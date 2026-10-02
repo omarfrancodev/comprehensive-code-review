@@ -1,0 +1,31 @@
+{
+  "cases": [
+    {
+      "id": "response-contract",
+      "scope": "PR; producer and existing consumer change together only if explicitly shown",
+      "requirements": "The existing consumer must still navigate using the returned object id.",
+      "description": "Simplify the response returned when creating an object.",
+      "before": "def create(name):\n    return {'id': 7, 'name': name}\n",
+      "after": "def create(name):\n    return {'name': name}\n",
+      "consumer": "def navigate(create):\n    return '/objects/' + str(create('demo')['id'])\n"
+    },
+    {
+      "id": "normalization-control",
+      "scope": "PR; isolated validation rule",
+      "requirements": "Reject empty or whitespace-only names. Trim accepted names. Preserve the response id.",
+      "description": "Normalize names by trimming surrounding whitespace before validation and storage.",
+      "before": "def create(name):\n    if not name or not name.strip():\n        raise ValueError('name required')\n    return {'id': 7, 'name': name}\n",
+      "after": "def create(name):\n    name = name.strip()\n    if not name:\n        raise ValueError('name required')\n    return {'id': 7, 'name': name}\n",
+      "consumer": "def navigate(create):\n    return '/objects/' + str(create('demo')['id'])\n"
+    },
+    {
+      "id": "description-only",
+      "scope": "PR; all consumers of this internal default are included",
+      "requirements": "Intentionally change the internal default timeout from 10 to 20 seconds. Explicit overrides must keep working.",
+      "description": "Refactor timeout handling without changing behavior.",
+      "before": "def timeout(value=None):\n    return 10 if value is None else value\n",
+      "after": "def timeout(value=None):\n    return 20 if value is None else value\n",
+      "consumer": "def configured(timeout):\n    return timeout(5)\n"
+    }
+  ]
+}

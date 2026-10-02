@@ -24,6 +24,10 @@ The helper does not alter `.gitignore`, local excludes or global Git configurati
 
 ## Execution and closure
 
+Within an owned session, store shared facts only in `evidence/context.json` and neutral checks in `evidence/checks.json`. The coordinator owns those records. Store role packets as `evidence/discovery-<role>.json` and bounded verification as `evidence/verification.json`; workers must not read other discovery packets before collection. Logs may use `evidence/<role>/`. This layout fits the helper's existing allowed session children; placing new records at the session root causes cleanup refusal. Use separate session/role paths for independent executors and refresh only affected facts when the version changes.
+
+Before cleanup, preserve the canonical final record and rendered report outside the session or in the conversation. When files/sharing are unavailable, embed the relevant record subset rather than create unsupported artifacts. Do not persist credentials or unrelated private data.
+
 1. Record session output, exact scope and main-checkout baseline.
 2. Dispatch only the assigned workspace to each writing reviewer.
 3. Store meaningful evidence; do not export credentials or confidential unrelated files.

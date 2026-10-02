@@ -1,6 +1,6 @@
 interface:
   display_name: "Comprehensive Code Review"
-  short_description: "Revisión por perfiles con evidencia y aislamiento"
+  short_description: "Revisión por perfiles con resultados consistentes"
   default_prompt: "Usa $comprehensive-code-review para revisar este alcance y reportar hallazgos, sin publicar comentarios."
 policy:
   allow_implicit_invocation: true
