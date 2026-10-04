@@ -16,7 +16,7 @@ The coordinator discovers shared facts once per reviewed version. Skills do not 
 
 Use evidence/context.json in an owned session; otherwise an existing permitted location or embedded brief. Honor no-create requests. Record repository/scope/version, profile/reason, observable requirements/sources, applicable instructions, relevant stack/configuration/conventions with paths, affected flows/owners/invariants, MR/PR description identity/check owner, responsible identity/source, safe commands/required gates/executors and capability limitations. Embed binding instructions inaccessible to workers.
 
-Workers use these facts instead of repeating repository-wide discovery, but inspect raw assigned code and relevant conventions. Missing/conflicting facts go to the coordinator for targeted refresh. Source movement invalidates affected facts/evidence. The record is an index, not proof of correctness.
+Include ABCDE applicability and mapping to existing flow owners under review-areas.md, without discovery findings or final coverage claims. Workers use these facts instead of repeating repository-wide discovery, but inspect raw assigned code and relevant conventions. Missing/conflicting facts go to the coordinator for targeted refresh. Source movement invalidates affected facts/evidence. The record is an index, not proof of correctness.
 
 ## Neutral validation ledger
 

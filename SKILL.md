@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.0.0"
+  version: "2.1.0"
 ---
 
 # Comprehensive Code Review
@@ -29,9 +29,9 @@ This skill requests coordinator delegation only for required profile sessions wh
 
 ## Workflow and conditional references
 
-1. **Scope/context.** Read [scopes.md](references/scopes.md) and [capabilities.md](references/capabilities.md). Pin inputs, discover common facts once, assign coverage/check owners. MR/PR includes description consistency and verified responsible-person metadata. Re-review uses [re-review.md](references/re-review.md).
+1. **Scope/context.** Read [scopes.md](references/scopes.md), [capabilities.md](references/capabilities.md) and [review-areas.md](references/review-areas.md). Pin inputs, discover common facts once, map applicable ABCDE areas to assigned flows/check owners. MR/PR includes description consistency and verified responsible-person metadata. Re-review uses [re-review.md](references/re-review.md).
 2. **Discovery/verification.** Use compact records under [result-contract.md](references/result-contract.md). Read [reviewers.md](references/reviewers.md) when delegating/grouping. Preserve independent results, provisionally group shared causes, then verify under the profile. Discard unsupported claims; mark unresolved ones explicitly.
-3. **Report/close.** Recheck code/description freshness. Use [report-format.md](references/report-format.md) for a user report/public draft. Preserve the final record/report, then clean owned resources without undoing user changes.
+3. **Report/close.** Recheck code/description freshness. Use [report-format.md](references/report-format.md) for a user report/public draft; only the user report includes the ABCDE matrix. Preserve the final record/report, then clean owned resources without undoing user changes.
 
 Read [workspaces.md](references/workspaces.md) only for isolated-resource operations, [external-cli.md](references/external-cli.md) only for configured external execution, and [publication.md](references/publication.md) only for remote publication. Builds/writes need isolated executor workspaces; read-only workers may share pinned inputs. Commit-only static inspection can read immutable Git objects without a worktree.
 

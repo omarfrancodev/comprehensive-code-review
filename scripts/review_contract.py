@@ -28,6 +28,11 @@ ORIGINS = {'introduced': 'introducido', 'preexisting': 'preexistente', 'unknown'
 CHECK_STATUS = {'passed': 'aprobada', 'failed': 'falló', 'blocked': 'bloqueada', 'not_run': 'no ejecutada'}
 FAILURE_KINDS = {'product': 'producto', 'fixture': 'fixture', 'environment': 'entorno'}
 REREVIEW_STATUS = {'resolved': 'resuelto', 'still_valid': 'vigente', 'withdrawn': 'retirado', 'new': 'nuevo'}
+AREAS = {'A': 'Arquitectura y diseño', 'B': 'Comportamiento y negocio',
+         'C': 'Contratos e integración', 'D': 'Datos y persistencia',
+         'E': 'Seguridad y operación'}
+AREA_STATUS = {'covered': 'Cubierta', 'partial': 'Parcial',
+               'not_evaluated': 'No evaluada', 'not_applicable': 'No aplica'}
 
 
 def validate(record):
@@ -76,7 +81,8 @@ def validate(record):
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(record.get('schema_version')) is not int or record['schema_version'] != 1:
+    schema_version = record.get('schema_version')
+    if type(schema_version) is not int or schema_version not in {1, 2}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -181,6 +187,8 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
+        if schema_version == 2:
+            coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
         text(flow, f'coverage.flows[{i}]')
@@ -193,6 +201,41 @@ def validate(record):
     if stage != 'final':
         return errors
 
+    material_area_gap = False
+    if schema_version == 2:
+        area_ids = set()
+        public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
+                              and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
+        for i, raw in enumerate(array(coverage.get('areas'), 'coverage.areas')):
+            path = f'coverage.areas[{i}]'
+            row = fields(raw, {'area', 'status', 'details', 'material', 'finding_ids'}, path)
+            enum(row.get('area'), AREAS, f'{path}.area')
+            code = row.get('area')
+            if isinstance(code, str):
+                if code in area_ids:
+                    error(f'{path}.area', 'duplicate area')
+                area_ids.add(code)
+            enum(row.get('status'), AREA_STATUS, f'{path}.status')
+            text(row.get('details'), f'{path}.details')
+            boolean(row.get('material'), f'{path}.material')
+            if row.get('material') is True:
+                if row.get('status') in ('covered', 'not_applicable'):
+                    error(f'{path}.material', 'only pending applicable coverage can be a material gap')
+                material_area_gap = True
+            references = array(row.get('finding_ids'), f'{path}.finding_ids')
+            seen_references = set()
+            for j, identifier in enumerate(references):
+                if not isinstance(identifier, str) or identifier not in public_finding_ids:
+                    error(f'{path}.finding_ids[{j}]', 'must reference a retained non-rejected finding')
+                elif identifier in seen_references:
+                    error(f'{path}.finding_ids[{j}]', 'duplicate finding reference')
+                else:
+                    seen_references.add(identifier)
+            if row.get('status') == 'not_applicable' and references:
+                error(f'{path}.finding_ids', 'nonapplicable areas cannot reference findings')
+        if area_ids != set(AREAS):
+            error('coverage.areas', 'exactly one row for each area A through E is required')
+
     enum(record.get('profile'), {'economy', 'balanced', 'deep'}, 'profile')
     text(record.get('profile_reason'), 'profile_reason')
     boolean(coverage.get('adequate'), 'coverage.adequate')
@@ -202,7 +245,7 @@ def validate(record):
         error('coverage.verification', 'deep invariants cannot be skipped')
     substantive = any(isinstance(f, dict) and f.get('type') == 'code' and f.get('status') == 'confirmed' for f in findings)
     if (record.get('profile') == 'balanced' and coverage.get('verification') == 'skipped'
-            and (substantive or any(l.get('material') is True for l in limitations))):
+            and (substantive or material_area_gap or any(l.get('material') is True for l in limitations))):
         error('coverage.verification', 'balanced code findings/material questions require verification or disclosed unavailability')
     responsible = fields(record.get('responsible'), {'name', 'username', 'verified', 'source'}, 'responsible')
     for key in ('name', 'username', 'source'):
@@ -231,7 +274,8 @@ def validate(record):
     enum(record.get('verdict'), VERDICTS, 'verdict')
     text(record.get('verdict_reason'), 'verdict_reason')
     blockers = any(isinstance(f, dict) and f.get('status') == 'confirmed' and f.get('blocking') is True for f in findings)
-    uncertain = coverage.get('stale') is True or coverage.get('adequate') is not True or any(l.get('material') is True for l in limitations)
+    uncertain = (coverage.get('stale') is True or coverage.get('adequate') is not True
+                 or material_area_gap or any(l.get('material') is True for l in limitations))
     expected = ('not_approvable' if blockers else 'insufficient_evidence' if uncertain
                 else 'approvable_with_reservations' if reservations else 'approvable')
     if record.get('verdict') != expected:
@@ -292,6 +336,10 @@ def one_line(value):
     return ' '.join(str(value).splitlines()).strip()
 
 
+def table_cell(value):
+    return one_line(value).replace('|', '\\|')
+
+
 def render(record, audience='user'):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -336,7 +384,7 @@ def render(record, audience='user'):
     else:
         lines.extend(['', 'No se confirmaron defectos bloqueantes dentro del alcance revisado.'])
     unresolved = [f for f in record['findings'] if f['status'] == 'unresolved']
-    limitations = record['coverage']['limitations']
+    limitations = [dict(item) for item in record['coverage']['limitations']]
     lines.extend(['', '### Validación', ''])
     if record['checks']:
         for check in record['checks']:
@@ -349,6 +397,23 @@ def render(record, audience='user'):
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
     if audience == 'user' and record['coverage']['flows']:
         lines.extend(['', '**Cobertura:** ' + '; '.join(one_line(flow) for flow in record['coverage']['flows']) + '.'])
+    areas = record['coverage'].get('areas', [])
+    if audience == 'user' and areas:
+        lines.extend(['', '### Matriz ABCDE', '',
+                      '| Área | Estado | Evidencia o motivo | Hallazgos |',
+                      '|---|---|---|---|'])
+        for row in sorted(areas, key=lambda item: item['area']):
+            references = ', '.join(table_cell(identifier) for identifier in row['finding_ids']) or '—'
+            lines.append(f"| {row['area']} — {AREAS[row['area']]} | {AREA_STATUS[row['status']]} | {table_cell(row['details'])} | {references} |")
+    known_limits = {one_line(item['detail']): i for i, item in enumerate(limitations)}
+    for row in areas:
+        detail = one_line(row['details'])
+        if row['material']:
+            if detail in known_limits:
+                limitations[known_limits[detail]]['material'] = True
+            else:
+                known_limits[detail] = len(limitations)
+                limitations.append({'detail': detail, 'material': True})
     if unresolved or limitations:
         lines.extend(['', '### Incertidumbres', ''])
         lines.extend(f"- {f['id']}: {one_line(f['title'])} — {one_line(f['scenario'])}" for f in unresolved)

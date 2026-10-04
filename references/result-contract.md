@@ -1,4 +1,4 @@
-# Canonical review record — schema version 1
+# Canonical review record — schema version 2
 
 One source, rendered only for the requested audience. Workers return just schema_version, stage, scope, findings, checks and coverage; final consolidation adds final-only fields. No complete user/public report or repeated shared context from workers. Coordinator IDs are stable; remap role collisions once.
 
@@ -6,10 +6,16 @@ All listed fields are required in applicable objects. Use explicit null/empty ar
 
 ## Worker fields
 
-- schema_version: integer 1; stage: discovery/verification/final.
+- schema_version: integer 2 for new reviews; stage: discovery/verification/final. Helpers still accept legacy version 1 records unchanged, without inventing an ABCDE matrix or new coverage claims.
 - scope: repository; mode pr/mr/commit/range/staged/unstaged/working/module/feature; base/head/snapshot/target/reference (text/null). head or snapshot is required.
 - findings/checks: arrays under the contracts below; include only owned/referenced check entries.
-- coverage: flows (text array), limitations (detail text, material boolean). Final adds adequate/stale booleans and verification independent/same_session/skipped/unavailable.
+- coverage: flows (text array), limitations (detail text, material boolean). Final adds adequate/stale booleans, verification independent/same_session/skipped/unavailable, and areas under the contract below. Worker packets keep their existing minimal shape without a full matrix.
+
+## Final coverage areas
+
+Version 2 final coverage.areas requires exactly one row for each A/B/C/D/E, as defined in review-areas.md. Each row has area (letter), status covered/partial/not_evaluated/not_applicable, details (nonempty concise evidence or applicability/pending reason), material (boolean; true only for partial/not_evaluated required coverage gaps), finding_ids (distinct retained non-rejected canonical IDs; empty when none).
+
+Covered rows can reference findings. Not-applicable rows require a reason, material=false and no findings. Multiple rows may reference one cause without duplicating finding objects. Material gaps affect verdict/verification even if omitted from coverage.limitations; public uncertainty must still disclose them without the matrix. Version 1 retains its earlier coverage fields and behavior.
 
 ## Findings
 

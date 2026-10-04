@@ -12,7 +12,7 @@ Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante;
 
 ## User Report Format — fixed order
 
-Required: verdict/reason; project/mode/reference/version/target; responsible person; profile/reason and verification mode; MR/PR description result; confirmed findings or clean-review sentence; actual validation and covered flows.
+Required: verdict/reason; project/mode/reference/version/target; responsible person; profile/reason and verification mode; MR/PR description result; confirmed findings or clean-review sentence; actual validation and covered flows; ABCDE coverage matrix for new reviews.
 
 Then conditional sections, in this order: uncertainties; conditions/reservations; re-review ID changes; residual resources or actual publication outcome. Omit successful cleanup mechanics. Residual resources need exact paths and next actions. Reused evidence/substantive reruns are identified. No executed checks means an explicit static-only statement.
 
@@ -41,13 +41,25 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 - [Actual check/result, reuse/rerun reason or static-only statement]
 
 **Cobertura:** [inspected flows; material gaps appear under uncertainties]
+
+### Matriz ABCDE
+
+| Área | Estado | Evidencia o motivo | Hallazgos |
+|---|---|---|---|
+| A — Arquitectura y diseño | [state] | [decisive paths/checks or applicability/pending reason] | [IDs or —] |
+| B — Comportamiento y negocio | [state] | [evidence/reason] | [IDs or —] |
+| C — Contratos e integración | [state] | [evidence/reason] | [IDs or —] |
+| D — Datos y persistencia | [state] | [evidence/reason] | [IDs or —] |
+| E — Seguridad y operación | [state] | [evidence/reason] | [IDs or —] |
 ```
+
+Use review-areas.md states and scope rules; Cubierta means inspected, including any confirmed findings. Each row is concise and references existing findings. No overall risk level or quality score. Legacy version 1 records keep their original presentation; no guessed matrix.
 
 Replace an empty findings section with: no blocking defects were confirmed within the reviewed scope. Target 60–120 words per finding, retaining decisive evidence; never omit confirmed findings to meet a word target. Report resolved/withdrawn IDs in re-review changes even if absent from current findings.
 
 ## Public Comment Format — fixed order
 
-Use the same verdict, scope/version/reference, **responsible person**, description result, confirmed finding blocks and validation. Public validation uses check IDs, actual execution revision, outcomes and concise public-safe reuse/rerun reasons; raw commands remain in the user/internal record. Then conditional uncertainties, conditions/reservations and re-review changes. Omit profile selection, worker names, internal resource paths and cleanup mechanics. Use the finding block above unchanged.
+Use the same verdict, scope/version/reference, **responsible person**, description result, confirmed finding blocks and validation. Public validation uses check IDs, actual execution revision, outcomes and concise public-safe reuse/rerun reasons; raw commands remain in the user/internal record. Then conditional uncertainties, conditions/reservations and re-review changes. Omit the ABCDE matrix/area classifications, profile selection, worker names, internal resource paths and cleanup mechanics. Material coverage gaps still appear as uncertainties explaining the verdict. Use the finding block above unchanged.
 
 Variants:
 

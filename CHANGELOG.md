@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0
+
+- ABCDE coverage areas map to existing flow owners without adding per-area agents or tests.
+- New user reports include a five-row coverage matrix with evidence/reasons and canonical finding references. Public comments omit the matrix and classifications while retaining material uncertainty.
+- Schema version 2 validates complete area coverage, references and verdict consistency. Legacy version 1 records remain supported unchanged.
+- No change-risk level or quality score added; existing profile/priority/verdict rules preserved.
+
 ## 2.0.0
 
 - Canonical discovery, verification and final records, with an optional standard-library validator and Spanish report renderer.
