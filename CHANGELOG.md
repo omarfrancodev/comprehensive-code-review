@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1
+
+- Public GitHub distribution with installation documentation for the existing `skills` CLI, project/global scope and Codex/Claude Code targets.
+- Versioned ZIP download with SHA-256 checksums for manual installation without cloning.
+- README covering scope, profiles, ABCDE coverage, permissions, optional helpers, updates/removal and validation.
+- Review behavior and schema unchanged from 2.1.0.
+
 ## 2.1.0
 
 - ABCDE coverage areas map to existing flow owners without adding per-area agents or tests.

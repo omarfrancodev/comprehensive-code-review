@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.1.0"
+  version: "2.1.1"
 ---
 
 # Comprehensive Code Review
