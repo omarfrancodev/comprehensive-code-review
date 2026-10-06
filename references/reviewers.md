@@ -16,8 +16,9 @@ Validation: [owned check IDs and reusable neutral evidence].
 Use shared facts; inspect raw assigned code independently. Do not read other
 findings or existing review comments until collection. Do not fix code or
 mutate remote systems. Record owned fixtures before cleanup.
-Return one minimal discovery packet under result-contract.md: candidates,
-referenced checks, covered flows and material limitations. No full user report.
+Load worker-packets.md and its discovery section with this brief. Return
+one compact discovery packet: candidates, check IDs, covered flows and
+material limitations. No full user report.
 ```
 
 Fresh contexts exclude coordinator hypotheses/full transcript. Preserve raw observable requirements, defer diagnoses. Coverage is inspected flows, not headcount.
@@ -34,6 +35,6 @@ Supply minimal shared facts, exact version, groups, baseline access, decisive pa
 
 Trace actual requirements/mechanisms, registration conventions and consumers. Use baseline for introduced/preexisting/unknown origin. Reproduce when evidence is insufficient; decisive static flow is acceptable. Validate fixtures before interpreting failures. In-memory stores do not establish relational translation, constraints or credible-scale performance.
 
-Return one verification packet with confirmed/rejected/unresolved findings and evidence. Independence follows profiles.md; same-session fallback is disclosed. Record rejected claims only for material uncertainty, withdrawal of an earlier finding or a likely repeat investigation, not every discarded hypothesis.
+Load worker-packets.md and its verification section. Return decisions for assigned IDs, decisive evidence and only changed assessments; unchanged candidate prose/check records stay referenced. Independence follows profiles.md; same-session fallback is disclosed. Decisions account for all assigned IDs; final rejected-claim retention stays limited to material uncertainty, withdrawal or likely repeat investigation. Preserve raw packets.
 
 After independent results are preserved, examine existing reviews when relevant/requested. Verify claims/severity instead of adopting them. Missing tests or manually managed migrations are not automatically product defects. Keep deployment prerequisites and uncertain business rules distinct.

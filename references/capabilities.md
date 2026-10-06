@@ -14,13 +14,13 @@ The coordinator discovers shared facts once per reviewed version. Skills do not 
 
 ## Shared context
 
-Use evidence/context.json in an owned session; otherwise an existing permitted location or embedded brief. Honor no-create requests. Record repository/scope/version, profile/reason, observable requirements/sources, applicable instructions, relevant stack/configuration/conventions with paths, affected flows/owners/invariants, MR/PR description identity/check owner, responsible identity/source, safe commands/required gates/executors and capability limitations. Embed binding instructions inaccessible to workers.
+Use evidence/context.json in an owned session; otherwise an existing permitted location or embedded brief. Honor no-create requests. Record a context_id binding exact scope/code/description inputs, complete scope/version, profile/reason, observable requirements/sources, applicable instructions, relevant stack/configuration/conventions with paths, affected flows/owners/invariants, MR/PR description identity/check owner, responsible identity/source, safe commands/required gates/executors and capability limitations. Give workers only their relevant neutral subset and accessible raw sources. Embed binding instructions inaccessible to workers.
 
 Include ABCDE applicability and mapping to existing flow owners under review-areas.md, without discovery findings or final coverage claims. Workers use these facts instead of repeating repository-wide discovery, but inspect raw assigned code and relevant conventions. Missing/conflicting facts go to the coordinator for targeted refresh. Source movement invalidates affected facts/evidence. The record is an index, not proof of correctness.
 
 ## Neutral validation ledger
 
-The coordinator owns evidence/checks.json: check ID, executor, command, actual revision/snapshot, fixtures/configuration, result/evidence and reuse/rerun reason. Each common check has one executor. Copy only referenced/assigned entries into worker packets; no discovery diagnoses/verdicts in this shared ledger.
+The coordinator owns evidence/checks.json: check ID, executor, command, actual revision/snapshot, fixtures/configuration, result/evidence and reuse/rerun reason. Each common check has one executor. New packets return check_ids and refer to accessible assigned ledger entries; the coordinator supplies the canonical projection at merge. Legacy full packets copy only referenced entries. No discovery diagnoses/verdicts in this shared ledger.
 
 Discover extra commands only for assignment-specific needs. Inspect effects: no autofix/generated writes in the main checkout, production/shared test resources, real migrations, emails or external business mutations without authorization. Building/writing executors need owned isolation and disposable integration resources.
 

@@ -11,6 +11,8 @@ import subprocess
 import sys
 import time
 
+from review_metrics import normalize_usage
+
 
 def stop(process):
     if os.name == "nt":
@@ -60,6 +62,10 @@ def run(args):
                 "status": "failed", "review_validated": False,
                 "descendant_lifecycle": "adapter_responsibility; runner timeout termination is best effort",
                 "workspace_cleanup_ready": False}
+    metadata.update(role=args.role, phase=args.phase, model=args.model, harness=args.harness,
+                    sessions=None, executor_invocations=1, usage=normalize_usage(), usage_status='unavailable',
+                    tool_calls=None, repeated_reads=None, tool_output_chars=None)
+    started = time.monotonic()
     process = None
     try:
         with (output / "stdout.txt").open("wb") as stdout, (output / "stderr.txt").open("wb") as stderr:
@@ -83,6 +89,20 @@ def run(args):
         if process is not None and process.poll() is None:
             stop(process)
         metadata["finished_at"] = datetime.now(timezone.utc).isoformat()
+        metadata['elapsed_seconds'] = round(time.monotonic() - started, 6)
+        for name in ('stdout', 'stderr'):
+            path = output / (name + '.txt')
+            metadata[name + '_bytes'] = path.stat().st_size if path.is_file() else None
+        usage_path = output / 'usage.json'
+        if usage_path.exists() or usage_path.is_symlink():
+            try:
+                if usage_path.is_symlink() or not usage_path.is_file() or usage_path.stat().st_size > 65536:
+                    raise ValueError('usage.json must be a small regular file owned by this run')
+                metadata['usage'] = normalize_usage(json.loads(usage_path.read_text(encoding='utf-8')))
+                metadata['usage_status'] = 'reported'
+            except (OSError, ValueError, TypeError) as exc:
+                metadata['usage_status'] = 'invalid'
+                metadata['usage_error'] = str(exc)
         (output / "run.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return metadata
 
@@ -92,6 +112,10 @@ def main():
     for field in ("config", "prompt-file", "workspace", "output-dir"):
         parser.add_argument("--" + field, required=True)
     parser.add_argument("--timeout", type=float, default=900)
+    parser.add_argument('--role', default='external_worker', help='Measurement label; does not configure the agent')
+    parser.add_argument('--phase', default='unknown', help='Measurement phase label')
+    parser.add_argument('--model', help='Actual model identifier, if known; does not select it')
+    parser.add_argument('--harness', help='Actual execution environment, if known')
     args = parser.parse_args()
     try:
         result = run(args)

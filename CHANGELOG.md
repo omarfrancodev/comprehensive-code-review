@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.2.0
+
+- Independently versioned compact discovery candidates and verification decision deltas; optional merge preserves scenarios, amended claims and referenced check revisions without inventing final judgments.
+- Role-specific instruction loading, progressive bounded source/log access and explicit expansion/stopping checkpoints. Required gates, material uncertainty and independent balanced verification remain in force.
+- Standard-library per-phase usage accounting, partial totals and optional runner capture of adapter-normalized counters. Unknown usage stays unknown; cached/reasoning subsets are not double-counted.
+- Final schema 1/2, user/public report format, ABCDE user-only coverage, responsible/description checks and workspace safeguards preserved. No persistent project cache or automatic model-setting changes.
+- Installation update documentation for current skills CLI project/global scopes. No measured token/credit savings claimed.
+
 ## 2.1.1
 
 - Public GitHub distribution with installation documentation for the existing `skills` CLI, project/global scope and Codex/Claude Code targets.
