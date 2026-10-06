@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 — Unreleased
+
+- Common per-user persistent review archive with configurable root, stable repository grouping, unique runs and retained report/final record/closure/measurement availability before temporary cleanup.
+- Standard-library archive helper with scope binding, atomic writes, hashes, registered temporary resources and observed closure; no resource deletion, automatic retention or cross-run context cache.
+- Schema 3 final records distinguish MR/PR responsibility from version-bound commit authors. Legacy schema 1/2 inputs remain supported; account mentions require verified mappings.
+- Structural Markdown metadata/finding lists, translated user-facing values and separate user/public projections prevent soft-line-break headers from collapsing.
+- Native missing usage stays unknown with an explicit reason; account-wide credits do not become per-review consumption. No automatic native usage interception or savings claim.
+
 ## 2.2.0
 
 - Independently versioned compact discovery candidates and verification decision deltas; optional merge preserves scenarios, amended claims and referenced check revisions without inventing final judgments.

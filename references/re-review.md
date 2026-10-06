@@ -2,6 +2,8 @@
 
 Recover the previous exact base/head/snapshot, final record, stable IDs/aliases, evidence, coverage and pending conditions. If unavailable/unreliable, disclose that limitation and perform a new bounded review; do not claim continuity.
 
+Use the exact previous archive path under artifacts.md; create a new run and link it in cierre.json. Retain the earlier final record/measurements unchanged. Read only evidence required for the current comparison, not all historical runs or a cross-run context cache.
+
 Compare old/new head and base: a moving base can change effective changes even with unchanged head. Map corrected findings, changed/deleted paths, dependencies/interfaces and new risks. Reinspect affected flows and pending required checks; reuse unaffected evidence only with applicable inputs and a recorded reason. Changed execution revision/configuration/fixtures require refreshed checks or explicit justification of unchanged inputs; never relabel old execution as new execution.
 
 Keep IDs for the same cause across renamed files/shifted lines; retain duplicate aliases. Prior IDs become resolved (proved correction), still_valid (reconfirmed), or withdrawn (earlier claim disproved). New causes get new IDs. Final outcomes are not candidates; never silently delete earlier user/public claims.

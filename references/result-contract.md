@@ -1,4 +1,4 @@
-# Canonical review record — schema version 2
+# Canonical review record — schema version 3
 
 One final source, rendered only for the requested audience. New workers use worker-packets.md; packet_version is independent of this schema. The coordinator merges evidence/decision deltas, supplies explicit judgments and validates this complete record. Legacy full workers still use schema_version, stage, scope, findings, checks and coverage below. No complete user/public reports from workers. Coordinator IDs are stable; remap role collisions once.
 
@@ -6,14 +6,14 @@ All listed fields are required in applicable objects. Use explicit null/empty ar
 
 ## Canonical envelope / legacy full worker fields
 
-- schema_version: integer 2 for new reviews; stage: discovery/verification/final. Helpers still accept legacy version 1 records unchanged, without inventing an ABCDE matrix or new coverage claims.
+- schema_version: integer 3 for new final reviews; stage: discovery/verification/final. Helpers accept legacy versions 1/2 unchanged as input; no invented authors or missing legacy coverage. Compact worker packet_version stays independent; existing full worker/merge outputs may use schema 1/2 until the coordinator completes a schema3 final record.
 - scope: repository; mode pr/mr/commit/range/staged/unstaged/working/module/feature; base/head/snapshot/target/reference (text/null). head or snapshot is required.
 - findings/checks: arrays under the contracts below; include only owned/referenced check entries.
 - coverage: flows (text array), limitations (detail text, material boolean). Final adds adequate/stale booleans, verification independent/same_session/skipped/unavailable, and areas under the contract below. Worker packets keep their existing minimal shape without a full matrix.
 
 ## Final coverage areas
 
-Version 2 final coverage.areas requires exactly one row for each A/B/C/D/E, as defined in review-areas.md. Each row has area (letter), status covered/partial/not_evaluated/not_applicable, details (nonempty concise evidence or applicability/pending reason), material (boolean; true only for partial/not_evaluated required coverage gaps), finding_ids (distinct retained non-rejected canonical IDs; empty when none).
+Versions 2/3 final coverage.areas requires exactly one row for each A/B/C/D/E, as defined in review-areas.md. Each row has area (letter), status covered/partial/not_evaluated/not_applicable, details (nonempty concise evidence or applicability/pending reason), material (boolean; true only for partial/not_evaluated required coverage gaps), finding_ids (distinct retained non-rejected canonical IDs; empty when none).
 
 Covered rows can reference findings. Not-applicable rows require a reason, material=false and no findings. Multiple rows may reference one cause without duplicating finding objects. Material gaps affect verdict/verification even if omitted from coverage.limitations; public uncertainty must still disclose them without the matrix. Version 1 retains its earlier coverage fields and behavior.
 
@@ -37,11 +37,14 @@ The shared ledger additionally keeps executor and fixture/configuration identiti
 
 - profile economy/balanced/deep; profile_reason text.
 - responsible: name/username/source (text/null), verified boolean. Username has no @ prefix. Mentions require an actual verified account; verified display name is sufficient without an account. Unknown renders No identificado.
+- change_authors (schema3 only): identity array, empty for unknown. Each entry has name/username/source (text/null), verified boolean, commits (nonempty distinct reviewed commit identities; an explicitly attributed local snapshot may use its snapshot identity). Verified entries need an identity/source; usernames use the responsible-account rules. Commit membership and account mapping are coordinator evidence checks, not established by structural validation. Exact duplicate entries are invalid. Separate this attribution from MR/PR assignment, creator and committer. Unknown identities never become mentions.
 - description: status aligned/needs_update/unverified for MR/PR, otherwise not_applicable; identity (captured text/hash identity or null when unavailable); details text.
 - verdict approvable/approvable_with_reservations/not_approvable/insufficient_evidence; verdict_reason text; reservations (concrete nonblocking text array). Use profiles.md precedence; reservations cannot waive material uncertainty.
 - rereview: id/status/details array; status resolved/still_valid/withdrawn/new. Resolved/withdrawn IDs need not remain in current findings.
 - aliases: object mapping duplicate IDs directly to surviving finding/re-review IDs; empty when none. Preserve it in the final record for incremental reviews, never chains or self-aliases. Workers do not supply this coordinator registry.
 - resources: cleanup complete/not_needed/pending; residuals (exact path array); publication not_requested/draft/published/failed. Residuals require pending cleanup. Published needs actual remote evidence retained outside disposable resources.
+
+The durable run/skill version, file inventory and closure belong in cierre.json under artifacts.md; measurements remain in measurements.json, outside this final schema. A retained report/fixture is not a pending temporary residual. Complete cleanup does not mean deleting the archive. Retain final records before disposal; update resources only from observed cleanup evidence.
 
 ## Mechanical tools
 
