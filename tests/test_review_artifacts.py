@@ -74,17 +74,14 @@ class ArchiveTests(unittest.TestCase):
     def close(self, run, cleanup='not_needed', residuals=None):
         return artifacts.close(run, self.write('cleanup.json', {'cleanup': cleanup, 'residuals': residuals or []}))
 
-    def test_prepare_binds_scope_and_creates_unknown_measurements(self):
+    def test_prepare_binds_scope_without_automatic_measurements(self):
         run = self.prepare()
         manifest = self.read(run / 'cierre.json')
         self.assertEqual(manifest['scope'], record()['scope'])
         self.assertEqual(manifest['skill_version'], '2.3.0')
         self.assertEqual(manifest['state'], 'prepared')
         self.assertEqual(manifest['cleanup'], 'pending')
-        usage = self.read(run / 'measurements.json')
-        self.assertEqual(usage['status'], 'unavailable')
-        self.assertIsNone(usage['summary']['input_tokens']['total'])
-        self.assertTrue(usage['unavailable_reason'])
+        self.assertFalse((run / 'measurements.json').exists())
 
     def test_root_priority_and_home_default_are_durable(self):
         with patch.dict(os.environ, {'CCR_ARTIFACTS_DIR': str(self.root / 'env')}), patch.object(Path, 'home', return_value=self.root / 'home'):
@@ -211,8 +208,9 @@ class ArchiveTests(unittest.TestCase):
 
     def test_unknown_usage_requires_a_reason_and_measured_zero_is_reported(self):
         run = self.prepare()
+        unknown = self.write('unknown.json', {'usage': None})
         with self.assertRaises(ValueError):
-            artifacts.retain(run, self.final)
+            artifacts.retain(run, self.final, measurement_inputs=[unknown])
         usage = {key: 0 for key in ('input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens', 'credits', 'cost')}
         usage['currency'] = 'USD'
         counters = {key: 0 for key in ('sessions', 'tool_calls', 'repeated_reads', 'tool_output_chars')}

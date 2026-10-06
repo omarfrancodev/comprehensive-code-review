@@ -40,6 +40,8 @@ AREAS = {'A': 'Arquitectura y diseño', 'B': 'Comportamiento y negocio',
          'E': 'Seguridad y operación'}
 AREA_STATUS = {'covered': 'Cubierta', 'partial': 'Parcial',
                'not_evaluated': 'No evaluada', 'not_applicable': 'No aplica'}
+REVIEW_KINDS = {'review': 'Code Review', 'rereview': 'Re-review',
+                'complement': 'Complement Code Review'}
 
 
 def validate(record):
@@ -88,10 +90,12 @@ def validate(record):
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
-    if schema_version == 3:
+    if schema_version in (3, 4):
         final_fields.add('change_authors')
+    if schema_version == 4:
+        final_fields.add('presentation')
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(schema_version) is not int or schema_version not in {1, 2, 3}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -196,7 +200,7 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version in (2, 3):
+        if schema_version in (2, 3, 4):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -211,7 +215,7 @@ def validate(record):
         return errors
 
     material_area_gap = False
-    if schema_version in (2, 3):
+    if schema_version in (2, 3, 4):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -282,7 +286,13 @@ def validate(record):
         return person
 
     identity(record.get('responsible'), 'responsible')
-    if schema_version == 3:
+    if schema_version == 4:
+        presentation = fields(record.get('presentation'), {'kind', 'subject'}, 'presentation')
+        enum(presentation.get('kind'), REVIEW_KINDS, 'presentation.kind')
+        text(presentation.get('subject'), 'presentation.subject')
+        if isinstance(presentation.get('subject'), str) and any(c in presentation['subject'] for c in '\r\n'):
+            error('presentation.subject', 'expected a single-line functional subject')
+    if schema_version in (3, 4):
         seen_authors = set()
         for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
             identity(author, f'change_authors[{i}]', author=True)
@@ -408,13 +418,17 @@ def render(record, audience='user'):
     version = scope['snapshot'] or scope['head']
     remote = scope['mode'] in {'mr', 'pr'}
     responsibility = 'Responsable del MR/PR' if remote else 'Responsable'
-    lines = ['## Code Review', '', f"**Veredicto:** {VERDICTS[record['verdict']]} — {markdown_text(record['verdict_reason'])}.", '',
+    presentation = record.get('presentation')
+    title = (REVIEW_KINDS[presentation['kind']] + ' — ' + markdown_text(presentation['subject'])
+             if presentation else 'Code Review')
+    lines = ['## ' + title, '', f"### Veredicto: **{VERDICTS[record['verdict']]}**", '',
+             markdown_text(record['verdict_reason']), '',
              f"- **Alcance:** {markdown_text(scope['repository'])} · {MODE_LABELS[scope['mode']]}",
              f"- **Versión:** {markdown_text(scope['base'] or 'sin comparación')} → {markdown_text(version)}"]
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] == 3:
+    if record['schema_version'] in (3, 4):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
@@ -431,17 +445,18 @@ def render(record, audience='user'):
     confirmed = sorted((f for f in record['findings'] if f['status'] == 'confirmed'),
                        key=lambda f: (f['priority'], f['id']))
     if confirmed:
-        lines.extend(['', '### Hallazgos confirmados'])
-        for item in confirmed:
+        for ordinal, item in enumerate(confirmed, 1):
             location = item['location']
             label = f"{location['path']}:{location['line']}" if item['type'] == 'code' else location['section']
             if location['url']:
                 label = f"[{one_line(label)}]({location['url']})"
             evidence = '; '.join(one_line(ev['details']) + (f" [{ev['check_id']}]" if ev['check_id'] else '')
                                  for ev in item['evidence'])
-            lines.extend(['', f"#### {PRIORITIES[item['priority']]} — {item['id']}: {one_line(item['title'])}", '',
+            lines.extend(['', f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
+                          f"#### {ordinal}. {one_line(item['title'])}", '',
                           f"- **Ubicación:** {label} · **Origen:** {ORIGINS[item['origin']]}",
-                          f"- **Escenario e impacto:** {one_line(item['scenario'])} → {one_line(item['impact'])}",
+                          f"- **Escenario:** {one_line(item['scenario'])}",
+                          f"- **Impacto:** {one_line(item['impact'])}",
                           f'- **Evidencia:** {evidence}', f"- **Corrección requerida:** {one_line(item['correction'])}",
                           '- **Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no')])
     else:

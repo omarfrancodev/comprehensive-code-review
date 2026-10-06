@@ -1,10 +1,10 @@
 # Bounded effectiveness and cost evaluation
 
-Read only when maintaining/evaluating this skill. Contract tests establish mechanical behavior; fixture executions establish their ground truth. Neither proves a model's review accuracy or token savings.
+Read only when explicitly maintaining/evaluating effectiveness or cost of this skill. Contract tests establish mechanical behavior; fixture executions establish their ground truth. Neither proves a model's review accuracy or token savings.
 
 ## Offline checks
 
-Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers record consistency, output omission rules, CLI Unicode/errors, explicit deduplication, ABCDE user-only coverage with material-gap precedence/legacy compatibility, and the evidence layout with cleanup refusal/recovery in a disposable Git repository. No paid model calls or third-party Python dependencies. Git integration explicitly reports a skip if Git is unavailable.
+Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers record consistency, output omission rules, CLI Unicode/errors, explicit deduplication, schema4 presentation identity, optional measurements/legacy archive closure, executor provenance, ABCDE user-only coverage with material-gap precedence/legacy compatibility, and the evidence layout with cleanup refusal/recovery in a disposable Git repository. No paid model calls or third-party Python dependencies. Git integration explicitly reports a skip if Git is unavailable.
 
 ## Review inputs
 
