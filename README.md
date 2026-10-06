@@ -112,6 +112,15 @@ npx skills remove comprehensive-code-review
 
 Usa `-p` desde el proyecto para actualizar su instalación, o `-g` para la global. Las actualizaciones son explícitas; publicar una release no reemplaza automáticamente una instalación. `@latest` selecciona la versión actual del instalador; la ayuda comprobada de `skills@1.7.0` admite estos comandos y coincide con las [opciones documentadas](https://github.com/vercel-labs/skills#skills-update). Añade `-g` a remove para desinstalar globalmente. Conserva cualquier personalización antes de actualizar; no ejecutes el instalador sobre un checkout de desarrollo editable. Para una instalación manual, descarga la release elegida y reemplaza solo la carpeta instalada. Consulta [CHANGELOG.md](CHANGELOG.md).
 
+Si instalaste con `--copy`, puedes refrescar explícitamente las copias de los agentes repitiendo la instalación con el mismo alcance:
+
+```bash
+# Desde el proyecto; añade -g si tu instalación es global
+npx skills@latest add omarfrancodev/comprehensive-code-review -a codex claude-code --copy
+```
+
+Con `skills` 1.7.0 y Node.js 24.15.0 en Windows, la prueba de `update -p` terminó con un error al cerrar y una copia conservó 2.1.1. Repetir `add` con ambos agentes y `--copy` terminó correctamente y actualizó las dos a 2.2.0. Esta alternativa reemplaza los archivos instalados; conserva tus personalizaciones y selecciona únicamente los agentes que uses. El comando obtiene la fuente del repositorio, sin esperar a una actualización automática por release.
+
 ## Validación y mantenimiento
 
 Desde una copia del código fuente:
