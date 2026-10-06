@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.3.0 — Unreleased
+## 2.3.0 — 2026-10-06
 
 - Common per-user persistent review archive with configurable root, stable repository grouping, unique runs and retained report/final record/closure/measurement availability before temporary cleanup.
 - Standard-library archive helper with scope binding, atomic writes, hashes, registered temporary resources and observed closure; no resource deletion, automatic retention or cross-run context cache.

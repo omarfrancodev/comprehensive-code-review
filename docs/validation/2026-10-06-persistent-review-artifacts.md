@@ -1,6 +1,6 @@
 # Persistent review archive and presentation validation
 
-Source baseline: main 6b34b621f4abb6550dfe04ab0a3a396b1ca888c4 (skill 2.2.0). Proposed release: 2.3.0; public release/merge are pending user review of the PR.
+Source baseline: main 6b34b621f4abb6550dfe04ab0a3a396b1ca888c4 (skill 2.2.0). Release target: 2.3.0. The results below were obtained before publication; the user reviewed PR #3 and approved merge/publication on 2026-10-06.
 
 ## Mechanical RED/GREEN
 

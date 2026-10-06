@@ -37,7 +37,7 @@
 - [x] Update SKILL.md, archive/workspace/metrics/scope/context/presentation/publication/result-contract references, README and CHANGELOG; prepare 2.3.0.
 - [x] GREEN: fresh-context scenarios with the revised full skill; verify archive location/lifecycle, missing measurements, role separation and rendered Markdown.
 - [x] Run the complete suite and independent final code/skill review; fix evidenced defects and rerun affected checks. Final: 123 tests, 122 passed/one host-privilege skip; both independently verified archive defects corrected.
-- [ ] Commit, push and create/attach PR, including actual validation evidence and pending release notes. Stop before merge/tag/public release.
+- [x] Commit, push and create/attach PR #3 with actual validation evidence. Stopped before merge/tag/public release; the user then reviewed and approved publication on 2026-10-06.
 
 ## Verification
 

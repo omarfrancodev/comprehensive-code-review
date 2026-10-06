@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.2.0.zip` desde [la release 2.2.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.2.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.3.0.zip` desde [la release 2.3.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.3.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -88,7 +88,7 @@ Los veredictos son **Aprobable**, **Aprobable con reservas**, **No aprobable** o
 
 ## Artefactos persistentes
 
-La versión 2.3.0 preparada en esta rama conserva cada revisión en una carpeta por usuario, independiente de Codex/Kiro, de la instalación de la skill y de los worktrees temporales:
+Desde la versión 2.3.0, la skill conserva cada revisión en una carpeta por usuario, independiente de Codex/Kiro, de la instalación de la skill y de los worktrees temporales:
 
 ```text
 <home>/.comprehensive-code-review/reviews/
@@ -153,4 +153,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.3.0 está preparada para revisión mediante PR; la release pública enlazada arriba sigue siendo 2.2.0 hasta su publicación. Los cambios añaden archivo persistente, cierre/mediciones y presentación consistente con autoría separada. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.3.0 se distribuye mediante el repositorio y la release enlazada arriba. Los cambios añaden archivo persistente, cierre/mediciones y presentación consistente con autoría separada. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.
