@@ -1,6 +1,6 @@
 # Project worktree review flow validation
 
-Baseline: main 047c77b5810407e9708e4c2411fe86da5bf136db (2.3.0). Target: 2.4.0, pending human PR review and release preparation.
+Baseline: main 047c77b5810407e9708e4c2411fe86da5bf136db (2.3.0). Target: 2.4.0. The user approved PR #4 and merge/release publication on 2026-10-06.
 
 ## Mechanical checks
 
@@ -18,4 +18,4 @@ The reviewer identified documentation remnants and a legacy retry edge; they wer
 
 ## Limits
 
-Provenance validation checks structure, registered paths, Git root/common repository and HEAD. It does not prove command execution, copy content, local snapshot truth or fixture correctness; the coordinator still checks those inputs. Shared dependencies remain allowed within inspected effects/ownership. Metrics utilities and existing archives remain supported for explicit evaluations. Merge, release date, tag and release assets remain pending human review.
+Provenance validation checks structure, registered paths, Git root/common repository and HEAD. It does not prove command execution, copy content, local snapshot truth or fixture correctness; the coordinator still checks those inputs. Shared dependencies remain allowed within inspected effects/ownership. Metrics utilities and existing archives remain supported for explicit evaluations. Release preparation dates the changelog and updates download links before merge. The annotated tag targets the integrated commit; the distribution ZIP is revalidated before publication.

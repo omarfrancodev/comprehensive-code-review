@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.4.0 — Unreleased
+## 2.4.0 — 2026-10-06
 
 - Builds/tests/installs/reproductions require owned project Git worktrees; blocked creation is disclosed and scratch/copy execution requires explicit user authorization. Static immutable reads remain workspace-optional.
 - Compatible shared dependencies/caches/junctions remain permitted; conflicts trigger executor-owned dependencies/cache/outputs and an evidenced retry.

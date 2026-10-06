@@ -48,7 +48,7 @@
 - [x] Baseline pressure probe, then update instructions to the approved worktree/dependency/measurement/presentation rules.
 - [x] Fresh forward probe and bounded independent review; repair confirmed issues.
 - [x] Full offline suite, link/frontmatter/CLI validation and git diff checks.
-- [ ] Commit/push authorized branch, create and attach PR; leave release pending human approval.
+- [x] Commit/push authorized branch, create and attach PR; leave release pending human approval.
 
 ## Execution ledger
 
@@ -61,3 +61,5 @@
 - Release stays pending human PR review; the existing 2.3.0 published download link remains accurate until release preparation.
 
 - Final integrated validation: 133 tests in 79.505s, 132 passed/one Windows symlink privilege skip; six helpers compile/help pass, direct frontmatter/local links and diff checks pass. quick_validate lacks PyYAML; no dependency added.
+
+- PR #4 was created and attached; the user approved its merge/release on 2026-10-06. Release preparation dates the changelog and updates download links before merging; annotated tagging and ZIP verification follow the integrated commit.
