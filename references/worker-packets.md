@@ -1,6 +1,6 @@
 # Compact worker packets — packet version 1
 
-Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 3; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries or durable closure records.
+Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 4; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
 
 ## Common envelope
 

@@ -24,7 +24,8 @@ import review_contract
 import review_metrics
 
 
-FILES = ('review.json', 'informe.md', 'measurements.json')
+FILES = ('review.json', 'informe.md')
+OPTIONAL_FILES = ('measurements.json',)
 MARKER = '.review-ownership.json'
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
@@ -254,6 +255,8 @@ def _load_run(run_dir):
         raise ValueError('invalid archive state')
     if manifest.get('cleanup') not in {'pending', 'complete', 'not_needed'}:
         raise ValueError('invalid closure state')
+    if manifest.get('schema_version') not in (1, 2):
+        raise ValueError('unsupported archive schema')
     return run, manifest, marker
 
 
@@ -262,16 +265,17 @@ def _verify_files(run, manifest, required=False):
     if not isinstance(hashes, dict) or any(not _retained_name(name) for name in hashes):
         raise ValueError('invalid retained file manifest')
     planned = manifest.get('planned_hashes', {}) if manifest['state'] == 'retaining' else {}
-    if required and (not set(FILES).issubset(hashes) or manifest['state'] == 'retaining'):
+    required_files = set(FILES) | (set(OPTIONAL_FILES) if manifest['schema_version'] == 1 else set())
+    if required and (not required_files.issubset(hashes) or manifest['state'] == 'retaining'):
         raise ValueError('retained evidence is absent or interrupted')
     if not isinstance(planned, dict) or any(not _retained_name(name) for name in planned):
         raise ValueError('invalid planned evidence paths')
-    for name in set(FILES) | set(hashes) | set(planned):
+    for name in set(FILES) | set(OPTIONAL_FILES) | set(hashes) | set(planned):
         path = safe_path(run / name)
         try:
             data = path.read_bytes()
         except FileNotFoundError:
-            if required or (name in hashes and manifest['state'] != 'retaining'):
+            if (required and name in required_files | set(hashes)) or (name in hashes and manifest['state'] != 'retaining'):
                 raise ValueError('retained evidence missing: ' + name)
             continue
         if _digest(data) not in {hashes.get(name), planned.get(name)}:
@@ -286,7 +290,7 @@ def _evidence_name(name):
 
 
 def _retained_name(name):
-    if name in FILES:
+    if name in FILES + OPTIONAL_FILES:
         return True
     return (isinstance(name, str) and name.startswith('evidence/')
             and name.count('/') == 1 and '\\' not in name
@@ -389,12 +393,12 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
-    manifest = {'schema_version': 1, 'skill_version': skill_version, 'harness': harness,
+    manifest = {'schema_version': 2, 'skill_version': skill_version, 'harness': harness,
                 'scope': scope, 'archive_root': str(root), 'repository_path': str(repo),
                 'repository_key': repository_key, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'prepared', 'retained': False, 'cleanup': 'pending', 'residuals': [],
-                'temporary_paths': [], 'temporary_manifests': [], 'hashes': {}}
+                'temporary_paths': [], 'temporary_manifests': [], 'executors': [], 'hashes': {}}
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
     identity_path = identity.split(':', 1)[1].replace('\\', '/')
@@ -418,9 +422,6 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         raise ValueError('cannot allocate a unique owned review run')
     marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run), 'archive_root': str(root),
               'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
-    measurements = _json_bytes(_measurements([], 'Review has not retained measured usage yet'))
-    atomic_write(run / 'measurements.json', measurements)
-    manifest['hashes'] = {'measurements.json': _digest(measurements)}
     _save_manifest(run, manifest, marker)
     return str(run)
 
@@ -440,7 +441,65 @@ def _retain_data(run, manifest, marker, contents):
     return manifest
 
 
-def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None):
+def _executors(context_input, manifest, temporary):
+    """Project existing neutral context facts; verify Git roots/HEAD, not check truth."""
+    previous = manifest.get('executors', [])
+    if context_input is None:
+        return previous
+    context = read_json(context_input)
+    if not isinstance(context, dict) or not isinstance(context.get('executors'), list):
+        raise ValueError('context.executors must be an array')
+    entries = {item['executor']: item for item in previous}
+    seen = set()
+    for raw in context['executors']:
+        required = {'executor', 'method', 'workspace', 'revision', 'snapshot', 'manifest',
+                    'dependencies', 'dependency_reason'}
+        if not isinstance(raw, dict) or set(raw) - required - {'authorization'} or not required.issubset(raw):
+            raise ValueError('invalid executor provenance fields')
+        entry = dict(raw)
+        for key in ('executor', 'revision', 'dependency_reason'):
+            if not isinstance(entry[key], str) or not entry[key].strip():
+                raise ValueError('executor ' + key + ' must be nonempty text')
+        if entry['executor'] in seen:
+            raise ValueError('duplicate executor identity')
+        seen.add(entry['executor'])
+        if entry['method'] not in {'git-worktree', 'native-worktree', 'authorized-copy'}:
+            raise ValueError('unsupported executor isolation method')
+        if entry['dependencies'] not in {'shared', 'local', 'none'}:
+            raise ValueError('invalid dependency strategy')
+        workspace = safe_path(entry['workspace'])
+        if not workspace.is_dir() or not any(_contains(Path(path), workspace) for path in temporary):
+            raise ValueError('executor workspace must be an existing registered temporary resource')
+        entry['workspace'] = str(workspace)
+        baseline = entry['revision'] == manifest['scope']['base'] and entry['snapshot'] is None
+        if entry['snapshot'] != manifest['scope']['snapshot'] and not baseline:
+            raise ValueError('executor snapshot differs from pinned scope')
+        if entry['revision'] not in {manifest['scope']['head'], manifest['scope']['base']}:
+            raise ValueError('executor revision differs from pinned scope')
+        if entry['method'] == 'authorized-copy':
+            if not isinstance(entry.get('authorization'), str) or not entry['authorization'].strip():
+                raise ValueError('copy execution requires explicit user authorization provenance')
+        else:
+            repo = Path(manifest['repository_path'])
+            if safe_path(_git(workspace, 'rev-parse', '--show-toplevel')) != workspace:
+                raise ValueError('executor must be an actual worktree root')
+            def common(path):
+                value = Path(_git(path, 'rev-parse', '--git-common-dir'))
+                return (path / value).resolve() if not value.is_absolute() else value.resolve()
+            if common(workspace) != common(repo) or _git(workspace, 'rev-parse', 'HEAD') != entry['revision']:
+                raise ValueError('executor worktree repository or HEAD differs from provenance')
+        if entry['manifest'] is not None:
+            path = safe_path(entry['manifest'])
+            if not path.is_file() or not any(_contains(Path(raw_path), path) for raw_path in temporary):
+                raise ValueError('executor manifest must exist inside registered temporary resources')
+            entry['manifest'] = str(path)
+        if entry['executor'] in entries and entries[entry['executor']] != entry:
+            raise ValueError('retained executor identity cannot be rewritten; use a new executor ID')
+        entries[entry['executor']] = entry
+    return list(entries.values())
+
+
+def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None):
     run, manifest, marker = _load_run(run_dir)
     if manifest['state'] == 'complete':
         raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
@@ -459,13 +518,18 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     if temporary:
         value = copy.deepcopy(value)
         value['resources'].update(cleanup='pending', residuals=present)
-    measurements = _measurements(measurement_inputs, unavailable_reason)
-    contents = {'review.json': _json_bytes(value), 'informe.md': review_contract.render(value).encode('utf-8'),
-                'measurements.json': _json_bytes(measurements)}
+    executors = _executors(context_input, manifest, temporary)
+    contents = {'review.json': _json_bytes(value), 'informe.md': review_contract.render(value).encode('utf-8')}
+    if measurement_inputs or unavailable_reason is not None:
+        measurements = _measurements(measurement_inputs, unavailable_reason)
+        contents['measurements.json'] = _json_bytes(measurements)
+    elif manifest['schema_version'] == 1:
+        contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
     contents.update(_evidence_contents(run, manifest, evidence_inputs))
     manifest['temporary_paths'] = temporary
     manifest['temporary_manifests'] = _temporary_manifests(temporary, manifest)
     manifest['residuals'] = present
+    manifest['executors'] = executors
     return _retain_data(run, manifest, marker, contents)
 
 
@@ -515,8 +579,7 @@ def close(run_dir, cleanup_file):
     report = review_contract.render(value).encode('utf-8')
     if value != read_json(run / 'review.json'):
         manifest = _retain_data(run, manifest, marker,
-                                {'review.json': _json_bytes(value), 'informe.md': report,
-                                 'measurements.json': (run / 'measurements.json').read_bytes()})
+                                {'review.json': _json_bytes(value), 'informe.md': report})
         run, manifest, marker = _load_run(run)
     manifest.update(cleanup=cleanup, residuals=residuals,
                     state='complete' if cleanup != 'pending' else 'closing')
@@ -545,6 +608,7 @@ def main():
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')
     keep.add_argument('--evidence-input', action='append')
+    keep.add_argument('--context-input', help='Existing neutral context JSON with executor provenance')
     finish = commands.add_parser('close')
     finish.add_argument('--run-dir', required=True)
     finish.add_argument('--cleanup-file', required=True)
@@ -555,7 +619,7 @@ def main():
                                          args.output_root, args.previous_run, args.temporary_path)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
-                            args.unavailable_reason, args.temporary_path, args.evidence_input)
+                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input)
         else:
             result = close(args.run_dir, args.cleanup_file)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))

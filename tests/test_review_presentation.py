@@ -90,7 +90,7 @@ class PortableMarkdownTests(unittest.TestCase):
                 self.assertTrue(any(line.startswith('- **' + label + ':**')
                                     for line in header.splitlines()), label)
             self.assertIn('defectos bloqueantes', output)
-            self.assertIn('**Veredicto:** APROBABLE', output)
+            self.assertIn('### Veredicto: **APROBABLE**', output)
 
     def test_local_fields_translate_values_and_do_not_invent_remote_description(self):
         record = current_record()
@@ -121,7 +121,7 @@ class PortableMarkdownTests(unittest.TestCase):
         record['findings'] = [finding()]
         for audience in ('user', 'comment'):
             output = contract.render(record, audience)
-            for label in ('Ubicación', 'Escenario e impacto', 'Evidencia', 'Corrección requerida', 'Bloqueante'):
+            for label in ('Ubicación', 'Escenario', 'Impacto', 'Evidencia', 'Corrección requerida', 'Bloqueante'):
                 self.assertIn('\n- **' + label + ':**', output)
 
 

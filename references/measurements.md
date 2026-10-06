@@ -1,5 +1,7 @@
 # Per-phase measurements
 
+Load only for an explicitly requested cost/effectiveness evaluation. Normal reviews do not create measurements.json, probe native counters or load this reference. The optional runner may preserve already supplied adapter usage without extra model/tool calls; do not aggregate it by default. Explicit measurement flags opt into retention; old measurement archives remain intact.
+
 Initialize and retain measurements.json in the persistent run under artifacts.md, outside public comments/final schema. Recording availability is required even when the helper/counters are unavailable. Native missing usage uses null and an explicit reason; interruption preserves the partial record. Use actual counters; absence is unknown. Count disjoint executions once, not both inclusive parent totals and children. Role/phase/model/harness labels identify actual execution; they do not configure it.
 
 Normalized usage: input_tokens, output_tokens, cached_input_tokens, reasoning_tokens (nonnegative integers/null), credits and cost (actual finite nonnegative numbers/null), currency (explicit text/null, required for cost). Omitted fields become null. Input includes cached tokens; output includes reasoning tokens. Adapters map provider counters to these semantics. Credits/currency costs stay separate, never inferred from tokens.

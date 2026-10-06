@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0 — Unreleased
+
+- Builds/tests/installs/reproductions require owned project Git worktrees; blocked creation is disclosed and scratch/copy execution requires explicit user authorization. Static immutable reads remain workspace-optional.
+- Compatible shared dependencies/caches/junctions remain permitted; conflicts trigger executor-owned dependencies/cache/outputs and an evidenced retry.
+- Executor isolation, revision/snapshot, manifest and dependency decisions persist in existing context/closure. Optional --context-input verifies Git-root/common-repository/HEAD provenance without adding audit agents.
+- Normal reviews omit measurement creation/probing. Archive schema 2 retains report/record/closure with opt-in measurement evidence; legacy schema 1 archives and integrity protections remain supported.
+- Final schema 4 stores explicit review/re-review/complement kind and functional subject once. Both projections use H2 review title, H3 verdict/priority/ID, H4 finding title and separate scenario/impact. Schemas 1–3, attribution, user-only ABCDE and review gates remain supported.
+
 ## 2.3.0 — 2026-10-06
 
 - Common per-user persistent review archive with configurable root, stable repository grouping, unique runs and retained report/final record/closure/measurement availability before temporary cleanup.
