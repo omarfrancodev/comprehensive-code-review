@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.2.0"
+  version: "2.3.0"
 ---
 
 # Comprehensive Code Review
@@ -35,12 +35,12 @@ This skill requests coordinator delegation only for required profile sessions wh
 
 ## Workflow and conditional references
 
-1. **Scope/context.** Read [scopes.md](references/scopes.md), [capabilities.md](references/capabilities.md) and [review-areas.md](references/review-areas.md). Pin inputs, discover common facts once, map applicable ABCDE areas to assigned flows/check owners. MR/PR includes description consistency and verified responsible-person metadata. Re-review uses [re-review.md](references/re-review.md).
+1. **Scope/context.** Read [scopes.md](references/scopes.md), [capabilities.md](references/capabilities.md), [review-areas.md](references/review-areas.md) and [artifacts.md](references/artifacts.md). Pin inputs, discover common facts once, map applicable ABCDE areas to assigned flows/check owners. Separate MR/PR responsibility from version-bound change authors. Establish the permitted persistent run directory and initial closure/measurement records; ephemeral scratch/worktrees remain execution resources. Re-review uses [re-review.md](references/re-review.md).
 2. **Discovery/verification.** Assign packets under [worker-packets.md](references/worker-packets.md); read [reviewers.md](references/reviewers.md) when delegating/grouping. Preserve results, group evidenced shared causes and verify candidates/material questions in one batch per scope. Reopen only for new evidence or an uncompleted gate. Mark remaining uncertainty explicitly.
-3. **Report/close.** Recheck code/description freshness. Use [report-format.md](references/report-format.md) for a user report/public draft; only the user report includes the ABCDE matrix. Preserve the final record/report, then clean owned resources without undoing user changes.
+3. **Report/close.** Recheck code/description/attribution freshness. Use [report-format.md](references/report-format.md) for structural Markdown metadata and findings; only the user report includes the ABCDE matrix. Retain and verify the report, final record and measurements under artifacts.md before cleaning owned temporary resources. Record observed cleanup in the durable closure; preserve interrupted/pending runs and user resources.
 
 Read [workspaces.md](references/workspaces.md) only for isolated-resource operations, [external-cli.md](references/external-cli.md) only for configured external execution, and [publication.md](references/publication.md) only for remote publication. Builds/writes need isolated executor workspaces; read-only workers may share pinned inputs. Commit-only static inspection can read immutable Git objects without a worktree.
 
 ## Optional helpers
 
-Use an interpreter and absolute script paths; consult --help. review_packets.py validates/merges internal packets; complete the final record under [result-contract.md](references/result-contract.md). Existing workspace/runner/report helpers retain their roles. [measurements.md](references/measurements.md) defines counters and optional review_metrics.py; unavailable usage stays unknown. Read [evaluation.md](references/evaluation.md) only to evaluate effectiveness/cost. Helpers do not prove truth, select models or grant permissions.
+Use an interpreter and absolute script paths; consult --help. review_packets.py validates/merges internal packets; complete the final record under [result-contract.md](references/result-contract.md). review_artifacts.py prepares/retains/closes durable runs without deleting resources. Existing workspace/runner/report helpers retain their roles. Read [measurements.md](references/measurements.md) when initializing/closing measurement records; helper use is optional, recording availability is required. Unavailable usage stays unknown. Read [evaluation.md](references/evaluation.md) only to evaluate effectiveness/cost. Helpers do not prove truth, select models or grant permissions.

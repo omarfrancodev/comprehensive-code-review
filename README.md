@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.2.0.zip` desde [la release 2.2.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.2.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.3.0.zip` desde [la release 2.3.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.3.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -82,9 +82,30 @@ El reporte al usuario incluye una matriz con estado, evidencia o motivo y refere
 
 Cada área queda como **Cubierta**, **Parcial**, **No evaluada** o **No aplica**. Cubierta significa inspeccionada; puede contener defectos. Un mismo hallazgo puede afectar varias áreas y conserva un solo bloque. No se añade una puntuación global ni un nivel de riesgo del cambio.
 
-El comentario público incluye responsable, alcance, versión, consistencia de la descripción, hallazgos, validación e incertidumbres pertinentes. Omite la matriz ABCDE y las rutas internas de ejecución. Solo se publica con autorización explícita.
+El comentario público incluye responsable del MR/PR, autores del cambio, alcance, versión, consistencia de la descripción, hallazgos, validación e incertidumbres pertinentes. La asignación del MR y la autoría de los commits se declaran por separado; los nombres de Git no se convierten en menciones sin verificar la cuenta. Omite la matriz ABCDE y las rutas internas de ejecución. Solo se publica con autorización explícita.
 
 Los veredictos son **Aprobable**, **Aprobable con reservas**, **No aprobable** o **Evidencia insuficiente**. La prioridad P0–P3, el carácter bloqueante y el origen del hallazgo se declaran por separado. En MR/PR también se verifica que la descripción refleje correctamente los cambios.
+
+## Artefactos persistentes
+
+Desde la versión 2.3.0, la skill conserva cada revisión en una carpeta por usuario, independiente de Codex/Kiro, de la instalación de la skill y de los worktrees temporales:
+
+```text
+<home>/.comprehensive-code-review/reviews/
+  <proyecto>-<id-repositorio>/<alcance>/<fecha>-<id-ejecucion>/
+    informe.md
+    review.json
+    cierre.json
+    measurements.json
+```
+
+Una ubicación solicitada explícitamente tiene prioridad; después se utiliza `CCR_ARTIFACTS_DIR`, y finalmente la ruta anterior. Cada entorno debe disponer de permisos para escribir en la ubicación elegida. Una ruta bloqueada se informa como limitación; no se cambia silenciosamente a `docs/` o al scratch del proveedor. Los nombres e identificadores distinguen repositorios, alcances y ejecuciones; una re-review crea otro registro enlazado al anterior.
+
+`cierre.json` se inicia antes de ejecutar la revisión y conserva versión de la skill, alcance, recursos temporales registrados, hashes y estado observado de limpieza. `measurements.json` conserva los contadores disponibles y el motivo de los desconocidos, incluso en una ejecución interrumpida. No hay captura automática de tokens/créditos en Codex/Kiro; los créditos globales de la cuenta no se atribuyen a una revisión.
+
+El reporte, registro y evidencia necesaria se guardan y comprueban antes de limpiar los recursos temporales propios. El archivo persistente permanece; su eliminación es explícita. Las reproducciones conservadas son evidencia, no modificaciones al producto. El helper no borra worktrees ni reutiliza contexto de revisiones anteriores como caché. La ubicación real se entrega al usuario y se omite del comentario público. Consulta [artifacts.md](references/artifacts.md) y [measurements.md](references/measurements.md).
+
+Los metadatos y campos de cada hallazgo usan listas Markdown para conservar su separación al renderizarse. El veredicto aparece en un párrafo independiente, y los valores visibles se traducen; los enums permanecen en el JSON.
 
 ## Requisitos y helpers
 
@@ -92,9 +113,10 @@ La lectura de instrucciones no requiere ejecutar los helpers. Según el alcance,
 
 Los helpers usan Python 3.10+ y su biblioteca estándar:
 
-- `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros usan schema 2; schema 1 sigue siendo compatible.
-- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato interno tiene su propia versión; el registro final no cambia.
+- `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros finales usan schema 3 con autores separados; schemas 1/2 siguen siendo compatibles como entradas.
+- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato de los paquetes internos tiene su propia versión; el registro final añade autores en schema 3.
 - `scripts/review_metrics.py`: registra contadores suministrados por fase y agrega uso sin duplicar caché/razonamiento. Los datos no disponibles permanecen desconocidos.
+- `scripts/review_artifacts.py`: prepara, conserva y cierra archivos persistentes con identidad, hashes y estado observado; no elimina recursos. El uso del script es opcional; el contrato de conservación y disponibilidad se aplica también con herramientas nativas.
 - `scripts/review_workspace.py`: crea y limpia snapshots temporales con comprobaciones de propiedad; requiere Git.
 - `scripts/review_runner.py`: ejecuta un adaptador CLI previamente configurado; no selecciona ni configura automáticamente un proveedor.
 
@@ -131,4 +153,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.2.0 añade paquetes internos compactos, lectura por rol, acceso progresivo, reglas de parada y medición por fase. Conserva los perfiles, la independencia, los formatos de reporte y la matriz ABCDE. No incorpora caché de proyectos entre revisiones ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.3.0 se distribuye mediante el repositorio y la release enlazada arriba. Los cambios añaden archivo persistente, cierre/mediciones y presentación consistente con autoría separada. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.

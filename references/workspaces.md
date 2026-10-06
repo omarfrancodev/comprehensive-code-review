@@ -16,7 +16,7 @@ python /absolute/skill/scripts/review_workspace.py record-artifact --manifest /a
 python /absolute/skill/scripts/review_workspace.py cleanup --manifest /absolute/project/.worktrees/code-review-SESSION/manifest.json
 ```
 
-`prepare` returns one JSON object with absolute manifest/workspace paths and the pinned SHA. Keep that output in the coordinator's review record. The session directory contains an ownership marker, manifest, captured patches and role worktrees. Logs/fixtures may live inside the owned session or worktrees. Reports that must survive cleanup belong outside it, in a user-authorized output location or the conversation.
+`prepare` returns one JSON object with absolute manifest/workspace paths and the pinned SHA. Keep that output in the coordinator's durable closure under artifacts.md. The session directory contains an ownership marker, manifest, captured patches and role worktrees. Logs/fixtures may live inside the owned session or worktrees. Retained reports/evidence belong in the common persistent archive outside this session. A user development worktree is not disposable merely because it lives under .worktrees.
 
 For local modes, use current HEAD; `--ref` selecting another commit is rejected to prevent applying local edits to the wrong baseline. `commit` is the default; no local edits are imported in that mode. New files are opt-in for working/unstaged modes. Submodule patch scopes and symlink patches are rejected; arrange a reviewed alternative with accurate coverage disclosure. Git LFS content is not automatically hydrated. A clean index/worktree check can never stand in for in-scope content freshness.
 
@@ -26,7 +26,7 @@ The helper does not alter `.gitignore`, local excludes or global Git configurati
 
 Within an owned session, store shared facts only in `evidence/context.json` and neutral checks in `evidence/checks.json`. The coordinator owns those records. Store role packets as `evidence/discovery-<role>.json` and bounded verification as `evidence/verification.json`; workers must not read other discovery packets before collection. Logs may use `evidence/<role>/`. This layout fits the helper's existing allowed session children; placing new records at the session root causes cleanup refusal. Use separate session/role paths for independent executors and refresh only affected facts when the version changes.
 
-Before cleanup, preserve the canonical final record and rendered report outside the session or in the conversation. When files/sharing are unavailable, embed the relevant record subset rather than create unsupported artifacts. Do not persist credentials or unrelated private data.
+Before cleanup, retain and verify the canonical final record, rendered report, measurements and selected necessary evidence under artifacts.md. Initial durable closure records exact temporary paths/manifest locations; finalize it from observed cleanup after removal. When files/sharing are unavailable, embed the relevant record subset and disclose persistence limits. Do not persist credentials or unrelated private data.
 
 1. Record session output, exact scope and main-checkout baseline.
 2. Dispatch only the assigned workspace to each writing reviewer.

@@ -277,7 +277,7 @@ class RenderingTests(unittest.TestCase):
         record = clean_record()
         record['coverage']['verification'] = 'skipped'
         result = contract.render(record, audience='user')
-        self.assertIn('balanced', result)
+        self.assertIn('equilibrado', result)
         self.assertIn('omitida', result)
         self.assertNotIn('### Recursos', result)
         record['resources'].update(cleanup='pending', residuals=['owned/temporary'])

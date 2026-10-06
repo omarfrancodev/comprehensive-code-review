@@ -1,6 +1,6 @@
 # Per-phase measurements
 
-Retain compact measurements with owned evidence, outside public comments/final schema. Use actual counters; absence is unknown. Count disjoint executions once, not both inclusive parent totals and children. Role/phase/model/harness labels identify actual execution; they do not configure it.
+Initialize and retain measurements.json in the persistent run under artifacts.md, outside public comments/final schema. Recording availability is required even when the helper/counters are unavailable. Native missing usage uses null and an explicit reason; interruption preserves the partial record. Use actual counters; absence is unknown. Count disjoint executions once, not both inclusive parent totals and children. Role/phase/model/harness labels identify actual execution; they do not configure it.
 
 Normalized usage: input_tokens, output_tokens, cached_input_tokens, reasoning_tokens (nonnegative integers/null), credits and cost (actual finite nonnegative numbers/null), currency (explicit text/null, required for cost). Omitted fields become null. Input includes cached tokens; output includes reasoning tokens. Adapters map provider counters to these semantics. Credits/currency costs stay separate, never inferred from tokens.
 
@@ -17,6 +17,6 @@ python /absolute/skill/scripts/review_metrics.py record --phase discovery --role
 python /absolute/skill/scripts/review_metrics.py summarize --input /absolute/discovery/run.json /absolute/verification/run.json
 ```
 
-record emits JSON for a permitted evidence location; omit --usage-file when unavailable. Counter flags use hyphens, e.g. --tool-calls. summarize recomputes totals without double-counting subsets, exposes known_subtotal/unknown_runs and leaves incomplete totals unknown. Monetary subtotals stay separated by currency. Feed disjoint records only; retain input/model identities alongside them.
+record emits JSON to stdout; explicitly save it to a permitted owned location or capture it using supported tools. Omit --usage-file when unavailable. Counter flags use hyphens, e.g. --tool-calls. summarize recomputes totals without double-counting subsets, exposes known_subtotal/unknown_runs and leaves incomplete totals unknown. Monetary subtotals stay separated by currency. Feed disjoint records only; retain input/model identities alongside them. Archive the compact records/summary before removing execution evidence. Account-wide credit snapshots are not attributable per-review usage and must not populate review credits/cost fields.
 
 Compare immutable inputs under one changed factor using evaluation.md, including missed defects/false positives. Smaller packets/files alone do not establish savings. Model effort, caching and billing remain provider/harness behavior; this skill does not change them or guarantee savings.

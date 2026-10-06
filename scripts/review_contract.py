@@ -4,10 +4,12 @@
 Python 3.10+, standard library only. Structural checks never establish finding truth.
 """
 import argparse
+import html
 import json
 from pathlib import Path
 import re
 import sys
+from urllib.parse import quote, urlsplit
 
 
 MODES = {'pr', 'mr', 'commit', 'range', 'staged', 'unstaged', 'working', 'module', 'feature'}
@@ -27,6 +29,11 @@ VERIFICATION = {'independent': 'independiente', 'same_session': 'misma sesión',
 ORIGINS = {'introduced': 'introducido', 'preexisting': 'preexistente', 'unknown': 'desconocido'}
 CHECK_STATUS = {'passed': 'aprobada', 'failed': 'falló', 'blocked': 'bloqueada', 'not_run': 'no ejecutada'}
 FAILURE_KINDS = {'product': 'producto', 'fixture': 'fixture', 'environment': 'entorno'}
+PROFILES = {'economy': 'económico', 'balanced': 'equilibrado', 'deep': 'profundo'}
+MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de commits',
+               'staged': 'cambios preparados', 'unstaged': 'cambios sin preparar',
+               'working': 'cambios locales', 'module': 'módulo',
+               'feature': 'implementación de funcionalidad'}
 REREVIEW_STATUS = {'resolved': 'resuelto', 'still_valid': 'vigente', 'withdrawn': 'retirado', 'new': 'nuevo'}
 AREAS = {'A': 'Arquitectura y diseño', 'B': 'Comportamiento y negocio',
          'C': 'Contratos e integración', 'D': 'Datos y persistencia',
@@ -77,12 +84,14 @@ def validate(record):
     if not isinstance(record, dict):
         return ['record: expected object']
     stage = record.get('stage')
+    schema_version = record.get('schema_version')
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
+    if schema_version == 3:
+        final_fields.add('change_authors')
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    schema_version = record.get('schema_version')
-    if type(schema_version) is not int or schema_version not in {1, 2}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -187,7 +196,7 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version == 2:
+        if schema_version in (2, 3):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -202,7 +211,7 @@ def validate(record):
         return errors
 
     material_area_gap = False
-    if schema_version == 2:
+    if schema_version in (2, 3):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -247,16 +256,41 @@ def validate(record):
     if (record.get('profile') == 'balanced' and coverage.get('verification') == 'skipped'
             and (substantive or material_area_gap or any(l.get('material') is True for l in limitations))):
         error('coverage.verification', 'balanced code findings/material questions require verification or disclosed unavailability')
-    responsible = fields(record.get('responsible'), {'name', 'username', 'verified', 'source'}, 'responsible')
-    for key in ('name', 'username', 'source'):
-        text(responsible.get(key), f'responsible.{key}', nullable=True)
-    boolean(responsible.get('verified'), 'responsible.verified')
-    if responsible.get('verified'):
-        if not responsible.get('source') or not (responsible.get('name') or responsible.get('username')):
-            error('responsible', 'verified identity requires identity and source')
-        username = responsible.get('username')
-        if username is not None and (not isinstance(username, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', username)):
-            error('responsible.username', 'invalid account identifier; omit @ prefix')
+    def identity(raw, path, author=False):
+        names = {'name', 'username', 'verified', 'source'} | ({'commits'} if author else set())
+        person = fields(raw, names, path)
+        for key in ('name', 'username', 'source'):
+            text(person.get(key), f'{path}.{key}', nullable=True)
+        boolean(person.get('verified'), f'{path}.verified')
+        if person.get('verified') is True:
+            if not person.get('source') or not (person.get('name') or person.get('username')):
+                error(path, 'verified identity requires identity and source')
+            username = person.get('username')
+            if username is not None and (not isinstance(username, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', username)):
+                error(f'{path}.username', 'invalid account identifier; omit @ prefix')
+        if author:
+            commits = array(person.get('commits'), f'{path}.commits')
+            if not commits:
+                error(f'{path}.commits', 'at least one reviewed commit or snapshot identity required')
+            seen = set()
+            for j, commit in enumerate(commits):
+                text(commit, f'{path}.commits[{j}]')
+                if isinstance(commit, str):
+                    if commit in seen:
+                        error(f'{path}.commits[{j}]', 'duplicate commit identity')
+                    seen.add(commit)
+        return person
+
+    identity(record.get('responsible'), 'responsible')
+    if schema_version == 3:
+        seen_authors = set()
+        for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
+            identity(author, f'change_authors[{i}]', author=True)
+            if isinstance(author, dict):
+                key = json.dumps(author, sort_keys=True, ensure_ascii=False)
+                if key in seen_authors:
+                    error(f'change_authors[{i}]', 'duplicate author entry')
+                seen_authors.add(key)
     description = fields(record.get('description'), {'status', 'identity', 'details'}, 'description')
     enum(description.get('status'), DESCRIPTION, 'description.status')
     text(description.get('details'), 'description.details', empty=True)
@@ -340,6 +374,29 @@ def table_cell(value):
     return one_line(value).replace('|', '\\|')
 
 
+def markdown_text(value):
+    """Keep untrusted metadata inside one literal Markdown block."""
+    return re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', html.escape(one_line(value), quote=False))
+
+
+def reference_text(value):
+    raw = one_line(value)
+    try:
+        parsed = urlsplit(raw)
+        if parsed.scheme in ('http', 'https') and parsed.netloc and not parsed.username:
+            return '[Ver referencia](' + quote(raw, safe='/:#?&=%-._~') + ')'
+    except ValueError:
+        pass
+    return markdown_text(raw)
+
+
+def person_text(person):
+    if person['verified'] is not True:
+        return 'No identificado'
+    # Validated account characters are safe and must remain intact for mentions.
+    return '@' + person['username'] if person['username'] else markdown_text(person['name'])
+
+
 def render(record, audience='user'):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -348,23 +405,29 @@ def render(record, audience='user'):
         raise ValueError('audience must be user or comment')
     scope = record['scope']
     responsible = record['responsible']
-    identity = ('@' + responsible['username'] if responsible['username']
-                else responsible['name']) if responsible['verified'] else 'No identificado'
     version = scope['snapshot'] or scope['head']
-    lines = ['## Code Review', '', f"**Veredicto:** {VERDICTS[record['verdict']]} — {one_line(record['verdict_reason'])}.",
-             f"**Alcance:** {one_line(scope['repository'])} · {one_line(scope['mode'])}",
-             f"**Versión:** {one_line(scope['base'] or 'sin comparación')} → {one_line(version)}" +
-             (f" · **Destino:** {one_line(scope['target'])}" if scope['target'] else ''),
-             f'**Responsable:** {one_line(identity)}']
+    remote = scope['mode'] in {'mr', 'pr'}
+    responsibility = 'Responsable del MR/PR' if remote else 'Responsable'
+    lines = ['## Code Review', '', f"**Veredicto:** {VERDICTS[record['verdict']]} — {markdown_text(record['verdict_reason'])}.", '',
+             f"- **Alcance:** {markdown_text(scope['repository'])} · {MODE_LABELS[scope['mode']]}",
+             f"- **Versión:** {markdown_text(scope['base'] or 'sin comparación')} → {markdown_text(version)}"]
+    if scope['target']:
+        lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
+    lines.append(f'- **{responsibility}:** {person_text(responsible)}')
+    if record['schema_version'] == 3:
+        authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
+        lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
-        lines.append(f"**{reference_label}:** {one_line(scope['reference'])}")
+        lines.append(f"- **{reference_label}:** {reference_text(scope['reference'])}")
     if audience == 'user':
-        lines.extend([f"**Perfil:** {record['profile']} — {one_line(record['profile_reason'])}.",
-                      f"**Verificación:** {VERIFICATION[record['coverage']['verification']]}."])
+        lines.extend([f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.",
+                      f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}."])
     description = record['description']
     if description['status'] != 'not_applicable':
-        lines.append(f"**Descripción:** {DESCRIPTION[description['status']]} — {one_line(description['details'])}")
+        lines.append(f"- **Descripción:** {DESCRIPTION[description['status']]} — {markdown_text(description['details'])}")
+    else:
+        lines.append('- **Descripción:** No aplica; revisión local.')
     confirmed = sorted((f for f in record['findings'] if f['status'] == 'confirmed'),
                        key=lambda f: (f['priority'], f['id']))
     if confirmed:
@@ -377,10 +440,10 @@ def render(record, audience='user'):
             evidence = '; '.join(one_line(ev['details']) + (f" [{ev['check_id']}]" if ev['check_id'] else '')
                                  for ev in item['evidence'])
             lines.extend(['', f"#### {PRIORITIES[item['priority']]} — {item['id']}: {one_line(item['title'])}", '',
-                          f"**Ubicación:** {label} · **Origen:** {ORIGINS[item['origin']]}",
-                          f"**Escenario e impacto:** {one_line(item['scenario'])} → {one_line(item['impact'])}",
-                          f'**Evidencia:** {evidence}', f"**Corrección requerida:** {one_line(item['correction'])}",
-                          '**Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no')])
+                          f"- **Ubicación:** {label} · **Origen:** {ORIGINS[item['origin']]}",
+                          f"- **Escenario e impacto:** {one_line(item['scenario'])} → {one_line(item['impact'])}",
+                          f'- **Evidencia:** {evidence}', f"- **Corrección requerida:** {one_line(item['correction'])}",
+                          '- **Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no')])
     else:
         lines.extend(['', 'No se confirmaron defectos bloqueantes dentro del alcance revisado.'])
     unresolved = [f for f in record['findings'] if f['status'] == 'unresolved']
