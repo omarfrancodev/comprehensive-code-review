@@ -1,10 +1,10 @@
 # Canonical review record — schema version 2
 
-One source, rendered only for the requested audience. Workers return just schema_version, stage, scope, findings, checks and coverage; final consolidation adds final-only fields. No complete user/public report or repeated shared context from workers. Coordinator IDs are stable; remap role collisions once.
+One final source, rendered only for the requested audience. New workers use worker-packets.md; packet_version is independent of this schema. The coordinator merges evidence/decision deltas, supplies explicit judgments and validates this complete record. Legacy full workers still use schema_version, stage, scope, findings, checks and coverage below. No complete user/public reports from workers. Coordinator IDs are stable; remap role collisions once.
 
 All listed fields are required in applicable objects. Use explicit null/empty arrays for unknown/not applicable values. Unknown fields/enums are errors in this schema version. Evidence is specific, not numeric confidence. Use actual supplied revision/snapshot identities; local edits require a snapshot identifying the selected state.
 
-## Worker fields
+## Canonical envelope / legacy full worker fields
 
 - schema_version: integer 2 for new reviews; stage: discovery/verification/final. Helpers still accept legacy version 1 records unchanged, without inventing an ABCDE matrix or new coverage claims.
 - scope: repository; mode pr/mr/commit/range/staged/unstaged/working/module/feature; base/head/snapshot/target/reference (text/null). head or snapshot is required.

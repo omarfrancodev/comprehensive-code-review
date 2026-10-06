@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.1.1.zip` desde [la release 2.1.1](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.1.1), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.2.0.zip` desde [la release 2.2.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.2.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -93,6 +93,8 @@ La lectura de instrucciones no requiere ejecutar los helpers. Según el alcance,
 Los helpers usan Python 3.10+ y su biblioteca estándar:
 
 - `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros usan schema 2; schema 1 sigue siendo compatible.
+- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato interno tiene su propia versión; el registro final no cambia.
+- `scripts/review_metrics.py`: registra contadores suministrados por fase y agrega uso sin duplicar caché/razonamiento. Los datos no disponibles permanecen desconocidos.
 - `scripts/review_workspace.py`: crea y limpia snapshots temporales con comprobaciones de propiedad; requiere Git.
 - `scripts/review_runner.py`: ejecuta un adaptador CLI previamente configurado; no selecciona ni configura automáticamente un proveedor.
 
@@ -103,11 +105,12 @@ Ejecuta cada helper con `--help`. Las comprobaciones que escriban archivos usan 
 Para instalaciones gestionadas por el CLI:
 
 ```bash
-npx skills update comprehensive-code-review
+npx skills@latest update comprehensive-code-review -p
+npx skills@latest update comprehensive-code-review -g
 npx skills remove comprehensive-code-review
 ```
 
-Añade `-g` para operar sobre una instalación global. Para una instalación manual, descarga la release elegida y conserva cualquier personalización antes de reemplazar la carpeta; para desinstalarla, elimina únicamente la carpeta que instalaste. Las versiones y sus cambios están en [CHANGELOG.md](CHANGELOG.md).
+Usa `-p` desde el proyecto para actualizar su instalación, o `-g` para la global. Las actualizaciones son explícitas; publicar una release no reemplaza automáticamente una instalación. `@latest` selecciona la versión actual del instalador; la ayuda comprobada de `skills@1.7.0` admite estos comandos y coincide con las [opciones documentadas](https://github.com/vercel-labs/skills#skills-update). Añade `-g` a remove para desinstalar globalmente. Conserva cualquier personalización antes de actualizar; no ejecutes el instalador sobre un checkout de desarrollo editable. Para una instalación manual, descarga la release elegida y reemplaza solo la carpeta instalada. Consulta [CHANGELOG.md](CHANGELOG.md).
 
 ## Validación y mantenimiento
 
@@ -119,4 +122,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La publicación 2.1.1 añade documentación y empaquetado; mantiene el flujo de revisión de 2.1.0.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.2.0 añade paquetes internos compactos, lectura por rol, acceso progresivo, reglas de parada y medición por fase. Conserva los perfiles, la independencia, los formatos de reporte y la matriz ABCDE. No incorpora caché de proyectos entre revisiones ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.

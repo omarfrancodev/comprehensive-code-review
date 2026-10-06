@@ -10,6 +10,6 @@ Adapter JSON needs argv with {prompt_file}/{workspace} placeholders, optional {o
 
 Run review_runner.py through an absolute interpreter/script path with documented --config, --prompt-file, --workspace, --output-dir and --timeout arguments. Output dirs must be new; prefer evidence/<role>/ for logs/metadata. No credentials in configuration/prompts/logs; use permitted authentication.
 
-Zero exit means process completion, not review validity. Check canonical output separately with review_contract.py; structural validity is not finding truth. Distinguish process state, contract validity and semantic verification; preserve evidence before cleanup.
+Zero exit means process completion, not review validity. Validate new worker output with review_packets.py, and final/legacy records with review_contract.py; structural validity is not finding truth. Distinguish process state, contract validity and semantic verification; preserve evidence before cleanup. Optional measurement labels and adapter-supplied usage.json follow measurements.md; they do not configure the model or infer credits.
 
 The runner is not an OS sandbox or guaranteed descendant container. Timeout termination is best effort; detached descendants may survive. workspace_cleanup_ready stays false until the coordinator confirms owned workers stopped. If lifecycle/ownership cannot be established, stop that fallback and preserve/report resources. Root exit alone never authorizes deletion.
