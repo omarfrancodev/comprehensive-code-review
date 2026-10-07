@@ -22,3 +22,14 @@ The forward reviewer inspected the final nine-file instruction diff and related 
 - skill-creator quick_validate cannot run because the bundled interpreter lacks PyYAML; no dependency was installed. Direct frontmatter checks were used.
 
 Independent gates, evidence adequacy, verdict precedence, execution isolation, persistent artifacts, user-only ABCDE and explicit publication permissions remain in effect. Merge, tag and release await human validation of the feature PR; the worktree stays available for further edits.
+
+## Integration with main — 2026-10-07
+
+Integrated origin/main 7ad3ce160bb6a1eac2296b5fd9cb1f60a215f107 (PR #7, released skill 2.4.1) into feat/adaptive-review-profiles without rewriting the existing PR history. Resolved five documentation conflicts: retained both changelog entries, kept the proposed 2.5.0 version, linked the published 2.4.1 release, preserved the mandatory archive/session/retention lifecycle and combined it with effective profile selection and scoped deep assignments in shared context.
+
+- Integrated suite: 150 tests in 98.641 seconds; 149 passed and one Windows symlink privilege skip. Actual Windows junction coverage passed.
+- Six helper sources compile; direct frontmatter/version checks, local links and conflict-marker checks across 28 Markdown files pass. git diff --check passes.
+- Scripts and tests match origin/main exactly. The archive schema 3 and retention/cleanup gates introduced by 2.4.1 are preserved; the final review record remains schema 4.
+- Git identity remains omarfrancodev <fofe2803@gmail.com>. The feature stays in its project .worktrees directory; no source checkout was reset and no release was published by this integration.
+
+Explicit ABCDE reviewer briefs/grouping, expanded discovery limits and a possible higher profile remain outside PR #6 for a separate future worktree/PR. This integration introduces none of those changes. The proposed release stays Unreleased pending human review.

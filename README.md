@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.4.0.zip` desde [la release 2.4.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.4.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.4.1.zip` desde [la release 2.4.1](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.4.1), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -108,6 +108,12 @@ Una ubicación solicitada explícitamente tiene prioridad; después se utiliza `
 
 El reporte, registro y evidencia necesaria se guardan y comprueban antes de limpiar los recursos temporales propios. El archivo persistente permanece; su eliminación es explícita. Las reproducciones conservadas son evidencia, no modificaciones al producto. El helper no borra worktrees ni reutiliza contexto de revisiones anteriores como caché. La ubicación real se entrega al usuario y se omite del comentario público. Consulta [artifacts.md](references/artifacts.md); para una evaluación explícita de coste, [measurements.md](references/measurements.md).
 
+Desde 2.4.1, el helper de artifacts es obligatorio cuando puede ejecutarse dentro de los permisos disponibles. Se usa exactamente el `run_dir` devuelto: las rutas históricas no definen la convención. La evidencia temporal se crea en `evidence/` de una sesión propia registrada; `register` permite añadir sesiones antes de usarlas. Una alternativa nativa por indisponibilidad debe comprobar el mismo contrato. La closure schema 3 conserva las identidades necesarias para verificar el layout sin depender del checkout original; schemas 1/2 siguen compatibles sin migrar archivos.
+
+`review_artifacts.py validate --run-dir <ruta>` comprueba propiedad, layout y hashes sin escribir; añade `--require-retained` antes de limpiar para exigir informe, registro final y scope coherentes. También se valida el layout al retener/cerrar. La evidencia necesaria se selecciona explícitamente con `--evidence-input`; `--context-input` conserva procedencia de ejecutores, no copia automáticamente los archivos. Un fallo conserva el run y temporales para recuperación, sin afirmar cierre correcto.
+
+Después de observar la limpieza, `close --run-dir <ruta> --cleanup complete` registra el cierre sin crear otro temporal. Si quedan recursos, usa `--cleanup pending --residual <ruta-absoluta>` por cada residuo registrado. La entrada anterior mediante `--cleanup-file` sigue disponible para archivos existentes permitidos.
+
 Los metadatos y campos de cada hallazgo usan listas Markdown para conservar su separación al renderizarse. El veredicto aparece como encabezado con su motivo en un párrafo independiente, y los valores visibles se traducen; los enums permanecen en el JSON.
 
 ## Ejecución y presentación desde 2.4.0
@@ -118,7 +124,7 @@ El registro final usa schema 4 y guarda una sola identidad de presentación: tip
 
 ## Requisitos y helpers
 
-La lectura de instrucciones no requiere ejecutar los helpers. Según el alcance, el agente necesita acceso al código y, para MR/PR, a sus metadatos mediante un conector o CLI autenticado.
+La lectura de instrucciones no requiere ejecutar los helpers. La preparación/retención/cierre de artifacts usa su helper cuando puede ejecutarse; los demás helpers siguen siendo opcionales. Según el alcance, el agente necesita acceso al código y, para MR/PR, a sus metadatos mediante un conector o CLI autenticado.
 
 Los helpers usan Python 3.10+ y su biblioteca estándar:
 
@@ -162,4 +168,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La última release publicada enlazada arriba es 2.4.0; esta rama prepara 2.5.0 con selección automática de perfiles y profundidad acotada por flujo. Los cambios priorizan worktrees del proyecto, mediciones optativas y una presentación canónica consistente. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La última release publicada enlazada arriba es 2.4.1; esta rama prepara 2.5.0 con selección automática de perfiles y profundidad acotada por flujo. Conserva el layout y la retención verificada de artifacts de 2.4.1, worktrees del proyecto, mediciones optativas, presentación canónica, independencia, paquetes internos compactos y matriz ABCDE. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.

@@ -7,6 +7,15 @@
 - Deep assignments target named flows/invariants with two independent discovery reviewers and a justified optional third. Other flows keep ordinary coverage and substantive candidates still receive fresh verification.
 - Follow-ups select on their current affected mechanisms/adjacent behavior rather than blindly inheriting the earlier profile. Existing profile enums, final schema 4 and user/public rendering remain unchanged.
 
+## 2.4.1 — 2026-10-07
+
+- Require archive helper use when executable, its exact returned run directory, and owned registered evidence sessions. Historical layouts are not current policy; native fallback must verify the same contract.
+- Define the pre-run scope bootstrap and add `register` for temporary sessions before discovery/execution, without creating or deleting resources.
+- Add read-only `validate` and `--require-retained` as the pre-cleanup gate; retention, closure and previous-run loading reject incorrect repository/scope/run paths.
+- Accept inline observed cleanup/residuals in `close` so closure needs no temporary file after registered sessions have been removed; existing cleanup-file input remains supported.
+- Archive schema 3 binds layout to stored repository identity, scope, creation time and run ID without relying on surviving source checkouts. Legacy schemas 1/2 retain compatible checks without migration.
+- Make selected evidence copying explicit: context provenance does not automatically retain files, and required evidence survives cleanup as part of the review contract.
+
 ## 2.4.0 — 2026-10-06
 
 - Builds/tests/installs/reproductions require owned project Git worktrees; blocked creation is disclosed and scratch/copy execution requires explicit user authorization. Static immutable reads remain workspace-optional.

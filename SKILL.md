@@ -21,6 +21,8 @@ Assigned discovery/verification workers read [worker-packets.md](references/work
 
 The coordinator loads references by phase and embeds relevant rules in briefs. Use [reading-strategy.md](references/reading-strategy.md) to plan bounded access/checkpoints. Context identities bind exact inputs; routing preserves project gates.
 
+Before the first artifact write, load [artifacts.md](references/artifacts.md). Use the archive helper when executable within permissions, preserve its exact returned `run_dir`, and keep review-created temporary evidence in an owned registered session. Existing review directories are history, not layout policy. Verify retained evidence before cleanup; a failed archive gate prevents claiming durable completion.
+
 ## Profiles
 
 Keep an explicit profile; never escalate it silently. Without one, select economy for demonstrated bounded eligibility, deep for observable material mechanisms, otherwise balanced under [profiles.md](references/profiles.md). Use already discovered context; no extra selection agent/audit. Automatic selection can escalate when new facts invalidate its basis. Project gates and execution isolation always apply.
@@ -41,6 +43,6 @@ This skill requests coordinator delegation only for required profile sessions wh
 
 Read [workspaces.md](references/workspaces.md) before builds/tests/installs/reproductions or other writes. Those executors need owned Git worktrees, preferably the project's established location (normally .worktrees); read-only workers may share pinned inputs or immutable Git objects. Blocked creation is an explicit validation limitation, never an automatic switch to scratch/copies. Load [external-cli.md](references/external-cli.md) only for configured external execution and [publication.md](references/publication.md) only for remote publication.
 
-## Optional helpers
+## Helpers
 
-Use an interpreter and absolute script paths; consult --help. review_packets.py validates/merges internal packets; complete the final record under [result-contract.md](references/result-contract.md). review_artifacts.py prepares/retains/closes durable runs without deleting resources. Existing workspace/runner/report helpers retain their roles. Measurement collection is opt-in for an explicitly requested cost evaluation: only then load [measurements.md](references/measurements.md) and [evaluation.md](references/evaluation.md). Normal reviews do not initialize measurement files, probe counters or estimate consumption. Helpers do not prove truth, select models or grant permissions.
+Use an interpreter and absolute script paths; consult --help. The archive helper prepares/registers/validates/retains/closes durable runs without deleting resources; its native fallback and mandatory gates are in artifacts.md. Other helpers remain optional: review_packets.py validates/merges internal packets; complete the final record under [result-contract.md](references/result-contract.md). Existing workspace/runner/report helpers retain their roles. Measurement collection is opt-in for an explicitly requested cost evaluation: only then load [measurements.md](references/measurements.md) and [evaluation.md](references/evaluation.md). Normal reviews do not initialize measurement files, probe counters or estimate consumption. Helpers do not prove truth, select models or grant permissions.
