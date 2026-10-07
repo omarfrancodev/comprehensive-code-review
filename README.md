@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.5.0.zip` desde [la release 2.5.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.5.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.6.0.zip` desde [la release 2.6.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.6.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -60,15 +60,16 @@ En entornos con invocación mediante `$`, también puedes usar `$comprehensive-c
 
 ## Perfiles
 
-| Perfil | Descubrimiento | Verificación |
-|---|---|---|
-| economy, explícito o automático para alcance acotado demostrado | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
-| balanced, alternativa automática cuando economy no se justifica | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
-| deep | Dos revisores con flujos concretos; un tercero solo por necesidad distinta | Verificación independiente de candidatos e invariantes asignadas |
+| Perfil | Selección y uso | Descubrimiento | Verificación |
+|---|---|---|---|
+| economy | Explícito o automático para alcance acotado demostrado | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
+| balanced | Alternativa automática cuando economy no se justifica y no corresponde mayor profundidad | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
+| deep | Explícito o automático por mecanismos materiales observables | Dos revisores con flujos concretos; un tercero solo por necesidad distinta | Verificación independiente de candidatos e invariantes asignadas |
+| extended | Explícito o automático cuando se justifican más de tres asignaciones independientes sobre mecanismos que requieren deep | Automático: cuatro o cinco; explícito: dos a cinco según necesidades distintas | Una verificación independiente agrupada de candidatos e invariantes |
 
-Desde 2.5.0, un perfil solicitado explícitamente se respeta y no escala sin autorización. Sin perfil, se decide con el contexto ya descubierto: deep por mecanismos materiales observables; economy para un alcance acotado con requisitos claros, consumidores identificados, sin incertidumbres materiales ni gates independientes; balanced cuando esa elegibilidad no está demostrada. No se añade otro agente de preevaluación. El modo automático puede escalar si aparecen hechos nuevos, sin repetir lo ya comprobado ni reducir el perfil para eludir verificación.
+Un perfil solicitado explícitamente se respeta y no escala sin autorización. Sin perfil, se decide con el contexto ya descubierto: extended requiere mecanismos de deep y cuatro o cinco asignaciones independientes necesarias que no puedan agruparse en tres sin omitir una perspectiva o gate requerido; deep por mecanismos materiales observables; economy para alcance acotado con requisitos claros, consumidores identificados, sin incertidumbres materiales ni gates independientes; balanced cuando esa elegibilidad no está demostrada. No se añade otro agente de preevaluación. El modo automático puede escalar con hechos nuevos, reutilizando asignaciones válidas, contexto y checks. Las sesiones adicionales exigidas por gates verificados se identifican por separado y no son una excusa para añadir descubridores opcionales.
 
-Deep concentra sus revisores en los flujos e invariantes que lo requieren; las partes ajenas conservan cobertura habitual por un responsable existente. Sus candidatos sustantivos y dudas materiales siguen requiriendo verificación independiente. El reporte conserva un solo perfil efectivo y el motivo de selección.
+Deep y extended concentran sus revisores en los flujos e invariantes que lo requieren; las partes ajenas conservan cobertura habitual por un responsable existente. Cada brief declara áreas ABCDE, flujos/archivos/interfaces, preguntas/invariantes y evidencia/cobertura esperada. Se agrupan áreas que comparten flujo y se separan por necesidades independientes demostradas; cinco áreas aplicables no justifican cinco agentes. El coordinador construye la matriz desde lo inspeccionado, incluso cuando quedan áreas sin cubrir. El reporte conserva un solo perfil efectivo y su motivo.
 
 El número de líneas, una urgencia o un nombre de tecnología no determinan el perfil. Ningún perfil elimina worktrees para ejecuciones que escriben, cobertura, persistencia o validaciones obligatorias. Sin capacidad de delegación, se declara la alternativa en una sola sesión y cualquier limitación. Las áreas ABCDE no requieren cinco agentes.
 
@@ -120,7 +121,7 @@ Los metadatos y campos de cada hallazgo usan listas Markdown para conservar su s
 
 Builds, tests, instalaciones y reproducciones se ejecutan en worktrees propios del proyecto, preferentemente su ubicación establecida (`.worktrees`). Las lecturas estáticas pueden usar objetos Git. Si no se puede crear el worktree, se informa la validación bloqueada; una copia en scratch requiere autorización explícita. Las dependencias/cachés compartidas y junctions siguen permitidas si son compatibles; ante conflictos se usan dependencias, cachés y salidas propias del ejecutor afectado. La procedencia se conserva en el contexto/cierre existentes, sin otro agente de auditoría.
 
-El registro final usa schema 4 y guarda una sola identidad de presentación: tipo y asunto funcional. Reporte y comentario comparten un título H2 (`Code Review`, `Re-review` o `Complement Code Review`), veredicto H3, prioridad/color/ID H3 y título del hallazgo H4; escenario e impacto van separados. Los metadatos siguen como lista. ABCDE permanece solo en el reporte del usuario; responsable y autores siguen separados. Los schemas anteriores y archivos de 2.3.0 continúan siendo compatibles.
+Los nuevos registros finales usan schema 5, que añade extended y conserva los campos y la presentación de schema 4. Guardan una sola identidad de presentación: tipo y asunto funcional. Reporte y comentario comparten un título H2 (`Code Review`, `Re-review` o `Complement Code Review`), veredicto H3, prioridad/color/ID H3 y título del hallazgo H4; escenario e impacto van separados. Los metadatos siguen como lista. ABCDE permanece solo en el reporte del usuario; responsable y autores siguen separados. Los schemas anteriores y archivos de 2.3.0 continúan siendo compatibles.
 
 ## Requisitos y helpers
 
@@ -128,8 +129,8 @@ La lectura de instrucciones no requiere ejecutar los helpers. La preparación/re
 
 Los helpers usan Python 3.10+ y su biblioteca estándar:
 
-- `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros finales usan schema 4 con autores y presentación separados; schemas 1/2/3 siguen siendo compatibles como entradas.
-- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato de los paquetes internos tiene su propia versión; el registro final añade autores y presentación en schema 4.
+- `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros finales usan schema 5 con extended, autores y presentación separados; schemas 1/2/3/4 siguen siendo compatibles como entradas, conservando sus perfiles originales.
+- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato de los paquetes internos tiene su propia versión; el registro final conserva autores y presentación en schema 5 sin ampliar los paquetes internos.
 - `scripts/review_metrics.py`: registra contadores suministrados por fase y agrega uso sin duplicar caché/razonamiento. Los datos no disponibles permanecen desconocidos.
 - `scripts/review_artifacts.py`: prepara, conserva y cierra archivos persistentes con identidad, hashes y estado observado; no elimina recursos. El uso del script es opcional; el contrato de conservación se aplica también con herramientas nativas.
 - `scripts/review_workspace.py`: crea y limpia snapshots temporales con comprobaciones de propiedad; requiere Git.
@@ -168,4 +169,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.5.0 se distribuye mediante el repositorio y la release enlazada arriba. Añade selección automática de perfiles y profundidad acotada por flujo. Conserva el layout y la retención verificada de artifacts de 2.4.1, worktrees del proyecto, mediciones optativas, presentación canónica, independencia, paquetes internos compactos y matriz ABCDE. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.6.0 se distribuye mediante el repositorio y la release enlazada arriba. Añade asignaciones ABCDE explícitas y el perfil extended justificado. Conserva el layout y la retención verificada de artifacts de 2.4.1, worktrees del proyecto, mediciones optativas, presentación canónica, independencia y paquetes internos compactos. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.

@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.5.0"
+  version: "2.6.0"
 ---
 
 # Comprehensive Code Review
@@ -25,15 +25,16 @@ Before the first artifact write, load [artifacts.md](references/artifacts.md). U
 
 ## Profiles
 
-Keep an explicit profile; never escalate it silently. Without one, select economy for demonstrated bounded eligibility, deep for observable material mechanisms, otherwise balanced under [profiles.md](references/profiles.md). Use already discovered context; no extra selection agent/audit. Automatic selection can escalate when new facts invalidate its basis. Project gates and execution isolation always apply.
+Keep an explicit profile; never escalate it silently. Without one, select extended only for justified independent discovery beyond deep's capacity, deep for observable material mechanisms, economy for demonstrated bounded eligibility, otherwise balanced under [profiles.md](references/profiles.md). Reuse discovered context and its ABCDE/flow assignment map; no extra selection agent/audit. Automatic selection can escalate with new facts. Project gates and execution isolation always apply.
 
 | Profile | Discovery | Verification |
 |---|---|---|
 | economy | One reviewer, potentially the coordinator | Same-session skeptical pass over candidates/material questions |
 | balanced | One reviewer, potentially the coordinator | Fresh verifier for substantive candidates/material questions; skip when none remain and coverage is adequate |
 | deep | Two independent reviewers on named flows/risks; a third only for a distinct coverage need | Fresh verifier for grouped candidates and named invariants; unrelated flows retain ordinary coverage |
+| extended | Automatic: four or five justified independent assignments; explicit: two to five as needed | One fresh grouped verification batch for candidates and assigned invariants |
 
-This skill requests coordinator delegation only for required profile sessions when available and authorized; workers do not delegate. Fresh discovery contexts exclude other findings and the full coordinator transcript. Shared execution facts do not establish independence. Missing delegation uses disclosed single-agent passes. Project-required independent gates still apply.
+Every discovery brief states assigned ABCDE areas, flows/interfaces, questions/invariants and expected evidence/coverage under [reviewers.md](references/reviewers.md). Group shared flows; split only for a distinct need. This skill requests coordinator delegation only for required profile sessions when available and authorized; workers do not delegate. Fresh discovery contexts exclude other findings and the full coordinator transcript. Shared execution facts do not establish independence. Missing delegation uses disclosed single-agent passes. Project-required independent gates still apply.
 
 ## Workflow and conditional references
 

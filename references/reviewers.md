@@ -2,14 +2,18 @@
 
 ## Assignments
 
-One reviewer combines relevant functional, data/architecture and integration/security perspectives. Use profiles.md for selection precedence and scoped deep assignments: two fresh reviewers receive named affected flows/risks, a third needs a distinct coverage reason, and unrelated flows keep ordinary coverage with an existing owner. Include adjacent unchanged code and producer/consumer boundaries. Each material flow has one primary owner; overlap needs a named cross-interface risk or independent gate. Perspectives are lenses, not whole-repository audits. Report uncovered boundaries for reassignment.
+One reviewer can combine functional, data/architecture and integration/security perspectives. Use profiles.md for discovery limits and automatic extended eligibility. In existing context, map every applicable ABCDE mechanism and affected flow/interface to a primary owner, including adjacent unchanged code and consumers. Group areas sharing a flow, sources and questions. Split only for a distinct mechanism/perspective or verified independent gate; one reviewer per area is permitted when justified, never automatic. Each brief names its areas and expected coverage. Report unowned mechanisms for targeted reassignment; overlapping areas are valid when boundaries are explicit, overlapping work requires a named cross-interface risk/gate.
 
 One existing owner checks the MR/PR description using collected evidence. Other observations stay independent until collection; consolidate afterward. Each common check has one executor; reuse neutral revision/configuration/fixture-matched evidence. Repeat only for distinct scenarios, changed inputs, unreliable evidence or required gates, recording why. Every building/writing executor needs its own owned workspace.
 
 ## Discovery brief
 
 ```text
-Assignment: [owned flows/risks, adjacent interfaces, required depth/invariants]. Do not delegate.
+Assignment: [owner ID; ABCDE areas and specific aspects; required depth]. Do not delegate.
+Scope: [owned flows, files/symbols and adjacent producer/consumer interfaces].
+Questions: [observable requirements, questions and named invariants to settle].
+Return: [decisive paths/check IDs, inspected flows/aspects and remaining gaps;
+         discovery packet under worker-packets.md, no full matrix/report].
 Inputs: [pinned scope, context record or relevant embedded subset].
 Workspace/permissions: [actual path or immutable objects; assigned safe checks].
 Validation: [owned check IDs and reusable neutral evidence].
@@ -21,7 +25,7 @@ one compact discovery packet: candidates, check IDs, covered flows and
 material limitations. No full user report.
 ```
 
-Fresh contexts exclude coordinator hypotheses/full transcript. Preserve raw observable requirements, defer diagnoses. Coverage is inspected flows, not headcount.
+Fresh contexts exclude coordinator hypotheses/full transcript. Preserve raw observable requirements, defer diagnoses. Area assignments define responsibility, not findings or final covered status. The coordinator derives matrix rows from returned evidence; use flow-specific coverage/limitations in existing packets without adding fields or duplicate area packets. Coverage is inspected flows, not headcount.
 
 ## Group before verification
 

@@ -1,6 +1,6 @@
 # ABCDE coverage matrix
 
-Use these lenses to map affected flows, then consolidate coverage in the final user report. They do not add sessions, checks, a change-risk rating or quality scores. Profile selection, independent verification and verdict rules remain unchanged.
+Use these lenses to assign affected mechanisms explicitly, then consolidate coverage in the final user report. Applicable letters alone add no sessions/checks, change-risk rating or quality scores. Profile selection and independent verification follow profiles.md; verdict rules remain unchanged.
 
 | Area | Applicable mechanisms |
 |---|---|
@@ -10,7 +10,7 @@ Use these lenses to map affected flows, then consolidate coverage in the final u
 | D — Data/persistence | Queries, transactions, constraints, migrations and data integrity |
 | E — Security/operation | Authorization, tenant isolation, errors, concurrency, resource lifecycle and credible performance scenarios |
 
-Discover applicability once in common context; attach areas to existing flow owners. Review only applicable mechanisms within the requested scope, including affected adjacent interfaces. Economy/balanced can cover all applicable areas through one discovery reviewer. Workers return their assigned flows and limitations; the coordinator builds one final matrix from that evidence. Do not dispatch one agent or repeat tests per letter.
+Discover applicability once in common context; assign every applicable mechanism to a named flow owner using reviewers.md. Briefs declare areas/aspects, files/interfaces, questions/invariants and expected evidence/coverage. Group areas sharing a flow; split when independent mechanisms/perspectives justify it within profile limits. Economy/balanced can cover all applicable areas through one discovery reviewer. A dedicated reviewer per area is allowed when supported by distinct needs, including extended eligibility, never a default five-agent plan. Workers return existing flow coverage/limitations; the coordinator derives the final matrix from evidence, not assignments. Each common check still has one executor.
 
 Every final matrix has one row per area:
 
