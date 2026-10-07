@@ -4,7 +4,7 @@ Read only when explicitly maintaining/evaluating effectiveness or cost of this s
 
 ## Offline checks
 
-Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers record consistency, output omission rules, CLI Unicode/errors, explicit deduplication, schema4 presentation identity, optional measurements/legacy archive closure, executor provenance, ABCDE user-only coverage with material-gap precedence/legacy compatibility, and the evidence layout with cleanup refusal/recovery in a disposable Git repository. No paid model calls or third-party Python dependencies. Git integration explicitly reports a skip if Git is unavailable.
+Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers record consistency, output omission rules, CLI Unicode/errors, explicit deduplication, schema5 extended-profile support with schema4 presentation identity and legacy profile compatibility, optional measurements/legacy archive closure, executor provenance, ABCDE user-only coverage with material-gap precedence/legacy compatibility, and the evidence layout with cleanup refusal/recovery in a disposable Git repository. No paid model calls or third-party Python dependencies. Git integration explicitly reports a skip if Git is unavailable.
 
 ## Review inputs
 

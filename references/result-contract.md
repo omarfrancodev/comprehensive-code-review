@@ -1,4 +1,4 @@
-# Canonical review record — schema version 4
+# Canonical review record — schema version 5
 
 One final source, rendered only for the requested audience. New workers use worker-packets.md; packet_version is independent of this schema. The coordinator merges evidence/decision deltas, supplies explicit judgments and validates this complete record. Legacy full workers still use schema_version, stage, scope, findings, checks and coverage below. No complete user/public reports from workers. Coordinator IDs are stable; remap role collisions once.
 
@@ -6,15 +6,15 @@ All listed fields are required in applicable objects. Use explicit null/empty ar
 
 ## Canonical envelope / legacy full worker fields
 
-- schema_version: integer 4 for new final reviews; stage: discovery/verification/final. Helpers accept legacy versions 1/2/3 unchanged as input; no invented authors or missing legacy coverage. Compact worker packet_version stays independent; existing full worker/merge outputs may use schema 1/2 until the coordinator completes a schema4 final record.
-- presentation (final schema4 only): {kind: review/rereview/complement, subject: nonempty single-line functional title}. Choose once from discovered scope; same values drive user/public rendering and survive closure rewrites. Kind is explicit, never inferred from previous findings. Earlier schemas render the legacy Code Review title without guessed presentation.
+- schema_version: integer 5 for new final reviews; stage: discovery/verification/final. Helpers accept legacy versions 1/2/3/4 unchanged as input. Schema 5 adds extended while retaining schema 4's fields and presentation; no invented authors or missing legacy coverage. Compact worker packet_version stays independent; existing full worker/merge outputs may use schema 1/2 until the coordinator completes a schema5 final record.
+- presentation (final schemas4/5): {kind: review/rereview/complement, subject: nonempty single-line functional title}. Choose once from discovered scope; same values drive user/public rendering and survive closure rewrites. Kind is explicit, never inferred from previous findings. Schemas1–3 render the legacy Code Review title without guessed presentation.
 - scope: repository; mode pr/mr/commit/range/staged/unstaged/working/module/feature; base/head/snapshot/target/reference (text/null). head or snapshot is required.
 - findings/checks: arrays under the contracts below; include only owned/referenced check entries.
-- coverage: flows (text array), limitations (detail text, material boolean). Final adds adequate/stale booleans, verification independent/same_session/skipped/unavailable, and areas under the contract below. Worker packets keep their existing minimal shape without a full matrix.
+- coverage: flows (text array), limitations (detail text, material boolean). Final adds adequate/stale booleans, verification independent/same_session/skipped/unavailable, and areas under the contract below. Deep/extended never skip assigned invariant verification; unavailable independence uses a disclosed fallback and existing material-gap verdict rules. Worker packets keep their existing minimal shape without a full matrix.
 
 ## Final coverage areas
 
-Versions 2/3/4 final coverage.areas requires exactly one row for each A/B/C/D/E, as defined in review-areas.md. Each row has area (letter), status covered/partial/not_evaluated/not_applicable, details (nonempty concise evidence or applicability/pending reason), material (boolean; true only for partial/not_evaluated required coverage gaps), finding_ids (distinct retained non-rejected canonical IDs; empty when none).
+Versions 2/3/4/5 final coverage.areas requires exactly one row for each A/B/C/D/E, as defined in review-areas.md. Each row has area (letter), status covered/partial/not_evaluated/not_applicable, details (nonempty concise evidence or applicability/pending reason), material (boolean; true only for partial/not_evaluated required coverage gaps), finding_ids (distinct retained non-rejected canonical IDs; empty when none).
 
 Covered rows can reference findings. Not-applicable rows require a reason, material=false and no findings. Multiple rows may reference one cause without duplicating finding objects. Material gaps affect verdict/verification even if omitted from coverage.limitations; public uncertainty must still disclose them without the matrix. Version 1 retains its earlier coverage fields and behavior.
 
@@ -36,9 +36,9 @@ The shared ledger additionally keeps executor and fixture/configuration identiti
 
 ## Final-only fields
 
-- profile economy/balanced/deep (effective whole-review profile); profile_reason text identifying explicit/automatic selection, concrete basis and any escalation. Scoped deep assignments stay in shared context/briefs; no auto/mixed enum, new final field or risk score.
+- profile economy/balanced/deep/extended in schema5 (effective whole-review profile); schemas1–4 retain economy/balanced/deep; profile_reason text identifying explicit/automatic selection, concrete basis and any escalation. ABCDE/flow assignments and independent reviewer justifications stay in shared context/briefs; no auto/mixed enum, new final field or risk score.
 - responsible: name/username/source (text/null), verified boolean. Username has no @ prefix. Mentions require an actual verified account; verified display name is sufficient without an account. Unknown renders No identificado.
-- change_authors (schema3/4): identity array, empty for unknown. Each entry has name/username/source (text/null), verified boolean, commits (nonempty distinct reviewed commit identities; an explicitly attributed local snapshot may use its snapshot identity). Verified entries need an identity/source; usernames use the responsible-account rules. Commit membership and account mapping are coordinator evidence checks, not established by structural validation. Exact duplicate entries are invalid. Separate this attribution from MR/PR assignment, creator and committer. Unknown identities never become mentions.
+- change_authors (schema3/4/5): identity array, empty for unknown. Each entry has name/username/source (text/null), verified boolean, commits (nonempty distinct reviewed commit identities; an explicitly attributed local snapshot may use its snapshot identity). Verified entries need an identity/source; usernames use the responsible-account rules. Commit membership and account mapping are coordinator evidence checks, not established by structural validation. Exact duplicate entries are invalid. Separate this attribution from MR/PR assignment, creator and committer. Unknown identities never become mentions.
 - description: status aligned/needs_update/unverified for MR/PR, otherwise not_applicable; identity (captured text/hash identity or null when unavailable); details text.
 - verdict approvable/approvable_with_reservations/not_approvable/insufficient_evidence; verdict_reason text; reservations (concrete nonblocking text array). Use profiles.md precedence; reservations cannot waive material uncertainty.
 - rereview: id/status/details array; status resolved/still_valid/withdrawn/new. Resolved/withdrawn IDs need not remain in current findings.

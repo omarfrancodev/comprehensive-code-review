@@ -29,7 +29,8 @@ VERIFICATION = {'independent': 'independiente', 'same_session': 'misma sesión',
 ORIGINS = {'introduced': 'introducido', 'preexisting': 'preexistente', 'unknown': 'desconocido'}
 CHECK_STATUS = {'passed': 'aprobada', 'failed': 'falló', 'blocked': 'bloqueada', 'not_run': 'no ejecutada'}
 FAILURE_KINDS = {'product': 'producto', 'fixture': 'fixture', 'environment': 'entorno'}
-PROFILES = {'economy': 'económico', 'balanced': 'equilibrado', 'deep': 'profundo'}
+PROFILES = {'economy': 'económico', 'balanced': 'equilibrado',
+            'deep': 'profundo', 'extended': 'extendido'}
 MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de commits',
                'staged': 'cambios preparados', 'unstaged': 'cambios sin preparar',
                'working': 'cambios locales', 'module': 'módulo',
@@ -90,12 +91,12 @@ def validate(record):
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
-    if schema_version in (3, 4):
+    if schema_version in (3, 4, 5):
         final_fields.add('change_authors')
-    if schema_version == 4:
+    if schema_version in (4, 5):
         final_fields.add('presentation')
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -200,7 +201,7 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version in (2, 3, 4):
+        if schema_version in (2, 3, 4, 5):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -215,7 +216,7 @@ def validate(record):
         return errors
 
     material_area_gap = False
-    if schema_version in (2, 3, 4):
+    if schema_version in (2, 3, 4, 5):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -249,13 +250,14 @@ def validate(record):
         if area_ids != set(AREAS):
             error('coverage.areas', 'exactly one row for each area A through E is required')
 
-    enum(record.get('profile'), {'economy', 'balanced', 'deep'}, 'profile')
+    profile_choices = set(PROFILES) if schema_version == 5 else {'economy', 'balanced', 'deep'}
+    enum(record.get('profile'), profile_choices, 'profile')
     text(record.get('profile_reason'), 'profile_reason')
     boolean(coverage.get('adequate'), 'coverage.adequate')
     boolean(coverage.get('stale'), 'coverage.stale')
     enum(coverage.get('verification'), VERIFICATION, 'coverage.verification')
-    if record.get('profile') == 'deep' and coverage.get('verification') == 'skipped':
-        error('coverage.verification', 'deep invariants cannot be skipped')
+    if record.get('profile') in ('deep', 'extended') and coverage.get('verification') == 'skipped':
+        error('coverage.verification', 'deep/extended invariants cannot be skipped')
     substantive = any(isinstance(f, dict) and f.get('type') == 'code' and f.get('status') == 'confirmed' for f in findings)
     if (record.get('profile') == 'balanced' and coverage.get('verification') == 'skipped'
             and (substantive or material_area_gap or any(l.get('material') is True for l in limitations))):
@@ -286,13 +288,13 @@ def validate(record):
         return person
 
     identity(record.get('responsible'), 'responsible')
-    if schema_version == 4:
+    if schema_version in (4, 5):
         presentation = fields(record.get('presentation'), {'kind', 'subject'}, 'presentation')
         enum(presentation.get('kind'), REVIEW_KINDS, 'presentation.kind')
         text(presentation.get('subject'), 'presentation.subject')
         if isinstance(presentation.get('subject'), str) and any(c in presentation['subject'] for c in '\r\n'):
             error('presentation.subject', 'expected a single-line functional subject')
-    if schema_version in (3, 4):
+    if schema_version in (3, 4, 5):
         seen_authors = set()
         for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
             identity(author, f'change_authors[{i}]', author=True)
@@ -428,7 +430,7 @@ def render(record, audience='user'):
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] in (3, 4):
+    if record['schema_version'] in (3, 4, 5):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:

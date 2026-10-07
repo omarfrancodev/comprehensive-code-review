@@ -35,7 +35,7 @@ When the interpreter/script is executable within permissions, use the helper for
 The coordinator is the sole durable writer. Run mutations sequentially for that run. Invoke through an absolute interpreter/script path and consult --help:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.5.0 --harness actual-harness --temporary-path /absolute/owned/session
+python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.6.0 --harness actual-harness --temporary-path /absolute/owned/session
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run
 python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR
 python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
