@@ -62,11 +62,15 @@ En entornos con invocación mediante `$`, también puedes usar `$comprehensive-c
 
 | Perfil | Descubrimiento | Verificación |
 |---|---|---|
-| economy | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
-| balanced, predeterminado | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
-| deep | Dos o tres revisores con flujos distintos | Verificación independiente de candidatos e invariantes asignadas |
+| economy, explícito o automático para alcance acotado demostrado | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
+| balanced, alternativa automática cuando economy no se justifica | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
+| deep | Dos revisores con flujos concretos; un tercero solo por necesidad distinta | Verificación independiente de candidatos e invariantes asignadas |
 
-Los mecanismos afectados pueden justificar deep; el número de líneas o una urgencia no lo determinan por sí solos. Sin capacidad de delegación, se declara la alternativa en una sola sesión y cualquier limitación. Las áreas ABCDE no requieren cinco agentes.
+Desde 2.5.0, un perfil solicitado explícitamente se respeta y no escala sin autorización. Sin perfil, se decide con el contexto ya descubierto: deep por mecanismos materiales observables; economy para un alcance acotado con requisitos claros, consumidores identificados, sin incertidumbres materiales ni gates independientes; balanced cuando esa elegibilidad no está demostrada. No se añade otro agente de preevaluación. El modo automático puede escalar si aparecen hechos nuevos, sin repetir lo ya comprobado ni reducir el perfil para eludir verificación.
+
+Deep concentra sus revisores en los flujos e invariantes que lo requieren; las partes ajenas conservan cobertura habitual por un responsable existente. Sus candidatos sustantivos y dudas materiales siguen requiriendo verificación independiente. El reporte conserva un solo perfil efectivo y el motivo de selección.
+
+El número de líneas, una urgencia o un nombre de tecnología no determinan el perfil. Ningún perfil elimina worktrees para ejecuciones que escriben, cobertura, persistencia o validaciones obligatorias. Sin capacidad de delegación, se declara la alternativa en una sola sesión y cualquier limitación. Las áreas ABCDE no requieren cinco agentes.
 
 ## Cobertura y resultados
 
@@ -158,4 +162,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.4.0 se distribuye mediante el repositorio y la release enlazada arriba. Los cambios priorizan worktrees del proyecto, mediciones optativas y una presentación canónica consistente. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La última release publicada enlazada arriba es 2.4.0; esta rama prepara 2.5.0 con selección automática de perfiles y profundidad acotada por flujo. Los cambios priorizan worktrees del proyecto, mediciones optativas y una presentación canónica consistente. Conservan los perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorporan caché de proyectos entre revisiones ni modifican el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen de lo que exponga el entorno. No se ha medido un porcentaje de ahorro.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.5.0 — Unreleased
+
+- Automatic selection uses economy for demonstrated bounded scope/requirements/consumers without deep mechanisms or independent gates, deep for observable material mechanisms, otherwise balanced. Initial selection reuses common context without an extra agent or audit.
+- Explicit profiles remain fixed; required project gates, isolation and evidence adequacy still apply. Automatic escalation records new facts and reuses unaffected work; no downgrade after discovery to evade verification.
+- Deep assignments target named flows/invariants with two independent discovery reviewers and a justified optional third. Other flows keep ordinary coverage and substantive candidates still receive fresh verification.
+- Follow-ups select on their current affected mechanisms/adjacent behavior rather than blindly inheriting the earlier profile. Existing profile enums, final schema 4 and user/public rendering remain unchanged.
+
 ## 2.4.0 — 2026-10-06
 
 - Builds/tests/installs/reproductions require owned project Git worktrees; blocked creation is disclosed and scratch/copy execution requires explicit user authorization. Static immutable reads remain workspace-optional.

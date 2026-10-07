@@ -25,7 +25,7 @@ Execution facts/packets remain under owned evidence/context.json, checks.json, d
 The helper is optional; its records and lifecycle also apply with native tools. The coordinator is the sole writer of a durable run; workers return assigned evidence. Run prepare/retain/close sequentially for that run, not concurrently. Invoke through an absolute interpreter/script path and consult --help:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/pinned-scope.json --skill-version 2.4.0 --harness actual-harness --temporary-path /absolute/project/.worktrees/code-review-SESSION
+python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/pinned-scope.json --skill-version 2.5.0 --harness actual-harness --temporary-path /absolute/project/.worktrees/code-review-SESSION
 python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/durable/run --input /absolute/final-review.json --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
 python /absolute/skill/scripts/review_artifacts.py close --run-dir /absolute/durable/run --cleanup-file /absolute/observed-cleanup.json
 ```

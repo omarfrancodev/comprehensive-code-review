@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.4.0"
+  version: "2.5.0"
 ---
 
 # Comprehensive Code Review
@@ -23,13 +23,13 @@ The coordinator loads references by phase and embeds relevant rules in briefs. U
 
 ## Profiles
 
-Honor an explicit profile; otherwise use balanced. Escalate to deep for observable material risk under [profiles.md](references/profiles.md), not merely because a file concerns security/storage.
+Keep an explicit profile; never escalate it silently. Without one, select economy for demonstrated bounded eligibility, deep for observable material mechanisms, otherwise balanced under [profiles.md](references/profiles.md). Use already discovered context; no extra selection agent/audit. Automatic selection can escalate when new facts invalidate its basis. Project gates and execution isolation always apply.
 
 | Profile | Discovery | Verification |
 |---|---|---|
 | economy | One reviewer, potentially the coordinator | Same-session skeptical pass over candidates/material questions |
 | balanced | One reviewer, potentially the coordinator | Fresh verifier for substantive candidates/material questions; skip when none remain and coverage is adequate |
-| deep | Two or three independent reviewers assigned distinct flows/risks | Fresh verifier for grouped candidates and explicitly assigned high-risk invariants |
+| deep | Two independent reviewers on named flows/risks; a third only for a distinct coverage need | Fresh verifier for grouped candidates and named invariants; unrelated flows retain ordinary coverage |
 
 This skill requests coordinator delegation only for required profile sessions when available and authorized; workers do not delegate. Fresh discovery contexts exclude other findings and the full coordinator transcript. Shared execution facts do not establish independence. Missing delegation uses disclosed single-agent passes. Project-required independent gates still apply.
 

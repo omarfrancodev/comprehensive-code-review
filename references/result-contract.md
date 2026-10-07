@@ -36,7 +36,7 @@ The shared ledger additionally keeps executor and fixture/configuration identiti
 
 ## Final-only fields
 
-- profile economy/balanced/deep; profile_reason text.
+- profile economy/balanced/deep (effective whole-review profile); profile_reason text identifying explicit/automatic selection, concrete basis and any escalation. Scoped deep assignments stay in shared context/briefs; no auto/mixed enum, new final field or risk score.
 - responsible: name/username/source (text/null), verified boolean. Username has no @ prefix. Mentions require an actual verified account; verified display name is sufficient without an account. Unknown renders No identificado.
 - change_authors (schema3/4): identity array, empty for unknown. Each entry has name/username/source (text/null), verified boolean, commits (nonempty distinct reviewed commit identities; an explicitly attributed local snapshot may use its snapshot identity). Verified entries need an identity/source; usernames use the responsible-account rules. Commit membership and account mapping are coordinator evidence checks, not established by structural validation. Exact duplicate entries are invalid. Separate this attribution from MR/PR assignment, creator and committer. Unknown identities never become mentions.
 - description: status aligned/needs_update/unverified for MR/PR, otherwise not_applicable; identity (captured text/hash identity or null when unavailable); details text.
