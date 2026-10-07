@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare, retain and close durable review evidence (Python 3.10+, stdlib only).
+"""Prepare, register, validate, retain and close durable review evidence (Python 3.10+).
 
 Measurement inputs are an explicit caller assertion of disjoint executions. Duplicate
 paths and execution_id values are refused; semantic overlap is not detectable here.
@@ -178,6 +178,56 @@ def _slug(value):
     return label
 
 
+def _repository_group(identity):
+    if (not isinstance(identity, str) or not identity.startswith(('origin:', 'common-dir:'))
+            or not identity.split(':', 1)[1]):
+        raise ValueError('invalid layout repository identity')
+    identity_path = identity.split(':', 1)[1].replace('\\', '/')
+    label = Path(identity_path).parent.name if identity_path.endswith('/.git') else identity_path.rsplit('/', 1)[-1]
+    return _slug(label) + '-' + _digest(identity.encode('utf-8'))[:20]
+
+
+def _scope_group(scope):
+    hint = scope['reference'] or scope['target'] or scope['snapshot'] or scope['head']
+    if scope['reference'] and '://' in hint:
+        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
+    return _slug(scope['mode']) + '-' + _slug(hint) + '-' + _digest(_json_bytes(scope))[:16]
+
+
+def _validate_layout(run, manifest):
+    """Bind location to durable identities; never need the original checkout."""
+    root = safe_path(manifest['archive_root'])
+    parts = run.relative_to(root).parts
+    key = manifest.get('repository_key')
+    if len(parts) != 3 or not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{20}', key):
+        raise ValueError('invalid archive layout: expected repository/scope/run below root')
+    repository, scope, name = parts
+    label, separator, suffix = repository.rpartition('-')
+    # Historical _slug strips before truncating, so a generated label may end
+    # in '-' or '_'. Validate its shape without applying a second normalization.
+    if not separator or suffix != key or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}', label):
+        raise ValueError('invalid archive layout: repository name must include its stable ID')
+    if scope != _scope_group(manifest['scope']):
+        raise ValueError('invalid archive layout: scope directory differs from pinned scope')
+    if not re.fullmatch(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}', name):
+        raise ValueError('invalid archive layout: timestamp and unique run ID are required')
+    if manifest['schema_version'] == 3:
+        if repository != _repository_group(manifest.get('repository_identity')):
+            raise ValueError('invalid archive layout: repository identity differs from directory')
+        run_id = manifest.get('run_id')
+        if not isinstance(run_id, str) or not re.fullmatch(r'[0-9a-f]{20}', run_id):
+            raise ValueError('invalid archive layout: unique run ID is missing')
+        try:
+            created = datetime.fromisoformat(manifest['created_at'])
+            if created.utcoffset() is None:
+                raise ValueError('timestamp needs timezone')
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError('invalid archive layout: creation timestamp is missing or invalid') from exc
+        expected = created.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + run_id
+        if name != expected:
+            raise ValueError('invalid archive layout: run directory differs from stored identity')
+
+
 def _temporary_paths(paths, manifest):
     registered = list(manifest.get('temporary_paths', []))
     repo, root = safe_path(manifest['repository_path']), safe_path(manifest['archive_root'])
@@ -255,8 +305,9 @@ def _load_run(run_dir):
         raise ValueError('invalid archive state')
     if manifest.get('cleanup') not in {'pending', 'complete', 'not_needed'}:
         raise ValueError('invalid closure state')
-    if manifest.get('schema_version') not in (1, 2):
+    if manifest.get('schema_version') not in (1, 2, 3):
         raise ValueError('unsupported archive schema')
+    _validate_layout(run, manifest)
     return run, manifest, marker
 
 
@@ -393,26 +444,22 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
-    manifest = {'schema_version': 2, 'skill_version': skill_version, 'harness': harness,
+    manifest = {'schema_version': 3, 'skill_version': skill_version, 'harness': harness,
                 'scope': scope, 'archive_root': str(root), 'repository_path': str(repo),
-                'repository_key': repository_key, 'previous_run': previous,
+                'repository_key': repository_key, 'repository_identity': identity, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'prepared', 'retained': False, 'cleanup': 'pending', 'residuals': [],
                 'temporary_paths': [], 'temporary_manifests': [], 'executors': [], 'hashes': {}}
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
-    identity_path = identity.split(':', 1)[1].replace('\\', '/')
-    label = Path(identity_path).parent.name if identity_path.endswith('/.git') else identity_path.rsplit('/', 1)[-1]
-    group = root / (_slug(label) + '-' + repository_key)
-    scope_key = _digest(_json_bytes(scope))[:16]
-    hint = scope['reference'] or scope['target'] or scope['snapshot'] or scope['head']
-    if scope['reference'] and '://' in hint:
-        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
-    scoped = group / (_slug(scope['mode']) + '-' + _slug(hint) + '-' + scope_key)
+    scoped = root / _repository_group(identity) / _scope_group(scope)
     safe_path(scoped).mkdir(parents=True, exist_ok=True)
     # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
     for _ in range(8):
-        run = scoped / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:20])
+        created = datetime.now(timezone.utc)
+        manifest.update(created_at=created.isoformat(), run_id=uuid.uuid4().hex[:20])
+        run = scoped / (created.strftime('%Y%m%dT%H%M%S') + '-' + manifest['run_id'])
+        _validate_layout(run, manifest)
         try:
             run.mkdir()
             break
@@ -424,6 +471,37 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
               'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
     _save_manifest(run, manifest, marker)
     return str(run)
+
+
+def register(run_dir, temporary_paths):
+    """Register coordinator-verified owned resources before discovery/execution."""
+    run, manifest, marker = _load_run(run_dir)
+    _verify_files(run, manifest)
+    if manifest['state'] != 'prepared':
+        raise ValueError('register temporary resources before retention')
+    temporary = _temporary_paths(temporary_paths, manifest)
+    manifests = _temporary_manifests(temporary, manifest)
+    manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
+    _save_manifest(run, manifest, marker)
+    return manifest
+
+
+def validate(run_dir, require_retained=False):
+    """Read-only archive gate; selected evidence is verified, never copied here."""
+    run, manifest, _ = _load_run(run_dir)
+    _verify_files(run, manifest, required=require_retained)
+    if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
+        raise ValueError('retained final review is required before cleanup')
+    if require_retained:
+        value = read_json(run / 'review.json')
+        errors = review_contract.validate(value)
+        if errors or not isinstance(value, dict) or value.get('stage') != 'final':
+            raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
+        if value['scope'] != manifest['scope']:
+            raise ValueError('retained review scope differs from the pinned scope')
+    return {'run_dir': str(run), 'schema_version': manifest['schema_version'],
+            'state': manifest['state'], 'retained': manifest.get('retained') is True,
+            'cleanup': manifest['cleanup']}
 
 
 def _retain_data(run, manifest, marker, contents):
@@ -545,11 +623,18 @@ def _present_resources(registered):
     return present
 
 
-def close(run_dir, cleanup_file):
+def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
     _verify_files(run, manifest, required=True)
-    observed = read_json(cleanup_file)
+    if (cleanup_file is None) == (cleanup is None):
+        raise ValueError('supply either cleanup_file or an inline cleanup observation')
+    if cleanup_file is not None:
+        if residuals is not None:
+            raise ValueError('residuals belong to the cleanup file or inline observation, not both')
+        observed = read_json(cleanup_file)
+    else:
+        observed = {'cleanup': cleanup, 'residuals': residuals if residuals is not None else []}
     if (not isinstance(observed, dict) or set(observed) != {'cleanup', 'residuals'}
             or observed['cleanup'] not in {'complete', 'not_needed', 'pending'}
             or not isinstance(observed['residuals'], list)):
@@ -601,6 +686,12 @@ def main():
     create.add_argument('--output-root')
     create.add_argument('--previous-run')
     create.add_argument('--temporary-path', action='append')
+    resources = commands.add_parser('register', help='Register verified owned temporary paths before use')
+    resources.add_argument('--run-dir', required=True)
+    resources.add_argument('--temporary-path', action='append', required=True)
+    gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
+    gate.add_argument('--run-dir', required=True)
+    gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
@@ -611,7 +702,11 @@ def main():
     keep.add_argument('--context-input', help='Existing neutral context JSON with executor provenance')
     finish = commands.add_parser('close')
     finish.add_argument('--run-dir', required=True)
-    finish.add_argument('--cleanup-file', required=True)
+    observed = finish.add_mutually_exclusive_group(required=True)
+    observed.add_argument('--cleanup-file')
+    observed.add_argument('--cleanup', choices=('complete', 'not_needed', 'pending'),
+                          help='Observed state without creating a post-cleanup temporary file')
+    finish.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
     args = parser.parse_args()
     try:
         if args.command == 'prepare':
@@ -620,8 +715,12 @@ def main():
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
                             args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input)
+        elif args.command == 'register':
+            result = register(args.run_dir, args.temporary_path)
+        elif args.command == 'validate':
+            result = validate(args.run_dir, args.require_retained)
         else:
-            result = close(args.run_dir, args.cleanup_file)
+            result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup, residuals=args.residual)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError) as exc:
