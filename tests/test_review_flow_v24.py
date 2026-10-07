@@ -64,7 +64,7 @@ class ArchiveFlowTests(unittest.TestCase):
         session.rmdir()
         self.close(run, 'complete')
         manifest = self.read(run / 'cierre.json')
-        self.assertEqual(manifest['schema_version'], 2)
+        self.assertEqual(manifest['schema_version'], 3)
         self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md'})
         self.assertFalse((run / 'measurements.json').exists())
 
