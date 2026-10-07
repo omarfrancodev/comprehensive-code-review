@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.6.0 — Unreleased
+## 2.6.0 — 2026-10-07
 
 - Explicit ABCDE assignment briefs name areas/aspects, affected flows/files/interfaces, questions/invariants and expected evidence/coverage. Related areas share owners; dedicated reviewers require distinct needs, not a quota per letter.
 - Add automatic/explicit extended with at most five justified discovery reviewers and one grouped verification batch. Automatic selection requires deep mechanisms and four/five independent assignments that cannot be covered by a three-reviewer plan; preserve valid work when escalating.
