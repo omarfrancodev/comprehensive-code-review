@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.5.0 — Unreleased
+## 2.5.0 — 2026-10-07
 
 - Automatic selection uses economy for demonstrated bounded scope/requirements/consumers without deep mechanisms or independent gates, deep for observable material mechanisms, otherwise balanced. Initial selection reuses common context without an extra agent or audit.
 - Explicit profiles remain fixed; required project gates, isolation and evidence adequacy still apply. Automatic escalation records new facts and reuses unaffected work; no downgrade after discovery to evade verification.
