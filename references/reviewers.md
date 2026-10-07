@@ -2,14 +2,14 @@
 
 ## Assignments
 
-One reviewer combines relevant functional, data/architecture and integration/security perspectives; deep assigns actual affected flows to two or three fresh reviewers. Include adjacent unchanged code and producer/consumer boundaries. Each material flow has one owner; overlap needs a named cross-interface risk or independent gate. Perspectives are lenses, not whole-repository audits. Report uncovered boundaries for reassignment.
+One reviewer combines relevant functional, data/architecture and integration/security perspectives. Use profiles.md for selection precedence and scoped deep assignments: two fresh reviewers receive named affected flows/risks, a third needs a distinct coverage reason, and unrelated flows keep ordinary coverage with an existing owner. Include adjacent unchanged code and producer/consumer boundaries. Each material flow has one primary owner; overlap needs a named cross-interface risk or independent gate. Perspectives are lenses, not whole-repository audits. Report uncovered boundaries for reassignment.
 
 One existing owner checks the MR/PR description using collected evidence. Other observations stay independent until collection; consolidate afterward. Each common check has one executor; reuse neutral revision/configuration/fixture-matched evidence. Repeat only for distinct scenarios, changed inputs, unreliable evidence or required gates, recording why. Every building/writing executor needs its own owned workspace.
 
 ## Discovery brief
 
 ```text
-Assignment: [owned flows/risks, adjacent interfaces]. Do not delegate.
+Assignment: [owned flows/risks, adjacent interfaces, required depth/invariants]. Do not delegate.
 Inputs: [pinned scope, context record or relevant embedded subset].
 Workspace/permissions: [actual path or immutable objects; assigned safe checks].
 Validation: [owned check IDs and reusable neutral evidence].

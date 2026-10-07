@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.4.1.zip` desde [la release 2.4.1](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.4.1), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.5.0.zip` desde [la release 2.5.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.5.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -62,11 +62,15 @@ En entornos con invocación mediante `$`, también puedes usar `$comprehensive-c
 
 | Perfil | Descubrimiento | Verificación |
 |---|---|---|
-| economy | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
-| balanced, predeterminado | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
-| deep | Dos o tres revisores con flujos distintos | Verificación independiente de candidatos e invariantes asignadas |
+| economy, explícito o automático para alcance acotado demostrado | Un revisor, que puede ser el coordinador | Comprobación escéptica en la misma sesión |
+| balanced, alternativa automática cuando economy no se justifica | Un revisor, que puede ser el coordinador | Verificador independiente para candidatos sustantivos o dudas materiales; se omite si no quedan y la cobertura es suficiente |
+| deep | Dos revisores con flujos concretos; un tercero solo por necesidad distinta | Verificación independiente de candidatos e invariantes asignadas |
 
-Los mecanismos afectados pueden justificar deep; el número de líneas o una urgencia no lo determinan por sí solos. Sin capacidad de delegación, se declara la alternativa en una sola sesión y cualquier limitación. Las áreas ABCDE no requieren cinco agentes.
+Desde 2.5.0, un perfil solicitado explícitamente se respeta y no escala sin autorización. Sin perfil, se decide con el contexto ya descubierto: deep por mecanismos materiales observables; economy para un alcance acotado con requisitos claros, consumidores identificados, sin incertidumbres materiales ni gates independientes; balanced cuando esa elegibilidad no está demostrada. No se añade otro agente de preevaluación. El modo automático puede escalar si aparecen hechos nuevos, sin repetir lo ya comprobado ni reducir el perfil para eludir verificación.
+
+Deep concentra sus revisores en los flujos e invariantes que lo requieren; las partes ajenas conservan cobertura habitual por un responsable existente. Sus candidatos sustantivos y dudas materiales siguen requiriendo verificación independiente. El reporte conserva un solo perfil efectivo y el motivo de selección.
+
+El número de líneas, una urgencia o un nombre de tecnología no determinan el perfil. Ningún perfil elimina worktrees para ejecuciones que escriben, cobertura, persistencia o validaciones obligatorias. Sin capacidad de delegación, se declara la alternativa en una sola sesión y cualquier limitación. Las áreas ABCDE no requieren cinco agentes.
 
 ## Cobertura y resultados
 
@@ -164,4 +168,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.4.1 se distribuye mediante el repositorio y la release enlazada arriba. Refuerza el layout y la retención verificada de artifacts, conservando worktrees del proyecto, mediciones optativas, presentación canónica, perfiles, independencia, paquetes internos compactos y matriz ABCDE. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.5.0 se distribuye mediante el repositorio y la release enlazada arriba. Añade selección automática de perfiles y profundidad acotada por flujo. Conserva el layout y la retención verificada de artifacts de 2.4.1, worktrees del proyecto, mediciones optativas, presentación canónica, independencia, paquetes internos compactos y matriz ABCDE. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.
