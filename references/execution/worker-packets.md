@@ -4,6 +4,8 @@ Workers load this contract and their stage, plus the pinned brief/raw artifacts 
 
 ## Common envelope
 
+Available dispatch/tool timestamps and session IDs are coordinator observations for the archive trace, not new required packet fields. Keep missing times/IDs unknown; do not query provider history, emit extra logs or write durable milestones. The coordinator uses existing results under [lifecycle-trace.md](../archive/lifecycle-trace.md).
+
 Required: packet_version (integer 1), stage (discovery/verification), context_id (coordinator-supplied nonempty identity binding exact scope/code/description inputs), check_ids (distinct assigned/referenced IDs), coverage: flows (text array), limitations (array of {detail: nonempty text, material: boolean}). Changed inputs need a new identity. Use role-qualified provisional finding/check IDs; the coordinator maps them consistently under identifiers.md before finalization. Fields are required unless marked optional; empty arrays are valid.
 
 Evidence: kind static/executed, details (specific mechanism/result), optional check_id (null/absent for static; referenced executed ID otherwise). Location: actual path/positive line for code, section for description; remaining path/line/url/section fields are optional/null. Missing source mapping is a limitation, never an invented line.

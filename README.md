@@ -88,6 +88,8 @@ El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada 
 
 ## Guías y versiones
 
+Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo, presentación y mantenimiento. El agente consulta solo las necesarias en cada fase; la [guía de uso](docs/usage.md#organización-de-referencias) explica la organización.
+
 - [Uso y comportamiento avanzado](docs/usage.md): veredictos, IDs, re-review, publicación, helpers y validación.
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.

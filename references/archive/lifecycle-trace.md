@@ -14,6 +14,26 @@ Use concise summaries and selected durable evidence/hash references. Record inte
 
 A closed run is immutable. Later transfer/correction/publication is a separate linked operation with its own evidence and authorization; preserve the original review/report/trace. Trace records never grant permission or prove finding correctness.
 
+## Start milestone example
+
+For a static coordinator discovery, write this bounded input in the already-registered owned evidence session and pass it to `record-event --run-dir <exact returned run> --event-file <owned JSON>`. The start is observed at the coordinator; this example assumes the harness exposes no occurrence clock or provider ID. It does not create a worker, runner or measurement file.
+
+```json
+{
+  "kind": "discovery",
+  "status": "started",
+  "summary": "Pinned static discovery started",
+  "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+  "executor": null,
+  "provenance": {"kind": "agent", "source": null},
+  "occurred_at": null,
+  "evidence": [],
+  "relations": []
+}
+```
+
+For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
+
 ## Participants and explicit links
 
 The coordinator takes actor/executor names and available provider IDs from existing dispatch/results, while recorder remains review_artifacts. Do not infer identity from a summary, fabricate provider IDs or turn recording order into execution order. The temporal metadata adapter does not substitute a model/role label for an observed identity. Missing executor or provider IDs stay null. Workers do not write the durable trace or acquire additional required packet fields.

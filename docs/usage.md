@@ -97,9 +97,11 @@ El layout es `<raíz>/<proyecto>-<id-repositorio>/<alcance>/<fecha>-<id-ejecucio
 | `cierre.json` | Identidad de ejecución, alcance, recursos registrados, integridad y limpieza observada. |
 | `trazabilidad.jsonl` | Hitos compactos de alcance, perfil, asignaciones, checks, verificación, conservación y cierre. |
 | `evidence/` | Evidencia seleccionada necesaria para reproducir o auditar el resultado. |
-| `measurements.json` | Solo para una evaluación de coste solicitada; los archivos anteriores se conservan. |
+| `measurements.json` | Contadores disponibles para una evaluación de coste solicitada. |
 
-La trazabilidad distingue ejecutor y registrador, procedencia observada o declarada y orden de registro frente a acciones paralelas. No registra cada búsqueda ni reconstruye eventos desconocidos. Los hashes comprueban integridad respecto al cierre conservado; no demuestran la verdad de un hallazgo. Consulta [lifecycle-trace.md](../references/archive/lifecycle-trace.md).
+El cierre de los archivos nuevos distingue `prepared` (preparación), `processing` (trabajo iniciado), `retaining` (retención en curso), `closing` (cierre pendiente) y `complete` (cierre observado y verificado). Un hito real de descubrimiento, dispatch o resultado cambia automáticamente prepared a processing; la selección de perfil o planificación no lo hace. Processing no demuestra que un proceso siga vivo. Las escrituras pendientes impiden afirmar un estado validado hasta la recuperación. Los archivos históricos conservan sus estados y esquema.
+
+La trazabilidad distingue ejecutor y registrador, procedencia observada o declarada y orden de registro frente a acciones paralelas. `occurred_at` usa un tiempo UTC observado; si el harness no lo expone, permanece null. `recorded_at` indica cuándo se guardó el evento. Sin occurred_at se usa el orden de registro como fallback explícito, sin inventar duraciones ni simultaneidad. El helper observa sus hitos lógicos y el runner opcional permite aprovechar los límites temporales de un run.json ya existente; no se activa el runner para conseguir tiempos. Las identidades no expuestas siguen desconocidas. Los vínculos entre eventos/hallazgos/checks son opcionales y explícitos, sin barridos automáticos de otros reviews. No registra cada búsqueda ni reconstruye eventos desconocidos. Los hashes comprueban integridad respecto al cierre conservado; no demuestran la verdad de un hallazgo. Consulta [lifecycle-trace.md](../references/archive/lifecycle-trace.md).
 
 Las escrituras de builds, tests, instalaciones y reproducciones usan worktrees propios del proyecto, preferentemente su ubicación establecida, normalmente `.worktrees`. Las lecturas estáticas pueden usar objetos Git. Si no puede crearse el worktree, se declara bloqueada la validación; una copia en scratch necesita autorización explícita. Las dependencias, cachés compartidas y junctions son admisibles cuando son compatibles; ante conflictos se usan recursos propios del ejecutor afectado. La procedencia se conserva en el contexto/cierre existentes. Consulta [workspaces.md](../references/execution/workspaces.md).
 
@@ -112,6 +114,19 @@ Una revisión cerrada es inmutable. Correcciones, otra revisión, publicación o
 Solo se publican con autorización explícita. Comparten el título, veredicto, ID, alcance, versión, hallazgos confirmados y validación del informe; incorporan la consistencia de la descripción y las incertidumbres pertinentes. Omiten la matriz ABCDE, selección de perfil, rutas del archivo interno y mecánica de los revisores.
 
 El responsable del MR/PR y los autores del cambio se declaran por separado usando fuentes verificadas. La asignación, creación del MR/PR y autoría de commits no son equivalentes. Los nombres o correos de Git no se convierten en menciones sin verificar su cuenta; las identidades no disponibles se declaran como no identificadas. Antes de publicar se comprueba la vigencia de código, descripción y atribución. Consulta [report-format.md](../references/reporting/report-format.md) y [publication.md](../references/reporting/publication.md).
+
+## Organización de referencias
+
+| Carpeta | Responsabilidad |
+|---|---|
+| `references/workflow/` | Alcance, perfiles, capacidades, lectura, seguimiento y ABCDE. |
+| `references/execution/` | Revisores, packets, worktrees y ejecutores externos. |
+| `references/contracts/` | Registro final e identificadores. |
+| `references/archive/` | Persistencia, cierre y trazabilidad. |
+| `references/reporting/` | Informe, comentario, publicación y entrega. |
+| `references/maintenance/` | Evaluaciones de eficacia y coste solicitadas. |
+
+La agrupación facilita mantener las reglas; cada rol sigue consultando solo las referencias aplicables. No se cargan todos los archivos al comenzar una revisión.
 
 ## Helpers y validación
 

@@ -24,6 +24,8 @@ Once prepared, create descriptions, captures, identity hashes, discussions, cont
 
 ## Mandatory compact records
 
+For pending trace recovery, use an allowed helper mutation on the exact owned run. Before retention, `register` with the current verified resource list recovers the preserved intent; do not clear or replace resource ownership merely to recover. An interrupted retain/close is retried with its original verified inputs and observed cleanup. Read-only validate never repairs. Failed ownership/hash recovery preserves resources and is a reported limitation, not permission to clean up.
+
 | File | Purpose |
 |---|---|
 | informe.md | User report from the canonical final record |
