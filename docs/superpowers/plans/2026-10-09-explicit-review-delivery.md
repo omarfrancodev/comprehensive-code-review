@@ -57,7 +57,7 @@ self.assertEqual(set(p.name for p in target.iterdir()),
 - [x] **Step 3: Implement deliver.** Validar/renderizar antes de escribir; neutralizar referencias privadas, conservar campos decisivos, escribir exclusivamente y registrar hashes/procedencia en recibo.
 - [x] **Step 4: Add regression cases.** test_relative_output_root_is_anchored_at_project_in_api_and_cli; test_prepared_archive_cannot_be_delivered; test_business_paths_and_urls_survive_while_unc_and_absolute_paths_do_not; test_context_typed_references_hide_absolute_paths_and_are_bounded; test_write_failure_rolls_back_only_own_preparation. Expected: anclaje correcto, fuente intacta, rechazo sin entrega y archivos ajenos preservados.
 - [x] **Step 5: Run tests to verify GREEN.** Comando de Step 2: 19 tests enfocados aprobados, incluidos en 214 tests previos al renombrado.
-- [ ] **Step 6: Commit.** Incluir el entregable verificado en el commit conjunto de Task 4.
+- [x] **Step 6: Commit.** Incluir el entregable verificado en el commit conjunto de Task 4.
 
 ### Task 2: Instrucciones y guías
 
@@ -71,7 +71,7 @@ self.assertEqual(set(p.name for p in target.iterdir()),
 - [x] **Step 2: Write delivery rules/examples.** Crear delivery.md; sustituir transferencia automática por modalidad explícita; preservar handoff histórico y distinguir raíces.
 - [x] **Step 3: Split public documentation.** README de 185 a 95 líneas; uso e instalación/actualización en guías; descarga publicada sigue en 2.7.0.
 - [x] **Step 4: Verify instructions/links.** Repetir cuatro escenarios; corregir contradicciones sobre handoff, raíces, versión y resumen. Checker local: 62 enlaces/anclas correctos después del primer plan.
-- [ ] **Step 5: Commit.** Incluir documentación en el commit de Task 4.
+- [x] **Step 5: Commit.** Incluir documentación en el commit de Task 4.
 
 ### Task 3: focused/standard con compatibilidad
 
@@ -98,7 +98,7 @@ self.assertTrue(any('coverage.verification' in e for e in contract.validate(valu
 - [x] **Step 4: Add regression checks.** Standard con candidatos/dudas materiales; deep/extended con cero hallazgos; profile malformado; IDs inválidos; schema 6 sin mutación/cambio de render; retención/cierre/entrega full de schema 7 e identidad adulterada rechazada.
 - [x] **Step 5: Verify GREEN.** Comando de Step 2 y suite test_review_delivery.py: aprobadas nuevas reglas y lectura histórica.
 - [x] **Step 6: Update instructions/aliases.** focused/standard en instrucciones/ejemplos actuales; estrategias explícitas y aliases normalizados antes de seleccionar. No editar changelog/documentos históricos.
-- [ ] **Step 7: Commit.** Incorporar código, tests y documentación al commit de Task 4 tras gate integrado.
+- [x] **Step 7: Commit.** Incorporar código, tests y documentación al commit de Task 4 tras gate integrado.
 
 ### Task 4: Integración y PR
 
@@ -111,10 +111,12 @@ self.assertTrue(any('coverage.verification' in e for e in contract.validate(valu
 - [x] **Step 1: Verify base.** 195 tests: 194 aprobados/uno omitido por privilegios de symlinks en Windows. Base e51dcb3; Git omarfrancodev / fofe2803@gmail.com.
 - [x] **Step 2: Verify integration before added renaming.** Run python -B -X utf8 -m unittest discover -s tests -v con TEMP/TMP fuera de instalación: 214 tests en 162.119s, 213 aprobados/uno omitido. Sintaxis ocho scripts y siete --help correctos.
 - [x] **Step 3: Verify final integration.** Mismo comando tras Task 3: 224 tests en 159.616s, 223 aprobados y uno omitido por privilegios de symlink. Sintaxis de ocho scripts, siete --help, 63 enlaces/anclas y git diff --check correctos; resultados registrados.
-- [ ] **Step 4: Inspect stage/commit.** Prechecks Git; stage solo archivos de Tasks 1–3, validación y plan. Commit: feat(revision): añadir entregas explícitas y aclarar perfiles.
-- [ ] **Step 5: Publish branch/create PR.** Fetch/confirmar main; git push -u origin feat/explicit-review-delivery. gh pr create --body-file con cuerpo preparado hacia main; adjuntar URL y comprobar head/estado.
+- [x] **Step 4: Inspect stage/commit.** Prechecks Git; stage solo archivos de Tasks 1–3, validación y plan. Commit: feat(revision): añadir entregas explícitas y aclarar perfiles.
+- [x] **Step 5: Publish branch/create PR.** Fetch/confirmar main; git push -u origin feat/explicit-review-delivery. gh pr create --body-file con cuerpo preparado hacia main; PR #10 creado y adjunto al chat: https://github.com/omarfrancodev/comprehensive-code-review/pull/10. Comprobar head/estado después del push final del plan.
 - [ ] **Step 6: Wait for user validation.** Mantener worktree activo; tras aprobación, flujo de merge/release/actualización local/limpieza propia.
 
 ## Self-Review
 
 Task 1 cubre entrega/contexto, Task 2 explicitud/documentación, Task 3 nombres compatibles sin alterar estrategia y Task 4 integración/publicación. Las firmas/options/schema son consistentes; los cinco grupos de Review Focus tienen tests asignados. Se detallan decisiones y checks sin transcribir el algoritmo. No se añade otro review ni mediciones de coste.
+
+La implementación verificada quedó en 7c7510a. Los pasos de merge/release/limpieza siguen pendientes de validación del usuario; publicar el PR no concede esa aprobación.
