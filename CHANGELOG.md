@@ -2,6 +2,15 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.8.0 — Pendiente de publicación
+
+- Perfiles focused/standard/deep/extended: economy y balanced permanecen como alias de entrada. El contrato final 7 conserva las estrategias y gates existentes; los registros históricos mantienen sus esquemas, nombres y representación.
+- Entrega explícita completa o breve desde el resultado retenido, con destino estable en el checkout persistente elegido y sin copiar evidencias, logs o reproducciones.
+- Registro y reporte portables, resumen autocontenido y contexto adicional opcional para supuestos, fuentes analizadas, estado observado de implementación y pendientes.
+- Convenciones de solicitud --profile, --delivery y --output, equivalentes al lenguaje natural explícito; perfil y entrega se eligen por separado.
+- README más breve con definiciones y ejemplos; instalación, actualización y uso detallado en documentación separada.
+- Archivo interno e historial conservados; handoff histórico compatible sin generarlo en los nuevos flujos de entrega.
+
 ## 2.7.0 — 2026-10-09
 
 - Añadir ID público de revisión y formatos estables de hallazgos/checks, conservando referencias y excepciones históricas explícitas en el seguimiento.

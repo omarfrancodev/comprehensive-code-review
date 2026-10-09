@@ -1,6 +1,8 @@
-# Optional correction or transfer handoff
+# Historical handoff compatibility
 
-Create `handoff.md` only when the user requests transfer or correction planning. It works for any review scope, including a commit range, local changes or a module. Derive it from the existing canonical review/context with `retain --handoff` or `render-handoff`; it requires no new review, agents or discovery. Keep the archive copy by default. Create a project copy only when the user explicitly requests that destination.
+New transfer requests use explicit full/brief delivery under [delivery.md](delivery.md), with informe.md/review.json or resumen.md and optional additional contexto.md. Do not automatically create handoff.md for transfers or correction requests. The legacy renderer and archive options below remain available only to preserve historical behavior or an explicit request for that legacy artifact; never migrate a closed archive.
+
+This reference describes the legacy handoff renderer for historical compatibility. Only an explicit request for that named legacy artifact uses `retain --handoff` or `render-handoff`; generic transfer/correction requests use delivery.md and need an explicit full/brief mode. The legacy artifact works for any review scope and requires no new review, agents or discovery. Preserve its archive copy; any separate delivery still follows explicit destination and non-overwrite rules.
 
 The compact handoff contains:
 

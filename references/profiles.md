@@ -1,23 +1,25 @@
 # Profile selection and closure
 
+Profiles describe review strategies: focused for demonstrated bounded scope, standard for one discovery with conditional independent verification, deep for independent perspectives on material mechanisms, and extended for further necessary distinct assignments. Request aliases economy → focused and balanced → standard remain supported and fixed when explicit; record any normalization in the existing profile_reason/context. New final records use schema7 canonical names; historical records keep their original names, schemas and rendering. Renaming changes no eligibility, passes, limits or verdict rules.
+
 Select once during shared scope/context discovery, before delegating. Reuse already collected facts; no separate selection agent, full audit, scoring system or measurement probe. Record selection source (explicit/automatic), effective profile and concrete basis in the existing profile_reason/context. Line count, urgency, model, available slots, technology names and ABCDE letters do not determine depth.
 
 ## Selection precedence
 
-1. An explicit economy/balanced/deep/extended is fixed for the requested scope. Observable mechanisms do not silently override it. Apply its passes and verified project gates; economy still executes a required independent gate. Profile caps constrain skill discovery, not independently mandated project gates: name/count any additional gate sessions separately in the existing reason/context; never relabel optional discovery as a gate. If more optional discovery is necessary, request a profile change or report the material gap. Inadequate proof follows verdict precedence; the profile accepts no exception.
-2. Without an explicit profile, choose extended only when its eligibility below is established; otherwise deep for an observable trigger. Otherwise choose economy only when all bounded eligibility conditions hold. Balanced is the fallback, including material questions without a deep mechanism.
-3. Automatic selection may escalate economy to balanced/deep/extended, balanced to deep/extended or deep to extended when new facts invalidate its basis. Record the fact/transition; reuse context, checks and unaffected discovery, refreshing affected assignments only. Count valid existing independent discovery toward the new plan; escalation is not permission to launch a second complete team. Do not downgrade after discovery starts to evade verification. Follow-ups select for their own current scope.
+1. An explicit focused/standard/deep/extended is fixed for the requested scope. Observable mechanisms do not silently override it. Apply its passes and verified project gates; focused still executes a required independent gate. Profile caps constrain skill discovery, not independently mandated project gates: name/count any additional gate sessions separately in the existing reason/context; never relabel optional discovery as a gate. If more optional discovery is necessary, request a profile change or report the material gap. Inadequate proof follows verdict precedence; the profile accepts no exception.
+2. Without an explicit profile, choose extended only when its eligibility below is established; otherwise deep for an observable trigger. Otherwise choose focused only when all bounded eligibility conditions hold. Standard is the fallback, including material questions without a deep mechanism.
+3. Automatic selection may escalate focused to standard/deep/extended, standard to deep/extended or deep to extended when new facts invalidate its basis. Record the fact/transition; reuse context, checks and unaffected discovery, refreshing affected assignments only. Count valid existing independent discovery toward the new plan; escalation is not permission to launch a second complete team. Do not downgrade after discovery starts to evade verification. Follow-ups select for their own current scope.
 
-## Automatic economy eligibility
+## Automatic focused eligibility
 
 All conditions must be supported by the initial neutral context; absence of a known problem is not proof:
 
 - The requested change is a contained behavior, a mechanical compatible transformation or a bounded follow-up whose affected consumers/interfaces are identified and can be checked directly. A follow-up includes adjacent affected behavior, not only the corrected line.
 - Applicable requirements and expected outcomes are clear from supplied/verified sources; no material unknown requirement, version/input gap or unexplored dependency prevents assessing that behavior.
-- No observable deep trigger applies to the affected mechanism, including an invariant still being reassessed in a follow-up. An unmodified sensitive filename alone does not disqualify economy.
+- No observable deep trigger applies to the affected mechanism, including an invariant still being reassessed in a follow-up. An unmodified sensitive filename alone does not disqualify focused.
 - No verified gate requires independent review, and the change does not require discovery across unexplored independently deployed consumers or broad system boundaries.
 
-Examples: local normalization with known consumers and explicit expected output; a description correction against pinned code; a compatible repeated internal rename with checked mappings. They remain subject to actual coverage. Many files do not prove breadth or simplicity; unsupported mappings keep balanced. Worktrees, tests, artifacts, description consistency and ABCDE coverage are unchanged across profiles. Economy is a review strategy, not a no-execution mode.
+Examples: local normalization with known consumers and explicit expected output; a description correction against pinned code; a compatible repeated internal rename with checked mappings. They remain subject to actual coverage. Many files do not prove breadth or simplicity; unsupported mappings keep standard. Worktrees, tests, artifacts, description consistency and ABCDE coverage are unchanged across profiles. Focused is a review strategy, not a no-execution mode.
 
 ## Observable deep triggers
 
@@ -39,15 +41,15 @@ Automatic extended requires an observable deep mechanism and four or five necess
 
 Extended permits at most five skill discovery reviewers in the scope's current plan, plus one fresh grouped verifier. Automatic use launches only the justified four/five assignments. Explicit extended starts with two independent discovery perspectives and adds only distinctly justified assignments, up to five; it need not fill five slots. Run assignments in waves if concurrency is lower; available slots do not change their necessity or independence. Preserve unaffected valid owners when escalating. Verified independent project gates remain separately identified; if required coverage cannot be achieved within the plan/capabilities, disclose the gap or request a changed scope/authorization, never claim coverage from headcount.
 
-Non-triggering flows retain ordinary balanced coverage by an existing owner/coordinator; do not send every file to every independent reviewer. Substantive candidates/material questions from those flows still enter fresh verification. Use one grouped verification batch for candidates and explicitly assigned deep invariants, including invariants with no candidates. Reuse neutral checks through their single executor; independent reviewers inspect decisive raw inputs, not another reviewer's conclusions. No automatic second whole-scope audit.
+Non-triggering flows retain ordinary standard coverage by an existing owner/coordinator; do not send every file to every independent reviewer. Substantive candidates/material questions from those flows still enter fresh verification. Use one grouped verification batch for candidates and explicitly assigned deep invariants, including invariants with no candidates. Reuse neutral checks through their single executor; independent reviewers inspect decisive raw inputs, not another reviewer's conclusions. No automatic second whole-scope audit.
 
 Explicit deep/extended without automatic triggers still gets its passes on actual affected flows/invariants; do not invent sensitive mechanisms or independent assignments to fill capacity.
 
 ## Verification and closure
 
-Economy checks candidates/material questions skeptically in-session. If none remain, check coverage and close without another discovery sweep.
+Focused checks candidates/material questions skeptically in-session. If none remain, check coverage and close without another discovery sweep.
 
-Balanced uses a fresh verifier for substantive code candidates, material uncertainty or a required independent gate. Mechanically evident description-only corrections can be checked by the coordinator using collected evidence; disputed required product behavior remains substantive. P3 alone does not exempt a code defect. Record verification mode/reason.
+Standard uses a fresh verifier for substantive code candidates, material uncertainty or a required independent gate. Mechanically evident description-only corrections can be checked by the coordinator using collected evidence; disputed required product behavior remains substantive. P3 alone does not exempt a code defect. Record verification mode/reason.
 
 Deep/extended independently verifies grouped candidates and assigned invariants, even with no findings. Use one bounded verification batch, not one verifier per area/discoverer. Missing independent sessions uses a disclosed skeptical fallback; a required independent gate may make evidence inadequate.
 

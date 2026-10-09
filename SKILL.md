@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.7.0"
+  version: "2.8.0"
 ---
 
 # Comprehensive Code Review
@@ -23,14 +23,20 @@ The coordinator loads references by phase and embeds relevant rules in briefs. U
 
 Before the first artifact write, load [artifacts.md](references/artifacts.md). Use the archive helper when executable within permissions, preserve its returned `run_dir` and `CR-<run_id>` review identity, and keep temporary evidence in an owned registered session. New durable runs require the compact [trace](references/lifecycle-trace.md); historical runs remain unchanged. Verify retained evidence before cleanup; a failed archive gate prevents claiming durable completion.
 
+## Request options
+
+Treat `--profile focused|standard|deep|extended`, `--delivery full|brief` and `--output <delivery-root>` as explicit request conventions, not shell commands or npx options. Equivalent clear natural-language requests apply. No profile means automatic selection below; an explicit profile stays fixed. Delivery is separate from review depth and only runs for an explicitly selected full/brief mode. Without a delivery request, respond normally and keep the internal archive. `--output` only chooses the delivery root: by itself it neither authorizes delivery nor redirects the internal archive. Ask for a missing/contradictory delivery choice without blocking independent review work. Read [delivery.md](references/delivery.md) only when delivering.
+
 ## Profiles
 
-Keep an explicit profile; never escalate it silently. Without one, select extended only for justified independent discovery beyond deep's capacity, deep for observable material mechanisms, economy for demonstrated bounded eligibility, otherwise balanced under [profiles.md](references/profiles.md). Reuse discovered context and its ABCDE/flow assignment map; no extra selection agent/audit. Automatic selection can escalate with new facts. Project gates and execution isolation always apply.
+Canonical strategies are focused, standard, deep and extended. Normalize explicit request aliases economy → focused and balanced → standard before selection; aliases remain explicit fixed choices. Use canonical names in new schema7 results; preserve historical record names/versions without migration.
+
+Keep an explicit profile; never escalate it silently. Without one, select extended only for justified independent discovery beyond deep's capacity, deep for observable material mechanisms, focused for demonstrated bounded eligibility, otherwise standard under [profiles.md](references/profiles.md). Reuse discovered context and its ABCDE/flow assignment map; no extra selection agent/audit. Automatic selection can escalate with new facts. Project gates and execution isolation always apply.
 
 | Profile | Discovery | Verification |
 |---|---|---|
-| economy | One reviewer, potentially the coordinator | Same-session skeptical pass over candidates/material questions |
-| balanced | One reviewer, potentially the coordinator | Fresh verifier for substantive candidates/material questions; skip when none remain and coverage is adequate |
+| focused | One reviewer, potentially the coordinator | Same-session skeptical pass over candidates/material questions |
+| standard | One reviewer, potentially the coordinator | Fresh verifier for substantive candidates/material questions; skip when none remain and coverage is adequate |
 | deep | Two independent reviewers on named flows/risks; a third only for a distinct coverage need | Fresh verifier for grouped candidates and named invariants; unrelated flows retain ordinary coverage |
 | extended | Automatic: four or five justified independent assignments; explicit: two to five as needed | One fresh grouped verification batch for candidates and assigned invariants |
 
@@ -40,7 +46,7 @@ Every discovery brief states assigned ABCDE areas, flows/interfaces, questions/i
 
 1. **Scope/context.** Read [scopes.md](references/scopes.md), [capabilities.md](references/capabilities.md), [review-areas.md](references/review-areas.md) and [artifacts.md](references/artifacts.md). Pin inputs, discover common facts once, map applicable ABCDE areas to assigned flows/check owners. Separate MR/PR responsibility from version-bound change authors. Choose review kind and functional subject once for the canonical presentation. Establish the persistent run and initial closure; execution worktrees remain separate. Re-review/complement uses [re-review.md](references/re-review.md).
 2. **Discovery/verification.** Assign packets under [worker-packets.md](references/worker-packets.md); read [reviewers.md](references/reviewers.md) when delegating/grouping. After independent discovery, contrast pertinent external notes before grouped verification. Preserve results, map provisional IDs under [identifiers.md](references/identifiers.md), group evidenced shared causes and verify candidates/material questions in one batch per scope. Reopen only for new evidence or an uncompleted gate. Mark uncertainty explicitly.
-3. **Report/close.** Recheck code/description/attribution freshness. Use [report-format.md](references/report-format.md) for canonical user/public projections with findings counts and meaningful check evidence; only the user report includes the ABCDE matrix. Retain and verify report, record, trace, executor provenance and necessary evidence before cleanup. If the user requests transfer/corrections, derive the optional [handoff](references/handoff.md) from that record. Record observed closure; preserve interrupted/pending runs and user resources.
+3. **Report/close.** Recheck code/description/attribution freshness. Use [report-format.md](references/report-format.md) for canonical user/public projections with findings counts and meaningful check evidence; only the user report includes the ABCDE matrix. Retain and verify report, record, trace, executor provenance and necessary evidence before cleanup. Record observed closure; preserve interrupted/pending runs and user resources. When full/brief delivery is explicitly requested, derive it from the retained result under [delivery.md](references/delivery.md); keep the archive immutable and omit raw evidence from the delivery.
 
 Read [workspaces.md](references/workspaces.md) before builds/tests/installs/reproductions or other writes. Those executors need owned Git worktrees, preferably the project's established location (normally .worktrees); read-only workers may share pinned inputs or immutable Git objects. Blocked creation is an explicit validation limitation, never an automatic switch to scratch/copies. Load [external-cli.md](references/external-cli.md) only for configured external execution and [publication.md](references/publication.md) only for remote publication.
 
