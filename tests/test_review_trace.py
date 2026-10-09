@@ -168,7 +168,7 @@ class TraceTests(unittest.TestCase):
         recorded = self.events(run)[-1]
         self.assertEqual(recorded['occurred_at'], '2026-10-01T12:00:00+00:00')
         self.assertNotEqual(recorded['recorded_at'], recorded['occurred_at'])
-        self.assertIsNone(self.events(run)[0]['occurred_at'])
+        self.assertIsNotNone(self.events(run)[0]['occurred_at'])
         for invalid in ('unknown', '2026-10-01T12:00:00', '2026-10-01T12:00:00-05:00'):
             event['occurred_at'] = invalid
             with self.assertRaises(ValueError):
@@ -189,6 +189,77 @@ class TraceTests(unittest.TestCase):
         path.unlink()
         with self.assertRaises(ValueError):
             artifacts.validate(run, require_retained=True)
+
+    def test_helper_milestones_capture_observed_utc_time(self):
+        run = self.prepare()
+        artifacts.register(run, [])
+        artifacts.validate(run, record_checkpoint=True)
+        artifacts.record_event(run, self.write('unknown-clock.json', self.event()))
+        artifacts.retain(run, self.final)
+        self.close(run)
+        for event in self.events(run):
+            if event['actor']['kind'] == 'helper':
+                self.assertEqual(datetime.fromisoformat(event['occurred_at']).utcoffset().total_seconds(), 0)
+                self.assertEqual(event['provenance'], {'kind': 'helper', 'source': 'review_artifacts:' + event['kind']})
+                self.assertLessEqual(datetime.fromisoformat(event['occurred_at']), datetime.fromisoformat(event['recorded_at']))
+            else:
+                self.assertIsNone(event['occurred_at'])
+        self.assertFalse((run / 'measurements.json').exists())
+
+    def test_execution_metadata_rejects_conflicts_and_keeps_unknown_times(self):
+        raw = self.event()
+        metadata = {'started_at': '2026-10-09T12:00:00+00:00', 'finished_at': '2026-10-09T12:01:00+00:00'}
+        adapter = artifacts.review_trace.event_from_execution
+        for status in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped'):
+            event = dict(raw, status=status)
+            key = 'started_at' if status == 'started' else 'finished_at'
+            value = adapter(event, metadata, 'review_runner:run.json')
+            self.assertEqual(value['occurred_at'], metadata[key])
+            self.assertEqual(value['actor'], raw['actor'])
+            self.assertEqual(value['executor'], raw['executor'])
+            self.assertEqual(value['status'], status)
+            self.assertEqual(adapter(dict(event, occurred_at=metadata[key]), metadata, 'runner')['occurred_at'], metadata[key])
+            self.assertIsNone(adapter(event, {}, 'runner')['occurred_at'])
+            self.assertIsNone(adapter(event, {key: None}, 'runner')['occurred_at'])
+        for invalid in ('unknown', '2026-10-09T12:00:00', '2026-10-09T12:00:00-05:00', 7):
+            with self.assertRaises(ValueError):
+                adapter(raw, dict(metadata, finished_at=invalid), 'runner')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            adapter(dict(raw, occurred_at=metadata['started_at']), metadata, 'runner')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            adapter(dict(raw, occurred_at=metadata['finished_at']), {}, 'runner')
+        with self.assertRaises(ValueError):
+            adapter(dict(raw, status='pending'), metadata, 'runner')
+        with self.assertRaises(ValueError):
+            adapter(raw, [], 'runner')
+        # Equivalent UTC spellings denote the same observed instant.
+        equivalent = dict(raw, occurred_at='2026-10-09T12:01:00Z')
+        self.assertEqual(adapter(equivalent, metadata, 'runner')['occurred_at'], equivalent['occurred_at'])
+
+    def test_execution_metadata_cli_preserves_identity_without_metrics(self):
+        run = self.prepare()
+        event_path = self.write('timed-event.json', self.event())
+        metadata = self.write('runner.json', {'finished_at': '2026-10-09T12:01:00+00:00'})
+        result = subprocess.run([sys.executable, artifacts.__file__, 'record-event', '--run-dir', str(run),
+                                 '--event-file', str(event_path), '--execution-metadata', str(metadata)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = self.events(run)[-1]
+        self.assertEqual(observed['occurred_at'], '2026-10-09T12:01:00+00:00')
+        self.assertEqual(observed['actor'], self.event()['actor'])
+        self.assertEqual(observed['provenance'], {'kind': 'tool', 'source': 'review_runner:' + str(metadata)})
+        self.assertFalse((run / 'measurements.json').exists())
+
+    def test_historical_time_validation_is_unchanged(self):
+        event = dict(self.event(), occurred_at='2026-10-01T12:00:00+00:00')
+        legacy = self.legacy_run(4)
+        artifacts.record_event(legacy, self.write('old-time.json', event))
+        before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
+        artifacts.validate(legacy)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
+        run = self.prepare()
+        with self.assertRaisesRegex(ValueError, 'source'):
+            artifacts.record_event(run, self.write('new-time.json', event))
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
 
     def test_trace_interruption_is_pending_and_next_mutation_recovers_evidence(self):
         run = self.prepare()

@@ -91,6 +91,31 @@ def event_input(raw, *, helper=False):
     return value
 
 
+def event_from_execution(raw: dict, metadata: dict, source: str) -> dict:
+    """Use an existing wrapper boundary timestamp without inferring actor/status."""
+    value = event_input(raw)
+    if not isinstance(metadata, dict):
+        raise ValueError('execution metadata must be an object')
+    _text(source, 500, 'provenance source')
+    if value['status'] == 'started':
+        key = 'started_at'
+    elif value['status'] in {'completed', 'passed', 'failed', 'blocked', 'skipped'}:
+        key = 'finished_at'
+    else:
+        raise ValueError('event status has no execution timestamp mapping')
+    observed = metadata.get(key)
+    if observed is not None:
+        _utc_time(observed, 'execution')
+    supplied = value['occurred_at']
+    if supplied is not None:
+        if observed is None or (datetime.fromisoformat(supplied.replace('Z', '+00:00'))
+                                != datetime.fromisoformat(observed.replace('Z', '+00:00'))):
+            raise ValueError('execution timestamp conflicts with supplied occurred_at')
+    value['occurred_at'] = supplied if supplied is not None else observed
+    value['provenance'] = {'kind': 'tool', 'source': source}
+    return event_input(value)
+
+
 def append(data, manifest, raw, *, helper=False):
     value = event_input(raw, helper=helper)
     descriptor = manifest.get('trace', {'schema_version': SCHEMA_VERSION, 'events': 0, 'last_sha256': None})

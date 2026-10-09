@@ -407,7 +407,9 @@ def _append_trace_events(run, manifest, marker, events, *, helper=True):
 
 
 def _milestone(kind, summary, *, status='completed', evidence=None):
-    return {'kind': kind, 'status': status, 'summary': summary, 'evidence': evidence or []}
+    return {'kind': kind, 'status': status, 'summary': summary, 'evidence': evidence or [],
+            'occurred_at': datetime.now(timezone.utc).isoformat(),
+            'provenance': {'kind': 'helper', 'source': 'review_artifacts:' + kind}}
 
 
 def _starts_processing(event):
@@ -415,9 +417,12 @@ def _starts_processing(event):
             and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
 
 
-def record_event(run_dir, event_file):
+def record_event(run_dir, event_file, execution_metadata=None):
     """Coordinator-only durable writer for a bounded, structured worker milestone."""
     event = review_trace.event_input(read_json(event_file))
+    if execution_metadata is not None:
+        metadata_path = safe_path(execution_metadata)
+        event = review_trace.event_from_execution(event, read_json(metadata_path), 'review_runner:' + str(metadata_path))
     run, manifest, marker = _load_run(run_dir)
     if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS:
         raise ValueError('legacy archives cannot acquire synthetic traces; prepare a new run')
@@ -427,6 +432,8 @@ def record_event(run_dir, event_file):
         raise ValueError('completed review history is immutable')
     if manifest['state'] == 'retaining':
         raise ValueError('retention is interrupted; finish retention before recording milestones')
+    if manifest['schema_version'] == 5 and event['occurred_at'] is not None and event['provenance']['source'] is None:
+        raise ValueError('observed execution time requires an identifiable provenance source')
     if manifest['schema_version'] == 5 and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
@@ -869,10 +876,11 @@ def main():
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
-    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4 archive')
+    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5 archive')
     trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
     trace.add_argument('--run-dir', required=True)
     trace.add_argument('--event-file', required=True)
+    trace.add_argument('--execution-metadata', help='Optional existing review_runner run.json; no timing or identity inference')
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
@@ -903,7 +911,7 @@ def main():
         elif args.command == 'validate':
             result = validate(args.run_dir, args.require_retained, args.record_checkpoint)
         elif args.command == 'record-event':
-            result = record_event(args.run_dir, args.event_file)
+            result = record_event(args.run_dir, args.event_file, args.execution_metadata)
         else:
             result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup, residuals=args.residual)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
