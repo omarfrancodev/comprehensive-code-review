@@ -43,7 +43,7 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 
 ### Hallazgos
 
-**Confirmados:** P0: [count] · P1: [count] · P2: [count] · P3: [count]
+**Confirmados:** [icon] P0: [count] · [icon] P1: [count] · [icon] P2: [count] · [icon] P3: [count]
 
 ### [icon] [priority name] · [P0–P3] — [stable ID]
 

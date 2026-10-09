@@ -29,7 +29,7 @@ Los argumentos de estos comandos pertenecen al instalador. Las convenciones `--p
 
 ## Descarga de una versión
 
-Descarga `comprehensive-code-review-v2.8.0.zip` desde [la release 2.8.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.8.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases). El [CHANGELOG](../CHANGELOG.md) puede describir trabajo pendiente de publicación; comprueba la release antes de elegir un ZIP.
+Descarga `comprehensive-code-review-v2.9.0.zip` desde [la release 2.9.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.9.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases). El [CHANGELOG](../CHANGELOG.md) puede describir trabajo pendiente de publicación; comprueba la release antes de elegir un ZIP.
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills del agente sin usar Git ni Node.js. Para Codex, una ubicación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -66,4 +66,4 @@ Esta alternativa reemplaza los archivos instalados: conserva tus personalizacion
 
 La lectura de las instrucciones no requiere helpers. Estos usan Python 3.10+ y su biblioteca estándar; el helper de workspaces y las pruebas de integración necesitan Git. Para MR/PR, el agente necesita acceso a los metadatos mediante un conector o CLI autenticado, además del código.
 
-La preparación, retención y cierre del archivo interno usan su helper cuando puede ejecutarse dentro de los permisos disponibles; una alternativa nativa por indisponibilidad debe comprobar el mismo contrato. Las limitaciones de escritura, aislamiento o herramientas se declaran en el resultado. Consulta [uso y helpers](usage.md#helpers-y-validación), [capacidades](../references/capabilities.md) y [artefactos](../references/artifacts.md).
+La preparación, retención y cierre del archivo interno usan su helper cuando puede ejecutarse dentro de los permisos disponibles; una alternativa nativa por indisponibilidad debe comprobar el mismo contrato. Las limitaciones de escritura, aislamiento o herramientas se declaran en el resultado. Consulta [uso y helpers](usage.md#helpers-y-validación), [capacidades](../references/workflow/capabilities.md) y [artefactos](../references/archive/artifacts.md).

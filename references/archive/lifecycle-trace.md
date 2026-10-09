@@ -1,0 +1,43 @@
+# Compact review lifecycle trace
+
+Every new durable run keeps `trazabilidad.jsonl` from preparation through observed closure. Archive schema 5 preserves schema 4's binding of `review_id` to `CR-<run_id>` and trace inventory/hash state in cierre.json, adding `processing` for meaningful observed work. Preserve legacy archives without reconstructing a trace from narrative or guessed timestamps.
+
+The helper records its lifecycle operations. The coordinator records only meaningful observed transitions: agent/profile assignment, discovery completion, a check/result, grouped verification, freshness, and authorized publication. Use `record-event --run-dir <exact returned run> --event-file <owned JSON>` and its help for the input contract. Existing context, packets and checks provide evidence references; the trace is their compact index, not copied reports, metrics, every search/tool call or a reason to reload workers.
+
+Trace schema 1 includes sequence/event_id/run_id/review_id, recorded_at, recorder/actor/executor, provenance, kind/status/summary, evidence/relations and the hash chain. `recorded_at` is the time the event was recorded; exact execution timing/order is asserted only when an actual source provides it. Identify whether provenance is helper/tool/agent/recovered. Distinguish the recorder from the actor/executor; provider IDs stay null when unavailable. Supplied names/identities and references describe observed provenance, not proof of human identity or semantic truth.
+
+Prefer `occurred_at` from an observed UTC source. Helper milestones capture their logical operation time with `provenance.source: review_artifacts:<kind>`; it is not the exact instant of an OS write. Native worker/tool events use timestamps actually exposed by dispatch/results. If no clock is exposed, keep `occurred_at: null` and use sequence as recording-order fallback, labelled as such. Never copy recorded_at or the ingestion clock into occurred_at. New archive schema 5 external events with a non-null occurrence require an identifiable source; historical trace schema 1 verification stays compatible.
+
+For an already-used optional runner, `record-event --execution-metadata <existing run.json>` maps started to started_at and completed/passed/failed/blocked/skipped to finished_at. Missing/null time remains null; invalid/non-UTC metadata or a conflicting supplied occurred_at fails. Equivalent UTC spellings are accepted. Metadata describes wrapper boundaries, not model activity or review validity; the adapter preserves supplied actor, executor and status. It does not create metadata, activate measurements or query counters. Other statuses have no temporal mapping. Native execution needs no runner or metadata file. Recovery reuses original pending bytes and times rather than sampling a new clock.
+
+Use concise summaries and selected durable evidence/hash references. Record interruption or capability limits honestly. Native fallback follows artifacts.md with the same verifiable structure; it reports limited observations rather than inventing helper execution, missing events or execution order. Pending helper recovery preserves observed facts. `validate` is read-only; optional `--record-checkpoint` records a requested checkpoint only on an open run.
+
+A closed run is immutable. Later transfer/correction/publication is a separate linked operation with its own evidence and authorization; preserve the original review/report/trace. Trace records never grant permission or prove finding correctness.
+
+## Start milestone example
+
+For a static coordinator discovery, write this bounded input in the already-registered owned evidence session and pass it to `record-event --run-dir <exact returned run> --event-file <owned JSON>`. The start is observed at the coordinator; this example assumes the harness exposes no occurrence clock or provider ID. It does not create a worker, runner or measurement file.
+
+```json
+{
+  "kind": "discovery",
+  "status": "started",
+  "summary": "Pinned static discovery started",
+  "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+  "executor": null,
+  "provenance": {"kind": "agent", "source": null},
+  "occurred_at": null,
+  "evidence": [],
+  "relations": []
+}
+```
+
+For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
+
+## Participants and explicit links
+
+The coordinator takes actor/executor names and available provider IDs from existing dispatch/results, while recorder remains review_artifacts. Do not infer identity from a summary, fabricate provider IDs or turn recording order into execution order. The temporal metadata adapter does not substitute a model/role label for an observed identity. Missing executor or provider IDs stay null. Workers do not write the durable trace or acquire additional required packet fields.
+
+Relations are optional observed links, never edges inferred from adjacent events, matching text or ABCDE letters. Use same-run `E000001`, `F001`, `C001`; for a known other review, use `CR-<run_id>#F001`, `CR-<run_id>#C001` or `CR-<run_id>#E000001`. Preserve existing IDs and bounded legacy/external references without renaming them or manufacturing a CR identity. Existing types and limits (24 relations, 8 KiB event) apply.
+
+New schema 5 emission requires a local E plus six-digit target to exist in the previously verified trace. Self/future/missing local events fail before mutation. F/C targets may denote assigned candidates later discarded, so no final finding or extra registry is required. Cross-review links do not trigger automatic archive access. Historical structural validation remains unchanged; hashes and target existence do not prove a relation's semantic truth or require sequential execution.

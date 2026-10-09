@@ -1,5 +1,7 @@
 # Stable review, finding and check identities
 
+Trace events use `E000001` in recording order. Explicit trace links may target same-run F/C/E IDs or `CR-<run_id>#<id>` for an actually known review. Preserve legacy IDs/references; never infer lineage or execution order. See [lifecycle-trace.md](../archive/lifecycle-trace.md) for emission checks and limits.
+
 New durable reviews use `CR-<run_id>` from the prepared archive, not a title, MR number or invented timestamp. Carry it into the final record, report and requested handoff. Link prior reviews by their actual durable reference/verified URL and known review ID; legacy unknown IDs remain null.
 
 New final finding/check IDs are uppercase `F001`/`C001`, padded to three digits, no hyphen and no all-zero ID. Continue with `F1000`/`C1000` as needed; redundant padding such as `F0001` is invalid. A display ordinal is not an ID. Preserve IDs for the same cause/check across re-review; new causes/check executions receive unused IDs. Never rewrite historical archives to normalize IDs.

@@ -91,6 +91,42 @@ def event_input(raw, *, helper=False):
     return value
 
 
+def event_from_execution(raw: dict, metadata: dict, source: str) -> dict:
+    """Use an existing wrapper boundary timestamp without inferring actor/status."""
+    value = event_input(raw)
+    if not isinstance(metadata, dict):
+        raise ValueError('execution metadata must be an object')
+    _text(source, 500, 'provenance source')
+    if value['status'] == 'started':
+        key = 'started_at'
+    elif value['status'] in {'completed', 'passed', 'failed', 'blocked', 'skipped'}:
+        key = 'finished_at'
+    else:
+        raise ValueError('event status has no execution timestamp mapping')
+    observed = metadata.get(key)
+    if observed is not None:
+        _utc_time(observed, 'execution')
+    supplied = value['occurred_at']
+    if supplied is not None:
+        if observed is None or (datetime.fromisoformat(supplied.replace('Z', '+00:00'))
+                                != datetime.fromisoformat(observed.replace('Z', '+00:00'))):
+            raise ValueError('execution timestamp conflicts with supplied occurred_at')
+    value['occurred_at'] = supplied if supplied is not None else observed
+    value['provenance'] = {'kind': 'tool', 'source': source}
+    return event_input(value)
+
+
+def validate_local_event_targets(event: dict, previous_data: bytes) -> None:
+    """Check observed same-run event IDs; other references never trigger IO."""
+    targets = {relation['target'] for relation in event.get('relations', [])
+               if re.fullmatch(r'E[0-9]{6}', relation['target'])}
+    if not targets:
+        return
+    existing = {json.loads(line)['event_id'] for line in previous_data.splitlines()}
+    if not targets.issubset(existing):
+        raise ValueError('local event relation target must already exist in this run')
+
+
 def append(data, manifest, raw, *, helper=False):
     value = event_input(raw, helper=helper)
     descriptor = manifest.get('trace', {'schema_version': SCHEMA_VERSION, 'events': 0, 'last_sha256': None})

@@ -4,7 +4,9 @@ Read only when explicitly maintaining/evaluating effectiveness or cost of this s
 
 ## Offline checks
 
-Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers record consistency, output omission rules, CLI Unicode/errors, explicit deduplication, schema5 extended-profile support with schema4 presentation identity and legacy profile compatibility, optional measurements/legacy archive closure, executor provenance, ABCDE user-only coverage with material-gap precedence/legacy compatibility, and the evidence layout with cleanup refusal/recovery in a disposable Git repository. No paid model calls or third-party Python dependencies. Git integration explicitly reports a skip if Git is unavailable.
+Run `python -B -m unittest discover -s /absolute/skill/tests -v`. This covers final-record/packet consistency, rendering and delivery, profile/ABCDE rules, reference links, executor isolation, optional measurements, archive schemas 1–5, processing transitions, observed timing, explicit local event links and interrupted-write recovery using disposable Git fixtures. Final review schema 7 and packet/trace schema 1 remain independent of archive schema 5. Mechanical tests need no paid model calls or third-party Python dependencies. Git/symlink limitations are reported as skips rather than claimed coverage.
+
+For lifecycle instruction changes, compare bounded application scenarios with and without the new guidance: static coordinator start, missing harness clocks/IDs after dispatch, and interrupted retention/cleanup under time and budget pressure. Record exact decisions and remaining limitations. Fresh-context application tests check instruction comprehension; they are not executed end-to-end reviews or measured token savings. Keep maintenance testing separate from normal review execution.
 
 ## Review inputs
 

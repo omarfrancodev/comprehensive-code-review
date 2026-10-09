@@ -2,6 +2,8 @@
 
 ## Assignments
 
+The coordinator preserves actual worker/session names and provider IDs available from dispatch/results for compact trace milestones; unavailable identities/times remain unknown. Shared packet schema 1 stays unchanged. Workers do not write the durable trace, query provider history or infer links to other agents' work. See [lifecycle-trace.md](../archive/lifecycle-trace.md).
+
 One reviewer can combine functional, data/architecture and integration/security perspectives. Use profiles.md for discovery limits and automatic extended eligibility. In existing context, map every applicable ABCDE mechanism and affected flow/interface to a primary owner, including adjacent unchanged code and consumers. Group areas sharing a flow, sources and questions. Split only for a distinct mechanism/perspective or verified independent gate; one reviewer per area is permitted when justified, never automatic. Each brief names its areas and expected coverage. Report unowned mechanisms for targeted reassignment; overlapping areas are valid when boundaries are explicit, overlapping work requires a named cross-interface risk/gate.
 
 One existing owner checks the MR/PR description using collected evidence. Other observations stay independent until collection; consolidate afterward. Each common check has one executor; reuse neutral revision/configuration/fixture-matched evidence. Repeat only for distinct scenarios, changed inputs, unreliable evidence or required gates, recording why. Every building/writing executor needs its own owned workspace.

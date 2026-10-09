@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.10+, biblioteca estándar, unittest, Git y Markdown.
 
-**Spec:** [Entrega portable](../../../references/delivery.md), [archivo interno](../../../references/artifacts.md), [perfiles](../../../references/profiles.md) y requisitos aprobados en la conversación, incluido el renombrado en este PR.
+**Spec:** [Entrega portable](../../../references/reporting/delivery.md), [archivo interno](../../../references/archive/artifacts.md), [perfiles](../../../references/workflow/profiles.md) y requisitos aprobados en la conversación, incluido el renombrado en este PR.
 
 **Estado documental:** Se creó después de iniciar Tasks 1–2; no se presenta como un plan previo. Sus pasos completados reflejan evidencia registrada. Task 3 se planifica antes de ejecutarla. Continúa la sesión actual en feat/explicit-review-delivery, basada en main e51dcb3a72afc123916cd90bdea277b9d494f9ed.
 

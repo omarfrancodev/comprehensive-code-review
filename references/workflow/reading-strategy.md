@@ -2,6 +2,8 @@
 
 The coordinator embeds relevant steps in briefs. Limits govern expansion, not coverage claims.
 
+References are grouped by purpose; keep phase/role loading selective. This directory structure is navigation, not a requirement to enumerate or load every document. Archive start/trace milestones reuse already-observed work and context: no timing probes, counter discovery, worker refreshes or cross-review scans to fill optional fields.
+
 1. Obtain change/file summaries and needed MR/PR metadata once. Select affected flows/project gates.
 2. Read hunks/containing symbols through bounded searches/ranges. Retrieve check results/errors before full logs. Raw artifacts remain accessible.
 3. Follow concrete producers/consumers, registration/configuration and unchanged dependencies until behavior/contracts can be assessed. Each expansion names its unanswered question or required gate.

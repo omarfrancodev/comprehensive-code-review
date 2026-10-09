@@ -41,7 +41,7 @@ class TraceTests(unittest.TestCase):
         self.assertEqual([event['kind'] for event in events], ['prepare', 'register', 'retain', 'validation', 'close'])
         self.assertEqual([event['sequence'] for event in events], list(range(1, 6)))
         self.assertTrue(all(datetime.fromisoformat(event['recorded_at']).utcoffset().total_seconds() == 0 for event in events))
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 4)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
         before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
         artifacts.validate(run, require_retained=True)
         self.close(run)
@@ -63,6 +63,103 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(event['relations'], [{'relation': 'verifies', 'target': 'F01'}])
         self.assertEqual(event['review_id'], 'CR-' + self.read(run / 'cierre.json')['run_id'])
 
+    def legacy_run(self, version):
+        """Build a historical fixture, including matching ownership/inventory."""
+        run = self.prepare()
+        manifest = self.read(run / 'cierre.json')
+        marker = self.read(run / artifacts.MARKER)
+        manifest['schema_version'] = version
+        if version < 4:
+            manifest.pop('trace')
+            manifest['hashes'].pop('trazabilidad.jsonl')
+            (run / 'trazabilidad.jsonl').unlink()
+        artifacts._save_manifest(run, manifest, marker)
+        return run
+
+    def test_processing_starts_on_observed_work_only(self):
+        run = self.prepare()
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        for kind, status in [('profile', 'selected'), ('agent', 'pending')]:
+            artifacts.record_event(run, self.write('planned.json', dict(kind=kind, status=status, summary='Planning only')))
+            self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        artifacts.validate(run, record_checkpoint=True)
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Discovery began')))
+        self.assertEqual(artifacts.validate(run)['state'], 'processing')
+        artifacts.register(run, [])
+        self.retain(run)
+        artifacts.validate(run, require_retained=True, record_checkpoint=True)
+        self.assertEqual(artifacts.validate(run)['state'], 'closing')
+        artifacts.record_event(run, self.write('late.json', self.event()))
+        self.assertEqual(artifacts.validate(run)['state'], 'closing')
+        self.close(run)
+        self.assertEqual(artifacts.validate(run, require_retained=True)['state'], 'complete')
+
+    def test_work_start_predicate_uses_observed_kinds_and_statuses(self):
+        for kind in ('agent', 'discovery', 'check', 'grouped-verification'):
+            for status in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped'):
+                self.assertTrue(artifacts._starts_processing({'kind': kind, 'status': status}))
+            for status in ('pending', 'selected', 'authorized', 'unchanged', 'retained'):
+                self.assertFalse(artifacts._starts_processing({'kind': kind, 'status': status}))
+        self.assertFalse(artifacts._starts_processing({'kind': 'validation', 'status': 'passed'}))
+
+    def test_legacy_states_and_complete_bytes_are_preserved(self):
+        for version in (1, 2, 3, 4):
+            run = self.legacy_run(version)
+            before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+            self.assertEqual(artifacts.validate(run)['schema_version'], version)
+            self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
+            if version == 4:
+                artifacts.record_event(run, self.write('legacy.json', self.event()))
+                self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+                manifest = self.read(run / 'cierre.json')
+                marker = self.read(run / artifacts.MARKER)
+                manifest['state'] = 'processing'
+                artifacts._save_manifest(run, manifest, marker)
+                with self.assertRaisesRegex(ValueError, 'state'):
+                    artifacts.validate(run)
+            else:
+                with self.assertRaisesRegex(ValueError, 'legacy'):
+                    artifacts.record_event(run, self.write('legacy.json', self.event()))
+        # The existing completed-run test checks byte-for-byte idempotency.
+
+    def test_processing_recovery_preserves_pending_event(self):
+        for failed_file in ('trazabilidad.jsonl', artifacts.MARKER):
+            run = self.prepare()
+            original = artifacts.atomic_write
+            writes = 0
+            def interrupt(path, data):
+                nonlocal writes
+                if Path(path).name == failed_file:
+                    writes += 1
+                    if failed_file == 'trazabilidad.jsonl' or writes == 2:
+                        raise OSError('interrupted processing transition')
+                original(path, data)
+            with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+                artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+            pending = self.read(run / 'cierre.json')['pending_trace']['events'][0]
+            with self.assertRaisesRegex(ValueError, 'pending'):
+                artifacts.validate(run)
+            artifacts.register(run, [])
+            self.assertEqual(artifacts.validate(run)['state'], 'processing')
+            self.assertEqual(self.events(run)[1], pending)
+
+    def test_manifest_replace_interruption_leaves_preparation_recoverable(self):
+        run = self.prepare()
+        original = artifacts.atomic_write
+        def interrupt(path, data):
+            if Path(path).name == 'cierre.json':
+                raise OSError('manifest replace interrupted')
+            original(path, data)
+        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+        with self.assertRaisesRegex(ValueError, 'pending'):
+            artifacts.validate(run)
+        artifacts.register(run, [])
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'register'])
+
     def test_tool_execution_time_is_preserved_separately_from_recording_time(self):
         run = self.prepare()
         event = self.event()
@@ -71,7 +168,7 @@ class TraceTests(unittest.TestCase):
         recorded = self.events(run)[-1]
         self.assertEqual(recorded['occurred_at'], '2026-10-01T12:00:00+00:00')
         self.assertNotEqual(recorded['recorded_at'], recorded['occurred_at'])
-        self.assertIsNone(self.events(run)[0]['occurred_at'])
+        self.assertIsNotNone(self.events(run)[0]['occurred_at'])
         for invalid in ('unknown', '2026-10-01T12:00:00', '2026-10-01T12:00:00-05:00'):
             event['occurred_at'] = invalid
             with self.assertRaises(ValueError):
@@ -92,6 +189,119 @@ class TraceTests(unittest.TestCase):
         path.unlink()
         with self.assertRaises(ValueError):
             artifacts.validate(run, require_retained=True)
+
+    def test_helper_milestones_capture_observed_utc_time(self):
+        run = self.prepare()
+        artifacts.register(run, [])
+        artifacts.validate(run, record_checkpoint=True)
+        artifacts.record_event(run, self.write('unknown-clock.json', self.event()))
+        artifacts.retain(run, self.final)
+        self.close(run)
+        for event in self.events(run):
+            if event['actor']['kind'] == 'helper':
+                self.assertEqual(datetime.fromisoformat(event['occurred_at']).utcoffset().total_seconds(), 0)
+                self.assertEqual(event['provenance'], {'kind': 'helper', 'source': 'review_artifacts:' + event['kind']})
+                self.assertLessEqual(datetime.fromisoformat(event['occurred_at']), datetime.fromisoformat(event['recorded_at']))
+            else:
+                self.assertIsNone(event['occurred_at'])
+        self.assertFalse((run / 'measurements.json').exists())
+
+    def test_execution_metadata_rejects_conflicts_and_keeps_unknown_times(self):
+        raw = self.event()
+        metadata = {'started_at': '2026-10-09T12:00:00+00:00', 'finished_at': '2026-10-09T12:01:00+00:00'}
+        adapter = artifacts.review_trace.event_from_execution
+        for status in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped'):
+            event = dict(raw, status=status)
+            key = 'started_at' if status == 'started' else 'finished_at'
+            value = adapter(event, metadata, 'review_runner:run.json')
+            self.assertEqual(value['occurred_at'], metadata[key])
+            self.assertEqual(value['actor'], raw['actor'])
+            self.assertEqual(value['executor'], raw['executor'])
+            self.assertEqual(value['status'], status)
+            self.assertEqual(adapter(dict(event, occurred_at=metadata[key]), metadata, 'runner')['occurred_at'], metadata[key])
+            self.assertIsNone(adapter(event, {}, 'runner')['occurred_at'])
+            self.assertIsNone(adapter(event, {key: None}, 'runner')['occurred_at'])
+        for invalid in ('unknown', '2026-10-09T12:00:00', '2026-10-09T12:00:00-05:00', 7):
+            with self.assertRaises(ValueError):
+                adapter(raw, dict(metadata, finished_at=invalid), 'runner')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            adapter(dict(raw, occurred_at=metadata['started_at']), metadata, 'runner')
+        with self.assertRaisesRegex(ValueError, 'conflict'):
+            adapter(dict(raw, occurred_at=metadata['finished_at']), {}, 'runner')
+        with self.assertRaises(ValueError):
+            adapter(dict(raw, status='pending'), metadata, 'runner')
+        with self.assertRaises(ValueError):
+            adapter(raw, [], 'runner')
+        # Equivalent UTC spellings denote the same observed instant.
+        equivalent = dict(raw, occurred_at='2026-10-09T12:01:00Z')
+        self.assertEqual(adapter(equivalent, metadata, 'runner')['occurred_at'], equivalent['occurred_at'])
+
+    def test_execution_metadata_cli_preserves_identity_without_metrics(self):
+        run = self.prepare()
+        event_path = self.write('timed-event.json', self.event())
+        metadata = self.write('runner.json', {'finished_at': '2026-10-09T12:01:00+00:00'})
+        result = subprocess.run([sys.executable, artifacts.__file__, 'record-event', '--run-dir', str(run),
+                                 '--event-file', str(event_path), '--execution-metadata', str(metadata)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observed = self.events(run)[-1]
+        self.assertEqual(observed['occurred_at'], '2026-10-09T12:01:00+00:00')
+        self.assertEqual(observed['actor'], self.event()['actor'])
+        self.assertEqual(observed['provenance'], {'kind': 'tool', 'source': 'review_runner:' + str(metadata)})
+        self.assertFalse((run / 'measurements.json').exists())
+
+    def test_historical_time_validation_is_unchanged(self):
+        event = dict(self.event(), occurred_at='2026-10-01T12:00:00+00:00')
+        legacy = self.legacy_run(4)
+        artifacts.record_event(legacy, self.write('old-time.json', event))
+        before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
+        artifacts.validate(legacy)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
+        run = self.prepare()
+        with self.assertRaisesRegex(ValueError, 'source'):
+            artifacts.record_event(run, self.write('new-time.json', event))
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+
+    def test_new_local_event_targets_and_legacy_references(self):
+        run = self.prepare()
+        for target in ('E000000', 'E000002', 'E999999'):
+            event = dict(self.event(), relations=[{'relation': 'follows', 'target': target}])
+            before = (run / 'cierre.json').read_bytes()
+            with self.assertRaisesRegex(ValueError, 'target'):
+                artifacts.record_event(run, self.write('future.json', event))
+            self.assertEqual((run / 'cierre.json').read_bytes(), before)
+        for target in ('E000001', 'F001', 'C001', 'F-01', 'CR-' + 'b' * 20 + '#E999999', 'https://example.test/old#F-1'):
+            event = dict(self.event(), relations=[{'relation': 'supports', 'target': target}])
+            data = (run / 'trazabilidad.jsonl').read_bytes()
+            with patch.object(Path, 'read_bytes', side_effect=AssertionError('relation resolution must not read files')):
+                artifacts.review_trace.validate_local_event_targets(event, data)
+            artifacts.record_event(run, self.write('observed.json', event))
+            self.assertEqual(self.events(run)[-1]['relations'], event['relations'])
+        legacy = self.legacy_run(4)
+        artifacts.record_event(legacy, self.write('legacy-relation.json', dict(self.event(), relations=[{
+            'relation': 'follows', 'target': 'E999999'}])))
+        before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
+        artifacts.validate(legacy)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
+
+    def test_actor_executor_and_recorder_remain_distinct(self):
+        run = self.prepare()
+        event = dict(self.event(), relations=[])
+        event['actor'] = {'kind': 'agent', 'name': 'verifier', 'provider_id': 'worker-17'}
+        event['executor'] = {'name': 'isolated-verifier', 'provider_id': 'executor-17'}
+        artifacts.record_event(run, self.write('identity.json', event))
+        artifacts.record_event(run, self.write('unknown-identity.json', dict(self.event(), relations=[])))
+        first, second = self.events(run)[-2:]
+        self.assertEqual(first['actor'], event['actor'])
+        self.assertEqual(first['executor'], event['executor'])
+        self.assertEqual(first['recorder'], {'kind': 'helper', 'name': 'review_artifacts', 'provider_id': None})
+        self.assertIsNone(second['actor']['provider_id'])
+        self.assertIsNone(second['executor']['provider_id'])
+        self.assertEqual(first['relations'], [])
+        self.assertEqual(second['relations'], [])
+        for invalid in (dict(event, relations=[{'relation': 'supports', 'target': 'F001'}] * 25),
+                        dict(event, evidence=['x' * 400] * 24)):
+            with self.assertRaises(ValueError):
+                artifacts.record_event(run, self.write('unbounded.json', invalid))
 
     def test_trace_interruption_is_pending_and_next_mutation_recovers_evidence(self):
         run = self.prepare()

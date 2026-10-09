@@ -70,7 +70,7 @@ El archivo interno se conserva en cada revisión. Solo una petición explícita 
 
 Ambas incluyen `.ccr-delivery.json` para vincular el origen y comprobar la integridad de los archivos. `contexto.md` es opcional y aporta únicamente contexto adicional relevante ya recopilado.
 
-El destino predeterminado es `<checkout-persistente>/docs/ccr/reviews/<alcance>/<review-id>/`, fuera del worktree temporal que ejecuta los checks. `--output <raíz>` cambia la raíz de una entrega solicitada; por sí solo no autoriza entregar ni redirige el archivo interno. Las entregas no copian evidence, logs ni reproducciones. Consulta [entregas y contexto](docs/usage.md#entrega-portable) y su [contrato operativo](references/delivery.md).
+El destino predeterminado es `<checkout-persistente>/docs/ccr/reviews/<alcance>/<review-id>/`, fuera del worktree temporal que ejecuta los checks. `--output <raíz>` cambia la raíz de una entrega solicitada; por sí solo no autoriza entregar ni redirige el archivo interno. Las entregas no copian evidence, logs ni reproducciones. Consulta [entregas y contexto](docs/usage.md#entrega-portable) y su [contrato operativo](references/reporting/delivery.md).
 
 ## Archivo interno
 
@@ -88,8 +88,10 @@ El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada 
 
 ## Guías y versiones
 
+Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo, presentación y mantenimiento. El agente consulta solo las necesarias en cada fase; la [guía de uso](docs/usage.md#organización-de-referencias) explica la organización.
+
 - [Uso y comportamiento avanzado](docs/usage.md): veredictos, IDs, re-review, publicación, helpers y validación.
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 2.8.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.8.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Última release publicada: 2.9.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.9.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).

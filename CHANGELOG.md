@@ -2,6 +2,14 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.9.0 — 2026-10-09
+
+- Agrupar las 20 referencias en workflow, execution, contracts, archive, reporting y maintenance; actualizar enlaces y conservar lectura selectiva por fase/rol.
+- Archivo schema 5 con processing desde el primer hito de trabajo observado, unido a la transacción de trazabilidad y su recuperación; schemas 1–4 conservan compatibilidad sin migración.
+- Capturar occurred_at de hitos lógicos del helper; aprovechar opcionalmente tiempos del metadata ya existente del runner. Mantener recorded_at separado y tiempos externos desconocidos en null, sin sondeos ni mediciones adicionales.
+- Conservar actor, executor y recorder separados, con identidades disponibles y vínculos opcionales explícitos. Rechazar destinos locales de eventos inexistentes al emitir schema 5, sin búsquedas de otras revisiones ni reescritura histórica.
+- Documentar inicio, límites de observación, recuperación y organización de referencias; el contrato final 7, packets y trace 1 permanecen sin cambios. El visor continúa como proyecto independiente.
+
 ## 2.8.0 — 2026-10-09
 
 - Perfiles focused/standard/deep/extended: economy y balanced permanecen como alias de entrada. El contrato final 7 conserva las estrategias y gates existentes; los registros históricos mantienen sus esquemas, nombres y representación.

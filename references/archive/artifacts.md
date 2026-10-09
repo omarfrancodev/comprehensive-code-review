@@ -12,7 +12,11 @@ The repository ID is the first 20 hex characters of SHA-256 of the normalized re
 
 ## Bootstrap and temporary evidence
 
-New archive schema 4 adds `review_id: CR-<run_id>` and mandatory `trazabilidad.jsonl` under [lifecycle-trace.md](lifecycle-trace.md). Schemas6/7 final records bind to that ID. Preserve legacy schemas and historical folders without reconstruction or migration.
+New archive schema 5 preserves schema 4's `review_id: CR-<run_id>` and mandatory `trazabilidad.jsonl` under [lifecycle-trace.md](lifecycle-trace.md), adding `processing` for observed review work. Schemas6/7 final records bind to that ID. Preserve legacy schemas and historical folders without reconstruction or migration.
+
+Lifecycle: `prepared → processing → retaining → closing → complete`. Preparation fixes scope and owns the archive; processing means work has begun, not that an executor is currently alive. The existing `record-event` mutation starts processing on the first observed `agent`, `discovery`, `check` or `grouped-verification` milestone with status `started`, `completed`, `passed`, `failed`, `blocked` or `skipped`. Blocked/skipped reflect an observed attempt or execution decision, never an anticipated impediment. Profile selection, planned/pending assignments, authorization, registration and preparatory validation do not start work. Record `discovery/started` before discovery, or `agent/started` after observing dispatch; reuse an equivalent existing milestone instead of adding a duplicate.
+
+Register resources while prepared or processing, before using them. Retain directly from prepared remains compatible with callers supplying an already-built result; it does not invent earlier activity. New skill executions still record their meaningful start. Schema 4 preserves its previous states; schemas 1–3 do not acquire synthetic traces. A failed/pending transaction prevents a validated state claim and is recovered using its original event bytes. Later checkpoints never regress closing to processing.
 
 Load this reference before creating any artifact. First pin inputs with read-only inspection. Before durable `prepare`, put its required `scope.json` in `evidence/` of an exclusive owned session, with an ownership manifest recording that bootstrap. A writing executor's session uses workspaces.md; a static-only review may use a native owned evidence session without creating a Git worktree. This bounded preparation is the only pre-run artifact phase: pass that session via `prepare --temporary-path`, validate the returned run, and finish registration before discovery, worker dispatch or validation commands.
 
@@ -20,13 +24,15 @@ Once prepared, create descriptions, captures, identity hashes, discussions, cont
 
 ## Mandatory compact records
 
+For pending trace recovery, use an allowed helper mutation on the exact owned run. Before retention, `register` with the current verified resource list recovers the preserved intent; do not clear or replace resource ownership merely to recover. An interrupted retain/close is retried with its original verified inputs and observed cleanup. Read-only validate never repairs. Failed ownership/hash recovery preserves resources and is a reported limitation, not permission to clean up.
+
 | File | Purpose |
 |---|---|
 | informe.md | User report from the canonical final record |
 | review.json | Complete version-bound final record |
 | cierre.json | Run/skill version, scope, repository/root, harness, previous run, executor isolation/inputs/dependencies, registered temporary paths, hashes and observed closure |
 | trazabilidad.jsonl | Compact observed lifecycle events and evidence references; mandatory for new runs |
-| handoff.md | Historical optional transfer index, preserved without migration under [handoff.md](handoff.md) |
+| handoff.md | Historical optional transfer index, preserved without migration under [handoff.md](../reporting/handoff.md) |
 
 Initialize cierre.json after pinning scope, before execution; register resources before use. A run without a final verdict keeps closure/trace, distinguishing interruption from completion. The default completed archive has informe.md, review.json, cierre.json and trazabilidad.jsonl plus ownership marker and selected evidence. Handoff and measurements are absent by default. New explicitly selected full/brief deliveries follow delivery.md separately from this archive; an explicit legacy handoff request uses handoff.md. Only a requested cost evaluation uses measurements.md. Preserve old archives and hashes; no migration or deletion.
 
@@ -36,10 +42,10 @@ Execution facts/packets remain under owned evidence/context.json, checks.json, d
 
 When the interpreter/script is executable within permissions, use the helper for durable preparation, registration, retention and closure, plus its validation gates. Native preparation is not an alternative because it seems simpler or older runs used it. If the helper cannot execute, record that limitation and use native operations only when they implement and verify the same layout, ownership/closure records, exact scope, atomic writes, hashes and lifecycle. Read the contract in `scripts/review_artifacts.py`; disclose native validation rather than claiming helper execution. If guarantees cannot be verified, preserve evidence and report persistence incomplete. A helper validation failure is not unavailability and must not be bypassed with native writes.
 
-The coordinator is the sole durable writer. Run mutations sequentially for that run. Invoke through an absolute interpreter/script path and consult --help:
+The coordinator is the sole durable writer. Run mutations sequentially for that run. Use metadata.version from the loaded SKILL.md for --skill-version, not an older example or latest published release. Invoke through an absolute interpreter/script path and consult --help:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.8.0 --harness actual-harness --temporary-path /absolute/owned/session
+python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.9.0 --harness actual-harness --temporary-path /absolute/owned/session
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run
 python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR
 python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
@@ -47,7 +53,7 @@ python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/
 python /absolute/skill/scripts/review_artifacts.py close --run-dir /absolute/returned/run --cleanup complete
 ```
 
-prepare accepts optional --output-root and --previous-run. Supply canonical scope. `register` adds resources while state is prepared; `retain --temporary-path` remains compatible but does not replace registration before use. Register only exact review-owned temporary directories after checking ownership; never the user checkout, another task's workspace or the persistent archive. Registration observes paths/manifests but does not create resources, delete them or prove ownership.
+prepare accepts optional --output-root and --previous-run. Supply canonical scope. `register` adds resources while state is prepared or processing; `retain --temporary-path` remains compatible but does not replace registration before use. Register only exact review-owned temporary directories after checking ownership; never the user checkout, another task's workspace or the persistent archive. Registration observes paths/manifests but does not create resources, delete them or prove ownership.
 
 `prepare` creates the trace; lifecycle helper mutations record their own events. `record-event --run-dir /absolute/returned/run --event-file /absolute/owned/event.json` records observed agent/profile/discovery/check/grouped-verification/freshness/authorized-publication transitions; publication needs supplied authority. Summaries/reference lists are bounded. Closure stores the trace hash and {schema_version, events, last_sha256}; pending_trace preserves interrupted helper recovery. These are provenance/integrity checks, not finding truth. Consult lifecycle-trace.md and --help for the exact event contract.
 
@@ -57,7 +63,7 @@ retain verifies scope/record, writes report/final record atomically and records 
 
 Legacy `retain --handoff` generates/hashes the compact handoff from the existing record/context only when that artifact is explicitly requested; new full/brief delivery uses delivery.md. Optional `--handoff-context-input` carries bounded sourced requirements/plan and pending decisions separately from executor `--context-input`; retain its references/identities through close. Preserve historical handoff files in the archive. Schema4 retention validates the trace as well as existing report/record/evidence gates. `validate --record-checkpoint` explicitly records a checkpoint in an open archive; ordinary validate remains read-only.
 
-Select every evidence file needed to reproduce/audit the verdict or referenced by the final report, passing each via repeatable `--evidence-input`. It copies files; it neither moves them nor automatically retains context/checks/description/discussions. `--context-input` only projects executors. Verify retained inventory/hashes and use durable final references. Do not ask the user whether required evidence should survive disposal; retention is part of the review contract. Closure schema 4 preserves schema 3's layout identities and adds trace integrity; schemas 1–3 keep their existing file requirements.
+Select every evidence file needed to reproduce/audit the verdict or referenced by the final report, passing each via repeatable `--evidence-input`. It copies files; it neither moves them nor automatically retains context/checks/description/discussions. `--context-input` only projects executors. Verify retained inventory/hashes and use durable final references. Do not ask the user whether required evidence should survive disposal; retention is part of the review contract. Closure schema 5 preserves schema 3's layout identities and schema 4's trace integrity while adding processing; schemas 1–4 keep their existing file requirements.
 
 Stop workers, retain required evidence and pass `validate --require-retained` before removing any temporary resource; with unavailable helper, record equivalent native checks. If retention/validation fails, preserve temporary evidence and report the failure. Then run the owned workspace cleanup, inspect its results and remaining resources, and supply close an observed object: {cleanup: complete|not_needed|pending, residuals: [exact absolute paths]}. Complete requires registered resources absent; not_needed requires none registered; pending identifies remaining registered resources. Inaccessible resources or modified archived files cannot be treated as successfully closed. The helper updates review.resources/report hashes with observed cleanup. Keep closure pending until that succeeds.
 
