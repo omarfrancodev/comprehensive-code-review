@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.6.0.zip` desde [la release 2.6.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.6.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.7.0.zip` desde [la release 2.7.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.7.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -89,6 +89,12 @@ Cada área queda como **Cubierta**, **Parcial**, **No evaluada** o **No aplica**
 
 El comentario público incluye responsable del MR/PR, autores del cambio, alcance, versión, consistencia de la descripción, hallazgos, validación e incertidumbres pertinentes. La asignación del MR y la autoría de los commits se declaran por separado; los nombres de Git no se convierten en menciones sin verificar la cuenta. Omite la matriz ABCDE y las rutas internas de ejecución. Solo se publica con autorización explícita.
 
+Reporte y comentario incluyen una sección **Hallazgos** con los conteos de defectos confirmados en P0, P1, P2 y P3, incluso cuando son cero. El icono, prioridad e ID forman un encabezado H3 y el título del hallazgo usa H4. Las incertidumbres no aumentan esos conteos. Validación muestra los resultados y la evidencia útil de las comprobaciones existentes; el hallazgo conserva un resumen y referencias, sin repetir resultados de suites, logs o condiciones de ejecución.
+
+Cada nueva revisión se identifica como `CR-<run_id>`. Los hallazgos nuevos usan `F001`, `F002`, etc., y los checks `C001`, `C002`, etc., con mayúscula y un mínimo de tres dígitos. Los IDs no cambian al ordenar por prioridad ni al actualizar el estado. El coordinador asigna los definitivos y conserva el mapeo de los candidatos por revisor. Las referencias a revisiones anteriores y los IDs históricos declarados permiten seguir una corrección sin renombrar archivos o comentarios ya publicados. Consulta [identifiers.md](references/identifiers.md) y [re-review.md](references/re-review.md).
+
+Los comentarios de otros revisores pueden usar cualquier formato. Se contrastan sus afirmaciones pertinentes después del descubrimiento independiente y antes de la verificación agrupada, conservando procedencia y versión conocida. No se heredan automáticamente su prioridad ni su estado de resolución. Las consultas al historial u otros MR/PR responden a preguntas concretas; no añaden otro barrido por defecto.
+
 Los veredictos son **Aprobable**, **Aprobable con reservas**, **No aprobable** o **Evidencia insuficiente**. La prioridad P0–P3, el carácter bloqueante y el origen del hallazgo se declaran por separado. En MR/PR también se verifica que la descripción refleje correctamente los cambios.
 
 ## Artefactos persistentes
@@ -101,11 +107,18 @@ Desde la versión 2.3.0, la skill conserva cada revisión en una carpeta por usu
     informe.md
     review.json
     cierre.json
+    trazabilidad.jsonl
+    handoff.md                  # solo cuando se solicita transferir la revisión
+    evidence/                   # evidencia seleccionada
 ```
 
 Una ubicación solicitada explícitamente tiene prioridad; después se utiliza `CCR_ARTIFACTS_DIR`, y finalmente la ruta anterior. Cada entorno debe disponer de permisos para escribir en la ubicación elegida. Una ruta bloqueada se informa como limitación; no se cambia silenciosamente a `docs/` o al scratch del proveedor. Los nombres e identificadores distinguen repositorios, alcances y ejecuciones; una re-review crea otro registro enlazado al anterior.
 
 `cierre.json` se inicia antes de ejecutar la revisión y conserva versión de la skill, alcance, recursos temporales registrados, hashes y estado observado de limpieza. Desde 2.4.0, el archivo predeterminado contiene esos tres documentos. Las mediciones son opcionales para evaluaciones de coste solicitadas: no se crea `measurements.json` ni se buscan contadores en revisiones normales. Los archivos anteriores conservan sus mediciones. No hay captura automática de tokens/créditos en Codex/Kiro.
+
+Desde 2.7.0, las nuevas ejecuciones conservan también `trazabilidad.jsonl`: hitos de alcance, perfil, asignaciones, ejecución, verificación, conservación y cierre. Distingue ejecutor y registrador, procedencia observada o declarada y orden de registro frente a acciones paralelas. Referencia evidencia y conserva información desconocida como tal; no registra cada búsqueda ni contadores de consumo. Los hashes permiten comprobar integridad respecto al cierre conservado, sin demostrar por sí mismos la verdad de un hallazgo. Los archivos históricos no requieren reconstruir esta secuencia. Consulta [lifecycle-trace.md](references/lifecycle-trace.md).
+
+Cuando se solicita entregar la revisión a otro agente para evaluarla o preparar correcciones, se genera opcionalmente `handoff.md` desde el mismo registro. Identifica versión, requisitos disponibles, hallazgos y checks relacionados, separando defectos confirmados de asuntos por investigar. Es un índice de transferencia, no otro informe completo ni una autorización para modificar código. Se guarda en el archivo persistente; copiarlo al proyecto requiere una petición explícita. Es aplicable tanto a MR/PR como a rangos, commits o cambios locales. Una transferencia posterior al cierre conserva intacto el archivo original y utiliza una operación vinculada. Consulta [handoff.md](references/handoff.md).
 
 El reporte, registro y evidencia necesaria se guardan y comprueban antes de limpiar los recursos temporales propios. El archivo persistente permanece; su eliminación es explícita. Las reproducciones conservadas son evidencia, no modificaciones al producto. El helper no borra worktrees ni reutiliza contexto de revisiones anteriores como caché. La ubicación real se entrega al usuario y se omite del comentario público. Consulta [artifacts.md](references/artifacts.md); para una evaluación explícita de coste, [measurements.md](references/measurements.md).
 
@@ -121,7 +134,7 @@ Los metadatos y campos de cada hallazgo usan listas Markdown para conservar su s
 
 Builds, tests, instalaciones y reproducciones se ejecutan en worktrees propios del proyecto, preferentemente su ubicación establecida (`.worktrees`). Las lecturas estáticas pueden usar objetos Git. Si no se puede crear el worktree, se informa la validación bloqueada; una copia en scratch requiere autorización explícita. Las dependencias/cachés compartidas y junctions siguen permitidas si son compatibles; ante conflictos se usan dependencias, cachés y salidas propias del ejecutor afectado. La procedencia se conserva en el contexto/cierre existentes, sin otro agente de auditoría.
 
-Los nuevos registros finales usan schema 5, que añade extended y conserva los campos y la presentación de schema 4. Guardan una sola identidad de presentación: tipo y asunto funcional. Reporte y comentario comparten un título H2 (`Code Review`, `Re-review` o `Complement Code Review`), veredicto H3, prioridad/color/ID H3 y título del hallazgo H4; escenario e impacto van separados. Los metadatos siguen como lista. ABCDE permanece solo en el reporte del usuario; responsable y autores siguen separados. Los schemas anteriores y archivos de 2.3.0 continúan siendo compatibles.
+Los nuevos registros finales usan schema 6 con ID de revisión, referencias anteriores, IDs normalizados y seguimiento explícito del re-review. Guardan una sola identidad de presentación: tipo y asunto funcional. Reporte y comentario comparten un título H2 (`Code Review`, `Re-review` o `Complement Code Review`), veredicto y Hallazgos H3, prioridad/color/ID H3 y título del hallazgo H4. Los metadatos siguen como lista. ABCDE permanece solo en el reporte del usuario; responsable y autores siguen separados. Los schemas 1–5 y archivos anteriores continúan siendo compatibles.
 
 ## Requisitos y helpers
 
@@ -129,10 +142,10 @@ La lectura de instrucciones no requiere ejecutar los helpers. La preparación/re
 
 Los helpers usan Python 3.10+ y su biblioteca estándar:
 
-- `scripts/review_contract.py`: valida registros, agrupa candidatos explícitos y genera reportes en español. Nuevos registros finales usan schema 5 con extended, autores y presentación separados; schemas 1/2/3/4 siguen siendo compatibles como entradas, conservando sus perfiles originales.
-- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. El formato de los paquetes internos tiene su propia versión; el registro final conserva autores y presentación en schema 5 sin ampliar los paquetes internos.
+- `scripts/review_contract.py`: valida registros, asigna IDs definitivos y genera reportes, comentarios y la transferencia opcional en español. Nuevos registros finales usan schema 6; schemas 1–5 siguen siendo compatibles como entradas, conservando sus perfiles originales.
+- `scripts/review_packets.py`: valida candidatos compactos y decisiones incrementales; combina evidencia sin inventar prioridad, origen, corrección ni veredicto. Los paquetes internos mantienen su versión independiente y no contienen informes completos.
 - `scripts/review_metrics.py`: registra contadores suministrados por fase y agrega uso sin duplicar caché/razonamiento. Los datos no disponibles permanecen desconocidos.
-- `scripts/review_artifacts.py`: prepara, conserva y cierra archivos persistentes con identidad, hashes y estado observado; no elimina recursos. El uso del script es opcional; el contrato de conservación se aplica también con herramientas nativas.
+- `scripts/review_artifacts.py`: prepara, registra, conserva y cierra archivos persistentes con identidad, trazabilidad, hashes y estado observado; no elimina recursos. Se usa cuando puede ejecutarse dentro de los permisos disponibles; una alternativa nativa por indisponibilidad debe comprobar el mismo contrato.
 - `scripts/review_workspace.py`: crea y limpia snapshots temporales con comprobaciones de propiedad; requiere Git.
 - `scripts/review_runner.py`: ejecuta un adaptador CLI previamente configurado; no selecciona ni configura automáticamente un proveedor.
 
@@ -169,4 +182,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.6.0 se distribuye mediante el repositorio y la release enlazada arriba. Añade asignaciones ABCDE explícitas y el perfil extended justificado. Conserva el layout y la retención verificada de artifacts de 2.4.1, worktrees del proyecto, mediciones optativas, presentación canónica, independencia y paquetes internos compactos. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.7.0 incorpora IDs estables, seguimiento entre revisiones, validación enriquecida, trazabilidad persistente y transferencia opcional de hallazgos. Conserva perfiles y asignaciones ABCDE, worktrees del proyecto, mediciones optativas, independencia y paquetes internos compactos. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.

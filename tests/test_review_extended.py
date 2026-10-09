@@ -124,7 +124,7 @@ class ExtendedArchiveTests(unittest.TestCase):
         retained = fixture.read(run/'review.json')
         closure = fixture.read(run/'cierre.json')
         self.assertEqual((retained['schema_version'], retained['profile']), (5, 'extended'))
-        self.assertEqual(closure['schema_version'], 3)
+        self.assertEqual(closure['schema_version'], 4)
         self.assertEqual(closure['cleanup'], 'not_needed')
         self.assertFalse((run/'measurements.json').exists())
 

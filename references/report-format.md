@@ -6,9 +6,9 @@ Use one canonical final record from result-contract.md. Report in the user's lan
 
 After the title, verdict first; one result per project/scope; one finding per cause. Use exact base/head/snapshot and verified links. Code needs a real version-specific file/line; description issues use the MR/PR section plus change evidence. Never link removed temporary workspaces.
 
-Use H2 for the review title, H3 for the verdict and each priority/ID block, H4 for its finding title. Separate verdict reason from heading and use one metadata field per Markdown list item. Use list items for finding fields too; plain consecutive newlines are soft breaks, not a portable visual layout. Separate headings, paragraphs and lists with blank lines. Preserve literal untrusted names/text through escaping. User-facing values are translated (e.g. No aprobable, equilibrado, independiente); enums such as not_approvable/balanced remain only in records. Manual rendering follows this same contract.
+Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-name/code/ID block, H4 for its finding title. Hallazgos always includes confirmed P0/P1/P2/P3 counts, including zero. Separate verdict reason from heading and use one metadata field per Markdown list item. Finding fields are list items too; plain consecutive newlines are soft breaks. Separate headings, paragraphs and lists with blank lines. Escape literal untrusted text. Translate user-facing values; internal enums remain in records. Manual rendering follows this contract.
 
-Confirmed findings appear as findings; unresolved claims/material limits appear as uncertainties. Rejected candidates stay internal unless withdrawing prior claims. Omit empty sections, full logs, duplicate findings tables, generic praise and speculative defects. Give observable corrections, not an unsolicited patch.
+Confirmed findings appear as findings; unresolved claims/material limits appear as uncertainties. Rejected candidates stay internal unless withdrawing prior claims. Omit empty conditional sections, full logs, duplicate findings tables and speculative defects. Give observable corrections, not an unsolicited patch. Finding evidence is concise decisive static evidence or linked check IDs; Validación adds the existing meaningful check output/results, skipped checks, blockage and retained log references instead of copying scenario/impact paragraphs.
 
 Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante; 🔵 P3 — Menor. Translate labels as needed, preserve circle/code. P0 is demonstrated immediate severe compromise/outage/corruption; P1 serious credible failure; P2 concrete correctness defect; P3 limited consequence. Blocking and origin are separate. Conditions come from actual blockers/nonblocking reservations, never silent acceptance of material unknown behavior.
 
@@ -18,7 +18,7 @@ Select presentation once from scope/context, without extra discovery: kind revie
 
 ## User Report Format — fixed order
 
-Required: verdict/reason; project/mode/reference/version/target; MR/PR responsible person (local: Responsable); change authors; profile/reason and verification mode; MR/PR description result (local: No aplica; revisión local); confirmed findings or clean-review sentence; actual validation and covered flows; ABCDE coverage matrix for new reviews. Legacy schemas 1/2 lack authors; do not invent them.
+Required: verdict/reason; persistent review ID and relevant previous report links; project/mode/reference/version/target; MR/PR responsible person (local: Responsable); change authors; profile/reason and verification mode; MR/PR description result (local: No aplica; revisión local); Hallazgos with confirmed counts and blocks or clean-review sentence; meaningful validation and covered flows; ABCDE coverage matrix for new reviews. Preserve historical IDs and missing legacy fields honestly.
 
 Then conditional sections, in this order: uncertainties; conditions/reservations; re-review ID changes; residual resources or actual publication outcome. Omit successful cleanup mechanics. Residual resources need exact paths and next actions. Reused evidence/substantive reruns are identified. No executed checks means an explicit static-only statement.
 
@@ -30,6 +30,8 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 [specific reason].
 
 - **Alcance:** [project] · [translated mode]
+- **ID de revisión:** CR-[actual run_id]
+- **Revisión anterior:** [previous report link and review ID, if applicable]
 - **Versión:** [base] → [head/snapshot]
 - **Destino:** [if applicable]
 - **Responsable del MR/PR:** [verified account/name or No identificado; local label: Responsable]
@@ -39,20 +41,24 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 - **Verificación:** [translated mode]
 - **Descripción:** [status and concise result; local: No aplica; revisión local]
 
-### [colored priority] — [stable ID]
+### Hallazgos
+
+**Confirmados:** P0: [count] · P1: [count] · P2: [count] · P3: [count]
+
+### [icon] [priority name] · [P0–P3] — [stable ID]
 
 #### [display ordinal]. [specific title]
 
 - **Ubicación:** [precise reference] · **Origen:** [translated origin]
 - **Escenario:** [conditions → expected/actual failure]
 - **Impacto:** [concrete consequence]
-- **Evidencia:** [decisive flow or check ID/result]
+- **Evidencia:** [concise decisive flow or linked canonical check ID]
 - **Corrección requerida:** [observable behavior]
 - **Bloqueante:** [yes/no; reason when yes]
 
 ### Validación
 
-- [Actual check/result, reuse/rerun reason or static-only statement]
+- **[canonical check ID]:** [actual execution revision and meaningful existing output/result; check evidence/log link; skipped/blocked reason; reuse/rerun reason where applicable]
 
 **Cobertura:** [inspected flows; material gaps appear under uncertainties]
 
@@ -69,11 +75,11 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 
 Use review-areas.md states and scope rules; Cubierta means inspected, including any confirmed findings. Each row is concise and references existing findings. No overall risk level or quality score. Legacy version 1 records have no guessed matrix.
 
-Replace an empty findings section with: no blocking defects were confirmed within the reviewed scope. Target 60–120 words per finding, retaining decisive evidence; never omit confirmed findings to meet a word target. Report resolved/withdrawn IDs in re-review changes even if absent from current findings.
+When no findings are confirmed, keep Hallazgos and four zero counts, then say no defects were confirmed within the reviewed scope. Target 60–120 words per finding without omitting decisive evidence. Validation summarizes checks.evidence and actual observed outputs; command text alone is insufficient. With no executions, state static-only and any unexecuted required checks. Report every prior ID's reassessed or not_reevaluated status and provenance in re-review changes, even when absent from findings.
 
 ## Public Comment Format — fixed order
 
-Reuse the same canonical title, H2/H3/H4 hierarchy, structural Markdown, verdict, scope/version/reference, **MR/PR responsible person and change authors**, description result, confirmed finding blocks and validation. Public validation uses check IDs, actual execution revision, outcomes and concise public-safe reuse/rerun reasons; raw commands remain in the user/internal record. Then conditional uncertainties, conditions/reservations and re-review changes. Omit the ABCDE matrix/area classifications, profile selection, worker names, internal resource/archive paths, measurements and cleanup mechanics. Material coverage gaps still appear as uncertainties explaining the verdict. Use the finding block above unchanged.
+Reuse the canonical title/hierarchy, verdict, review ID, scope/version/reference, **MR/PR responsible person and change authors**, description result, Hallazgos/counts, confirmed blocks and validation. Public validation includes check IDs, actual execution revision, meaningful public-safe output/results, blockage and safe evidence links. Keep private commands, paths, worker mechanics and raw logs in internal/user records. Then conditional uncertainties, conditions/reservations and re-review changes with safe source links. Omit ABCDE, profile selection, archive paths and measurements. Material gaps still explain the verdict. Use the same finding block.
 
 Variants:
 
@@ -83,6 +89,6 @@ Variants:
 
 Responsibility is operational MR/PR assignment: explicit verified user mapping, otherwise assignee(s), otherwise MR/PR creator as a disclosed source fallback, otherwise No identificado. It does not establish change authorship. Multiple assignees use a verified designated account or verified display names. Local responsibility needs a supplied/verified mapping; do not assign uncommitted changes to the HEAD author automatically.
 
-Change authors are separately collected once from actual version-bound platform commits or the selected Git range. Retain each identity source and relevant commit IDs under result-contract.md. Co-author trailers can supply declared display-name provenance; mentions require a verified platform account mapping. Git author metadata proves recorded attribution, not real-world identity or account ownership. Deduplicate only identities with supported equivalence. The MR/PR creator, assignee, committer and reviewers are not automatically authors. Uncommitted local authors stay unknown unless an explicit attribution maps them to the reviewed snapshot. Always render the schema3/4 authors slot; unknown is No identificados. Mention only verified accounts; never derive @usernames from names/emails. Missing identity alone is not a code defect or reason to repeat discovery.
+Change authors are separately collected once from actual version-bound platform commits or the selected Git range. Retain each identity source and relevant commit IDs under result-contract.md. Co-author trailers can supply declared display-name provenance; mentions require a verified platform account mapping. Git author metadata proves recorded attribution, not real-world identity or account ownership. Deduplicate only identities with supported equivalence. The MR/PR creator, assignee, committer and reviewers are not automatically authors. Uncommitted local authors stay unknown unless an explicit attribution maps them to the reviewed snapshot. Always render the schemas3–6 authors slot; unknown is No identificados. Mention only verified accounts; never derive @usernames from names/emails. Missing identity alone is not a code defect or reason to repeat discovery.
 
 Publishing uses publication.md. A draft or description correction does not authorize a remote edit.

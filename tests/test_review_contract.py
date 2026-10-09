@@ -267,9 +267,10 @@ class RenderingTests(unittest.TestCase):
         self.assertNotIn('@invented', result)
         self.assertIn('No identificado', result)
 
-    def test_clean_comment_omits_empty_findings_and_internal_mechanics(self):
+    def test_clean_comment_keeps_empty_findings_counts_and_omits_internal_mechanics(self):
         result = contract.render(clean_record(), audience='comment')
-        self.assertNotIn('### Hallazgos', result)
+        self.assertIn('### Hallazgos', result)
+        self.assertIn('P0: 0 · P1: 0 · P2: 0 · P3: 0', result)
         self.assertNotIn('balanced', result)
         self.assertNotIn('Limpieza', result)
 

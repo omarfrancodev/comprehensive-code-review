@@ -1,10 +1,10 @@
 # Compact worker packets — packet version 1
 
-Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 5; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
+Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 6; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
 
 ## Common envelope
 
-Required: packet_version (integer 1), stage (discovery/verification), context_id (coordinator-supplied nonempty identity binding exact scope/code/description inputs), check_ids (distinct assigned/referenced IDs), coverage: flows (text array), limitations (array of {detail: nonempty text, material: boolean}). Changed inputs need a new identity. Use role-qualified finding IDs. Fields are required unless marked optional; empty arrays are valid.
+Required: packet_version (integer 1), stage (discovery/verification), context_id (coordinator-supplied nonempty identity binding exact scope/code/description inputs), check_ids (distinct assigned/referenced IDs), coverage: flows (text array), limitations (array of {detail: nonempty text, material: boolean}). Changed inputs need a new identity. Use role-qualified provisional finding/check IDs; the coordinator maps them consistently under identifiers.md before finalization. Fields are required unless marked optional; empty arrays are valid.
 
 Evidence: kind static/executed, details (specific mechanism/result), optional check_id (null/absent for static; referenced executed ID otherwise). Location: actual path/positive line for code, section for description; remaining path/line/url/section fields are optional/null. Missing source mapping is a limitation, never an invented line.
 
@@ -22,7 +22,7 @@ Check claims/material questions against requirements, raw code, baseline and con
 
 ## Coordinator merge
 
-Preserve raw packets; remap colliding IDs consistently before verification. Supply context.json with context_id, complete scope and referenced neutral checks projection:
+Preserve raw packets; map provisional IDs consistently before verification. Supply context.json with context_id, complete scope and referenced neutral checks projection:
 
 ```text
 python /absolute/skill/scripts/review_packets.py validate --input /absolute/discovery.json

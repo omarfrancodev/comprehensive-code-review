@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.6.0"
+  version: "2.7.0"
 ---
 
 # Comprehensive Code Review
@@ -21,7 +21,7 @@ Assigned discovery/verification workers read [worker-packets.md](references/work
 
 The coordinator loads references by phase and embeds relevant rules in briefs. Use [reading-strategy.md](references/reading-strategy.md) to plan bounded access/checkpoints. Context identities bind exact inputs; routing preserves project gates.
 
-Before the first artifact write, load [artifacts.md](references/artifacts.md). Use the archive helper when executable within permissions, preserve its exact returned `run_dir`, and keep review-created temporary evidence in an owned registered session. Existing review directories are history, not layout policy. Verify retained evidence before cleanup; a failed archive gate prevents claiming durable completion.
+Before the first artifact write, load [artifacts.md](references/artifacts.md). Use the archive helper when executable within permissions, preserve its returned `run_dir` and `CR-<run_id>` review identity, and keep temporary evidence in an owned registered session. New durable runs require the compact [trace](references/lifecycle-trace.md); historical runs remain unchanged. Verify retained evidence before cleanup; a failed archive gate prevents claiming durable completion.
 
 ## Profiles
 
@@ -39,8 +39,8 @@ Every discovery brief states assigned ABCDE areas, flows/interfaces, questions/i
 ## Workflow and conditional references
 
 1. **Scope/context.** Read [scopes.md](references/scopes.md), [capabilities.md](references/capabilities.md), [review-areas.md](references/review-areas.md) and [artifacts.md](references/artifacts.md). Pin inputs, discover common facts once, map applicable ABCDE areas to assigned flows/check owners. Separate MR/PR responsibility from version-bound change authors. Choose review kind and functional subject once for the canonical presentation. Establish the persistent run and initial closure; execution worktrees remain separate. Re-review/complement uses [re-review.md](references/re-review.md).
-2. **Discovery/verification.** Assign packets under [worker-packets.md](references/worker-packets.md); read [reviewers.md](references/reviewers.md) when delegating/grouping. Preserve results, group evidenced shared causes and verify candidates/material questions in one batch per scope. Reopen only for new evidence or an uncompleted gate. Mark remaining uncertainty explicitly.
-3. **Report/close.** Recheck code/description/attribution freshness. Use [report-format.md](references/report-format.md) for the same canonical title and heading hierarchy in user report/public comment; only the user report includes the ABCDE matrix. Retain and verify the report, final record, executor provenance and necessary evidence under artifacts.md before cleanup. Record observed closure; preserve interrupted/pending runs and user resources.
+2. **Discovery/verification.** Assign packets under [worker-packets.md](references/worker-packets.md); read [reviewers.md](references/reviewers.md) when delegating/grouping. After independent discovery, contrast pertinent external notes before grouped verification. Preserve results, map provisional IDs under [identifiers.md](references/identifiers.md), group evidenced shared causes and verify candidates/material questions in one batch per scope. Reopen only for new evidence or an uncompleted gate. Mark uncertainty explicitly.
+3. **Report/close.** Recheck code/description/attribution freshness. Use [report-format.md](references/report-format.md) for canonical user/public projections with findings counts and meaningful check evidence; only the user report includes the ABCDE matrix. Retain and verify report, record, trace, executor provenance and necessary evidence before cleanup. If the user requests transfer/corrections, derive the optional [handoff](references/handoff.md) from that record. Record observed closure; preserve interrupted/pending runs and user resources.
 
 Read [workspaces.md](references/workspaces.md) before builds/tests/installs/reproductions or other writes. Those executors need owned Git worktrees, preferably the project's established location (normally .worktrees); read-only workers may share pinned inputs or immutable Git objects. Blocked creation is an explicit validation limitation, never an automatic switch to scratch/copies. Load [external-cli.md](references/external-cli.md) only for configured external execution and [publication.md](references/publication.md) only for remote publication.
 
