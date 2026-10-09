@@ -1,9 +1,13 @@
 # Referencias organizadas y ciclo de vida observable de las revisiones
 
-**Fecha:** 2026-10-09  
-**Proyecto:** comprehensive-code-review  
-**Base:** v2.8.0, commit `e227349d8082784949c2504f709b033e2231870d`  
-**Versión prevista:** 2.9.0; publicación pendiente del flujo de revisión del PR.  
+**Fecha:** 2026-10-09
+
+**Proyecto:** comprehensive-code-review
+
+**Base:** v2.8.0, commit `e227349d8082784949c2504f709b033e2231870d`
+
+**Versión prevista:** 2.9.0; publicación pendiente del flujo de revisión del PR.
+
 **Estado:** especificación escrita para revisión; implementación pendiente.
 
 ## Objetivo y alcance aprobado
