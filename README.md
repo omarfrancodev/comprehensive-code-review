@@ -92,4 +92,4 @@ El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada 
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 2.7.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.7.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Última release publicada: 2.8.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.8.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).

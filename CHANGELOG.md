@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.8.0 — Pendiente de publicación
+## 2.8.0 — 2026-10-09
 
 - Perfiles focused/standard/deep/extended: economy y balanced permanecen como alias de entrada. El contrato final 7 conserva las estrategias y gates existentes; los registros históricos mantienen sus esquemas, nombres y representación.
 - Entrega explícita completa o breve desde el resultado retenido, con destino estable en el checkout persistente elegido y sin copiar evidencias, logs o reproducciones.

@@ -113,10 +113,10 @@ self.assertTrue(any('coverage.verification' in e for e in contract.validate(valu
 - [x] **Step 3: Verify final integration.** Mismo comando tras Task 3: 224 tests en 159.616s, 223 aprobados y uno omitido por privilegios de symlink. Sintaxis de ocho scripts, siete --help, 63 enlaces/anclas y git diff --check correctos; resultados registrados.
 - [x] **Step 4: Inspect stage/commit.** Prechecks Git; stage solo archivos de Tasks 1–3, validación y plan. Commit: feat(revision): añadir entregas explícitas y aclarar perfiles.
 - [x] **Step 5: Publish branch/create PR.** Fetch/confirmar main; git push -u origin feat/explicit-review-delivery. gh pr create --body-file con cuerpo preparado hacia main; PR #10 creado y adjunto al chat: https://github.com/omarfrancodev/comprehensive-code-review/pull/10. Comprobar head/estado después del push final del plan.
-- [ ] **Step 6: Wait for user validation.** Mantener worktree activo; tras aprobación, flujo de merge/release/actualización local/limpieza propia.
+- [x] **Step 6: Record user validation.** El usuario aprobó el PR el 2026-10-09 y autorizó continuar el flujo de merge/release/actualización local/limpieza propia. El estado efectivo de estas operaciones se verifica en GitHub y Git; no lo establece este plan.
 
 ## Self-Review
 
 Task 1 cubre entrega/contexto, Task 2 explicitud/documentación, Task 3 nombres compatibles sin alterar estrategia y Task 4 integración/publicación. Las firmas/options/schema son consistentes; los cinco grupos de Review Focus tienen tests asignados. Se detallan decisiones y checks sin transcribir el algoritmo. No se añade otro review ni mediciones de coste.
 
-La implementación verificada quedó en 7c7510a. Los pasos de merge/release/limpieza siguen pendientes de validación del usuario; publicar el PR no concede esa aprobación.
+La implementación verificada quedó en 7c7510a. La aprobación explícita del usuario el 2026-10-09 habilita el cierre del flujo; las operaciones remotas y la limpieza requieren comprobación de sus resultados reales.
