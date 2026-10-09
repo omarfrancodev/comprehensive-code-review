@@ -591,7 +591,7 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') == 6 and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
     if record_checkpoint:
         if manifest['state'] == 'complete':
@@ -742,7 +742,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') == 6 and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]

@@ -31,7 +31,10 @@ ORIGINS = {'introduced': 'introducido', 'preexisting': 'preexistente', 'unknown'
 CHECK_STATUS = {'passed': 'aprobada', 'failed': 'falló', 'blocked': 'bloqueada', 'not_run': 'no ejecutada'}
 FAILURE_KINDS = {'product': 'producto', 'fixture': 'fixture', 'environment': 'entorno'}
 PROFILES = {'economy': 'económico', 'balanced': 'equilibrado',
+            'focused': 'focused (enfocado)', 'standard': 'standard (estándar)',
             'deep': 'profundo', 'extended': 'extendido'}
+CURRENT_PROFILES = {'focused', 'standard', 'deep', 'extended'}
+PROFILE_ALIASES = {'economy': 'focused', 'balanced': 'standard'}
 MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de commits',
                'staged': 'cambios preparados', 'unstaged': 'cambios sin preparar',
                'working': 'cambios locales', 'module': 'módulo',
@@ -45,6 +48,16 @@ AREA_STATUS = {'covered': 'Cubierta', 'partial': 'Parcial',
                'not_evaluated': 'No evaluada', 'not_applicable': 'No aplica'}
 REVIEW_KINDS = {'review': 'Code Review', 'rereview': 'Re-review',
                 'complement': 'Complement Code Review'}
+
+
+def normalize_profile(value):
+    """Resolve request aliases only; never rewrite a retained historical record."""
+    if not isinstance(value, str):
+        raise ValueError('expected a supported profile name')
+    normalized = PROFILE_ALIASES.get(value, value)
+    if normalized not in CURRENT_PROFILES:
+        raise ValueError('expected focused, standard, deep or extended (economy/balanced aliases accepted)')
+    return normalized
 
 
 def canonical_id(identifier, prefix):
@@ -116,14 +129,14 @@ def validate(record):
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
-    if schema_version in (3, 4, 5, 6):
+    if schema_version in (3, 4, 5, 6, 7):
         final_fields.add('change_authors')
-    if schema_version in (4, 5, 6):
+    if schema_version in (4, 5, 6, 7):
         final_fields.add('presentation')
-    if schema_version == 6:
+    if schema_version in (6, 7):
         final_fields |= {'review_id', 'previous_reviews', 'grandfathered_ids'}
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -139,7 +152,7 @@ def validate(record):
 
     prior_reviews = []
     historical = {'findings': [], 'checks': []}
-    if schema_version == 6 and stage == 'final':
+    if schema_version in (6, 7) and stage == 'final':
         if not review_id(record.get('review_id')):
             error('review_id', 'expected CR- followed by 20 lowercase hexadecimal run identity characters')
         for i, raw in enumerate(array(record.get('previous_reviews'), 'previous_reviews')):
@@ -172,13 +185,13 @@ def validate(record):
     for i, raw in enumerate(array(record.get('checks'), 'checks')):
         path = f'checks[{i}]'
         check_names = {'id', 'command', 'revision', 'status', 'failure_kind', 'evidence', 'reused', 'reuse_reason', 'rerun_reason'}
-        if schema_version == 6:
+        if schema_version in (6, 7):
             check_names.add('reference')
         check = fields(raw, check_names, path)
         for key in ('id', 'command', 'revision'):
             text(check.get(key), f'{path}.{key}')
         identifier = check.get('id')
-        if schema_version == 6:
+        if schema_version in (6, 7):
             if not canonical_id(identifier, 'C') and identifier not in historical['checks']:
                 error(path + '.id', 'expected canonical check ID C001 (at least three digits, nonzero)')
             text(check.get('reference'), path + '.reference', nullable=check.get('reused') is not True)
@@ -215,7 +228,7 @@ def validate(record):
         for key in ('id', 'title', 'scenario', 'impact', 'correction'):
             text(item.get(key), f'{path}.{key}')
         identifier = item.get('id')
-        if schema_version == 6 and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
+        if schema_version in (6, 7) and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
             error(path + '.id', 'expected canonical finding ID F001 (at least three digits, nonzero)')
         if isinstance(identifier, str):
             if identifier in finding_ids:
@@ -272,7 +285,7 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version in (2, 3, 4, 5, 6):
+        if schema_version in (2, 3, 4, 5, 6, 7):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -287,7 +300,7 @@ def validate(record):
         return errors
 
     material_area_gap = False
-    if schema_version in (2, 3, 4, 5, 6):
+    if schema_version in (2, 3, 4, 5, 6, 7):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -321,7 +334,9 @@ def validate(record):
         if area_ids != set(AREAS):
             error('coverage.areas', 'exactly one row for each area A through E is required')
 
-    profile_choices = set(PROFILES) if schema_version in (5, 6) else {'economy', 'balanced', 'deep'}
+    profile_choices = (CURRENT_PROFILES if schema_version == 7 else
+                       {'economy', 'balanced', 'deep', 'extended'} if schema_version in (5, 6) else
+                       {'economy', 'balanced', 'deep'})
     enum(record.get('profile'), profile_choices, 'profile')
     text(record.get('profile_reason'), 'profile_reason')
     boolean(coverage.get('adequate'), 'coverage.adequate')
@@ -330,9 +345,9 @@ def validate(record):
     if record.get('profile') in ('deep', 'extended') and coverage.get('verification') == 'skipped':
         error('coverage.verification', 'deep/extended invariants cannot be skipped')
     substantive = any(isinstance(f, dict) and f.get('type') == 'code' and f.get('status') == 'confirmed' for f in findings)
-    if (record.get('profile') == 'balanced' and coverage.get('verification') == 'skipped'
+    if (record.get('profile') in ('balanced', 'standard') and coverage.get('verification') == 'skipped'
             and (substantive or material_area_gap or any(l.get('material') is True for l in limitations))):
-        error('coverage.verification', 'balanced code findings/material questions require verification or disclosed unavailability')
+        error('coverage.verification', f"{record.get('profile')} code findings/material questions require verification or disclosed unavailability")
     def identity(raw, path, author=False):
         names = {'name', 'username', 'verified', 'source'} | ({'commits'} if author else set())
         person = fields(raw, names, path)
@@ -359,13 +374,13 @@ def validate(record):
         return person
 
     identity(record.get('responsible'), 'responsible')
-    if schema_version in (4, 5, 6):
+    if schema_version in (4, 5, 6, 7):
         presentation = fields(record.get('presentation'), {'kind', 'subject'}, 'presentation')
         enum(presentation.get('kind'), REVIEW_KINDS, 'presentation.kind')
         text(presentation.get('subject'), 'presentation.subject')
         if isinstance(presentation.get('subject'), str) and any(c in presentation['subject'] for c in '\r\n'):
             error('presentation.subject', 'expected a single-line functional subject')
-    if schema_version in (3, 4, 5, 6):
+    if schema_version in (3, 4, 5, 6, 7):
         seen_authors = set()
         for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
             identity(author, f'change_authors[{i}]', author=True)
@@ -402,15 +417,15 @@ def validate(record):
     for i, raw in enumerate(array(record.get('rereview'), 'rereview')):
         path = f'rereview[{i}]'
         names = {'id', 'status', 'details'}
-        if schema_version == 6:
+        if schema_version in (6, 7):
             names |= {'previous_review_id', 'previous_reference', 'previous_finding_id', 'previous_title', 'previous_url', 'check_ids'}
         item = fields(raw, names, path)
         text(item.get('id'), f'rereview[{i}].id')
         if isinstance(item.get('id'), str):
             previous_ids.add(item['id'])
-        enum(item.get('status'), set(REREVIEW_STATUS) if schema_version == 6 else {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
+        enum(item.get('status'), set(REREVIEW_STATUS) if schema_version in (6, 7) else {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
         text(item.get('details'), f'rereview[{i}].details')
-        if schema_version == 6:
+        if schema_version in (6, 7):
             identifier = item.get('id')
             if not canonical_id(identifier, 'F') and identifier not in historical['findings']:
                 error(path + '.id', 'expected canonical finding ID or disclosed historical ID')
@@ -447,14 +462,14 @@ def validate(record):
                     seen.add(identifier)
     historical_aliases = set()
     aliases = record.get('aliases')
-    if schema_version == 6 and isinstance(aliases, dict):
+    if schema_version in (6, 7) and isinstance(aliases, dict):
         for alias, survivor in aliases.items():
             if (isinstance(alias, str) and isinstance(survivor, str)
                     and alias in historical['findings'] and survivor in historical_sources
                     and survivor in finding_ids | previous_ids and survivor not in aliases
                     and alias not in finding_ids | previous_ids):
                 historical_aliases.add(alias)
-    if schema_version == 6:
+    if schema_version in (6, 7):
         for identifier in historical['findings']:
             if (not isinstance(identifier, str) or (identifier not in historical_aliases
                     and (identifier not in historical_sources or identifier not in finding_ids | previous_ids))):
@@ -468,7 +483,7 @@ def validate(record):
         for alias, survivor in aliases.items():
             text(alias, 'aliases key')
             text(survivor, f'aliases.{alias}')
-            if schema_version == 6 and not canonical_id(alias, 'F') and alias not in historical_aliases:
+            if schema_version in (6, 7) and not canonical_id(alias, 'F') and alias not in historical_aliases:
                 error(f'aliases.{alias}', 'expected canonical alias ID or explicitly declared historical alias with verified survivor provenance')
             if (not isinstance(survivor, str) or survivor not in finding_ids | previous_ids
                     or survivor in aliases or alias in finding_ids | previous_ids):
@@ -514,8 +529,8 @@ def canonicalize_ids(record, reserved_ids=None):
     Return a fresh record and source maps; caller must retain these maps as evidence.
     Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
     """
-    if not isinstance(record, dict) or record.get('schema_version') != 6:
-        raise ValueError('canonical ID allocation requires schema 6')
+    if not isinstance(record, dict) or record.get('schema_version') not in (6, 7):
+        raise ValueError('canonical ID allocation requires schema 6 or 7')
     errors = [error for error in validate(record) if 'expected canonical' not in error]
     if errors:
         raise ValueError('; '.join(errors))
@@ -674,7 +689,7 @@ def render(record, audience='user'):
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] in (3, 4, 5, 6):
+    if record['schema_version'] in (3, 4, 5, 6, 7):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
