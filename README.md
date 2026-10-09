@@ -31,7 +31,7 @@ Consulta las [opciones del instalador](https://github.com/vercel-labs/skills#opt
 
 ## Descarga directa de una versión
 
-Descarga `comprehensive-code-review-v2.6.0.zip` desde [la release 2.6.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.6.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+Descarga `comprehensive-code-review-v2.7.0.zip` desde [la release 2.7.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.7.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills de tu agente sin usar Git ni Node.js. Para Codex, una ubicación de instalación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 
@@ -182,4 +182,4 @@ python -B -m unittest discover -s tests -v
 
 Las pruebas cubren contratos, CLI, matriz ABCDE, compatibilidad, escenarios ejecutables y limpieza de workspaces en un repositorio temporal. Git es necesario para la prueba de integración; sin él se informa una omisión. Para evaluar precisión y coste del modelo, usa el protocolo de [evaluation.md](references/evaluation.md); las pruebas mecánicas no son un benchmark de tokens ni una garantía de integridad del producto.
 
-La guía operativa comienza en [SKILL.md](SKILL.md). Los cambios de 2.7.0 se preparan en una rama y se publicarán después de validar y fusionar su PR; la descarga enlazada arriba corresponde a la última release publicada, 2.6.0. Conserva perfiles y asignaciones ABCDE, worktrees del proyecto, mediciones optativas, independencia y paquetes internos compactos. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.
+La guía operativa comienza en [SKILL.md](SKILL.md). La versión 2.7.0 incorpora IDs estables, seguimiento entre revisiones, validación enriquecida, trazabilidad persistente y transferencia opcional de hallazgos. Conserva perfiles y asignaciones ABCDE, worktrees del proyecto, mediciones optativas, independencia y paquetes internos compactos. No incorpora caché de proyectos ni modifica el esfuerzo del modelo. El runner captura uso normalizado cuando el adaptador lo suministra; en Codex/Kiro los contadores dependen del entorno. No se ha medido un porcentaje de ahorro.

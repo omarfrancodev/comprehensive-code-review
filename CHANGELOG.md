@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.7.0 — Pendiente de publicación
+## 2.7.0 — 2026-10-09
 
 - Añadir ID público de revisión y formatos estables de hallazgos/checks, conservando referencias y excepciones históricas explícitas en el seguimiento.
 - Mostrar siempre Hallazgos y conteos confirmados P0–P3; conservar prioridad/icono/ID en H3 y título en H4. Presentar la evidencia de checks ya recopilada sin duplicar los detalles del defecto.
