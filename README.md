@@ -70,7 +70,7 @@ El archivo interno se conserva en cada revisión. Solo una petición explícita 
 
 Ambas incluyen `.ccr-delivery.json` para vincular el origen y comprobar la integridad de los archivos. `contexto.md` es opcional y aporta únicamente contexto adicional relevante ya recopilado.
 
-El destino predeterminado es `<checkout-persistente>/docs/ccr/reviews/<alcance>/<review-id>/`, fuera del worktree temporal que ejecuta los checks. `--output <raíz>` cambia la raíz de una entrega solicitada; por sí solo no autoriza entregar ni redirige el archivo interno. Las entregas no copian evidence, logs ni reproducciones. Consulta [entregas y contexto](docs/usage.md#entrega-portable) y su [contrato operativo](references/delivery.md).
+El destino predeterminado es `<checkout-persistente>/docs/ccr/reviews/<alcance>/<review-id>/`, fuera del worktree temporal que ejecuta los checks. `--output <raíz>` cambia la raíz de una entrega solicitada; por sí solo no autoriza entregar ni redirige el archivo interno. Las entregas no copian evidence, logs ni reproducciones. Consulta [entregas y contexto](docs/usage.md#entrega-portable) y su [contrato operativo](references/reporting/delivery.md).
 
 ## Archivo interno
 

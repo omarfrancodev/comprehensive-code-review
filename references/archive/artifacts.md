@@ -26,7 +26,7 @@ Once prepared, create descriptions, captures, identity hashes, discussions, cont
 | review.json | Complete version-bound final record |
 | cierre.json | Run/skill version, scope, repository/root, harness, previous run, executor isolation/inputs/dependencies, registered temporary paths, hashes and observed closure |
 | trazabilidad.jsonl | Compact observed lifecycle events and evidence references; mandatory for new runs |
-| handoff.md | Historical optional transfer index, preserved without migration under [handoff.md](handoff.md) |
+| handoff.md | Historical optional transfer index, preserved without migration under [handoff.md](../reporting/handoff.md) |
 
 Initialize cierre.json after pinning scope, before execution; register resources before use. A run without a final verdict keeps closure/trace, distinguishing interruption from completion. The default completed archive has informe.md, review.json, cierre.json and trazabilidad.jsonl plus ownership marker and selected evidence. Handoff and measurements are absent by default. New explicitly selected full/brief deliveries follow delivery.md separately from this archive; an explicit legacy handoff request uses handoff.md. Only a requested cost evaluation uses measurements.md. Preserve old archives and hashes; no migration or deletion.
 
