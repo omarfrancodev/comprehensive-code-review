@@ -2,6 +2,11 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.9.1 — 2026-10-09
+
+- Incluir el círculo de cada prioridad en los conteos de Hallazgos del reporte, comentario público y entregas completas/breves, también para conteos cero.
+- Unificar el renderizado de conteos confirmados y cubrir la regresión con pruebas de reportes y entregas; conservar contratos y archivos históricos sin migración.
+
 ## 2.9.0 — 2026-10-09
 
 - Agrupar las 20 referencias en workflow, execution, contracts, archive, reporting y maintenance; actualizar enlaces y conservar lectura selectiva por fase/rol.

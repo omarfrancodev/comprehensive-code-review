@@ -77,6 +77,8 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(projected['findings'][0][field], item[field])
         self.assertEqual(projected['checks'][0]['status'], 'passed')
         content = '\n'.join(p.read_text(encoding='utf-8') for p in target.iterdir())
+        self.assertIn('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 1 · 🔵 P3: 0',
+                      (target / 'informe.md').read_text(encoding='utf-8'))
         for private in ('SECRET', 'C:\\private', '/srv/private', 'evidence/result.log', str(run)):
             self.assertNotIn(private, content)
         self.assertIn('https://example.test/pr/12/files#L12', content)
@@ -215,8 +217,9 @@ class DeliveryTests(unittest.TestCase):
             run = self.retained(value)
             target = Path(delivery.deliver(run, 'brief', self.repo))
             text = (target / 'resumen.md').read_text(encoding='utf-8')
-            for priority in ('P0', 'P1', 'P2', 'P3'):
-                self.assertIn(priority + ': ' + ('1' if priority == 'P2' and populated else '0'), text)
+            expected = ('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 1 · 🔵 P3: 0'
+                        if populated else '**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0')
+            self.assertIn(expected, text)
 
     def test_output_under_source_or_registered_temporary_is_refused(self):
         temporary = self.root / 'temporary'

@@ -191,8 +191,7 @@ def _brief(record):
         lines.append('- **Revisiones previas:** ' + contract.previous_reviews_text(record, 'user'))
     lines.extend(['', '### Hallazgos', ''])
     confirmed = sorted((item for item in record['findings'] if item['status'] == 'confirmed'), key=lambda item: (item['priority'], item['id']))
-    lines.extend(['**Confirmados:** ' + ' · '.join(priority + ': ' + str(sum(item['priority'] == priority for item in confirmed))
-                                                for priority in contract.PRIORITIES), ''])
+    lines.extend(['**Confirmados:** ' + contract.confirmed_counts_text(record['findings']), ''])
     for item in confirmed:
         location = item['location']
         label = (str(location['path']) + ':' + str(location['line'])) if item['type'] == 'code' else location['section']
