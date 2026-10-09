@@ -41,7 +41,7 @@ class TraceTests(unittest.TestCase):
         self.assertEqual([event['kind'] for event in events], ['prepare', 'register', 'retain', 'validation', 'close'])
         self.assertEqual([event['sequence'] for event in events], list(range(1, 6)))
         self.assertTrue(all(datetime.fromisoformat(event['recorded_at']).utcoffset().total_seconds() == 0 for event in events))
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 4)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
         before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
         artifacts.validate(run, require_retained=True)
         self.close(run)
@@ -62,6 +62,103 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(event['evidence'], ['C01'])
         self.assertEqual(event['relations'], [{'relation': 'verifies', 'target': 'F01'}])
         self.assertEqual(event['review_id'], 'CR-' + self.read(run / 'cierre.json')['run_id'])
+
+    def legacy_run(self, version):
+        """Build a historical fixture, including matching ownership/inventory."""
+        run = self.prepare()
+        manifest = self.read(run / 'cierre.json')
+        marker = self.read(run / artifacts.MARKER)
+        manifest['schema_version'] = version
+        if version < 4:
+            manifest.pop('trace')
+            manifest['hashes'].pop('trazabilidad.jsonl')
+            (run / 'trazabilidad.jsonl').unlink()
+        artifacts._save_manifest(run, manifest, marker)
+        return run
+
+    def test_processing_starts_on_observed_work_only(self):
+        run = self.prepare()
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        for kind, status in [('profile', 'selected'), ('agent', 'pending')]:
+            artifacts.record_event(run, self.write('planned.json', dict(kind=kind, status=status, summary='Planning only')))
+            self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        artifacts.validate(run, record_checkpoint=True)
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Discovery began')))
+        self.assertEqual(artifacts.validate(run)['state'], 'processing')
+        artifacts.register(run, [])
+        self.retain(run)
+        artifacts.validate(run, require_retained=True, record_checkpoint=True)
+        self.assertEqual(artifacts.validate(run)['state'], 'closing')
+        artifacts.record_event(run, self.write('late.json', self.event()))
+        self.assertEqual(artifacts.validate(run)['state'], 'closing')
+        self.close(run)
+        self.assertEqual(artifacts.validate(run, require_retained=True)['state'], 'complete')
+
+    def test_work_start_predicate_uses_observed_kinds_and_statuses(self):
+        for kind in ('agent', 'discovery', 'check', 'grouped-verification'):
+            for status in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped'):
+                self.assertTrue(artifacts._starts_processing({'kind': kind, 'status': status}))
+            for status in ('pending', 'selected', 'authorized', 'unchanged', 'retained'):
+                self.assertFalse(artifacts._starts_processing({'kind': kind, 'status': status}))
+        self.assertFalse(artifacts._starts_processing({'kind': 'validation', 'status': 'passed'}))
+
+    def test_legacy_states_and_complete_bytes_are_preserved(self):
+        for version in (1, 2, 3, 4):
+            run = self.legacy_run(version)
+            before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
+            self.assertEqual(artifacts.validate(run)['schema_version'], version)
+            self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
+            if version == 4:
+                artifacts.record_event(run, self.write('legacy.json', self.event()))
+                self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+                manifest = self.read(run / 'cierre.json')
+                marker = self.read(run / artifacts.MARKER)
+                manifest['state'] = 'processing'
+                artifacts._save_manifest(run, manifest, marker)
+                with self.assertRaisesRegex(ValueError, 'state'):
+                    artifacts.validate(run)
+            else:
+                with self.assertRaisesRegex(ValueError, 'legacy'):
+                    artifacts.record_event(run, self.write('legacy.json', self.event()))
+        # The existing completed-run test checks byte-for-byte idempotency.
+
+    def test_processing_recovery_preserves_pending_event(self):
+        for failed_file in ('trazabilidad.jsonl', artifacts.MARKER):
+            run = self.prepare()
+            original = artifacts.atomic_write
+            writes = 0
+            def interrupt(path, data):
+                nonlocal writes
+                if Path(path).name == failed_file:
+                    writes += 1
+                    if failed_file == 'trazabilidad.jsonl' or writes == 2:
+                        raise OSError('interrupted processing transition')
+                original(path, data)
+            with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+                artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+            pending = self.read(run / 'cierre.json')['pending_trace']['events'][0]
+            with self.assertRaisesRegex(ValueError, 'pending'):
+                artifacts.validate(run)
+            artifacts.register(run, [])
+            self.assertEqual(artifacts.validate(run)['state'], 'processing')
+            self.assertEqual(self.events(run)[1], pending)
+
+    def test_manifest_replace_interruption_leaves_preparation_recoverable(self):
+        run = self.prepare()
+        original = artifacts.atomic_write
+        def interrupt(path, data):
+            if Path(path).name == 'cierre.json':
+                raise OSError('manifest replace interrupted')
+            original(path, data)
+        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+        with self.assertRaisesRegex(ValueError, 'pending'):
+            artifacts.validate(run)
+        artifacts.register(run, [])
+        self.assertEqual(artifacts.validate(run)['state'], 'prepared')
+        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'register'])
 
     def test_tool_execution_time_is_preserved_separately_from_recording_time(self):
         run = self.prepare()

@@ -29,6 +29,8 @@ FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
 TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
+ARCHIVE_SCHEMA_VERSION = 5
+TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5})
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
@@ -303,12 +305,15 @@ def _load_run(run_dir):
     if not _contains(root, run) or run == root:
         raise ValueError('run escaped its registered archive root')
     _scope(manifest.get('scope'))
-    if manifest.get('state') not in {'prepared', 'retaining', 'closing', 'complete'}:
+    if manifest.get('schema_version') not in (1, 2, 3, 4, ARCHIVE_SCHEMA_VERSION):
+        raise ValueError('unsupported archive schema')
+    states = {'prepared', 'retaining', 'closing', 'complete'}
+    if manifest['schema_version'] == 5:
+        states.add('processing')
+    if manifest.get('state') not in states:
         raise ValueError('invalid archive state')
     if manifest.get('cleanup') not in {'pending', 'complete', 'not_needed'}:
         raise ValueError('invalid closure state')
-    if manifest.get('schema_version') not in (1, 2, 3, 4):
-        raise ValueError('unsupported archive schema')
     _validate_layout(run, manifest)
     return run, manifest, marker
 
@@ -321,13 +326,13 @@ def _verify_files(run, manifest, required=False):
         raise ValueError('invalid retained file manifest')
     planned = manifest.get('planned_hashes', {}) if manifest['state'] == 'retaining' else {}
     required_files = set(FILES) | (set(OPTIONAL_FILES) if manifest['schema_version'] == 1 else set())
-    if manifest['schema_version'] == 4 and review_trace.NAME not in hashes:
+    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and review_trace.NAME not in hashes:
         raise ValueError('mandatory archive trace is missing from closure')
     if required and (not required_files.issubset(hashes) or manifest['state'] == 'retaining'):
         raise ValueError('retained evidence is absent or interrupted')
     if not isinstance(planned, dict) or any(not _retained_name(name) for name in planned):
         raise ValueError('invalid planned evidence paths')
-    for name in set(FILES) | set(OPTIONAL_FILES) | (set(TRACE_FILES) if manifest['schema_version'] == 4 else set()) | set(hashes) | set(planned):
+    for name in set(FILES) | set(OPTIONAL_FILES) | (set(TRACE_FILES) if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS else set()) | set(hashes) | set(planned):
         path = safe_path(run / name)
         try:
             data = path.read_bytes()
@@ -337,7 +342,7 @@ def _verify_files(run, manifest, required=False):
             continue
         if _digest(data) not in {hashes.get(name), planned.get(name)}:
             raise ValueError('refusing to clobber modified archived file: ' + name)
-    if manifest['schema_version'] == 4:
+    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS:
         review_trace.verify(safe_path(run / review_trace.NAME).read_bytes(), manifest.get('trace'), manifest['run_id'])
 
 
@@ -346,7 +351,7 @@ def _recover_trace(run, manifest, marker):
     pending = manifest.get('pending_trace')
     if pending is None:
         return marker
-    if manifest['schema_version'] != 4 or not isinstance(pending, dict):
+    if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS or not isinstance(pending, dict):
         raise ValueError('invalid pending trace transition')
     path = safe_path(run / review_trace.NAME)
     try:
@@ -381,7 +386,7 @@ def _append_trace(run, manifest, marker, event, *, helper=True):
 
 def _append_trace_events(run, manifest, marker, events, *, helper=True):
     """Bind one mutation and its bounded milestones in one owned transition."""
-    if manifest['schema_version'] != 4:
+    if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS:
         return _save_manifest(run, manifest, marker)
     path = safe_path(run / review_trace.NAME)
     old_digest = manifest['hashes'].get(review_trace.NAME)
@@ -405,11 +410,16 @@ def _milestone(kind, summary, *, status='completed', evidence=None):
     return {'kind': kind, 'status': status, 'summary': summary, 'evidence': evidence or []}
 
 
+def _starts_processing(event):
+    return (event['kind'] in {'agent', 'discovery', 'check', 'grouped-verification'}
+            and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
+
+
 def record_event(run_dir, event_file):
     """Coordinator-only durable writer for a bounded, structured worker milestone."""
     event = review_trace.event_input(read_json(event_file))
     run, manifest, marker = _load_run(run_dir)
-    if manifest['schema_version'] != 4:
+    if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS:
         raise ValueError('legacy archives cannot acquire synthetic traces; prepare a new run')
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
@@ -417,6 +427,8 @@ def record_event(run_dir, event_file):
         raise ValueError('completed review history is immutable')
     if manifest['state'] == 'retaining':
         raise ValueError('retention is interrupted; finish retention before recording milestones')
+    if manifest['schema_version'] == 5 and manifest['state'] == 'prepared' and _starts_processing(event):
+        manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
     return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
             'sequence': manifest['trace']['events']}
@@ -533,7 +545,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
-    manifest = {'schema_version': 4, 'skill_version': skill_version, 'harness': harness,
+    manifest = {'schema_version': ARCHIVE_SCHEMA_VERSION, 'skill_version': skill_version, 'harness': harness,
                 'scope': scope, 'archive_root': str(root), 'repository_path': str(repo),
                 'repository_key': repository_key, 'repository_identity': identity, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -567,7 +579,7 @@ def register(run_dir, temporary_paths):
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
-    if manifest['state'] != 'prepared':
+    if manifest['state'] not in {'prepared', 'processing'}:
         raise ValueError('register temporary resources before retention')
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
@@ -579,7 +591,7 @@ def register(run_dir, temporary_paths):
 def validate(run_dir, require_retained=False, record_checkpoint=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
     run, manifest, marker = _load_run(run_dir)
-    if manifest['schema_version'] == 4 and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
+    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
     _verify_files(run, manifest, required=require_retained)
     if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
@@ -596,7 +608,7 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')
-        if manifest['schema_version'] != 4:
+        if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS:
             raise ValueError('legacy archives cannot acquire synthetic trace checkpoints')
         _append_trace(run, manifest, marker, _milestone('validation',
                       'Retained evidence gate passed' if require_retained else 'Archive ownership and integrity gate passed', status='passed'))
