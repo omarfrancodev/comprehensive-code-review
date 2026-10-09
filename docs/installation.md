@@ -29,7 +29,7 @@ Los argumentos de estos comandos pertenecen al instalador. Las convenciones `--p
 
 ## Descarga de una versión
 
-Descarga `comprehensive-code-review-v2.8.0.zip` desde [la release 2.8.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.8.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases). El [CHANGELOG](../CHANGELOG.md) puede describir trabajo pendiente de publicación; comprueba la release antes de elegir un ZIP.
+Descarga `comprehensive-code-review-v2.9.0.zip` desde [la release 2.9.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.9.0), o consulta [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases). El [CHANGELOG](../CHANGELOG.md) puede describir trabajo pendiente de publicación; comprueba la release antes de elegir un ZIP.
 
 El ZIP contiene la carpeta `comprehensive-code-review/`, con `SKILL.md`, referencias, scripts, documentación y pruebas. Puedes extraerla en el directorio de skills del agente sin usar Git ni Node.js. Para Codex, una ubicación a nivel de usuario es `~/.codex/skills/comprehensive-code-review/`; para Claude Code, `~/.claude/skills/comprehensive-code-review/`. Sigue las reglas de carga de tu agente y comprueba que la carpeta final contiene directamente `SKILL.md`.
 

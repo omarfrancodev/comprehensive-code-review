@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.9.0 — Unreleased
+## 2.9.0 — 2026-10-09
 
 - Agrupar las 20 referencias en workflow, execution, contracts, archive, reporting y maintenance; actualizar enlaces y conservar lectura selectiva por fase/rol.
 - Archivo schema 5 con processing desde el primer hito de trabajo observado, unido a la transacción de trazabilidad y su recuperación; schemas 1–4 conservan compatibilidad sin migración.
