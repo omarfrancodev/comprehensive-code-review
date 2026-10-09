@@ -40,8 +40,7 @@ class TraceabilityContractTests(unittest.TestCase):
         for audience in ('user', 'comment'):
             output = contract.render(record, audience)
             self.assertIn('### Hallazgos', output)
-            for priority in ('P0', 'P1', 'P2', 'P3'):
-                self.assertIn(priority + ': 0', output)
+            self.assertIn('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0', output)
             self.assertIn('Consumer returned expected id', output)
             self.assertIn(record['review_id'], output)
             self.assertIn('<a id="C001"></a>', output)

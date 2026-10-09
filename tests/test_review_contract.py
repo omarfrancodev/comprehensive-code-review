@@ -270,7 +270,7 @@ class RenderingTests(unittest.TestCase):
     def test_clean_comment_keeps_empty_findings_counts_and_omits_internal_mechanics(self):
         result = contract.render(clean_record(), audience='comment')
         self.assertIn('### Hallazgos', result)
-        self.assertIn('P0: 0 · P1: 0 · P2: 0 · P3: 0', result)
+        self.assertIn('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0', result)
         self.assertNotIn('balanced', result)
         self.assertNotIn('Limpieza', result)
 

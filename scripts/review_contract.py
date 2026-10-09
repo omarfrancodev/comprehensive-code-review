@@ -664,6 +664,14 @@ def public_projection(text, record):
     return text
 
 
+def confirmed_counts_text(findings):
+    """Format the shared priority/icon summary, counting confirmed findings only."""
+    return ' · '.join(
+        f"{label.split()[0]} {priority}: "
+        f"{sum(item['status'] == 'confirmed' and item['priority'] == priority for item in findings)}"
+        for priority, label in PRIORITIES.items())
+
+
 def render(record, audience='user'):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -705,7 +713,7 @@ def render(record, audience='user'):
         lines.append('- **Descripción:** No aplica; revisión local.')
     confirmed = sorted((f for f in record['findings'] if f['status'] == 'confirmed'),
                        key=lambda f: (f['priority'], f['id']))
-    counts = ' · '.join(f"{priority}: {sum(item['priority'] == priority for item in confirmed)}" for priority in PRIORITIES)
+    counts = confirmed_counts_text(record['findings'])
     lines.extend(['', '### Hallazgos', '', '**Confirmados:** ' + counts])
     if confirmed:
         for ordinal, item in enumerate(confirmed, 1):

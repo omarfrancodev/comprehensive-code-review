@@ -6,7 +6,7 @@ Use one canonical final record from result-contract.md. Report in the user's lan
 
 After the title, verdict first; one result per project/scope; one finding per cause. Use exact base/head/snapshot and verified links. Code needs a real version-specific file/line; description issues use the MR/PR section plus change evidence. Never link removed temporary workspaces.
 
-Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-name/code/ID block, H4 for its finding title. Hallazgos always includes confirmed P0/P1/P2/P3 counts, including zero. Separate verdict reason from heading and use one metadata field per Markdown list item. Finding fields are list items too; plain consecutive newlines are soft breaks. Separate headings, paragraphs and lists with blank lines. Escape literal untrusted text. Translate user-facing values; internal enums remain in records. Manual rendering follows this contract.
+Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-name/code/ID block, H4 for its finding title. Hallazgos always includes confirmed P0/P1/P2/P3 counts with their respective colored circle, including zero; use the same summary in user reports, public comments and brief deliveries. Separate verdict reason from heading and use one metadata field per Markdown list item. Finding fields are list items too; plain consecutive newlines are soft breaks. Separate headings, paragraphs and lists with blank lines. Escape literal untrusted text. Translate user-facing values; internal enums remain in records. Manual rendering follows this contract.
 
 Confirmed findings appear as findings; unresolved claims/material limits appear as uncertainties. Rejected candidates stay internal unless withdrawing prior claims. Omit empty conditional sections, full logs, duplicate findings tables and speculative defects. Give observable corrections, not an unsolicited patch. Finding evidence is concise decisive static evidence or linked check IDs; Validación adds the existing meaningful check output/results, skipped checks, blockage and retained log references instead of copying scenario/impact paragraphs.
 
@@ -43,7 +43,7 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 
 ### Hallazgos
 
-**Confirmados:** [icon] P0: [count] · [icon] P1: [count] · [icon] P2: [count] · [icon] P3: [count]
+**Confirmados:** 🔴 P0: [count] · 🟠 P1: [count] · 🟡 P2: [count] · 🔵 P3: [count]
 
 ### [icon] [priority name] · [P0–P3] — [stable ID]
 
