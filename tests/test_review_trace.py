@@ -261,6 +261,48 @@ class TraceTests(unittest.TestCase):
             artifacts.record_event(run, self.write('new-time.json', event))
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
 
+    def test_new_local_event_targets_and_legacy_references(self):
+        run = self.prepare()
+        for target in ('E000000', 'E000002', 'E999999'):
+            event = dict(self.event(), relations=[{'relation': 'follows', 'target': target}])
+            before = (run / 'cierre.json').read_bytes()
+            with self.assertRaisesRegex(ValueError, 'target'):
+                artifacts.record_event(run, self.write('future.json', event))
+            self.assertEqual((run / 'cierre.json').read_bytes(), before)
+        for target in ('E000001', 'F001', 'C001', 'F-01', 'CR-' + 'b' * 20 + '#E999999', 'https://example.test/old#F-1'):
+            event = dict(self.event(), relations=[{'relation': 'supports', 'target': target}])
+            data = (run / 'trazabilidad.jsonl').read_bytes()
+            with patch.object(Path, 'read_bytes', side_effect=AssertionError('relation resolution must not read files')):
+                artifacts.review_trace.validate_local_event_targets(event, data)
+            artifacts.record_event(run, self.write('observed.json', event))
+            self.assertEqual(self.events(run)[-1]['relations'], event['relations'])
+        legacy = self.legacy_run(4)
+        artifacts.record_event(legacy, self.write('legacy-relation.json', dict(self.event(), relations=[{
+            'relation': 'follows', 'target': 'E999999'}])))
+        before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
+        artifacts.validate(legacy)
+        self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
+
+    def test_actor_executor_and_recorder_remain_distinct(self):
+        run = self.prepare()
+        event = dict(self.event(), relations=[])
+        event['actor'] = {'kind': 'agent', 'name': 'verifier', 'provider_id': 'worker-17'}
+        event['executor'] = {'name': 'isolated-verifier', 'provider_id': 'executor-17'}
+        artifacts.record_event(run, self.write('identity.json', event))
+        artifacts.record_event(run, self.write('unknown-identity.json', dict(self.event(), relations=[])))
+        first, second = self.events(run)[-2:]
+        self.assertEqual(first['actor'], event['actor'])
+        self.assertEqual(first['executor'], event['executor'])
+        self.assertEqual(first['recorder'], {'kind': 'helper', 'name': 'review_artifacts', 'provider_id': None})
+        self.assertIsNone(second['actor']['provider_id'])
+        self.assertIsNone(second['executor']['provider_id'])
+        self.assertEqual(first['relations'], [])
+        self.assertEqual(second['relations'], [])
+        for invalid in (dict(event, relations=[{'relation': 'supports', 'target': 'F001'}] * 25),
+                        dict(event, evidence=['x' * 400] * 24)):
+            with self.assertRaises(ValueError):
+                artifacts.record_event(run, self.write('unbounded.json', invalid))
+
     def test_trace_interruption_is_pending_and_next_mutation_recovers_evidence(self):
         run = self.prepare()
         event_file = self.write('event.json', self.event())

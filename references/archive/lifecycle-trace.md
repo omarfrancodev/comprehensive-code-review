@@ -13,3 +13,11 @@ For an already-used optional runner, `record-event --execution-metadata <existin
 Use concise summaries and selected durable evidence/hash references. Record interruption or capability limits honestly. Native fallback follows artifacts.md with the same verifiable structure; it reports limited observations rather than inventing helper execution, missing events or execution order. Pending helper recovery preserves observed facts. `validate` is read-only; optional `--record-checkpoint` records a requested checkpoint only on an open run.
 
 A closed run is immutable. Later transfer/correction/publication is a separate linked operation with its own evidence and authorization; preserve the original review/report/trace. Trace records never grant permission or prove finding correctness.
+
+## Participants and explicit links
+
+The coordinator takes actor/executor names and available provider IDs from existing dispatch/results, while recorder remains review_artifacts. Do not infer identity from a summary, fabricate provider IDs or turn recording order into execution order. The temporal metadata adapter does not substitute a model/role label for an observed identity. Missing executor or provider IDs stay null. Workers do not write the durable trace or acquire additional required packet fields.
+
+Relations are optional observed links, never edges inferred from adjacent events, matching text or ABCDE letters. Use same-run `E000001`, `F001`, `C001`; for a known other review, use `CR-<run_id>#F001`, `CR-<run_id>#C001` or `CR-<run_id>#E000001`. Preserve existing IDs and bounded legacy/external references without renaming them or manufacturing a CR identity. Existing types and limits (24 relations, 8 KiB event) apply.
+
+New schema 5 emission requires a local E plus six-digit target to exist in the previously verified trace. Self/future/missing local events fail before mutation. F/C targets may denote assigned candidates later discarded, so no final finding or extra registry is required. Cross-review links do not trigger automatic archive access. Historical structural validation remains unchanged; hashes and target existence do not prove a relation's semantic truth or require sequential execution.

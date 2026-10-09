@@ -116,6 +116,17 @@ def event_from_execution(raw: dict, metadata: dict, source: str) -> dict:
     return event_input(value)
 
 
+def validate_local_event_targets(event: dict, previous_data: bytes) -> None:
+    """Check observed same-run event IDs; other references never trigger IO."""
+    targets = {relation['target'] for relation in event.get('relations', [])
+               if re.fullmatch(r'E[0-9]{6}', relation['target'])}
+    if not targets:
+        return
+    existing = {json.loads(line)['event_id'] for line in previous_data.splitlines()}
+    if not targets.issubset(existing):
+        raise ValueError('local event relation target must already exist in this run')
+
+
 def append(data, manifest, raw, *, helper=False):
     value = event_input(raw, helper=helper)
     descriptor = manifest.get('trace', {'schema_version': SCHEMA_VERSION, 'events': 0, 'last_sha256': None})

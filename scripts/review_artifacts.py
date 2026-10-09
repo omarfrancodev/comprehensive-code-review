@@ -434,6 +434,8 @@ def record_event(run_dir, event_file, execution_metadata=None):
         raise ValueError('retention is interrupted; finish retention before recording milestones')
     if manifest['schema_version'] == 5 and event['occurred_at'] is not None and event['provenance']['source'] is None:
         raise ValueError('observed execution time requires an identifiable provenance source')
+    if manifest['schema_version'] == 5:
+        review_trace.validate_local_event_targets(event, (run / review_trace.NAME).read_bytes())
     if manifest['schema_version'] == 5 and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
