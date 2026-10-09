@@ -22,10 +22,12 @@ import uuid
 
 import review_contract
 import review_metrics
+import review_trace
 
 
 FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
+TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
@@ -211,7 +213,7 @@ def _validate_layout(run, manifest):
         raise ValueError('invalid archive layout: scope directory differs from pinned scope')
     if not re.fullmatch(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}', name):
         raise ValueError('invalid archive layout: timestamp and unique run ID are required')
-    if manifest['schema_version'] == 3:
+    if manifest['schema_version'] >= 3:
         if repository != _repository_group(manifest.get('repository_identity')):
             raise ValueError('invalid archive layout: repository identity differs from directory')
         run_id = manifest.get('run_id')
@@ -305,23 +307,27 @@ def _load_run(run_dir):
         raise ValueError('invalid archive state')
     if manifest.get('cleanup') not in {'pending', 'complete', 'not_needed'}:
         raise ValueError('invalid closure state')
-    if manifest.get('schema_version') not in (1, 2, 3):
+    if manifest.get('schema_version') not in (1, 2, 3, 4):
         raise ValueError('unsupported archive schema')
     _validate_layout(run, manifest)
     return run, manifest, marker
 
 
 def _verify_files(run, manifest, required=False):
+    if manifest.get('pending_trace') is not None:
+        raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
     hashes = manifest.get('hashes')
     if not isinstance(hashes, dict) or any(not _retained_name(name) for name in hashes):
         raise ValueError('invalid retained file manifest')
     planned = manifest.get('planned_hashes', {}) if manifest['state'] == 'retaining' else {}
     required_files = set(FILES) | (set(OPTIONAL_FILES) if manifest['schema_version'] == 1 else set())
+    if manifest['schema_version'] == 4 and review_trace.NAME not in hashes:
+        raise ValueError('mandatory archive trace is missing from closure')
     if required and (not required_files.issubset(hashes) or manifest['state'] == 'retaining'):
         raise ValueError('retained evidence is absent or interrupted')
     if not isinstance(planned, dict) or any(not _retained_name(name) for name in planned):
         raise ValueError('invalid planned evidence paths')
-    for name in set(FILES) | set(OPTIONAL_FILES) | set(hashes) | set(planned):
+    for name in set(FILES) | set(OPTIONAL_FILES) | (set(TRACE_FILES) if manifest['schema_version'] == 4 else set()) | set(hashes) | set(planned):
         path = safe_path(run / name)
         try:
             data = path.read_bytes()
@@ -331,6 +337,89 @@ def _verify_files(run, manifest, required=False):
             continue
         if _digest(data) not in {hashes.get(name), planned.get(name)}:
             raise ValueError('refusing to clobber modified archived file: ' + name)
+    if manifest['schema_version'] == 4:
+        review_trace.verify(safe_path(run / review_trace.NAME).read_bytes(), manifest.get('trace'), manifest['run_id'])
+
+
+def _recover_trace(run, manifest, marker):
+    """Finish only an owned, hash-bound pending append; never adopt unknown bytes."""
+    pending = manifest.get('pending_trace')
+    if pending is None:
+        return marker
+    if manifest['schema_version'] != 4 or not isinstance(pending, dict):
+        raise ValueError('invalid pending trace transition')
+    path = safe_path(run / review_trace.NAME)
+    try:
+        current = path.read_bytes()
+    except FileNotFoundError:
+        if pending['previous_sha256'] is not None:
+            raise ValueError('pending trace history is missing')
+        current = b''
+    if _digest(current) == pending['sha256']:
+        planned = current
+    elif (pending['previous_sha256'] is None and not current) or _digest(current) == pending['previous_sha256']:
+        events = pending['events']
+        if not isinstance(events, list) or not events or len(events) > 2:
+            raise ValueError('invalid pending trace milestone group')
+        planned = current + b''.join(review_trace.encoded(event) + b'\n' for event in events)
+    else:
+        raise ValueError('modified trace cannot be recovered')
+    if _digest(planned) != pending['sha256']:
+        raise ValueError('pending trace intent integrity mismatch')
+    review_trace.verify(planned, pending['trace'], manifest['run_id'])
+    if current != planned:
+        atomic_write(path, planned)
+    manifest['trace'] = pending['trace']
+    manifest['hashes'][review_trace.NAME] = pending['sha256']
+    manifest.pop('pending_trace')
+    return _save_manifest(run, manifest, marker)
+
+
+def _append_trace(run, manifest, marker, event, *, helper=True):
+    return _append_trace_events(run, manifest, marker, [event], helper=helper)
+
+
+def _append_trace_events(run, manifest, marker, events, *, helper=True):
+    """Bind one mutation and its bounded milestones in one owned transition."""
+    if manifest['schema_version'] != 4:
+        return _save_manifest(run, manifest, marker)
+    path = safe_path(run / review_trace.NAME)
+    old_digest = manifest['hashes'].get(review_trace.NAME)
+    current = path.read_bytes() if old_digest is not None else b''
+    if old_digest is not None and _digest(current) != old_digest:
+        raise ValueError('modified trace cannot be appended')
+    data = current
+    values = []
+    context = dict(manifest)
+    for event in events:
+        data, descriptor, value = review_trace.append(data, context, event, helper=helper)
+        context['trace'] = descriptor
+        values.append(value)
+    manifest['pending_trace'] = {'previous_sha256': old_digest, 'sha256': _digest(data),
+                                 'trace': descriptor, 'events': values}
+    marker = _save_manifest(run, manifest, marker)
+    return _recover_trace(run, manifest, marker)
+
+
+def _milestone(kind, summary, *, status='completed', evidence=None):
+    return {'kind': kind, 'status': status, 'summary': summary, 'evidence': evidence or []}
+
+
+def record_event(run_dir, event_file):
+    """Coordinator-only durable writer for a bounded, structured worker milestone."""
+    event = review_trace.event_input(read_json(event_file))
+    run, manifest, marker = _load_run(run_dir)
+    if manifest['schema_version'] != 4:
+        raise ValueError('legacy archives cannot acquire synthetic traces; prepare a new run')
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest['state'] == 'complete':
+        raise ValueError('completed review history is immutable')
+    if manifest['state'] == 'retaining':
+        raise ValueError('retention is interrupted; finish retention before recording milestones')
+    _append_trace(run, manifest, marker, event, helper=False)
+    return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
+            'sequence': manifest['trace']['events']}
 
 
 def _evidence_name(name):
@@ -341,7 +430,7 @@ def _evidence_name(name):
 
 
 def _retained_name(name):
-    if name in FILES + OPTIONAL_FILES:
+    if name in FILES + OPTIONAL_FILES + TRACE_FILES:
         return True
     return (isinstance(name, str) and name.startswith('evidence/')
             and name.count('/') == 1 and '\\' not in name
@@ -444,7 +533,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
-    manifest = {'schema_version': 3, 'skill_version': skill_version, 'harness': harness,
+    manifest = {'schema_version': 4, 'skill_version': skill_version, 'harness': harness,
                 'scope': scope, 'archive_root': str(root), 'repository_path': str(repo),
                 'repository_key': repository_key, 'repository_identity': identity, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -469,26 +558,29 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         raise ValueError('cannot allocate a unique owned review run')
     marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run), 'archive_root': str(root),
               'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
-    _save_manifest(run, manifest, marker)
+    _append_trace(run, manifest, marker, _milestone('prepare', 'Owned archive prepared with pinned scope'))
     return str(run)
 
 
 def register(run_dir, temporary_paths):
     """Register coordinator-verified owned resources before discovery/execution."""
     run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
     if manifest['state'] != 'prepared':
         raise ValueError('register temporary resources before retention')
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
     manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
-    _save_manifest(run, manifest, marker)
+    _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
 
-def validate(run_dir, require_retained=False):
+def validate(run_dir, require_retained=False, record_checkpoint=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
-    run, manifest, _ = _load_run(run_dir)
+    run, manifest, marker = _load_run(run_dir)
+    if manifest['schema_version'] == 4 and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
+        raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
     _verify_files(run, manifest, required=require_retained)
     if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
         raise ValueError('retained final review is required before cleanup')
@@ -499,12 +591,21 @@ def validate(run_dir, require_retained=False):
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
+        if value.get('schema_version') == 6 and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+            raise ValueError('retained review ID differs from archive run ID')
+    if record_checkpoint:
+        if manifest['state'] == 'complete':
+            raise ValueError('completed review history is immutable; validate without --record-checkpoint')
+        if manifest['schema_version'] != 4:
+            raise ValueError('legacy archives cannot acquire synthetic trace checkpoints')
+        _append_trace(run, manifest, marker, _milestone('validation',
+                      'Retained evidence gate passed' if require_retained else 'Archive ownership and integrity gate passed', status='passed'))
     return {'run_dir': str(run), 'schema_version': manifest['schema_version'],
             'state': manifest['state'], 'retained': manifest.get('retained') is True,
             'cleanup': manifest['cleanup']}
 
 
-def _retain_data(run, manifest, marker, contents):
+def _retain_data(run, manifest, marker, contents, *, record_retention=True):
     # Persist pending intent before replacing files. Old and planned digests allow a
     # safe retry after interruption, without accepting arbitrary user modifications.
     manifest.update(state='retaining', cleanup='pending', retained=False,
@@ -515,7 +616,18 @@ def _retain_data(run, manifest, marker, contents):
     hashes = dict(manifest['hashes'])
     hashes.update(manifest.pop('planned_hashes'))
     manifest.update(state='closing', retained=True, hashes=hashes)
-    _save_manifest(run, manifest, marker)
+    events = []
+    if record_retention:
+        selected = sum(name.startswith('evidence/') for name in contents)
+        events.append(_milestone('retain', 'Canonical final record retained with ' + str(selected) + ' selected evidence files',
+                                 status='retained', evidence=['review.json', 'informe.md', 'cierre.json#hashes']))
+    if 'handoff.md' in contents:
+        events.append(_milestone('handoff', 'Requested handoff generated from canonical review',
+                                evidence=['review.json', 'handoff.md']))
+    if events:
+        _append_trace_events(run, manifest, marker, events)
+    else:
+        _save_manifest(run, manifest, marker)
     return manifest
 
 
@@ -577,17 +689,61 @@ def _executors(context_input, manifest, temporary):
     return list(entries.values())
 
 
-def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None):
+def _handoff_context(input_file, value, contents, manifest):
+    """Retain only requested, bounded context with references that survive cleanup."""
+    context = read_json(input_file)
+    allowed = {'source_record', 'source_report', 'requirements', 'plan', 'decisions_pending'}
+    if not isinstance(context, dict) or set(context) - allowed or len(_json_bytes(context)) > 32768:
+        raise ValueError('handoff context must contain only bounded handoff fields')
+    context = copy.deepcopy(context)
+    for field, source in [('source_record', 'review.json'), ('source_report', 'informe.md')]:
+        if field in context and context[field] != source:
+            raise ValueError('handoff source references must identify the retained canonical record and report')
+        context[field] = source
+    for field in ('requirements', 'plan', 'decisions_pending'):
+        entries = context.get(field, [])
+        if not isinstance(entries, list) or len(entries) > 24:
+            raise ValueError('handoff context arrays must contain at most 24 entries')
+        for item in entries:
+            if isinstance(item, str):
+                if len(item) > 2000:
+                    raise ValueError('unbounded handoff context text')
+                reference = item
+            elif isinstance(item, dict) and field != 'decisions_pending':
+                reference = item.get('reference')
+            else:
+                raise ValueError('invalid handoff context entry')
+            if field == 'decisions_pending':
+                continue
+            if not isinstance(reference, str):
+                raise ValueError('handoff provenance must identify an evidence reference')
+            parsed = urlsplit(reference)
+            if parsed.scheme in {'http', 'https'} and parsed.netloc and not parsed.username:
+                continue
+            if (not reference.startswith('evidence/') or not _retained_name(reference)
+                    or reference not in contents and reference not in manifest['hashes']):
+                raise ValueError('local handoff provenance must reference selected retained evidence')
+    # The canonical renderer validates exact entry shapes and captured identities.
+    review_contract.render_handoff(value, context)
+    return context
+
+
+def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None):
     run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
     if manifest['state'] == 'complete':
         raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
     _verify_files(run, manifest)
+    if handoff_context_input is not None and not handoff:
+        raise ValueError('--handoff-context-input requires an explicit --handoff request')
     value = read_json(input_file)
     errors = review_contract.validate(value)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
+    if value.get('schema_version') == 6 and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
     if set(declared_residuals) - set(temporary):
@@ -604,6 +760,11 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
     contents.update(_evidence_contents(run, manifest, evidence_inputs))
+    if handoff_context_input is not None:
+        manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
+    if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):
+        manifest.setdefault('handoff_context', {'source_record': 'review.json', 'source_report': 'informe.md'})
+        contents['handoff.md'] = review_contract.render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
     manifest['temporary_paths'] = temporary
     manifest['temporary_manifests'] = _temporary_manifests(temporary, manifest)
     manifest['residuals'] = present
@@ -626,6 +787,7 @@ def _present_resources(registered):
 def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, required=True)
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')
@@ -663,14 +825,17 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
         raise ValueError('; '.join(errors))
     report = review_contract.render(value).encode('utf-8')
     if value != read_json(run / 'review.json'):
-        manifest = _retain_data(run, manifest, marker,
-                                {'review.json': _json_bytes(value), 'informe.md': report})
+        contents = {'review.json': _json_bytes(value), 'informe.md': report}
+        if 'handoff.md' in manifest['hashes']:
+            contents['handoff.md'] = review_contract.render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+        manifest = _retain_data(run, manifest, marker, contents, record_retention=False)
         run, manifest, marker = _load_run(run)
     manifest.update(cleanup=cleanup, residuals=residuals,
                     state='complete' if cleanup != 'pending' else 'closing')
     if manifest['state'] == 'complete':
         manifest['closed_at'] = datetime.now(timezone.utc).isoformat()
-    _save_manifest(run, manifest, marker)
+    _append_trace(run, manifest, marker, _milestone('close', 'Observed resource closure: ' + cleanup,
+                  status='pending' if cleanup == 'pending' else 'completed', evidence=['review.json', 'informe.md']))
     return manifest
 
 
@@ -692,6 +857,10 @@ def main():
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
+    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4 archive')
+    trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
+    trace.add_argument('--run-dir', required=True)
+    trace.add_argument('--event-file', required=True)
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
@@ -700,6 +869,8 @@ def main():
     keep.add_argument('--temporary-path', action='append')
     keep.add_argument('--evidence-input', action='append')
     keep.add_argument('--context-input', help='Existing neutral context JSON with executor provenance')
+    keep.add_argument('--handoff', action='store_true', help='Retain a handoff generated from the canonical record')
+    keep.add_argument('--handoff-context-input', help='Explicit handoff spec/plan references and pending decisions; requires --handoff')
     finish = commands.add_parser('close')
     finish.add_argument('--run-dir', required=True)
     observed = finish.add_mutually_exclusive_group(required=True)
@@ -714,11 +885,13 @@ def main():
                                          args.output_root, args.previous_run, args.temporary_path)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
-                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input)
+                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input)
         elif args.command == 'register':
             result = register(args.run_dir, args.temporary_path)
         elif args.command == 'validate':
-            result = validate(args.run_dir, args.require_retained)
+            result = validate(args.run_dir, args.require_retained, args.record_checkpoint)
+        elif args.command == 'record-event':
+            result = record_event(args.run_dir, args.event_file)
         else:
             result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup, residuals=args.residual)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))

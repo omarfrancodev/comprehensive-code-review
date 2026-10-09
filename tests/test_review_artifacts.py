@@ -169,7 +169,7 @@ class ArchiveTests(unittest.TestCase):
         self.assertIn('APROBABLE', (run / 'informe.md').read_text(encoding='utf-8'))
         manifest = self.read(run / 'cierre.json')
         self.assertEqual(manifest['state'], 'closing')
-        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md', 'measurements.json'})
+        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md', 'measurements.json', 'trazabilidad.jsonl'})
         self.close(run)
         self.assertEqual(self.read(run / 'cierre.json')['state'], 'complete')
         self.assertTrue((run / 'review.json').is_file())

@@ -4,6 +4,7 @@
 Python 3.10+, standard library only. Structural checks never establish finding truth.
 """
 import argparse
+import copy
 import html
 import json
 from pathlib import Path
@@ -36,6 +37,7 @@ MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de co
                'working': 'cambios locales', 'module': 'módulo',
                'feature': 'implementación de funcionalidad'}
 REREVIEW_STATUS = {'resolved': 'resuelto', 'still_valid': 'vigente', 'withdrawn': 'retirado', 'new': 'nuevo'}
+REREVIEW_STATUS['not_reevaluated'] = 'no reevaluado'
 AREAS = {'A': 'Arquitectura y diseño', 'B': 'Comportamiento y negocio',
          'C': 'Contratos e integración', 'D': 'Datos y persistencia',
          'E': 'Seguridad y operación'}
@@ -43,6 +45,29 @@ AREA_STATUS = {'covered': 'Cubierta', 'partial': 'Parcial',
                'not_evaluated': 'No evaluada', 'not_applicable': 'No aplica'}
 REVIEW_KINDS = {'review': 'Code Review', 'rereview': 'Re-review',
                 'complement': 'Complement Code Review'}
+
+
+def canonical_id(identifier, prefix):
+    if not isinstance(identifier, str) or not re.fullmatch(prefix + r'[0-9]{3,}', identifier):
+        return False
+    digits = identifier[1:]
+    significant = digits.lstrip('0')
+    # Avoid integer conversion: hostile numeric strings can exceed Python's limit.
+    return bool(significant) and digits == significant.zfill(3)
+
+
+def review_id(identifier):
+    return isinstance(identifier, str) and bool(re.fullmatch(r'CR-[0-9a-f]{20}', identifier))
+
+
+def public_url(value):
+    if not isinstance(value, str):
+        return False
+    try:
+        parsed = urlsplit(value)
+        return parsed.scheme in {'http', 'https'} and bool(parsed.netloc) and not parsed.username and not parsed.password
+    except ValueError:
+        return False
 
 
 def validate(record):
@@ -91,12 +116,14 @@ def validate(record):
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
-    if schema_version in (3, 4, 5):
+    if schema_version in (3, 4, 5, 6):
         final_fields.add('change_authors')
-    if schema_version in (4, 5):
+    if schema_version in (4, 5, 6):
         final_fields.add('presentation')
+    if schema_version == 6:
+        final_fields |= {'review_id', 'previous_reviews', 'grandfathered_ids'}
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -110,13 +137,55 @@ def validate(record):
         error('scope.snapshot', 'local edits require captured snapshot identity')
     versions = {v for key in ('head', 'base', 'snapshot') if isinstance(v := scope.get(key), str)}
 
+    prior_reviews = []
+    historical = {'findings': [], 'checks': []}
+    if schema_version == 6 and stage == 'final':
+        if not review_id(record.get('review_id')):
+            error('review_id', 'expected CR- followed by 20 lowercase hexadecimal run identity characters')
+        for i, raw in enumerate(array(record.get('previous_reviews'), 'previous_reviews')):
+            path = f'previous_reviews[{i}]'
+            prior = fields(raw, {'review_id', 'reference', 'verified'}, path)
+            if prior.get('review_id') is not None and not review_id(prior.get('review_id')):
+                error(path + '.review_id', 'expected known review ID or null; never invent legacy IDs')
+            text(prior.get('reference'), path + '.reference')
+            boolean(prior.get('verified'), path + '.verified')
+            if prior.get('verified') is not True:
+                error(path + '.verified', 'previous report reference must be verified')
+            if prior.get('review_id') == record.get('review_id'):
+                error(path, 'review cannot reference itself')
+            if prior in prior_reviews:
+                error(path, 'duplicate previous report reference')
+            prior_reviews.append(prior)
+        historical = dict(fields(record.get('grandfathered_ids'), {'findings', 'checks'}, 'grandfathered_ids'))
+        for kind in ('findings', 'checks'):
+            identifiers = array(historical.get(kind), 'grandfathered_ids.' + kind)
+            seen = set()
+            for identifier in identifiers:
+                text(identifier, 'grandfathered_ids.' + kind)
+                if isinstance(identifier, str):
+                    if identifier in seen:
+                        error('grandfathered_ids.' + kind, 'duplicate historical ID')
+                    seen.add(identifier)
+            historical[kind] = identifiers
+
     checks = {}
     for i, raw in enumerate(array(record.get('checks'), 'checks')):
         path = f'checks[{i}]'
-        check = fields(raw, {'id', 'command', 'revision', 'status', 'failure_kind', 'evidence', 'reused', 'reuse_reason', 'rerun_reason'}, path)
+        check_names = {'id', 'command', 'revision', 'status', 'failure_kind', 'evidence', 'reused', 'reuse_reason', 'rerun_reason'}
+        if schema_version == 6:
+            check_names.add('reference')
+        check = fields(raw, check_names, path)
         for key in ('id', 'command', 'revision'):
             text(check.get(key), f'{path}.{key}')
         identifier = check.get('id')
+        if schema_version == 6:
+            if not canonical_id(identifier, 'C') and identifier not in historical['checks']:
+                error(path + '.id', 'expected canonical check ID C001 (at least three digits, nonzero)')
+            text(check.get('reference'), path + '.reference', nullable=check.get('reused') is not True)
+            if check.get('reused') is True and check.get('rerun_reason') is not None:
+                error(path, 'one execution cannot be both reused and rerun; record rerun with a new ID')
+            if identifier in historical['checks'] and (check.get('reused') is not True or not prior_reviews or not check.get('reference')):
+                error(path + '.id', 'historical check requires verified previous report and actual execution reference')
         if isinstance(identifier, str):
             if identifier in checks:
                 error(path, 'duplicate check id')
@@ -146,6 +215,8 @@ def validate(record):
         for key in ('id', 'title', 'scenario', 'impact', 'correction'):
             text(item.get(key), f'{path}.{key}')
         identifier = item.get('id')
+        if schema_version == 6 and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
+            error(path + '.id', 'expected canonical finding ID F001 (at least three digits, nonzero)')
         if isinstance(identifier, str):
             if identifier in finding_ids:
                 error(path, 'duplicate finding id')
@@ -201,7 +272,7 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version in (2, 3, 4, 5):
+        if schema_version in (2, 3, 4, 5, 6):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -216,7 +287,7 @@ def validate(record):
         return errors
 
     material_area_gap = False
-    if schema_version in (2, 3, 4, 5):
+    if schema_version in (2, 3, 4, 5, 6):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -250,7 +321,7 @@ def validate(record):
         if area_ids != set(AREAS):
             error('coverage.areas', 'exactly one row for each area A through E is required')
 
-    profile_choices = set(PROFILES) if schema_version == 5 else {'economy', 'balanced', 'deep'}
+    profile_choices = set(PROFILES) if schema_version in (5, 6) else {'economy', 'balanced', 'deep'}
     enum(record.get('profile'), profile_choices, 'profile')
     text(record.get('profile_reason'), 'profile_reason')
     boolean(coverage.get('adequate'), 'coverage.adequate')
@@ -288,13 +359,13 @@ def validate(record):
         return person
 
     identity(record.get('responsible'), 'responsible')
-    if schema_version in (4, 5):
+    if schema_version in (4, 5, 6):
         presentation = fields(record.get('presentation'), {'kind', 'subject'}, 'presentation')
         enum(presentation.get('kind'), REVIEW_KINDS, 'presentation.kind')
         text(presentation.get('subject'), 'presentation.subject')
         if isinstance(presentation.get('subject'), str) and any(c in presentation['subject'] for c in '\r\n'):
             error('presentation.subject', 'expected a single-line functional subject')
-    if schema_version in (3, 4, 5):
+    if schema_version in (3, 4, 5, 6):
         seen_authors = set()
         for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
             identity(author, f'change_authors[{i}]', author=True)
@@ -327,20 +398,78 @@ def validate(record):
     if record.get('verdict') != expected:
         error('verdict', f'inconsistent with blockers/coverage/reservations; expected {expected}')
     previous_ids = set()
+    historical_sources = set()
     for i, raw in enumerate(array(record.get('rereview'), 'rereview')):
-        item = fields(raw, {'id', 'status', 'details'}, f'rereview[{i}]')
+        path = f'rereview[{i}]'
+        names = {'id', 'status', 'details'}
+        if schema_version == 6:
+            names |= {'previous_review_id', 'previous_reference', 'previous_finding_id', 'previous_title', 'previous_url', 'check_ids'}
+        item = fields(raw, names, path)
         text(item.get('id'), f'rereview[{i}].id')
         if isinstance(item.get('id'), str):
             previous_ids.add(item['id'])
-        enum(item.get('status'), {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
+        enum(item.get('status'), set(REREVIEW_STATUS) if schema_version == 6 else {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
         text(item.get('details'), f'rereview[{i}].details')
+        if schema_version == 6:
+            identifier = item.get('id')
+            if not canonical_id(identifier, 'F') and identifier not in historical['findings']:
+                error(path + '.id', 'expected canonical finding ID or disclosed historical ID')
+            if isinstance(identifier, str) and sum(isinstance(row, dict) and row.get('id') == identifier for row in record['rereview']) > 1:
+                error(path + '.id', 'duplicate re-review ID')
+            for key in ('previous_review_id', 'previous_reference', 'previous_finding_id', 'previous_title', 'previous_url'):
+                text(item.get(key), path + '.' + key, nullable=True)
+            if item.get('status') == 'new':
+                if any(item.get(key) is not None for key in ('previous_review_id', 'previous_reference', 'previous_finding_id', 'previous_title', 'previous_url')):
+                    error(path, 'new finding has no previous report identity')
+                if not isinstance(identifier, str) or identifier not in finding_ids:
+                    error(path + '.id', 'new row must reference a retained current finding')
+            else:
+                if not item.get('previous_finding_id') or not item.get('previous_title'):
+                    error(path, 'prior finding identity and original title required')
+                if not isinstance(identifier, str) or identifier != item.get('previous_finding_id'):
+                    error(path + '.id', 'same-cause followup must preserve the exact previously published finding ID')
+                matching = [prior for prior in prior_reviews if prior.get('verified') is True and
+                            prior.get('reference') == item.get('previous_reference') and
+                            (item.get('previous_review_id') is None or prior.get('review_id') == item['previous_review_id'])]
+                if not matching:
+                    error(path, 'prior finding must trace to verified previous report identity/reference')
+                if item.get('previous_url') is not None and not public_url(item['previous_url']):
+                    error(path + '.previous_url', 'expected verified public source URL or null')
+                if isinstance(identifier, str) and identifier == item.get('previous_finding_id') and matching:
+                    historical_sources.add(identifier)
+            seen = set()
+            for j, identifier in enumerate(array(item.get('check_ids'), path + '.check_ids')):
+                if not isinstance(identifier, str) or identifier not in checks:
+                    error(path + f'.check_ids[{j}]', 'unknown check reference')
+                elif identifier in seen:
+                    error(path + '.check_ids', 'duplicate check reference')
+                else:
+                    seen.add(identifier)
+    historical_aliases = set()
     aliases = record.get('aliases')
+    if schema_version == 6 and isinstance(aliases, dict):
+        for alias, survivor in aliases.items():
+            if (isinstance(alias, str) and isinstance(survivor, str)
+                    and alias in historical['findings'] and survivor in historical_sources
+                    and survivor in finding_ids | previous_ids and survivor not in aliases
+                    and alias not in finding_ids | previous_ids):
+                historical_aliases.add(alias)
+    if schema_version == 6:
+        for identifier in historical['findings']:
+            if (not isinstance(identifier, str) or (identifier not in historical_aliases
+                    and (identifier not in historical_sources or identifier not in finding_ids | previous_ids))):
+                error('grandfathered_ids.findings', 'historical ID requires retained original identity and verified prior finding provenance')
+        for identifier in historical['checks']:
+            if not isinstance(identifier, str) or identifier not in checks:
+                error('grandfathered_ids.checks', 'historical check ID must be retained')
     if not isinstance(aliases, dict):
         error('aliases', 'expected direct alias-to-surviving-ID object')
     else:
         for alias, survivor in aliases.items():
             text(alias, 'aliases key')
             text(survivor, f'aliases.{alias}')
+            if schema_version == 6 and not canonical_id(alias, 'F') and alias not in historical_aliases:
+                error(f'aliases.{alias}', 'expected canonical alias ID or explicitly declared historical alias with verified survivor provenance')
             if (not isinstance(survivor, str) or survivor not in finding_ids | previous_ids
                     or survivor in aliases or alias in finding_ids | previous_ids):
                 error(f'aliases.{alias}', 'alias must directly identify a retained finding or re-review ID')
@@ -378,6 +507,83 @@ def deduplicate(findings, groups):
     return output
 
 
+def canonicalize_ids(record, reserved_ids=None):
+    """Allocate once, preserving published IDs; atomically remap typed references.
+
+    Role-qualified provisional IDs are allocation inputs, never semantic aliases.
+    Return a fresh record and source maps; caller must retain these maps as evidence.
+    Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
+    """
+    if not isinstance(record, dict) or record.get('schema_version') != 6:
+        raise ValueError('canonical ID allocation requires schema 6')
+    errors = [error for error in validate(record) if 'expected canonical' not in error]
+    if errors:
+        raise ValueError('; '.join(errors))
+    result = copy.deepcopy(record)
+    history = record.get('grandfathered_ids', {'findings': [], 'checks': []})
+    reserved_ids = reserved_ids or {'findings': [], 'checks': []}
+    if not isinstance(reserved_ids, dict) or set(reserved_ids) != {'findings', 'checks'}:
+        raise ValueError('reserved_ids requires findings/checks arrays from the known review chain')
+    for kind, prefix in (('findings', 'F'), ('checks', 'C')):
+        if not isinstance(reserved_ids[kind], list) or any(not isinstance(identifier, str) or not identifier.strip() for identifier in reserved_ids[kind]):
+            raise ValueError('reserved ID arrays require actual prior identifier strings')
+
+    def allocate(identifiers, prefix, historic, reserved):
+        identifiers = list(dict.fromkeys(identifiers))
+        used = set(historic) | set(reserved)
+        for identifier in identifiers:
+            if canonical_id(identifier, prefix):
+                used.add(identifier)
+            elif identifier not in historic and (not isinstance(identifier, str) or not re.fullmatch(r'[A-Z][A-Z0-9]*-' + prefix + r'[0-9]{3,}', identifier) or int(identifier.rsplit('-', 1)[1][1:]) == 0):
+                raise ValueError('only qualified provisional IDs may be allocated; disclose and preserve published historical IDs')
+        mapping = {}
+        next_number = max((int(identifier[1:]) for identifier in used if canonical_id(identifier, prefix)), default=0) + 1
+        for identifier in identifiers:
+            if canonical_id(identifier, prefix) or identifier in historic:
+                mapping[identifier] = identifier
+                continue
+            while f'{prefix}{next_number:03d}' in used:
+                next_number += 1
+            mapping[identifier] = f'{prefix}{next_number:03d}'
+            used.add(mapping[identifier])
+        return mapping
+
+    finding_sources = [item['id'] for item in result.get('findings', [])]
+    if len(set(finding_sources)) != len(finding_sources):
+        raise ValueError('duplicate finding IDs; qualify sources before allocation')
+    check_sources = [item['id'] for item in result.get('checks', [])]
+    if len(set(check_sources)) != len(check_sources):
+        raise ValueError('duplicate check IDs; qualify sources before allocation')
+    finding_sources += [item['id'] for item in result.get('rereview', [])]
+    finding_sources += list(result.get('aliases', {}))
+    finding_map = allocate(finding_sources, 'F', history.get('findings', []), reserved_ids['findings'])
+    check_map = allocate(check_sources, 'C', history.get('checks', []), reserved_ids['checks'])
+
+    def mapped(mapping, identifier):
+        if identifier not in mapping:
+            raise ValueError('unknown reference during atomic allocation: ' + str(identifier))
+        return mapping[identifier]
+
+    for item in result.get('findings', []):
+        item['id'] = mapped(finding_map, item['id'])
+        for ev in item.get('evidence', []):
+            if ev.get('check_id') is not None:
+                ev['check_id'] = mapped(check_map, ev['check_id'])
+    for item in result.get('checks', []):
+        item['id'] = mapped(check_map, item['id'])
+    for area in result.get('coverage', {}).get('areas', []):
+        area['finding_ids'] = [mapped(finding_map, identifier) for identifier in area.get('finding_ids', [])]
+    for row in result.get('rereview', []):
+        row['id'] = mapped(finding_map, row['id'])
+        row['check_ids'] = [mapped(check_map, identifier) for identifier in row.get('check_ids', [])]
+    result['aliases'] = {mapped(finding_map, source): mapped(finding_map, survivor)
+                         for source, survivor in result.get('aliases', {}).items()}
+    errors = validate(result)
+    if errors:
+        raise ValueError('; '.join(errors))
+    return result, {'findings': finding_map, 'checks': check_map}
+
+
 def one_line(value):
     return ' '.join(str(value).splitlines()).strip()
 
@@ -409,6 +615,40 @@ def person_text(person):
     return '@' + person['username'] if person['username'] else markdown_text(person['name'])
 
 
+def previous_reviews_text(record, audience):
+    """Preserve parent identity without publishing private archive references."""
+    references = []
+    for prior in record.get('previous_reviews', []):
+        parts = [prior['review_id']] if prior.get('review_id') else []
+        reference = prior.get('reference')
+        if reference and (audience == 'user' or (prior.get('verified') is True and public_url(reference))):
+            parts.append(reference_text(reference))
+        references.append(' · '.join(parts) or 'Fuente verificada conservada en el registro')
+    return '; '.join(references)
+
+
+def public_projection(text, record):
+    """Exclude recorded raw commands and private absolute paths from publication."""
+    for check in record.get('checks', []):
+        command = one_line(check.get('command', ''))
+        if command:
+            text = text.replace(command, '[comprobación registrada]')
+            text = text.replace(markdown_text(command), '[comprobación registrada]')
+    urls = []
+
+    def preserve_url(match):
+        urls.append(match.group(0))
+        return f'PUBLICURLPLACEHOLDER{len(urls) - 1}END'
+
+    text = re.sub(r'https?://[^\s<>)\]]+', preserve_url, text)
+    text = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>)]+', '[ruta privada]', text)
+    text = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>)\]]+', '[ruta privada]', text)
+    text = re.sub(r'\\\\[^\s;|<>)]+', '[ruta privada]', text)
+    for index, url in enumerate(urls):
+        text = text.replace(f'PUBLICURLPLACEHOLDER{index}END', url)
+    return text
+
+
 def render(record, audience='user'):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -427,10 +667,14 @@ def render(record, audience='user'):
              markdown_text(record['verdict_reason']), '',
              f"- **Alcance:** {markdown_text(scope['repository'])} · {MODE_LABELS[scope['mode']]}",
              f"- **Versión:** {markdown_text(scope['base'] or 'sin comparación')} → {markdown_text(version)}"]
+    if record.get('review_id'):
+        lines.append('- **ID de revisión:** ' + record['review_id'])
+    if record.get('previous_reviews'):
+        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience))
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] in (3, 4, 5):
+    if record['schema_version'] in (3, 4, 5, 6):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
@@ -446,15 +690,19 @@ def render(record, audience='user'):
         lines.append('- **Descripción:** No aplica; revisión local.')
     confirmed = sorted((f for f in record['findings'] if f['status'] == 'confirmed'),
                        key=lambda f: (f['priority'], f['id']))
+    counts = ' · '.join(f"{priority}: {sum(item['priority'] == priority for item in confirmed)}" for priority in PRIORITIES)
+    lines.extend(['', '### Hallazgos', '', '**Confirmados:** ' + counts])
     if confirmed:
         for ordinal, item in enumerate(confirmed, 1):
             location = item['location']
             label = f"{location['path']}:{location['line']}" if item['type'] == 'code' else location['section']
             if location['url']:
                 label = f"[{one_line(label)}]({location['url']})"
-            evidence = '; '.join(one_line(ev['details']) + (f" [{ev['check_id']}]" if ev['check_id'] else '')
-                                 for ev in item['evidence'])
-            lines.extend(['', f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
+            ledger = {check['id']: check for check in record['checks']}
+            evidence = '; '.join(('Comprobación' if ev['check_id'] and ev['details'] == ledger[ev['check_id']]['evidence'] else one_line(ev['details']))
+                                 + (f" [{ev['check_id']}]" if ev['check_id'] else '') for ev in item['evidence'])
+            lines.extend(['', '<a id="' + html.escape(item['id'], quote=True) + '"></a>', '',
+                          f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
                           f"#### {ordinal}. {one_line(item['title'])}", '',
                           f"- **Ubicación:** {label} · **Origen:** {ORIGINS[item['origin']]}",
                           f"- **Escenario:** {one_line(item['scenario'])}",
@@ -468,11 +716,16 @@ def render(record, audience='user'):
     lines.extend(['', '### Validación', ''])
     if record['checks']:
         for check in record['checks']:
+            lines.extend(['', '<a id="' + html.escape(check['id'], quote=True) + '"></a>', ''])
             reuse = ' · evidencia reutilizada: ' + one_line(check['reuse_reason']) if check['reused'] else ''
             repeat = f" · repetición: {one_line(check['rerun_reason'])}" if check['rerun_reason'] else ''
             classification = f" · fallo de {FAILURE_KINDS[check['failure_kind']]}" if check['failure_kind'] else ''
             command = f" `{one_line(check['command'])}` —" if audience == 'user' else ''
             lines.append(f"- {check['id']}:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
+            if check.get('evidence'):
+                lines.append('  - **Evidencia:** ' + markdown_text(check['evidence']))
+            if check.get('reference'):
+                lines.append('  - **Referencia de ejecución:** ' + reference_text(check['reference']))
     else:
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
     if audience == 'user' and record['coverage']['flows']:
@@ -505,13 +758,100 @@ def render(record, audience='user'):
         lines.extend('- [ ] ' + condition for condition in conditions)
     if record['rereview']:
         lines.extend(['', '### Re-review', ''])
-        lines.extend(f"- {item['id']}: {REREVIEW_STATUS[item['status']]} — {one_line(item['details'])}" for item in record['rereview'])
+        for item in record['rereview']:
+            source = ''
+            if item.get('previous_finding_id'):
+                source = f" · anterior {markdown_text(item['previous_finding_id'])}: {markdown_text(item['previous_title'])}"
+                reference = item.get('previous_url') or item.get('previous_reference')
+                if reference and (audience == 'user' or public_url(reference)):
+                    source += ' · ' + reference_text(reference)
+                if item.get('previous_review_id'):
+                    source += ' · ' + item['previous_review_id']
+            checks = ' · comprobaciones: ' + ', '.join(item['check_ids']) if item.get('check_ids') else ''
+            lines.append(f"- {item['id']}: {REREVIEW_STATUS[item['status']]}{source} — {one_line(item['details'])}{checks}")
     if audience == 'user' and (record['resources']['residuals'] or record['resources']['publication'] in {'published', 'failed'}):
         lines.extend(['', '### Recursos y publicación', ''])
         lines.extend('- Recurso pendiente: ' + one_line(p) for p in record['resources']['residuals'])
         if record['resources']['publication'] in {'published', 'failed'}:
             lines.append('- Publicación: ' + record['resources']['publication'])
-    return '\n'.join(lines) + '\n'
+    output = '\n'.join(lines) + '\n'
+    return public_projection(output, record) if audience == 'comment' else output
+
+
+def render_handoff(record, context=None, audience='user'):
+    """Render an explicitly requested contextual index, never an authorization."""
+    errors = validate(record)
+    if errors or record.get('stage') != 'final':
+        raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
+    if audience not in {'user', 'comment'}:
+        raise ValueError('audience must be user or comment')
+    context = context or {}
+    allowed = {'source_record', 'source_report', 'requirements', 'plan', 'decisions_pending'}
+    if not isinstance(context, dict) or set(context) - allowed:
+        raise ValueError('unknown handoff context fields')
+    scope = record['scope']
+    lines = ['## Transferencia contextual de revisión', '',
+             '- **ID de revisión:** ' + record.get('review_id', 'ID histórico no disponible'),
+             '- **Alcance:** ' + markdown_text(scope['repository']) + ' · ' + MODE_LABELS[scope['mode']]]
+    if record.get('previous_reviews'):
+        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience))
+    for key, label in [('base', 'Base'), ('head', 'Head'), ('snapshot', 'Snapshot'), ('target', 'Destino')]:
+        if scope.get(key):
+            lines.append(f'- **{label}:** ' + markdown_text(scope[key]))
+    if scope.get('reference'):
+        lines.append('- **Referencia del alcance:** ' + reference_text(scope['reference']))
+    for key, label in [('source_record', 'Registro fuente'), ('source_report', 'Informe fuente')]:
+        if context.get(key):
+            if not isinstance(context[key], str):
+                raise ValueError(key + ' must be a reference string')
+            lines.append(f'- **{label}:** ' + reference_text(context[key]))
+    lines.extend(['', '### Índice de hallazgos confirmados', ''])
+    confirmed = [item for item in record['findings'] if item['status'] == 'confirmed']
+    for item in sorted(confirmed, key=lambda item: (item['priority'], item['id'])):
+        correction_reference = ''
+        if context.get('source_report'):
+            target = context['source_report'].split('#')[0] + '#' + item['id']
+            correction_reference = ' · [Corrección ' + markdown_text(item['id']) + '](' + quote(target, safe='/:#?&=%-._~') + ')'
+        lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · "
+                     + markdown_text(item['title']) + ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference)
+    if not confirmed:
+        lines.append('- Ningún hallazgo confirmado.')
+    uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
+    uncertainties += [item['detail'] for item in record['coverage']['limitations']]
+    uncertainties += [row['details'] for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'}]
+    pending = context.get('decisions_pending', [])
+    if not isinstance(pending, list) or any(not isinstance(item, str) for item in pending):
+        raise ValueError('decisions_pending must be a text array')
+    lines.extend(['', '### Incertidumbres y decisiones pendientes', ''])
+    lines.extend('- ' + markdown_text(item) for item in dict.fromkeys(uncertainties + pending + record['reservations']))
+    if not uncertainties and not pending and not record['reservations']:
+        lines.append('- Ninguna registrada.')
+    lines.extend(['', '### Comprobaciones y referencias', ''])
+    for check in record['checks']:
+        evidence_ref = (' · referencia: ' + reference_text(check['reference']) if check.get('reference') else
+                        ' · [Evidencia ' + check['id'] + '](' + quote(context['source_report'].split('#')[0] + '#' + check['id'], safe='/:#?&=%-._~') + ')' if context.get('source_report') else
+                        ' · evidencia: véase Validación del informe fuente')
+        lines.append(f"- {check['id']} · {CHECK_STATUS[check['status']]} · versión {markdown_text(check['revision'])}" +
+                     evidence_ref)
+    if not record['checks']:
+        lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
+    for key, label in [('requirements', 'Requisitos y especificaciones'), ('plan', 'Plan')]:
+        entries = context.get(key, [])
+        if not isinstance(entries, list):
+            raise ValueError(key + ' must be an array of collected provenance')
+        if entries:
+            lines.extend(['', '### ' + label, ''])
+        for item in entries:
+            if isinstance(item, str):
+                lines.append('- ' + reference_text(item))
+            elif isinstance(item, dict) and set(item) == {'title', 'reference', 'identity'} and all(isinstance(item[key], str) and item[key].strip() for key in item):
+                lines.append('- ' + markdown_text(item['title']) + ' · ' + reference_text(item['reference']) + ' · identidad: ' + markdown_text(item['identity']))
+            else:
+                raise ValueError('provenance needs title, reference and captured identity')
+    lines.extend(['', 'Antes de continuar, comprobar que base, head y snapshot coincidan con la versión actual y repetir las comprobaciones afectadas o pendientes con un nuevo ID de ejecución.',
+                  'La transferencia conserva el contexto; cualquier corrección, commit o publicación requiere la autorización correspondiente.'])
+    output = '\n'.join(lines) + '\n'
+    return public_projection(output, record) if audience == 'comment' else output
 
 
 def main():
@@ -519,9 +859,11 @@ def main():
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('validate', 'render-user', 'render-comment', 'deduplicate'))
+    parser.add_argument('command', choices=('validate', 'render-user', 'render-comment', 'render-handoff', 'canonicalize-ids', 'deduplicate'))
     parser.add_argument('--input', required=True, help='Record JSON; for deduplicate: findings array JSON')
     parser.add_argument('--groups', help='Explicit same-cause ID groups JSON; required for deduplicate')
+    parser.add_argument('--context', help='Optional explicitly collected handoff provenance JSON')
+    parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
     args = parser.parse_args()
     try:
         value = json.loads(Path(args.input).read_text(encoding='utf-8'))
@@ -534,6 +876,13 @@ def main():
                 raise ValueError('--groups is required')
             groups = json.loads(Path(args.groups).read_text(encoding='utf-8'))
             print(json.dumps(deduplicate(value, groups), ensure_ascii=False))
+        elif args.command == 'canonicalize-ids':
+            reserved = json.loads(Path(args.reserved_ids).read_text(encoding='utf-8')) if args.reserved_ids else None
+            record, mapping = canonicalize_ids(value, reserved_ids=reserved)
+            print(json.dumps({'record': record, 'source_mapping': mapping}, ensure_ascii=False))
+        elif args.command == 'render-handoff':
+            context = json.loads(Path(args.context).read_text(encoding='utf-8')) if args.context else None
+            print(render_handoff(value, context=context), end='')
         else:
             print(render(value, 'user' if args.command == 'render-user' else 'comment'), end='')
         return 0

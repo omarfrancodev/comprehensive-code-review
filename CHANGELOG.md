@@ -2,6 +2,15 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.7.0 — Pendiente de publicación
+
+- Añadir ID público de revisión y formatos estables de hallazgos/checks, conservando referencias y excepciones históricas explícitas en el seguimiento.
+- Mostrar siempre Hallazgos y conteos confirmados P0–P3; conservar prioridad/icono/ID en H3 y título en H4. Presentar la evidencia de checks ya recopilada sin duplicar los detalles del defecto.
+- Formalizar referencias y estados del re-review, incluyendo asuntos no reevaluados. Contrastar comentarios de otros formatos después del descubrimiento independiente y antes de la verificación agrupada.
+- Conservar trazabilidad compacta del ciclo de revisión con participantes, procedencia, tiempos observados, relaciones y comprobaciones de integridad; sin registrar cada búsqueda ni recopilar mediciones por defecto.
+- Generar opcionalmente handoff.md para transferir revisiones de MR/PR o locales desde el mismo resultado, separando correcciones confirmadas de decisiones pendientes y conservando el archivo fuera del proyecto por defecto.
+- Evolucionar contratos finales y de archivo con compatibilidad de lectura de los registros históricos y sin modificar revisiones cerradas.
+
 ## 2.6.0 — 2026-10-07
 
 - Explicit ABCDE assignment briefs name areas/aspects, affected flows/files/interfaces, questions/invariants and expected evidence/coverage. Related areas share owners; dedicated reviewers require distinct needs, not a quota per letter.

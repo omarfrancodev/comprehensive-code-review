@@ -29,7 +29,9 @@ Fresh contexts exclude coordinator hypotheses/full transcript. Preserve raw obse
 
 ## Group before verification
 
-Preserve role packets, then group only evidenced shared root causes. Remap colliding worker IDs once into the coordinator registry. Keep member IDs, scenarios/evidence; similar titles/locations/consequences alone are insufficient. Distinct causes remain separate. Preserve a stable surviving ID and aliases for re-review.
+Preserve role packets, then contrast collected external note claims with independently discovered evidence before grouping and verification. For each pertinent note, retain author/source, native ID/link and known revision in existing evidence context; distinguish matching, contradicted and unsettled claims. A resolved thread does not prove a fix. Confirm through current code/requirements or actual checks, regardless of author, tool or numeric confidence. No fixed model quota, confidence cutoff or per-note/per-issue validator applies.
+
+Group only evidenced shared root causes, including matching external/internal claims. Map provisional worker IDs once into canonical coordinator IDs under identifiers.md. Keep source IDs, distinct scenarios and evidence; similar titles/locations/consequences alone are insufficient. Distinct causes remain separate. Preserve surviving historical IDs and evidenced duplicate aliases for re-review.
 
 Optional review_contract.py deduplicate preserves explicit same-cause groups; it does not infer equivalence. The verifier may split a group. Grouping never upgrades status.
 
@@ -41,4 +43,4 @@ Trace actual requirements/mechanisms, registration conventions and consumers. Us
 
 Load worker-packets.md and its verification section. Return decisions for assigned IDs, decisive evidence and only changed assessments; unchanged candidate prose/check records stay referenced. Independence follows profiles.md; same-session fallback is disclosed. Decisions account for all assigned IDs; final rejected-claim retention stays limited to material uncertainty, withdrawal or likely repeat investigation. Preserve raw packets.
 
-After independent results are preserved, examine existing reviews when relevant/requested. Verify claims/severity instead of adopting them. Missing tests or manually managed migrations are not automatically product defects. Keep deployment prerequisites and uncertain business rules distinct.
+Grouped verification includes pertinent external claims and material questions after the contrast, with source provenance available to the verifier. Verify their mechanism/severity instead of adopting their conclusion. Missing tests or manually managed migrations are not automatically defects. Keep deployment prerequisites and uncertain business rules distinct; retain evidenced state/input defects. CI evidence must name its actual revision and result.

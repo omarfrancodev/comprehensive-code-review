@@ -18,6 +18,8 @@ Use evidence/context.json in an owned session registered under artifacts.md. Wit
 
 Include ABCDE applicability and mapping to existing flow owners under review-areas.md, without discovery findings or final coverage claims. Choose presentation.kind/subject once under report-format.md. Before executing checks, add context.executors under workspaces.md; persist that existing subset in closure, not an extra audit file/agent. Workers use these facts instead of repeating repository-wide discovery, but inspect raw assigned code and relevant conventions. Missing/conflicting facts go to the coordinator for targeted refresh. Source movement invalidates affected facts/evidence. The record is an index, not proof of correctness.
 
+Keep pertinent external notes separately with actual author/tool, native ID/link and known revision under scopes.md. Supply their claims only after independent discovery, for contrast and grouped verification. Use existing context/packets/checks as trace evidence sources; no extra worker, metrics collection or archive reload is needed. Requested handoff provenance comes only from existing sourced requirements/plan/decisions.
+
 ## Neutral validation ledger
 
 The coordinator owns evidence/checks.json: check ID, executor, command, actual revision/snapshot, fixtures/configuration, result/evidence and reuse/rerun reason. Each common check has one executor. New packets return check_ids and refer to accessible assigned ledger entries; the coordinator supplies the canonical projection at merge. Legacy full packets copy only referenced entries. No discovery diagnoses/verdicts in this shared ledger.

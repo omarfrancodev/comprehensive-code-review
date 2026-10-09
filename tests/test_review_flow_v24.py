@@ -64,8 +64,8 @@ class ArchiveFlowTests(unittest.TestCase):
         session.rmdir()
         self.close(run, 'complete')
         manifest = self.read(run / 'cierre.json')
-        self.assertEqual(manifest['schema_version'], 3)
-        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md'})
+        self.assertEqual(manifest['schema_version'], 4)
+        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md', 'trazabilidad.jsonl'})
         self.assertFalse((run / 'measurements.json').exists())
 
     def test_explicit_unknown_measurement_is_optional_and_integrity_protected(self):
