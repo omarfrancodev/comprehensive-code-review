@@ -14,7 +14,11 @@
 | Vínculos | Evento futuro E aceptado. | 69 pruebas de trace, contrato, packets, presentación y enlaces pasan; atribución/límites existentes se conservaron. |
 | Política | SKILL no exigía discovery/started y faltaba ejemplo de inicio. | El ejemplo JSON se ejecuta: processing, retención/validación/cierre, tiempo desconocido null y ningún measurements.json. |
 
-La base anterior pasó 224 pruebas, una omitida. Los intentos fallidos por permisos y rutas de TEMP se descartaron por causas ambientales; no se relajaron políticas del producto. Las cifras de la suite final y la revisión independiente se registrarán al completar el gate de entrega.
+La base anterior pasó 224 pruebas, una omitida. Los intentos fallidos por permisos y rutas de TEMP se descartaron por causas ambientales; no se relajaron políticas del producto.
+
+Gate final: `python -B -X utf8 -m unittest discover -s tests` pasó **237 pruebas, una omitida**, en 199.425 segundos; cero errores y cero fallos. La omisión corresponde al privilegio de symlink no disponible en Windows. También pasaron resolución de enlaces, `git diff --check`, las ayudas de prepare/record-event/validate y la correspondencia entre versión del ejemplo de preparación y metadata de SKILL.md.
+
+La revisión independiente de la rama detectó un detalle P3: el ejemplo operativo aún fijaba 2.8.0. Se completó la actualización de versión prevista por la tarea 6 a 2.9.0 y se indicó obtener siempre metadata.version del SKILL cargado; el ejemplo se comprobó mecánicamente. No hubo otros hallazgos accionables, preguntas pendientes ni asuntos menores diferidos. Las excepciones consideradas de estado histórico, retención directa, orden de registro, recuperación e inmutabilidad corresponden al contrato aprobado y sus pruebas. README/instalación siguen identificando 2.8.0 como última release efectivamente publicada mientras 2.9.0 permanece Unreleased.
 
 ## Aplicación en contextos frescos
 

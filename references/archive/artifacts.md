@@ -42,10 +42,10 @@ Execution facts/packets remain under owned evidence/context.json, checks.json, d
 
 When the interpreter/script is executable within permissions, use the helper for durable preparation, registration, retention and closure, plus its validation gates. Native preparation is not an alternative because it seems simpler or older runs used it. If the helper cannot execute, record that limitation and use native operations only when they implement and verify the same layout, ownership/closure records, exact scope, atomic writes, hashes and lifecycle. Read the contract in `scripts/review_artifacts.py`; disclose native validation rather than claiming helper execution. If guarantees cannot be verified, preserve evidence and report persistence incomplete. A helper validation failure is not unavailability and must not be bypassed with native writes.
 
-The coordinator is the sole durable writer. Run mutations sequentially for that run. Invoke through an absolute interpreter/script path and consult --help:
+The coordinator is the sole durable writer. Run mutations sequentially for that run. Use metadata.version from the loaded SKILL.md for --skill-version, not an older example or latest published release. Invoke through an absolute interpreter/script path and consult --help:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.8.0 --harness actual-harness --temporary-path /absolute/owned/session
+python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.9.0 --harness actual-harness --temporary-path /absolute/owned/session
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run
 python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR
 python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs

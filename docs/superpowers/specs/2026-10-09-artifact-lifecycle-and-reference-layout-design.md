@@ -8,7 +8,7 @@
 
 **Versión prevista:** 2.9.0; publicación pendiente del flujo de revisión del PR.
 
-**Estado:** especificación escrita para revisión; implementación pendiente.
+**Estado:** especificación y plan aprobados por el usuario; ejecución nativa en la rama de trabajo.
 
 ## Objetivo y alcance aprobado
 

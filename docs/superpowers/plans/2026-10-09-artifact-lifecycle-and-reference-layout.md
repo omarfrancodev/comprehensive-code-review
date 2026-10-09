@@ -33,13 +33,13 @@
 
 ## Preparación y ejecución
 
-Worktree preparado: `.worktrees/feat-artifact-lifecycle`; rama `feat/artifact-lifecycle`; base main `e227349d8082784949c2504f709b033e2231870d`. Las tareas siguientes están pendientes; este documento no registra una implementación ya realizada.
+Worktree preparado: `.worktrees/feat-artifact-lifecycle`; rama `feat/artifact-lifecycle`; base main `e227349d8082784949c2504f709b033e2231870d`. Tareas 1–5 completadas y verificadas; tarea 6 en publicación del PR, sin autorización de merge/release.
 
 Base verificada el 2026-10-09: `python -B -X utf8 -m unittest discover -s tests`, 224 pruebas, OK con una omisión, 181.551 segundos. Se ejecutó con el temporal normal de Windows y permisos disponibles. Dos intentos ambientales previos quedaron descartados: el sandbox no permitía escribir en su temporal y un temporal anidado en la skill interfería con la política de archivo y los límites de rutas Git. No se modificó producto ni pruebas para obtener este resultado.
 
 Usar `$taskPython` para la ruta del Python disponible y comandos PowerShell `& $taskPython -B -X utf8 ...`. El temporal debe estar fuera de la instalación de la skill y tener permisos de escritura; no usar un temporal anidado dentro del worktree para la suite de fixtures Git. No cambiar las políticas del producto para acomodar restricciones del sandbox.
 
-Método recomendado: ejecución nativa en esta sesión, seguida de revisión independiente de la rama, porque las tareas comparten helpers y gates de recuperación. El usuario selecciona el método al revisar los documentos antes de comenzar código.
+Método recomendado: ejecución nativa en esta sesión, seguida de revisión independiente de la rama, porque las tareas comparten helpers y gates de recuperación. El usuario aprobó ambos documentos y seleccionó ejecución nativa antes de comenzar código.
 
 ---
 
@@ -55,7 +55,7 @@ Método recomendado: ejecución nativa en esta sesión, seguida de revisión ind
 - Consumes: enlaces Markdown y rutas operativas actuales; tabla de ubicaciones de la spec.
 - Produces: una sola ruta canónica por referencia; mismas reglas operativas y carga por fase, sin stubs.
 
-- [ ] **Step 1: Escribir la prueba de estructura y resolución de enlaces.**
+- [x] **Step 1: Escribir la prueba de estructura y resolución de enlaces.**
 
 En `ReferenceLayoutTests.test_canonical_locations_and_local_links`, fijar el mapa de la spec y comprobar `set(relative_md_paths) == set(expected_paths)`, que ningún `.md` vive directamente en references y que cada destino local Markdown existe. Ignorar URLs, anclas y ejemplos de comandos; resolver rutas desde el archivo fuente, sin interpretar menciones históricas como enlaces.
 
@@ -65,20 +65,20 @@ self.assertEqual(set(relative_md_paths), set(expected_paths))
 self.assertEqual(list((root / 'references').glob('*.md')), [])
 ```
 
-- [ ] **Step 2: Ejecutar RED.**
+- [x] **Step 2: Ejecutar RED.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests -p test_reference_layout.py -v`.
 Expected: fallo porque faltan las ubicaciones nuevas, no por errores del parser de enlaces.
 
-- [ ] **Step 3: Mover y actualizar rutas.**
+- [x] **Step 3: Mover y actualizar rutas.**
 
 Usar `git mv` según la tabla exacta. Actualizar enlaces relativos entre carpetas y desde cada rol. Conservar el contenido histórico de planes; cambiar sus enlaces rotos, no reescribir versiones antiguas. Actualizar constantes de lectura de tests que usan las referencias actuales.
 
-- [ ] **Step 4: Ejecutar GREEN y comprobar diff.**
+- [x] **Step 4: Ejecutar GREEN y comprobar diff.**
 
 Ejecutar la prueba de layout y las pruebas de presentación/perfiles/flujo que cargan Markdown. `git diff --check` no debe producir errores. Verificar que la reorganización no añadió lecturas obligatorias ni copias.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Commit: `refactor(references): organiza los contratos por responsabilidad`.
 
@@ -93,7 +93,7 @@ Commit: `refactor(references): organiza los contratos por responsabilidad`.
 - Produces: `ARCHIVE_SCHEMA_VERSION = 5`, `TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5})`; mismos retornos públicos de prepare/register/retain/close.
 - Produces: `_starts_processing(event: dict) -> bool`, predicate puro con kinds/statuses exactos de la spec.
 
-- [ ] **Step 1: Escribir pruebas de estado y compatibilidad.**
+- [x] **Step 1: Escribir pruebas de estado y compatibilidad.**
 
 `test_processing_starts_on_observed_work_only`: prepare.schema_version == 5 y state == prepared; profile/selected, agent/pending y validation preparatoria conservan prepared; discovery/started cambia a processing; register sigue permitido; retain/close llegan a complete.
 
@@ -114,20 +114,20 @@ self.assertEqual(self.read(run / 'cierre.json')['state'], 'complete')
 
 `test_processing_recovery_preserves_pending_event`: interrumpir atomic_write del trace, comprobar que validate falla por pendiente; recuperar mediante register, y comparar event_id, occurred_at, recorded_at y sha256 con el evento pendiente original. Probar también interrupción de manifest/marker y no aceptar cambios de hash.
 
-- [ ] **Step 2: Ejecutar RED.**
+- [x] **Step 2: Ejecutar RED.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests -p test_review_trace.py -v` y el módulo de artifacts.
 Expected: nuevas aserciones de schema/processing fallan; las pruebas históricas existentes no se alteran para ocultar regresiones.
 
-- [ ] **Step 3: Implementar estados y soporte compartido de traces.**
+- [x] **Step 3: Implementar estados y soporte compartido de traces.**
 
 Usar constantes en todas las rutas de schema 4, incluyendo `_load_run`, `_verify_files`, `_recover_trace`, append, validate y checkpoints. Validar estados según versión. En `record_event`, después de recuperar y verificar el run, aplicar la transición solo desde prepared/schema 5 antes de la misma transacción append. No crear una segunda escritura independiente ni un nuevo comando start. Mantener retain directo desde prepared y los gates de closing/complete.
 
-- [ ] **Step 4: Ejecutar GREEN.**
+- [x] **Step 4: Ejecutar GREEN.**
 
 Ejecutar modules artifacts, trace, artifact-layout, workspace-layout y extended. Todas las pruebas pasan; los únicos skips deben corresponder a capacidades ambientales realmente ausentes.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Commit: `feat(artifacts): registra el inicio efectivo de las revisiones`.
 
@@ -143,7 +143,7 @@ Commit: `feat(artifacts): registra el inicio efectivo de las revisiones`.
 - Produces: `record_event(run_dir, event_file, execution_metadata=None) -> dict`, extensión compatible; CLI `--execution-metadata` opcional en record-event.
 - Preserves: `_milestone(kind, summary, status='completed', evidence=None) -> dict`, añadiendo campos ya existentes de trace schema 1.
 
-- [ ] **Step 1: Escribir pruebas de tiempos y fuentes.**
+- [x] **Step 1: Escribir pruebas de tiempos y fuentes.**
 
 `test_helper_milestones_capture_observed_utc_time`: todos los hitos nuevos del helper tienen occurred_at UTC y source `review_artifacts:<kind>`; un evento externo sin reloj conserva null.
 
@@ -162,20 +162,20 @@ self.assertIsNone(artifacts.review_trace.event_input(raw)['occurred_at'])
 
 `test_historical_time_validation_is_unchanged`: traza schema 1 antigua con occurred_at y source null sigue verificándose; una emisión nueva de archive schema 5 con tiempo externo no null/source null se rechaza.
 
-- [ ] **Step 2: Ejecutar RED.**
+- [x] **Step 2: Ejecutar RED.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests -p test_review_trace.py -v`.
 Expected: ausencia del adaptador y tiempos null de helper. Cambiar la expectativa anterior de prepare null únicamente en la prueba de nuevos runs; mantener fixtures históricos.
 
-- [ ] **Step 3: Implementar captura y adaptador.**
+- [x] **Step 3: Implementar captura y adaptador.**
 
 Capturar UTC en `_milestone`, conservar recorded_at en append. Leer metadata solo cuando se proporciona la opción y usar safe_path/read_json existentes. El adaptador usa el mapping exacto de status de la spec, valida UTC, no rellena con datetime.now ni cambia identidad. Con metadata fuente `review_runner:<ruta metadata>` identifica límites del wrapper; sin metadata, validar fuente de ocurrencia solo para emisiones nuevas de schema 5. Mantener `verify` compatible con registros antiguos y recuperación con bytes originales.
 
-- [ ] **Step 4: Ejecutar GREEN.**
+- [x] **Step 4: Ejecutar GREEN.**
 
 Ejecutar trace, artifacts y las pruebas existentes del runner en test_review_metrics.py. Confirmar que el caso normal no produce measurements.json ni obliga a generar metadata adicional.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Commit: `feat(trace): conserva tiempos observados y su procedencia`.
 
@@ -190,7 +190,7 @@ Commit: `feat(trace): conserva tiempos observados y su procedencia`.
 - Produces: `review_trace.validate_local_event_targets(event: dict, previous_data: bytes) -> None`; falla con ValueError solo para E locales con seis dígitos inexistentes, sin resolver otras revisiones.
 - Preserves: schema 1, tipos de relaciones actuales, actor/executor/recorder separados y límites actuales.
 
-- [ ] **Step 1: Escribir pruebas de destinos e identidad.**
+- [x] **Step 1: Escribir pruebas de destinos e identidad.**
 
 `test_new_local_event_targets_and_legacy_references`: E000001 existente pasa; E000000 y un E futuro fallan; CR de otro run no dispara IO; C001/F001 y referencias heredadas acotadas pasan; el lector histórico mantiene bytes intactos.
 
@@ -207,20 +207,20 @@ self.assertEqual(self.events(run)[-1]['relations'], event['relations'])
 
 `test_actor_executor_and_recorder_remain_distinct`: actor de worker y executor con IDs conocidos se conservan; recorder es review_artifacts; IDs ausentes siguen null; no se generan relaciones para dos eventos consecutivos sin vínculos de input. Probar 25 relaciones y evento mayor de 8 KiB para conservar rechazo.
 
-- [ ] **Step 2: Ejecutar RED.**
+- [x] **Step 2: Ejecutar RED.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests -p test_review_trace.py -v`.
 Expected: destinos E futuros aún aceptados; no exigir que pruebas de preservación ya válidas fallen.
 
-- [ ] **Step 3: Implementar gate de emisión y reglas de briefs.**
+- [x] **Step 3: Implementar gate de emisión y reglas de briefs.**
 
 Invocar validación local solo al emitir eventos externos schema 5 después del gate de integridad. No cambiar `verify` para imponer nuevos destinos a trazas históricas. Documentar referencias canónicas F001/C001/E000001 y `CR-<run_id>#<id>`; no renumerar eventos/finding/checks anteriores. Los briefs propagan identidades disponibles y el coordinador emite hitos desde resultados existentes, sin nuevos campos obligatorios de packet.
 
-- [ ] **Step 4: Ejecutar GREEN.**
+- [x] **Step 4: Ejecutar GREEN.**
 
 Ejecutar trace, traceability-contract, packets y tests de identificación/presentación. Confirmar que los checks no leen un archivo externo al resolver una relación cross-review.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Commit: `feat(trace): valida vínculos locales y conserva la atribución`.
 
@@ -234,24 +234,24 @@ Commit: `feat(trace): valida vínculos locales y conserva la atribución`.
 - Consumes: ubicaciones de tarea 1; estado y CLI de tareas 2–4.
 - Produces: instrucciones selectivas consistentes, ejemplos de nuevos eventos y registro de evidencia de validación, sin introducir un nuevo artefacto obligatorio por review.
 
-- [ ] **Step 1: Escribir prueba de contrato y preparar escenarios RED.**
+- [x] **Step 1: Escribir prueba de contrato y preparar escenarios RED.**
 
 `test_selective_loading_and_unknown_observations`: el flujo de coordinador enlaza el inicio significativo y la política de tiempos; el worker sigue usando packet schema 1 y brief; la sección de carga no exige maintenance ni todos los archivos. Validar ejemplos JSON con helpers, no solo buscar frases. Registrar tres escenarios: harness sin tiempos/IDs; ejecución estática de un solo coordinador; interrupción tras lanzamiento y antes de retención. Usar skills writing-skills/TDD para comprobar omisiones de comportamiento antes y después del cambio de instrucciones, sin ejecutar reviews sobre proyectos reales.
 
-- [ ] **Step 2: Ejecutar RED.**
+- [x] **Step 2: Ejecutar RED.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests -p test_artifact_lifecycle_policy.py -v`.
 Expected: instrucciones actuales aún no requieren el hito de inicio ni distinguen los nuevos estados; registrar resultados de escenarios sin atribuirles ahorro medido.
 
-- [ ] **Step 3: Actualizar instrucciones y uso.**
+- [x] **Step 3: Actualizar instrucciones y uso.**
 
 Mantener SKILL.md breve: enlazar reglas nuevas y registrar inicio antes de descubrir/lanzar, según evidencia disponible. Expandir solo contratos operativos y docs/usage. Explicar que processing no prueba actividad en vivo, que los consumidores usan orden de registro como fallback y que las fuentes no demuestran veracidad. README enlaza al detalle y describe artefactos por su utilidad actual.
 
-- [ ] **Step 4: Ejecutar GREEN y documentar presión.**
+- [x] **Step 4: Ejecutar GREEN y documentar presión.**
 
 Ejecutar pruebas de policy y flujo existentes; repetir escenarios después de las instrucciones. Confirmar ausencia de timestamps inventados, recorridos completos de references, contadores y agentes adicionales. Registrar exactamente qué comportamiento fue observado y qué quedó limitado, sin afirmar beneficios de tokens sin medición.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Commit: `docs(skill): explica el ciclo de vida y las observaciones verificables`.
 
@@ -265,15 +265,15 @@ Commit: `docs(skill): explica el ciclo de vida y las observaciones verificables`
 - Consumes: cambios probados de tareas 1–5 y contratos de release actuales.
 - Produces: PR completo para revisión humana; 2.9.0 Unreleased, sin tag/release todavía.
 
-- [ ] **Step 1: Preparar versión y changelog.**
+- [x] **Step 1: Preparar versión y changelog.**
 
 Añadir 2.9.0 Unreleased con layout, lifecycle, tiempos/relaciones y compatibilidad. No alterar fechas o versiones de entradas históricas ni prometer que el visor está implementado.
 
-- [ ] **Step 2: Ejecutar verificación completa.**
+- [x] **Step 2: Ejecutar verificación completa.**
 
 Run: `& $taskPython -B -X utf8 -m unittest discover -s tests`; `git diff --check`; prueba de resolución de enlaces de tarea 1; ayuda CLI de record-event/prepare/validate. Esperar PASS sin errores/fallos; registrar skips de entorno. No repetir la suite después de pasar salvo cambios nuevos o inquietudes no resueltas.
 
-- [ ] **Step 3: Revisar la rama completa.**
+- [x] **Step 3: Revisar la rama completa.**
 
 Aplicar requesting-code-review y los gates pertinentes con revisión independiente una vez; corregir defectos y volver a probar solo lo afectado, ampliando si la corrección lo exige. Comprobar compatibilidad schema 4, recuperación, carga selectiva y que no se tocaron archivos del visor ni reviews reales.
 
