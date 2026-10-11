@@ -32,3 +32,13 @@ Una única revisión final de solo lectura, sin archivos ni suite duplicada, ide
 El catálogo identifica declaraciones, no detecta procesos ni certifica integración con cada plataforma. Entornos personalizados siguen aceptados con texto original e ID desconocido. Lectores preservan ID/versión almacenados y no consultan el catálogo actual para reinterpretarlos. La incertidumbre de metadatos no cambia el veredicto de código. Sin mediciones, telemetría ni barridos nuevos.
 
 El visor independiente conserva su documentación previa y deberá aceptar archive schema 6 cuando se actualice ese proyecto; no forma parte de este PR. README/instalación siguen enlazando la última release publicada. Merge, tag, release, actualización local y limpieza del worktree esperan aprobación humana.
+
+## Feedback del PR #14 — 2026-10-11
+
+Se atendieron las observaciones del [comentario de revisión](https://github.com/omarfrancodev/comprehensive-code-review/pull/14#issuecomment-6113308549):
+
+- F001: evaluation.md ahora describe archive 1–6 y la independencia de final review 7/packet-trace 1 frente al cierre 6.
+- F002: argumentos y CCR_HARNESS_ID normalizan mayúsculas/espacios exteriores al buscar IDs canónicos. La nueva regresión falló con Codex-CLI y espacios antes de corregirlo; pasó después. Conserva procedencia, prioridad del argumento y detección de conflictos; un ID inexistente todavía produce unknown_requested_id, sin fallback silencioso al alias.
+- Reserva de compatibilidad: el changelog declara explícitamente que lectores de cierre.json, incluido el visor independiente, deben aceptar schema 6. No se presume ni se modifica la compatibilidad del proyecto externo.
+
+Verificación posterior: **250 pruebas en 212.910 segundos, 249 aprobadas/una omitida por permisos de symlinks de Windows**, sin errores ni fallos. Once pruebas de harness pasaron; AST/enlaces locales/diff check válidos. Este seguimiento solo modifica las observaciones del PR. Los puntos sobre publicación de detalles internos y cumplimiento de delegación se analizaron sin implementar cambios en perfiles, reportes o contratos; tampoco se reescribieron archivos de reviews ni comentarios publicados.

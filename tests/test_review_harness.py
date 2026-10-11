@@ -63,6 +63,27 @@ class HarnessTests(unittest.TestCase):
                 self.assertEqual(value['harness_diagnostics'], [code])
         self.assertEqual(self.resolve('private launcher', harness_id='claude-code-desktop')['harness_id'], 'claude-code-desktop')
 
+    def test_declared_ids_normalize_case_and_outer_whitespace_without_hiding_conflicts(self):
+        source = {'kind': 'user', 'reference': 'Declared session identity'}
+        for requested in ('Codex-CLI', ' codex-cli ', '\tCODEX-CLI\n'):
+            with self.subTest(requested=requested):
+                explicit = self.resolve('Codex', harness_id=requested, source=source)
+                self.assertEqual(explicit['harness_id'], 'codex-cli')
+                self.assertEqual(explicit['harness_source'], source)
+                self.assertEqual(explicit['harness_diagnostics'], [])
+                configured = self.resolve('Codex', environ={'CCR_HARNESS_ID': requested})
+                self.assertEqual(configured['harness_id'], 'codex-cli')
+                self.assertEqual(configured['harness_source']['kind'], 'environment')
+                conflict = self.resolve('Codex Desktop', environ={'CCR_HARNESS_ID': requested})
+                self.assertIsNone(conflict['harness_id'])
+                self.assertEqual(conflict['harness_diagnostics'], ['identity_conflict'])
+        self.assertEqual(self.resolve('Codex Desktop', harness_id=' CODEX-DESKTOP ')['harness_id'], 'codex-desktop')
+        self.assertEqual(self.resolve('Codex', harness_id=' CODEX-CLI ',
+                         environ={'CCR_HARNESS_ID': 'codex-desktop'})['harness_id'], 'codex-cli')
+        unknown = self.resolve('Codex Desktop', harness_id=' NOT-IN-CATALOG ')
+        self.assertIsNone(unknown['harness_id'])
+        self.assertEqual(unknown['harness_diagnostics'], ['unknown_requested_id'])
+
     def test_catalog_covers_additional_harnesses_without_guessing_generic_interfaces(self):
         expected = [('Cursor', 'cursor'), ('Cursor CLI', 'cursor-cli'), ('Cursor IDE', 'cursor-ide'),
                     ('Cursor Web', 'cursor-web'), ('Windsurf', 'windsurf'), ('Windsurf Editor', 'windsurf-editor'),

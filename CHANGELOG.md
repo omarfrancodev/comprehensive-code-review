@@ -7,6 +7,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Conservar el nombre original del harness y resolver una vez su ID mediante catálogo canónico versionado, con fuente, configuración explícita por sesión y diagnóstico de identidades desconocidas/contradictorias.
 - Ampliar el catálogo inicial a 52 identidades en 17 familias, distinguiendo las interfaces conocidas y conservando soporte para entornos personalizados no catalogados.
 - Archivo schema 6 conserva la identidad durante todo el ciclo y mantiene lectura de schemas 1–5 sin migración; final review 7 y trace 1 sin cambios. Sin sondas, telemetría ni mediciones adicionales.
+- Los consumidores de cierre.json, incluido el visor independiente, deben aceptar archive schema 6 para leer los nuevos runs. La compatibilidad del visor no se presume ni se verifica en este repositorio; su actualización corresponde al proyecto independiente.
+- Normalizar mayúsculas y espacios exteriores de IDs declarados por argumento o CCR_HARNESS_ID; conservar conflictos reales y diagnósticos de IDs desconocidos sin sustituirlos silenciosamente por un alias del nombre.
 - Unificar etiquetas de IDs en negrita en reporte, comentario, seguimiento e incertidumbres y entregas completas/breves; preservar valores y anclas y escapar contenido aportado.
 
 ## 2.9.1 — 2026-10-09

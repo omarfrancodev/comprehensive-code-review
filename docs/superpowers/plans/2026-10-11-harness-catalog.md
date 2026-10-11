@@ -76,3 +76,12 @@
 - PR es el gate humano restante; no merge/tag/release en esta ejecución.
 
 - Handoff: [PR #14](https://github.com/omarfrancodev/comprehensive-code-review/pull/14) abierto y adjunto; rama publicada, worktree conservado para feedback.
+
+## Seguimiento del PR: observaciones F001/F002
+
+- [x] Verificar ambas observaciones contra el código y el diseño; alcance acotado autorizado por el usuario.
+- [x] Reproducir normalización de argumento/configuración con regresión RED; implementar strip/casefold y verificar GREEN sin ocultar conflictos.
+- [x] Corregir evaluación archive 1–6 y anunciar en CHANGELOG la compatibilidad requerida por lectores/visor.
+- [x] Verificar suite integrada: 250 pruebas, 249 pass/una omisión del host; AST, enlaces y diff válidos.
+- [ ] Subir correcciones y actualizar descripción del PR con el estado actual de validación.
+- [ ] Esperar aprobación para merge/release. Los nuevos puntos sobre formato público/delegación quedan solo como propuesta, fuera de estas correcciones.

@@ -92,7 +92,7 @@ def resolve(harness, harness_id=None, source=None, environ=None):
         {'kind': 'alias' if known else 'unknown', 'reference': harness})
     chosen, diagnostics = known, []
     if requested is not None:
-        chosen = by_id.get(requested) if isinstance(requested, str) else None
+        chosen = by_id.get(requested.strip().casefold()) if isinstance(requested, str) else None
         if chosen is None:
             diagnostics = ['unknown_requested_id']
         elif known is not None:
