@@ -58,7 +58,7 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 
 ### Validación
 
-- **[canonical check ID]:** [actual execution revision and meaningful existing output/result; check evidence/log link; skipped/blocked reason; reuse/rerun reason where applicable]
+- **[canonical check ID]**: [actual execution revision and meaningful existing output/result; check evidence/log link; skipped/blocked reason; reuse/rerun reason where applicable]
 
 **Cobertura:** [inspected flows; material gaps appear under uncertainties]
 
@@ -78,6 +78,8 @@ Use review-areas.md states and scope rules; Cubierta means inspected, including 
 When no findings are confirmed, keep Hallazgos and four zero counts, then say no defects were confirmed within the reviewed scope. Target 60–120 words per finding without omitting decisive evidence. Validation summarizes checks.evidence and actual observed outputs; command text alone is insufficient. With no executions, state static-only and any unexecuted required checks. Report every prior ID's reassessed or not_reevaluated status and provenance in re-review changes, even when absent from findings.
 
 ## Public Comment Format — fixed order
+
+Use `**ID**` for check labels, unresolved finding labels and re-review ledger labels in both projections, keeping punctuation outside the bold span. Preserve the actual ID, link target, blank lines around HTML anchors and the established finding heading hierarchy. Escape supplied text separately from generated Markdown. Equivalent full/brief delivery labels follow the same convention; inline cross-references need not repeat label formatting. Historical IDs remain unchanged.
 
 Reuse the canonical title/hierarchy, verdict, review ID, scope/version/reference, **MR/PR responsible person and change authors**, description result, Hallazgos/counts, confirmed blocks and validation. Public validation includes check IDs, actual execution revision, meaningful public-safe output/results, blockage and safe evidence links. Keep private commands, paths, worker mechanics and raw logs in internal/user records. Then conditional uncertainties, conditions/reservations and re-review changes with safe source links. Omit ABCDE, profile selection, archive paths and measurements. Material gaps still explain the verdict. Use the same finding block.
 

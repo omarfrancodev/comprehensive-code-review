@@ -2,7 +2,7 @@
 name: comprehensive-code-review
 description: Use when the user requests a code review, MR/PR review, re-review, assessment of local changes, commits, a feature, or current code, including a broad review invoked through another review skill.
 metadata:
-  version: "2.9.1"
+  version: "2.10.0"
 ---
 
 # Comprehensive Code Review
@@ -22,6 +22,8 @@ Assigned discovery/verification workers read [worker-packets.md](references/exec
 The coordinator loads references by phase and embeds relevant rules in briefs. Use [reading-strategy.md](references/workflow/reading-strategy.md) to plan bounded access/checkpoints. Context identities bind exact inputs; routing preserves project gates.
 
 Before the first artifact write, load [artifacts.md](references/archive/artifacts.md). Use the archive helper when executable within permissions, preserve its returned `run_dir` and `CR-<run_id>` review identity, and keep temporary evidence in an owned registered session. New durable runs require the compact [trace](references/archive/lifecycle-trace.md); historical runs remain unchanged. Verify retained evidence before cleanup; a failed archive gate prevents claiming durable completion.
+
+Resolve archive harness identity once under artifacts.md: preserve the original name and use the bundled catalog for `harness_id`. A generic family does not establish its interface; unknown/conflicting identity stays visible without changing the code verdict. Reuse the prepared identity throughout the run, without detection probes or context rediscovery.
 
 ## Request options
 

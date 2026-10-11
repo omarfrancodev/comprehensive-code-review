@@ -744,7 +744,7 @@ def render(record, audience='user'):
             repeat = f" · repetición: {one_line(check['rerun_reason'])}" if check['rerun_reason'] else ''
             classification = f" · fallo de {FAILURE_KINDS[check['failure_kind']]}" if check['failure_kind'] else ''
             command = f" `{one_line(check['command'])}` —" if audience == 'user' else ''
-            lines.append(f"- {check['id']}:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
+            lines.append(f"- **{check['id']}**:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
             if check.get('evidence'):
                 lines.append('  - **Evidencia:** ' + markdown_text(check['evidence']))
             if check.get('reference'):
@@ -772,7 +772,7 @@ def render(record, audience='user'):
                 limitations.append({'detail': detail, 'material': True})
     if unresolved or limitations:
         lines.extend(['', '### Incertidumbres', ''])
-        lines.extend(f"- {f['id']}: {one_line(f['title'])} — {one_line(f['scenario'])}" for f in unresolved)
+        lines.extend(f"- **{f['id']}**: {markdown_text(f['title'])} — {markdown_text(f['scenario'])}" for f in unresolved)
         lines.extend(f"- {one_line(item['detail'])}" + (' [material]' if item['material'] else '') for item in limitations)
     conditions = [f"{f['id']}: {one_line(f['correction'])}" for f in confirmed if f['blocking']]
     conditions.extend(one_line(r) for r in record['reservations'])
@@ -791,7 +791,7 @@ def render(record, audience='user'):
                 if item.get('previous_review_id'):
                     source += ' · ' + item['previous_review_id']
             checks = ' · comprobaciones: ' + ', '.join(item['check_ids']) if item.get('check_ids') else ''
-            lines.append(f"- {item['id']}: {REREVIEW_STATUS[item['status']]}{source} — {one_line(item['details'])}{checks}")
+            lines.append(f"- **{item['id']}**: {REREVIEW_STATUS[item['status']]}{source} — {one_line(item['details'])}{checks}")
     if audience == 'user' and (record['resources']['residuals'] or record['resources']['publication'] in {'published', 'failed'}):
         lines.extend(['', '### Recursos y publicación', ''])
         lines.extend('- Recurso pendiente: ' + one_line(p) for p in record['resources']['residuals'])
