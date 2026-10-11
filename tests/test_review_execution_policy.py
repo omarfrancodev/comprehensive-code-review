@@ -6,6 +6,7 @@ import unittest
 from test_review_profile_names import record7
 from test_review_contract import contract, finding
 from review_execution import validate_execution_sources
+import test_review_delivery as delivery_tests
 
 
 def record8(profile='focused', selection='explicit'):
@@ -215,3 +216,79 @@ class ExecutionPolicyTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ArchiveExecutionPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = delivery_tests.DeliveryTests()
+        self.addCleanup(self.fixture.doCleanups)
+        self.fixture.setUp()
+        self.artifacts = delivery_tests.artifacts
+
+    def prepared(self, profile='deep'):
+        value = record8(profile)
+        fixture = self.fixture
+        run = self.artifacts.prepare(fixture.repo, fixture.write('scope.json', value['scope']),
+                                     '2.11.0', 'codex', output_root=fixture.archive)
+        from pathlib import Path
+        run = Path(run)
+        value['review_id'] = 'CR-' + self.artifacts.read_json(run / 'cierre.json')['run_id']
+        context, events, _ = source_fixture(value)
+        for event in events:
+            identity = event.get('actor', dict(name='coordinator', provider_id=None))
+            observed = dict(kind=event['kind'], status=event['status'], summary='Observed synthetic review step',
+                            actor=dict(identity, kind='agent'), executor=event.get('executor'),
+                            provenance=dict(kind='tool', source='synthetic native result'), evidence=event['evidence'],
+                            relations=[], authority=None, occurred_at=None)
+            self.artifacts.record_event(run, fixture.write('event.json', observed))
+        plan = value['coverage']['execution']['plan']
+        inputs = [fixture.write('briefs.json', {row['id']: dict(questions=['Check invariant']) for row in plan}),
+                  fixture.write('results.json', {row['id']: dict(result='completed') for row in plan})]
+        return run, value, fixture.write('context.json', context), inputs
+
+    def test_schema8_archive_requires_matching_run_identity(self):
+        run, value, context, inputs = self.prepared()
+        value['review_id'] = 'CR-' + 'f' * 20
+        before = self.fixture.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
+        self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_execution_sources_must_exist_before_retention(self):
+        run, value, context, inputs = self.prepared()
+        before = self.fixture.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs[:1])
+        self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_context_trace_profile_mismatch_blocks_retention(self):
+        run, value, context, inputs = self.prepared()
+        raw = self.artifacts.read_json(context)
+        raw['profile'] = 'standard'
+        context = self.fixture.write('context.json', raw)
+        before = self.fixture.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
+        self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_schema8_delivery_preserves_source_and_execution_provenance(self):
+        run, value, context, inputs = self.prepared()
+        self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
+        self.artifacts.validate(run, require_retained=True)
+        self.artifacts.close(run, cleanup='not_needed', residuals=[])
+        before = self.fixture.snapshot(run)
+        from pathlib import Path
+        target = Path(delivery_tests.delivery.deliver(run, 'full', self.fixture.repo))
+        projected = self.artifacts.read_json(target / 'review.json')
+        receipt = self.artifacts.read_json(target / '.ccr-delivery.json')
+        self.assertEqual(projected['schema_version'], 8)
+        self.assertEqual(projected['review_id'], value['review_id'])
+        self.assertEqual(receipt['source_id_kind'], 'review_id')
+        self.assertEqual(projected['coverage']['execution']['status'], 'fulfilled')
+        self.assertEqual(contract.validate(projected), [])
+        self.assertEqual(before, self.fixture.snapshot(run))
+        # Brief projects the same source without requiring portable references to resolve.
+        brief_root = self.fixture.root / 'brief-delivery'
+        target = Path(delivery_tests.delivery.deliver(run, 'brief', self.fixture.repo, output_root=brief_root))
+        self.assertTrue((target / 'resumen.md').is_file())
+        self.assertEqual(before, self.fixture.snapshot(run))
