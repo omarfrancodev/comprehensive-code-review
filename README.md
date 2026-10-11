@@ -96,6 +96,10 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
 - [Última release publicada: 2.9.1](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.9.1), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
+## Contribuciones
+
+Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para el formato de descripciones de PR/MR y el uso de las plantillas del repositorio.
+
 ## Licencia
 
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
