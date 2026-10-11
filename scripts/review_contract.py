@@ -5,6 +5,7 @@ Python 3.10+, standard library only. Structural checks never establish finding t
 """
 import argparse
 from review_execution import validate_execution
+from review_publication import public_limitations
 import copy
 import html
 import json
@@ -688,12 +689,14 @@ def confirmed_counts_text(findings):
         for priority, label in PRIORITIES.items())
 
 
-def render(record, audience='user'):
+def render(record, audience='user', publication_context=None):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
+    if publication_context is not None and audience != 'comment':
+        raise ValueError('publication context is only applicable to public rendering')
     scope = record['scope']
     responsible = record['responsible']
     version = scope['snapshot'] or scope['head']
@@ -751,7 +754,8 @@ def render(record, audience='user'):
     else:
         lines.extend(['', 'No se confirmaron defectos bloqueantes dentro del alcance revisado.'])
     unresolved = [f for f in record['findings'] if f['status'] == 'unresolved']
-    limitations = [dict(item) for item in record['coverage']['limitations']]
+    limitations = (public_limitations(record, publication_context) if audience == 'comment' else
+                   [dict(item) for item in record['coverage']['limitations']])
     lines.extend(['', '### Validación', ''])
     if record['checks']:
         for check in record['checks']:
@@ -791,7 +795,8 @@ def render(record, audience='user'):
         lines.extend(f"- **{f['id']}**: {markdown_text(f['title'])} — {markdown_text(f['scenario'])}" for f in unresolved)
         lines.extend(f"- {one_line(item['detail'])}" + (' [material]' if item['material'] else '') for item in limitations)
     conditions = [f"{f['id']}: {one_line(f['correction'])}" for f in confirmed if f['blocking']]
-    conditions.extend(one_line(r) for r in record['reservations'])
+    conditions.extend(one_line(r) for r in record['reservations']
+                      if audience != 'comment' or one_line(r) not in known_limits)
     if conditions:
         lines.extend(['', '### Condiciones y reservas', ''])
         lines.extend('- [ ] ' + condition for condition in conditions)
@@ -817,13 +822,17 @@ def render(record, audience='user'):
     return public_projection(output, record) if audience == 'comment' else output
 
 
-def render_handoff(record, context=None, audience='user'):
+def render_handoff(record, context=None, audience='user', publication_context=None):
     """Render an explicitly requested contextual index, never an authorization."""
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
+    if publication_context is not None and audience != 'comment':
+        raise ValueError('publication context is only applicable to public rendering')
+    limitations = (public_limitations(record, publication_context) if audience == 'comment' else
+                   record['coverage']['limitations'])
     context = context or {}
     allowed = {'source_record', 'source_report', 'requirements', 'plan', 'decisions_pending'}
     if not isinstance(context, dict) or set(context) - allowed:
@@ -856,8 +865,9 @@ def render_handoff(record, context=None, audience='user'):
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
     uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
-    uncertainties += [item['detail'] for item in record['coverage']['limitations']]
-    uncertainties += [row['details'] for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'}]
+    uncertainties += [item['detail'] for item in limitations]
+    uncertainties += [row['details'] for row in record['coverage'].get('areas', [])
+                      if row['status'] in {'partial', 'not_evaluated'} and (audience == 'user' or row['material'])]
     pending = context.get('decisions_pending', [])
     if not isinstance(pending, list) or any(not isinstance(item, str) for item in pending):
         raise ValueError('decisions_pending must be a text array')
@@ -902,9 +912,13 @@ def main():
     parser.add_argument('--input', required=True, help='Record JSON; for deduplicate: findings array JSON')
     parser.add_argument('--groups', help='Explicit same-cause ID groups JSON; required for deduplicate')
     parser.add_argument('--context', help='Optional explicitly collected handoff provenance JSON')
+    parser.add_argument('--publication-context', help='Ephemeral source-bound historical limitation classification for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
     args = parser.parse_args()
     try:
+        if args.publication_context and args.command != 'render-comment':
+            raise ValueError('--publication-context is only applicable to render-comment')
+        publication_context = json.loads(Path(args.publication_context).read_text(encoding='utf-8')) if args.publication_context else None
         value = json.loads(Path(args.input).read_text(encoding='utf-8'))
         if args.command == 'validate':
             errors = validate(value)
@@ -923,7 +937,7 @@ def main():
             context = json.loads(Path(args.context).read_text(encoding='utf-8')) if args.context else None
             print(render_handoff(value, context=context), end='')
         else:
-            print(render(value, 'user' if args.command == 'render-user' else 'comment'), end='')
+            print(render(value, 'user' if args.command == 'render-user' else 'comment', publication_context), end='')
         return 0
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)

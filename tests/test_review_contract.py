@@ -290,7 +290,10 @@ class RenderingTests(unittest.TestCase):
         record['findings'] = [finding(status='unresolved')]
         record['coverage']['limitations'] = [{'detail': 'Consumer requirement unknown', 'material': True}]
         record['verdict'] = 'insufficient_evidence'
-        output = contract.render(record, audience='comment')
+        from review_publication import publication_digest
+        output = contract.render(record, audience='comment', publication_context={
+            'source_sha256': publication_digest(record),
+            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
         self.assertNotIn('### Hallazgos confirmados', output)
         self.assertIn('### Incertidumbres', output)
 
