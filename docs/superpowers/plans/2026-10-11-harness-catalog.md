@@ -83,5 +83,5 @@
 - [x] Reproducir normalización de argumento/configuración con regresión RED; implementar strip/casefold y verificar GREEN sin ocultar conflictos.
 - [x] Corregir evaluación archive 1–6 y anunciar en CHANGELOG la compatibilidad requerida por lectores/visor.
 - [x] Verificar suite integrada: 250 pruebas, 249 pass/una omisión del host; AST, enlaces y diff válidos.
-- [ ] Subir correcciones y actualizar descripción del PR con el estado actual de validación.
+- [x] Subir correcciones y actualizar descripción del PR con el estado actual de validación (748f6d7).
 - [ ] Esperar aprobación para merge/release. Los nuevos puntos sobre formato público/delegación quedan solo como propuesta, fuera de estas correcciones.
