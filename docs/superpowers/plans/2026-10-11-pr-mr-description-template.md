@@ -50,7 +50,7 @@
 - [x] **Step 1: Actualizar esta rama desde main vigente.** Fetch/merge de origin/main; main sigue en d54be59, sin conflictos.
 - [x] **Step 2: Crear ambas plantillas con el bloque exacto de la spec.** Sin resultados precargados, checklists de aprobación, variables/quick actions, referencias ficticias ni secciones adicionales.
 - [x] **Step 3: Comprobar identidad de archivos y formato.** Copias idénticas y cuerpo igual al aprobado; enlaces y diff check válidos. Rutas/nombres respaldados por las fuentes oficiales de la spec. Sin tests permanentes de texto ni suite de producto nueva.
-- [ ] **Step 4: Commit.** Stage explícito de ambas rutas y commit `docs(contrib): añadir plantilla común de PR y MR`.
+- [x] **Step 4: Commit.** Plantillas guardadas en 4ee590a, con stage de rutas explícitas.
 
 ### Task 2: Guía y presentación del propio PR
 
@@ -62,13 +62,13 @@
 - Consumes: plantillas de Task 1 y reglas de título/contenido de la spec.
 - Produces: guía breve accesible desde README, sin duplicar el cuerpo de la plantilla ni las instrucciones de CCR.
 
-- [ ] **Step 1: Escribir CONTRIBUTING.** Explicar título orientado al cambio final, tres secciones obligatorias, opcionales, validación factual, compatibilidad relevante y fuente canónica/copia sincronizada. Enlazar ambas plantillas usando rutas relativas.
-- [ ] **Step 2: Documentar CLI/API y límites.** El cuerpo se prepara explícitamente con archivo UTF-8/`--body-file` cuando se usa gh; publicar/mergear requieren autorización del flujo. Native templates se consumen desde default branch y pueden tener precedencia externa en GitLab. No prometer prueba web en una instancia no disponible ni enforcement de agentes.
-- [ ] **Step 3: Añadir enlace breve desde README.** Mantener la explicación extensa en CONTRIBUTING; no cambiar SKILL.md, docs/usage.md ni changelog de versiones.
-- [ ] **Step 4: Revisión manual de dos muestras efímeras.** Probar formato para cambio documental pequeño y para contrato/schema; confirmar información útil, supresión de secciones vacías y ausencia de detalles privados/resultado inventado. No crear PRs de prueba, tests de texto o muestras permanentes redundantes.
+- [x] **Step 1: Escribir CONTRIBUTING.** Guía breve con secciones, título, validación factual y links a las dos plantillas.
+- [x] **Step 2: Documentar CLI/API y límites.** Cuerpo explícito UTF-8/--body-file y comprobación remota; prioridad de configuraciones GitLab y consumo desde default branch; sin enforcement/configuración de agente.
+- [x] **Step 3: Añadir enlace breve desde README.** Sin cambios a SKILL.md, docs/usage.md o changelog.
+- [x] **Step 4: Revisión manual de dos muestras efímeras.** Cuerpo del propio PR documental y muestra hipotética de contrato en scratch: secciones útiles, ninguna evidencia inventada ni datos privados. No PRs de prueba ni nuevas muestras permanentes.
 - [ ] **Step 5: Verificar enlaces y diff completo; commit.** Comprobar enlaces relativos de los nuevos archivos y README, igualdad de plantillas y `git diff --check`; comprobar que los únicos cambios son los previstos. Commit `docs(contrib): explicar descripciones y uso de plantillas`.
 - [ ] **Step 6: Publicar rama y crear/adjuntar PR con el formato propuesto.** Describir resultado, validación documental y alcance; título convencional en español. No reclamar suite completa nueva ni modificar PRs existentes. Esperar validación humana antes de merge; sin tag/release. Limpiar este worktree únicamente después de la integración autorizada.
 
 ## Execution ledger
 
-Preparación: rama separada de main, base y portabilidad consultadas; solo documentos de diseño/plan creados. Implementación pendiente de revisión. No cambios de versión ni necesidad de modificar PR #14.
+Usuario autorizó implementación y PR el 2026-10-11. Base main d54be59; Task 1 completada en 4ee590a, con plantillas idénticas y fieles a spec, enlaces/diff válidos. Task 2: guía y README implementados; dos escenarios documentales revisados, sin código de producto ni resultados inventados. Publicación del PR y revisión final pendientes. No cambios de versión ni modificaciones a PR #14 desde esta rama.

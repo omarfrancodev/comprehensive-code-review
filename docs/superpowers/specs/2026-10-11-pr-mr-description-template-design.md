@@ -1,6 +1,6 @@
 # Plantilla de descripciones de PR/MR del repositorio
 
-Fecha: 2026-10-11. Estado: propuesta para revisión; plantillas activas pendientes de implementar.
+Fecha: 2026-10-11. Estado: aprobada para implementación; plantillas implementadas, pendientes de integrar en main mediante PR.
 
 ## Objetivo y alcance
 
@@ -81,4 +81,4 @@ La incorporación de estas plantillas no actualiza PRs abiertos. El nuevo PR de 
 
 Sin plantillas de PR/MR ni guía CONTRIBUTING en main observado. Suite focalizada `test_review_contract.py`: 34 pruebas aprobadas, 0.313 s; el primer intento presentó dos errores de permisos en TEMP dentro del sandbox y la repetición permitida pasó. No se repitió la suite completa por preparar documentos sin cambiar código.
 
-Spec revisada por alcance, alternativas, formato, portabilidad y mantenimiento. Falta la revisión del usuario antes de activar plantillas.
+Spec revisada por alcance, alternativas, formato, portabilidad y mantenimiento. El usuario autorizó su implementación el 2026-10-11. Las plantillas se consumen desde main después de aprobar e integrar el PR.
