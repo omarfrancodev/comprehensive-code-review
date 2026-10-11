@@ -1,6 +1,6 @@
 # CCR Publication and Profile Fulfillment Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Publicar solo información relevante para el cambio y acreditar el cumplimiento o la degradación real de los perfiles.
 
@@ -36,7 +36,7 @@
 - [x] Verificar `.worktrees/` ignorado e identidad Git `omarfrancodev` / `fofe2803@gmail.com`.
 - [x] Suite base: `python -B -X utf8 -m unittest discover -s tests -q`; 237 pruebas, 236 pass / una omitida por Windows, 203.192 s.
 - [x] Preparar especificación y este plan; no modificar implementación.
-- [ ] Obtener revisión de documentos escritos y confirmar método de ejecución; conservar ejecución nativa si el usuario confirma el método usado en este flujo.
+- [x] Obtener revisión de documentos escritos y confirmar método de ejecución; conservar ejecución nativa si el usuario confirma el método usado en este flujo.
 
 ## Estructura y responsabilidades
 
@@ -65,11 +65,11 @@
 - Produces: `record8(profile='focused') -> dict`, con identidad canónica, limitaciones `{kind, detail, material, public_summary}` y ejecución según la spec; fixture reusable por Tasks 2–4.
 - El envelope llama posteriormente `validate_execution(record: dict) -> list[str]` de Task 2; no dejar un final schema 8 utilizable sin su gate.
 
-- [ ] **Step 1: Añadir regresiones `test_schema8_requires_typed_limitations`, `test_schema8_keeps_ids_authors_and_verdict_precedence` y `test_legacy_validation_does_not_mutate_source`.** Afirmar: kind desconocido, campos ausentes o material execution sin resumen fallan; execution no material con resumen no null falla; IDs/autores/binding siguen obligatorios; registros 1–7 mantienen sus bytes semánticos y reglas.
-- [ ] **Step 2: Ejecutar RED.** Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_execution_policy.py -v`. Expected: schema 8 no soportado o ausencia del contrato nuevo, no fallo de importación accidental.
-- [ ] **Step 3: Extender envelope/limitaciones y canonicalización en `review_contract.py`.** Aceptar schema 8 con nombres focused/standard/deep/extended y todas las obligaciones de schema 7. Conservar branches históricos y packet/merge. No clasificar texto por heurísticas.
-- [ ] **Step 4: Ejecutar GREEN y regresiones existentes de profiles/traceability.** Repetir comando del Step 2 y `python -B -X utf8 -m unittest discover -s tests -p test_review_profile_names.py -v`; todos los casos aplicables pasan. Task 2 completa el gate de ejecución antes del commit conjunto si separar Task 1 dejara un contrato permisivo.
-- [ ] **Step 5: Commit del deliverable testable.** `git add scripts/review_contract.py tests/test_review_execution_policy.py`; `git commit -m 'feat(contract): definir resultado de revisión schema 8'`. Si el gate de Task 2 es inseparable, realizar este commit junto con esa tarea, sin checkpoint que declare completo un gate ausente.
+- [x] **Step 1: Añadir regresiones `test_schema8_requires_typed_limitations`, `test_schema8_keeps_ids_authors_and_verdict_precedence` y `test_legacy_validation_does_not_mutate_source`.** Afirmar: kind desconocido, campos ausentes o material execution sin resumen fallan; execution no material con resumen no null falla; IDs/autores/binding siguen obligatorios; registros 1–7 mantienen sus bytes semánticos y reglas.
+- [x] **Step 2: Ejecutar RED.** Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_execution_policy.py -v`. Expected: schema 8 no soportado o ausencia del contrato nuevo, no fallo de importación accidental.
+- [x] **Step 3: Extender envelope/limitaciones y canonicalización en `review_contract.py`.** Aceptar schema 8 con nombres focused/standard/deep/extended y todas las obligaciones de schema 7. Conservar branches históricos y packet/merge. No clasificar texto por heurísticas.
+- [x] **Step 4: Ejecutar GREEN y regresiones existentes de profiles/traceability.** Repetir comando del Step 2 y `python -B -X utf8 -m unittest discover -s tests -p test_review_profile_names.py -v`; todos los casos aplicables pasan. Task 2 completa el gate de ejecución antes del commit conjunto si separar Task 1 dejara un contrato permisivo.
+- [x] **Step 5: Commit del deliverable testable.** `git add scripts/review_contract.py tests/test_review_execution_policy.py`; `git commit -m 'feat(contract): definir resultado de revisión schema 8'`. Si el gate de Task 2 es inseparable, realizar este commit junto con esa tarea, sin checkpoint que declare completo un gate ausente.
 
 ### Task 2: Cumplimiento de plan, independencia y fallback
 
@@ -83,11 +83,11 @@
 - Produces: `validate_execution(record: dict) -> list[str]`, sin I/O ni mutación; `validate_execution_sources(record: dict, context: dict, trace_events: list[dict], retained_references: set[str]) -> list[str]` para Task 4.
 - Resultados/plan usan referencias a contexto/briefs/packets existentes. Una referencia portable puede ser una etiqueta de provenance; su existencia real se verifica solo en el archive original.
 
-- [ ] **Step 1: Añadir casos parametrizados de perfiles y degradación.** `test_deep_requires_two_fresh_discoveries_and_grouped_verifier`; `test_extended_counts_follow_selection_source`; `test_same_input_context_is_not_reviewer_identity`; `test_reused_reviewer_context_cannot_claim_independence`; `test_fallback_requires_observed_source`; `test_restriction_does_not_invent_product_defect`; `test_focused_and_clean_standard_do_not_overdelegate`; `test_standard_p3_requires_fresh_verification`. Afirmar deep 2/3 justificados +1 verifier distinto; extended automático 4/5, explícito 2–5; fallback cubre asignaciones incumplidas y no convierte una sesión en independiente.
-- [ ] **Step 2: Ejecutar RED.** `python -B -X utf8 -m unittest discover -s tests -p test_review_execution_policy.py -v`; los planes incumplidos deben fallar por el gate ausente.
-- [ ] **Step 3: Implementar interfaces y conectar el gate.** Validar IDs/references, enums, requirements por perfil y verificación real. `fulfilled` satisface asignaciones obligatorias; `degraded` documenta impedimentos para requisitos no cumplidos. Mantener source/IDs null cuando la herramienta no los proporciona. No aceptar «no pidió subagentes» ni pocos slots como impedimento. Separar project gates con fuente propia y límites de discovery; no cambiar precedencia de veredicto por número de agentes.
-- [ ] **Step 4: Ejecutar GREEN.** Repetir suite focalizada. Añadir `test_profile_transition_needs_observed_source` con contexto/traza coherentes y una transición ausente; la ausencia no se repara fabricando un evento.
-- [ ] **Step 5: Commit.** `git add scripts/review_execution.py scripts/review_contract.py tests/test_review_execution_policy.py`; `git commit -m 'feat(review): verificar cumplimiento de perfiles y fallback'`.
+- [x] **Step 1: Añadir casos parametrizados de perfiles y degradación.** `test_deep_requires_two_fresh_discoveries_and_grouped_verifier`; `test_extended_counts_follow_selection_source`; `test_same_input_context_is_not_reviewer_identity`; `test_reused_reviewer_context_cannot_claim_independence`; `test_fallback_requires_observed_source`; `test_restriction_does_not_invent_product_defect`; `test_focused_and_clean_standard_do_not_overdelegate`; `test_standard_p3_requires_fresh_verification`. Afirmar deep 2/3 justificados +1 verifier distinto; extended automático 4/5, explícito 2–5; fallback cubre asignaciones incumplidas y no convierte una sesión en independiente.
+- [x] **Step 2: Ejecutar RED.** `python -B -X utf8 -m unittest discover -s tests -p test_review_execution_policy.py -v`; los planes incumplidos deben fallar por el gate ausente.
+- [x] **Step 3: Implementar interfaces y conectar el gate.** Validar IDs/references, enums, requirements por perfil y verificación real. `fulfilled` satisface asignaciones obligatorias; `degraded` documenta impedimentos para requisitos no cumplidos. Mantener source/IDs null cuando la herramienta no los proporciona. No aceptar «no pidió subagentes» ni pocos slots como impedimento. Separar project gates con fuente propia y límites de discovery; no cambiar precedencia de veredicto por número de agentes.
+- [x] **Step 4: Ejecutar GREEN.** Repetir suite focalizada. Añadir `test_profile_transition_needs_observed_source` con contexto/traza coherentes y una transición ausente; la ausencia no se repara fabricando un evento.
+- [x] **Step 5: Commit.** `git add scripts/review_execution.py scripts/review_contract.py tests/test_review_execution_policy.py`; `git commit -m 'feat(review): verificar cumplimiento de perfiles y fallback'`.
 
 ### Task 3: Proyección pública y clasificación histórica
 
@@ -142,6 +142,10 @@
 
 ## Execution ledger
 
-- Preparación únicamente: base `d54be59`, PR #14 abierto con HEAD `3f7a403`; sin cambios de producto/helper ni artifacts de CCR.
+- Preparación histórica: base `d54be59`, PR #14 abierto con HEAD `3f7a403`; sin cambios de producto/helper ni artifacts de CCR.
 - Suite base observada: 237 tests, 236 pass, 1 skip del host. Este resultado no cubre cambios todavía no implementados.
 - Todas las Tasks de implementación están pendientes; no declarar schema 8 disponible ni perfiles corregidos hasta completar verificación.
+
+- Implementación autorizada el 2026-10-11; ejecución nativa. Rama actualizada desde main 28ef2fa en 8b0ee45. Tasks 1–2 se implementan juntas por gate inseparable. RED: schema 8 no soportado; GREEN: contrato y fuentes, compatibilidad de perfiles/trazabilidad.
+- Ruling: Contexto retenido registra profile/profile_reference y profile_history opcional; referencia apunta a la observación ya recogida. El gate contrasta dispatch/resultados de la traza, sin inferir identidad desde el contexto de inputs ni consultar provider history.
+- Ruling: El cargador del fixture de contrato añade scripts a sys.path, igual que el fixture de archive, para importar los módulos puros sin afectar el CLI de producción.

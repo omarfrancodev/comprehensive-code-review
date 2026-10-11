@@ -1,6 +1,6 @@
 # Publicación y cumplimiento de perfiles de CCR
 
-Fecha: 2026-10-11. Estado: propuesta escrita para revisión; implementación pendiente.
+Fecha: 2026-10-11. Estado: implementación autorizada por el usuario el 2026-10-11; en curso.
 
 ## Objetivo y alcance acordado
 

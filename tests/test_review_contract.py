@@ -9,6 +9,7 @@ import tempfile
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts' / 'review_contract.py'
+sys.path.insert(0, str(MODULE_PATH.parent))
 spec = importlib.util.spec_from_file_location('review_contract', MODULE_PATH)
 contract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(contract)
