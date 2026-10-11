@@ -1,0 +1,17 @@
+{
+  "catalog_version": 1,
+  "entries": [
+    {"id": "codex", "name": "Codex", "family": "codex", "interface": null, "aliases": []},
+    {"id": "codex-desktop", "name": "Codex Desktop", "family": "codex", "interface": "desktop", "aliases": ["Codex desktop/native agents + PowerShell"]},
+    {"id": "codex-cli", "name": "Codex CLI", "family": "codex", "interface": "cli", "aliases": []},
+    {"id": "claude-code", "name": "Claude Code", "family": "claude-code", "interface": null, "aliases": []},
+    {"id": "claude-code-desktop", "name": "Claude Code Desktop", "family": "claude-code", "interface": "desktop", "aliases": []},
+    {"id": "claude-code-cli", "name": "Claude Code CLI", "family": "claude-code", "interface": "cli", "aliases": []},
+    {"id": "claude-code-web", "name": "Claude Code Web", "family": "claude-code", "interface": "web", "aliases": []},
+    {"id": "copilot-cli", "name": "Copilot CLI", "family": "copilot", "interface": "cli", "aliases": ["GitHub Copilot CLI"]},
+    {"id": "kiro", "name": "Kiro", "family": "kiro", "interface": null, "aliases": []},
+    {"id": "kiro-ide", "name": "Kiro IDE", "family": "kiro", "interface": "ide", "aliases": []},
+    {"id": "kiro-cli", "name": "Kiro CLI", "family": "kiro", "interface": "cli", "aliases": []},
+    {"id": "kirocrew-dashboard", "name": "KiroCrew Dashboard", "family": "kirocrew", "interface": "dashboard", "aliases": []}
+  ]
+}

@@ -23,14 +23,15 @@ import uuid
 import review_contract
 import review_metrics
 import review_trace
+import review_harness
 
 
 FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
 TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
-ARCHIVE_SCHEMA_VERSION = 5
-TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5})
+ARCHIVE_SCHEMA_VERSION = 6
+TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6})
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
@@ -305,10 +306,12 @@ def _load_run(run_dir):
     if not _contains(root, run) or run == root:
         raise ValueError('run escaped its registered archive root')
     _scope(manifest.get('scope'))
-    if manifest.get('schema_version') not in (1, 2, 3, 4, ARCHIVE_SCHEMA_VERSION):
+    if manifest.get('schema_version') not in (1, 2, 3, 4, 5, ARCHIVE_SCHEMA_VERSION):
         raise ValueError('unsupported archive schema')
+    if manifest['schema_version'] == 6:
+        review_harness.validate_identity(manifest)
     states = {'prepared', 'retaining', 'closing', 'complete'}
-    if manifest['schema_version'] == 5:
+    if manifest['schema_version'] in (5, 6):
         states.add('processing')
     if manifest.get('state') not in states:
         raise ValueError('invalid archive state')
@@ -432,11 +435,11 @@ def record_event(run_dir, event_file, execution_metadata=None):
         raise ValueError('completed review history is immutable')
     if manifest['state'] == 'retaining':
         raise ValueError('retention is interrupted; finish retention before recording milestones')
-    if manifest['schema_version'] == 5 and event['occurred_at'] is not None and event['provenance']['source'] is None:
+    if manifest['schema_version'] in (5, 6) and event['occurred_at'] is not None and event['provenance']['source'] is None:
         raise ValueError('observed execution time requires an identifiable provenance source')
-    if manifest['schema_version'] == 5:
+    if manifest['schema_version'] in (5, 6):
         review_trace.validate_local_event_targets(event, (run / review_trace.NAME).read_bytes())
-    if manifest['schema_version'] == 5 and manifest['state'] == 'prepared' and _starts_processing(event):
+    if manifest['schema_version'] in (5, 6) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
     return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
@@ -537,13 +540,15 @@ def _measurements(inputs, unavailable_reason):
             'overlap_detection': 'Duplicate paths and explicit execution IDs only; semantic overlap is not detectable.'}
 
 
-def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None):
+def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
+            *, harness_id=None, harness_source=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = read_json(scope_file)
     _scope(scope)
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
+    harness_identity = review_harness.resolve(harness, harness_id, harness_source)
     identity = repository_identity(repo)
     repository_key = _digest(identity.encode('utf-8'))[:20]
     root = select_output_root(repo, output_root)
@@ -560,6 +565,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'prepared', 'retained': False, 'cleanup': 'pending', 'residuals': [],
                 'temporary_paths': [], 'temporary_manifests': [], 'executors': [], 'hashes': {}}
+    manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
     scoped = root / _repository_group(identity) / _scope_group(scope)
@@ -872,13 +878,15 @@ def main():
     create.add_argument('--output-root')
     create.add_argument('--previous-run')
     create.add_argument('--temporary-path', action='append')
+    create.add_argument('--harness-id', help='Declared canonical catalog ID; overrides session CCR_HARNESS_ID')
+    create.add_argument('--harness-source-file', help='Existing JSON {kind: user|platform, reference: text}; requires --harness-id')
     resources = commands.add_parser('register', help='Register verified owned temporary paths before use')
     resources.add_argument('--run-dir', required=True)
     resources.add_argument('--temporary-path', action='append', required=True)
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
-    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5 archive')
+    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5/6 archive')
     trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
     trace.add_argument('--run-dir', required=True)
     trace.add_argument('--event-file', required=True)
@@ -904,7 +912,9 @@ def main():
     try:
         if args.command == 'prepare':
             result = {'run_dir': prepare(args.repo, args.scope_file, args.skill_version, args.harness,
-                                         args.output_root, args.previous_run, args.temporary_path)}
+                                         args.output_root, args.previous_run, args.temporary_path,
+                                         harness_id=args.harness_id,
+                                         harness_source=read_json(args.harness_source_file) if args.harness_source_file else None)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
                             args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input)
