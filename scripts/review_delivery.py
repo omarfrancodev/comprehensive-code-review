@@ -195,7 +195,7 @@ def _brief(record):
     for item in confirmed:
         location = item['location']
         label = (str(location['path']) + ':' + str(location['line'])) if item['type'] == 'code' else location['section']
-        lines.append('- ' + item['id'] + ' · ' + item['priority'] + ' · ' + contract.markdown_text(item['title'])
+        lines.append('- **' + item['id'] + '** · ' + item['priority'] + ' · ' + contract.markdown_text(item['title'])
                      + ' · ' + (contract.reference_text(location['url']) + ' · ' if location['url'] else '')
                      + contract.markdown_text(label) + ' · bloqueante: ' + ('sí' if item['blocking'] else 'no'))
         for key, label in [('scenario', 'Escenario'), ('impact', 'Impacto'), ('correction', 'Corrección requerida')]:
@@ -204,7 +204,7 @@ def _brief(record):
         lines.append('- Ningún hallazgo confirmado.')
     lines.extend(['', '### Comprobaciones', ''])
     for check in record['checks']:
-        lines.append('- ' + check['id'] + ' · ' + contract.CHECK_STATUS[check['status']] + ' · versión: '
+        lines.append('- **' + check['id'] + '** · ' + contract.CHECK_STATUS[check['status']] + ' · versión: '
                      + contract.markdown_text(check['revision']) + ' · ' + contract.markdown_text(check['evidence'] or 'Sin ejecución'))
         if check.get('reference'):
             lines.append('  - Referencia: ' + contract.reference_text(check['reference']))
@@ -214,18 +214,19 @@ def _brief(record):
             lines.append('  - Clasificación: ' + contract.FAILURE_KINDS[check['failure_kind']])
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
-    uncertainties = [item['id'] + ': ' + item['title'] + ' · ' + item['scenario'] for item in record['findings'] if item['status'] == 'unresolved']
-    uncertainties.extend(item['detail'] for item in record['coverage']['limitations'])
-    uncertainties.extend(row['details'] for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'})
-    uncertainties.extend(record['reservations'])
+    uncertainties = ['**' + item['id'] + '**: ' + contract.markdown_text(item['title'] + ' · ' + item['scenario'])
+                     for item in record['findings'] if item['status'] == 'unresolved']
+    uncertainties.extend(contract.markdown_text(item['detail']) for item in record['coverage']['limitations'])
+    uncertainties.extend(contract.markdown_text(row['details']) for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'})
+    uncertainties.extend(contract.markdown_text(item) for item in record['reservations'])
     if uncertainties:
         lines.extend(['', '### Incertidumbres y reservas', ''])
-        lines.extend('- ' + contract.markdown_text(item) for item in dict.fromkeys(uncertainties))
+        lines.extend('- ' + item for item in dict.fromkeys(uncertainties))
     if record['rereview']:
         lines.extend(['', '### Re-review', ''])
         for item in record['rereview']:
             source = ' · anterior: ' + contract.markdown_text(item['previous_title']) if item.get('previous_title') else ''
-            lines.append('- ' + item['id'] + ' · ' + contract.REREVIEW_STATUS[item['status']] + source + ' · ' + contract.markdown_text(item['details']))
+            lines.append('- **' + item['id'] + '** · ' + contract.REREVIEW_STATUS[item['status']] + source + ' · ' + contract.markdown_text(item['details']))
     return '\n'.join(lines) + '\n'
 
 

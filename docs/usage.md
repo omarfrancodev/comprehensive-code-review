@@ -153,3 +153,13 @@ python -B -m unittest discover -s tests -v
 Las pruebas cubren contratos, helpers, cobertura ABCDE, compatibilidad, escenarios ejecutables y limpieza en repositorios temporales. Git es necesario para la integración; sin él se informa una omisión. Ejecuta las comprobaciones que escriben en espacios aislados.
 
 Las mediciones se activan solo para una evaluación de coste solicitada: no se crean archivos de medición ni se buscan contadores en revisiones normales. Los contadores no disponibles permanecen desconocidos. No hay captura automática de tokens/créditos en Codex/Kiro, ni se ha medido un porcentaje de ahorro. Las pruebas mecánicas no son un benchmark de coste ni garantizan integridad del producto; consulta [measurements.md](../references/maintenance/measurements.md) y [evaluation.md](../references/maintenance/evaluation.md). La skill no selecciona modelos ni cambia su esfuerzo.
+
+## Identidad del entorno de ejecución
+
+`harness` conserva el nombre original. El cierre añade `harness_id` del [catálogo canónico](../references/archive/harness-catalog.json), su versión, fuente y diagnósticos. Por ejemplo, Claude Code Desktop tiene ID `claude-code-desktop`; `claude-code` conserva la familia con interfaz desconocida. No se deduce Desktop a partir del modelo ni del nombre genérico.
+
+Puedes declarar en la solicitud: «Esta sesión usa Claude Code Desktop; prepara el archivo con harness_id claude-code-desktop y registra esta declaración como fuente». El coordinador pasa el ID y la fuente al helper al preparar el run y los reutiliza. Para ejecuciones recurrentes puedes configurar `CCR_HARNESS_ID` en ese perfil/sesión; evita configurarlo globalmente si Desktop y CLI comparten settings. Un ID explícito prevalece sobre esa configuración. Si no hay identidad inequívoca, se conserva el texto, ID null y un diagnóstico; la revisión de código continúa.
+
+Consulta [artifacts.md](../references/archive/artifacts.md#harness-identity--resolve-once-at-preparation) para argumentos reales del helper, fuentes, conflictos y fallback nativo. Los archivos históricos permanecen intactos; el catálogo no los migra ni reinterpreta. Esto no activa mediciones ni sondeos adicionales.
+
+El catálogo inicial contiene 52 identidades en 17 familias, incluidas variantes de Cursor, Windsurf, Gemini CLI, OpenCode, Cline, Roo Code, Continue, Aider, Antigravity, Augment/Auggie, OpenHands y Devin, además de los entornos originales. Es un catálogo de identidad, no una certificación de integración. Un entorno personalizado puede ejecutar la revisión aunque no esté listado: conserva su nombre con ID desconocido. Las reglas para añadir entradas están en artifacts.md; los nombres de modelos y el editor anfitrión por sí solos no identifican al harness.

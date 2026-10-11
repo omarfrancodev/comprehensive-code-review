@@ -23,6 +23,22 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_brief_labels_bold_confirmed_checks_unresolved_and_historical_followup(self):
+        value = record6()
+        confirmed = finding()
+        confirmed['id'] = 'F001'
+        unresolved = copy.deepcopy(confirmed)
+        unresolved.update(id='F002', status='unresolved', title='<script>unsafe</script> **claim**')
+        value['findings'] = [confirmed, unresolved]
+        value['checks'] = [check()]
+        value['rereview'] = [dict(id='F-01', status='not_reevaluated', previous_title='Original', details='Outside scope')]
+        text = delivery._brief(value)
+        for label in ('- **F001** ·', '- **C001** ·', '- **F002**:', '- **F-01** ·'):
+            self.assertIn(label, text)
+        self.assertIn('&lt;script&gt;', text)
+        self.assertNotIn('<script>', text)
+        self.assertNotIn('**claim**', text)
+
     def setUp(self):
         self.assertIsNotNone(delivery, 'explicit delivery helper is missing')
         # TEMP/TMP are configured by the focused runner outside the installation.

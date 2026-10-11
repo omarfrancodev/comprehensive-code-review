@@ -53,3 +53,5 @@ For collected additional context, supply `--context <context.json>`. Omit empty 
 This input contains only supported observations already available, bound to their known version; the helper checks structure, not their truth. The total is limited to 32 KiB and 24 entries. Do not populate the example from invented IDs, sources or versions.
 
 Do not commit, publish or authorize fixes merely because delivery was requested. Report the actual delivery path and any source/destination limitation. When the helper is unavailable, a native export follows the same contents, projection, path and non-overwrite rules. A delivery failure does not erase the retained review or fabricate successful delivery.
+
+Use bold ID labels in full/brief delivery for confirmed findings (brief), checks, unresolved findings and previous-review ledger entries. Preserve the underlying IDs, historical source IDs and link targets; escape supplied text separately from generated formatting. Full delivery inherits report-format.md.

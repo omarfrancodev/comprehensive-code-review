@@ -41,7 +41,7 @@ class TraceTests(unittest.TestCase):
         self.assertEqual([event['kind'] for event in events], ['prepare', 'register', 'retain', 'validation', 'close'])
         self.assertEqual([event['sequence'] for event in events], list(range(1, 6)))
         self.assertTrue(all(datetime.fromisoformat(event['recorded_at']).utcoffset().total_seconds() == 0 for event in events))
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 6)
         before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
         artifacts.validate(run, require_retained=True)
         self.close(run)
@@ -78,7 +78,7 @@ class TraceTests(unittest.TestCase):
 
     def test_processing_starts_on_observed_work_only(self):
         run = self.prepare()
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 5)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 6)
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
         for kind, status in [('profile', 'selected'), ('agent', 'pending')]:
             artifacts.record_event(run, self.write('planned.json', dict(kind=kind, status=status, summary='Planning only')))
