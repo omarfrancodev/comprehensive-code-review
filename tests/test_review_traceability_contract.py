@@ -68,6 +68,7 @@ class TraceabilityContractTests(unittest.TestCase):
         self.assertIn('Contrato anterior', output)
         self.assertIn('F-01', output)
         self.assertIn('no reevaluado', output)
+        self.assertIn('- **F-01**:', output)
         record['rereview'][0]['previous_review_id'] = 'CR-' + 'c' * 20
         self.assertTrue(contract.validate(record))
 
@@ -197,8 +198,20 @@ class TraceabilityContractTests(unittest.TestCase):
         for audience in ('user', 'comment'):
             output = contract.render(record, audience)
             for identifier in ('C001', 'C002'):
-                self.assertIn('\n\n<a id="' + identifier + '"></a>\n\n- ' + identifier + ':', output)
+                self.assertIn('\n\n<a id="' + identifier + '"></a>\n\n- **' + identifier + '**:', output)
             self.assertIn('\n  - **Evidencia:** Consumer returned expected id', output)
+
+    def test_unresolved_labels_are_bold_without_interpreting_finding_text(self):
+        record = record6()
+        item = finding()
+        item.update(id='F001', status='unresolved', title='<script>unsafe</script> **claim**')
+        record['findings'] = [item]
+        for audience in ('user', 'comment'):
+            output = contract.render(record, audience)
+            self.assertIn('- **F001**:', output)
+            self.assertIn('&lt;script&gt;', output)
+            self.assertNotIn('<script>', output)
+            self.assertNotIn('**claim**', output)
 
     def test_malformed_schema6_collections_return_errors_without_crashing(self):
         variants = [('grandfathered_ids', {'findings': [[]], 'checks': []}),
