@@ -92,4 +92,4 @@
 - [x] Normalizar el entorno vacío/en blanco como no configurado; conservar prioridad de IDs explícitos, conflictos y errores de argumento en blanco. Doce pruebas de harness GREEN.
 - [x] Actualizar spec, artifacts y changelog con la diferencia entre entorno no configurado y argumento explícito inválido.
 - [x] Verificar suite integrada: 251 pruebas, 250 pass/una omisión del host; AST, enlaces y diff válidos.
-- [ ] Publicar corrección F003 y actualizar descripción del PR #14.
+- [x] Publicar corrección F003 (1a77e76) y actualizar descripción del PR #14.
