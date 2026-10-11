@@ -35,7 +35,7 @@
 - [x] Crear `docs/pr-mr-description-template` desde origin/main `d54be59`, en `.worktrees/pr-mr-description-template`, ignorado por Git.
 - [x] Verificar base: 34 pruebas focalizadas aprobadas; repetición fuera del sandbox tras dos errores de permisos TEMP.
 - [x] Redactar spec y plan; plantilla activa todavía pendiente.
-- [ ] Revisar documentos con el usuario antes de implementar; ejecución nativa sugerida por tratarse de archivos documentales pequeños y dependientes.
+- [x] Usuario autorizó implementar spec/plan y abrir PR el 2026-10-11; ejecución nativa.
 
 ### Task 1: Plantillas equivalentes
 
@@ -47,9 +47,9 @@
 - Consumes: bloque «Plantilla propuesta» de la spec.
 - Produces: archivos UTF-8 con el mismo cuerpo, apto para formularios web y preparación explícita de descripciones.
 
-- [ ] **Step 1: Actualizar esta rama desde main vigente.** Fetch/merge de origin/main en este worktree; no incorporar ramas pendientes ni alterar sus PRs. Revisar conflictos si afectan README/contribución. Detenerse ante una decisión no cubierta.
-- [ ] **Step 2: Crear ambas plantillas con el bloque exacto de la spec.** Sin resultados precargados, checklists de aprobación, variables/quick actions, referencias ficticias ni secciones adicionales.
-- [ ] **Step 3: Comprobar identidad de archivos y formato.** Comparar bytes de ambas plantillas y revisar separación Markdown; `git diff --check` debe pasar. Verificar rutas/nombres contra las fuentes oficiales enlazadas en la spec. No añadir tests que busquen frases ni una suite de producto para esta documentación.
+- [x] **Step 1: Actualizar esta rama desde main vigente.** Fetch/merge de origin/main; main sigue en d54be59, sin conflictos.
+- [x] **Step 2: Crear ambas plantillas con el bloque exacto de la spec.** Sin resultados precargados, checklists de aprobación, variables/quick actions, referencias ficticias ni secciones adicionales.
+- [x] **Step 3: Comprobar identidad de archivos y formato.** Copias idénticas y cuerpo igual al aprobado; enlaces y diff check válidos. Rutas/nombres respaldados por las fuentes oficiales de la spec. Sin tests permanentes de texto ni suite de producto nueva.
 - [ ] **Step 4: Commit.** Stage explícito de ambas rutas y commit `docs(contrib): añadir plantilla común de PR y MR`.
 
 ### Task 2: Guía y presentación del propio PR
