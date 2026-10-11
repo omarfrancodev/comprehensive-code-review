@@ -65,7 +65,7 @@
 - [x] Documentar catálogo/configuración, fuente y fallback sin detección ni nuevas medidas; versión 2.10.0 pendiente, conservar enlaces a releases publicadas.
 - [x] Ejecutar suite completa `python -B -X utf8 -m unittest discover -s tests -v`, CLI help, enlaces locales y `git diff --check`; corregir fallos del alcance.
 - [x] Revisar diff completo y registrar resultados y límites en `docs/validation/2026-10-11-harness-catalog.md`.
-- [ ] Push y crear/adjuntar PR (handoff); verificar que main y los cambios originales del usuario siguen intactos.
+- [x] Push y crear/adjuntar PR; main y los cambios originales del usuario siguen intactos.
 - [ ] Esperar revisión humana; merge/release y limpieza del worktree quedan pendientes.
 
 ## Execution ledger
@@ -74,3 +74,5 @@
 - Task 3: 16e9a10 y corrección final de escape; brief RED→GREEN, traceability 19/19, suite integrada validada.
 - Task 4: catálogo ampliado a petición del usuario; null-source independiente RED→GREEN. Suite final 249 pruebas, 248 pass/una omisión del host; ver registro de validación para resultados y alcance. Sin decisiones de alcance pendientes ni menores diferidos.
 - PR es el gate humano restante; no merge/tag/release en esta ejecución.
+
+- Handoff: [PR #14](https://github.com/omarfrancodev/comprehensive-code-review/pull/14) abierto y adjunto; rama publicada, worktree conservado para feedback.
