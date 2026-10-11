@@ -93,3 +93,10 @@
 - [x] Actualizar spec, artifacts y changelog con la diferencia entre entorno no configurado y argumento explícito inválido.
 - [x] Verificar suite integrada: 251 pruebas, 250 pass/una omisión del host; AST, enlaces y diff válidos.
 - [x] Publicar corrección F003 (1a77e76) y actualizar descripción del PR #14.
+
+## Seguimiento de CCR: F004
+
+- [x] Verificar el comentario y reproducir referencias JSON con surrogate alto/bajo aislado mediante CLI real (RED).
+- [x] Rechazar texto/referencias no codificables en UTF-8 durante validación de identidad, antes de crear directorios; preservar referencias con acentos y emoji. Trece pruebas de harness GREEN.
+- [x] Verificar suite integrada: 252 pruebas en 208.151 s, 251 pass/una omisión del host; sin fallos ni errores.
+- [x] Documentar el contrato en artifacts, spec y changelog; registrar evidencia y preparar actualización del PR.

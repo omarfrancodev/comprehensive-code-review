@@ -15,7 +15,13 @@ DIAGNOSTICS = frozenset({'unknown_harness', 'unknown_requested_id', 'identity_co
 
 
 def _text(value):
-    return isinstance(value, str) and bool(value.strip()) and len(value) <= 1024
+    if not isinstance(value, str) or not value.strip() or len(value) > 1024:
+        return False
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def _identifier(value):
@@ -55,7 +61,7 @@ def _source(value, kinds=SOURCE_KINDS):
     if (not isinstance(value, dict) or set(value) != {'kind', 'reference'}
             or not isinstance(value['kind'], str) or value['kind'] not in kinds
             or not _text(value['reference'])):
-        raise ValueError('invalid harness source: kind and nonempty reference are required')
+        raise ValueError('invalid harness source: kind and nonempty UTF-8 reference are required')
 
 
 def validate_identity(manifest):

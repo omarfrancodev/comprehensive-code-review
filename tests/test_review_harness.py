@@ -235,6 +235,23 @@ class ArchiveHarnessTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, sorted(str(p) for p in self.output.rglob('*')))
 
+    def test_cli_unencodable_source_is_rejected_before_creating_archive_directories(self):
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+                '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
+                '--harness', 'Codex', '--harness-id', 'codex-desktop', '--output-root', str(self.output)]
+        for reference in ('\ud800', '\udfff'):
+            with self.subTest(reference=ascii(reference)):
+                source = self.write('source.json', {'kind': 'user', 'reference': reference})
+                result = subprocess.run(args + ['--harness-source-file', str(source)], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('invalid harness source', result.stderr)
+                self.assertFalse(self.output.exists(), 'invalid source must not create archive directories')
+        source = self.write('source.json', {'kind': 'user', 'reference': 'Sesión declarada — escritorio 🚀'})
+        result = subprocess.run(args + ['--harness-source-file', str(source)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = self.read(Path(json.loads(result.stdout)['run_dir']) / 'cierre.json')
+        self.assertEqual(value['harness_source']['reference'], 'Sesión declarada — escritorio 🚀')
+
     def test_cli_null_source_is_rejected_before_writing_with_or_without_explicit_id(self):
         source = self.write('null-source.json', None)
         args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',

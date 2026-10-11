@@ -81,6 +81,8 @@ Resolution priority: explicit `--harness-id`, then session `CCR_HARNESS_ID`, the
 
 An empty or whitespace-only CCR_HARNESS_ID is treated as unset, so name/alias resolution applies. An explicitly supplied empty or whitespace-only --harness-id remains an input error.
 
+Harness text and declaration references must be encodable as UTF-8. Invalid Unicode, including isolated surrogate code points in JSON, is rejected during identity validation before archive directories are created; valid Unicode references are preserved.
+
 Optional helper arguments (not agent request flags or npx options):
 
 ```text

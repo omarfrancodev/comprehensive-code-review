@@ -10,6 +10,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Los consumidores de cierre.json, incluido el visor independiente, deben aceptar archive schema 6 para leer los nuevos runs. La compatibilidad del visor no se presume ni se verifica en este repositorio; su actualización corresponde al proyecto independiente.
 - Normalizar mayúsculas y espacios exteriores de IDs declarados por argumento o CCR_HARNESS_ID; conservar conflictos reales y diagnósticos de IDs desconocidos sin sustituirlos silenciosamente por un alias del nombre.
 - Tratar CCR_HARNESS_ID vacío o compuesto solo por espacios como configuración ausente; mantener el rechazo de IDs explícitos en blanco.
+- Rechazar texto/referencias de harness no codificables en UTF-8 antes de crear el archivo de revisión, conservando referencias Unicode válidas.
 - Unificar etiquetas de IDs en negrita en reporte, comentario, seguimiento e incertidumbres y entregas completas/breves; preservar valores y anclas y escapar contenido aportado.
 
 ## 2.9.1 — 2026-10-09

@@ -25,6 +25,8 @@ Un `CCR_HARNESS_ID` vacío o compuesto solo por espacios se considera no configu
 
 ## Persistencia y compatibilidad
 
+El texto del harness y las referencias de declaración deben poder codificarse en UTF-8. Surrogates aislados en una referencia JSON se rechazan durante validación, antes de crear directorios del archivo; los caracteres Unicode válidos se conservan.
+
 Resolver antes de crear el run; conservar el resultado durante register, recuperación, record-event, retain y close. Las cuatro propiedades quedan unidas al hash del cierre existente. Validar forma, tipos y vocabulario de procedencia en schema 6; al leer no volver a resolver contra el catálogo instalado ni reinterpretar versiones históricas. Los lectores aceptan schemas 1–6; schema 6 hereda processing, fuentes temporales y referencias locales de schema 5. Archivos 1–5 continúan sin migración ni campos sintéticos, incluidos completos inmutables. El fallback nativo respeta el mismo catálogo y reglas. No requiere medir consumo ni añade barridos de contexto.
 
 ## Presentación
