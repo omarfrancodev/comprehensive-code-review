@@ -66,9 +66,16 @@
 - [x] **Step 2: Documentar CLI/API y límites.** Cuerpo explícito UTF-8/--body-file y comprobación remota; prioridad de configuraciones GitLab y consumo desde default branch; sin enforcement/configuración de agente.
 - [x] **Step 3: Añadir enlace breve desde README.** Sin cambios a SKILL.md, docs/usage.md o changelog.
 - [x] **Step 4: Revisión manual de dos muestras efímeras.** Cuerpo del propio PR documental y muestra hipotética de contrato en scratch: secciones útiles, ninguna evidencia inventada ni datos privados. No PRs de prueba ni nuevas muestras permanentes.
-- [ ] **Step 5: Verificar enlaces y diff completo; commit.** Comprobar enlaces relativos de los nuevos archivos y README, igualdad de plantillas y `git diff --check`; comprobar que los únicos cambios son los previstos. Commit `docs(contrib): explicar descripciones y uso de plantillas`.
-- [ ] **Step 6: Publicar rama y crear/adjuntar PR con el formato propuesto.** Describir resultado, validación documental y alcance; título convencional en español. No reclamar suite completa nueva ni modificar PRs existentes. Esperar validación humana antes de merge; sin tag/release. Limpiar este worktree únicamente después de la integración autorizada.
+- [x] **Step 5: Verificar enlaces y diff completo; commit.** Enlaces, igualdad de plantillas, cuerpo aprobado y diff válidos. Guía y README guardados en 6c89166; cambios limitados a los archivos previstos.
+- [x] **Step 6: Publicar rama y crear/adjuntar PR con el formato propuesto.** [PR #15](https://github.com/omarfrancodev/comprehensive-code-review/pull/15) creado y adjuntado; base main y cuerpo remoto verificados. Pendiente de validación humana antes de merge; sin tag/release. Worktree conservado hasta integración autorizada.
 
 ## Execution ledger
 
-Usuario autorizó implementación y PR el 2026-10-11. Base main d54be59; Task 1 completada en 4ee590a, con plantillas idénticas y fieles a spec, enlaces/diff válidos. Task 2: guía y README implementados; dos escenarios documentales revisados, sin código de producto ni resultados inventados. Publicación del PR y revisión final pendientes. No cambios de versión ni modificaciones a PR #14 desde esta rama.
+Usuario autorizó implementación y PR el 2026-10-11. Base main d54be59; Task 1 completada en 4ee590a y Task 2 en 6c89166. Plantillas idénticas y fieles a spec, enlaces/diff válidos y dos escenarios documentales revisados. Revisión independiente del rango d54be59..6c89166 sin hallazgos accionables. PR #15 publicado con descripción explícita y verificado en GitHub; validación humana e integración pendientes. No cambios de versión ni modificaciones a PR #14 desde esta rama.
+
+- Ruling: No probar integración real con GitLab — ninguna instancia forma parte del alcance y la precedencia está documentada — si difiere la configuración, habrá que verificarla en la instancia correspondiente.
+- Ruling: Activación web pendiente de merge a la rama predeterminada — no afirmar que ya está activa — cualquier discrepancia de plataforma se comprobará después de integrar.
+- Ruling: No repetir la suite de producto para Markdown de contribución — plan y alcance aprobados requieren comprobaciones documentales — cambios posteriores de comportamiento requerirían pruebas de producto.
+- Ruling: La publicación era una entrega pendiente, no un defecto del contenido — PR creado y cuerpo remoto verificado — la integración conserva su validación humana.
+
+El scratch de ejecución de este plan se elimina tras registrar aquí los resultados; el worktree y los archivos publicados permanecen disponibles para la revisión del PR.
