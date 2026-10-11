@@ -772,7 +772,7 @@ def render(record, audience='user'):
                 limitations.append({'detail': detail, 'material': True})
     if unresolved or limitations:
         lines.extend(['', '### Incertidumbres', ''])
-        lines.extend(f"- **{f['id']}**: {one_line(f['title'])} — {one_line(f['scenario'])}" for f in unresolved)
+        lines.extend(f"- **{f['id']}**: {markdown_text(f['title'])} — {markdown_text(f['scenario'])}" for f in unresolved)
         lines.extend(f"- {one_line(item['detail'])}" + (' [material]' if item['material'] else '') for item in limitations)
     conditions = [f"{f['id']}: {one_line(f['correction'])}" for f in confirmed if f['blocking']]
     conditions.extend(one_line(r) for r in record['reservations'])

@@ -19,7 +19,7 @@ Prioridad: `--harness-id` explícito, después `CCR_HARNESS_ID` configurado para
 
 `--harness-source-file` acepta un objeto pequeño `{kind: user|platform, reference: texto}` junto con un ID explícito. Sin archivo, la procedencia identifica el argumento; el entorno identifica `CCR_HARNESS_ID`; el alias identifica el texto recibido. Fuentes malformadas son errores de entrada antes de crear el archivo. La declaración identifica la fuente, no prueba identidad real. No copiar recorded_at, inferir modelos ni detectar interfaz desde variables no documentadas.
 
-Catálogo inicial: codex genérico/desktop/cli, claude-code genérico/desktop/cli/web, copilot-cli, kiro genérico/ide/cli y kirocrew-dashboard como entorno distinto. Interfaz desconocida se representa con null. Alias iniciales limitados a nombres legibles y el nombre compuesto Codex ya observado; no usar nombres ambiguos de proveedores. La configuración debe ser por sesión/perfil, pues Desktop y CLI pueden compartir configuración global.
+Catálogo inicial ampliado por petición del usuario: Codex, Claude Code, Copilot, Kiro, KiroCrew, Cursor, Windsurf, Gemini CLI, OpenCode, Cline, Roo Code, Continue, Aider, Antigravity, Augment Code/Auggie, OpenHands y Devin. Incluir las variantes de interfaz registradas en el JSON; mantener nombres genéricos con interfaz desconocida y no usar nombres de modelos como alias. Interfaz desconocida se representa con null. Alias iniciales limitados a nombres legibles y el nombre compuesto Codex ya observado; no usar nombres ambiguos de proveedores. La configuración debe ser por sesión/perfil, pues Desktop y CLI pueden compartir configuración global.
 
 ## Persistencia y compatibilidad
 
@@ -32,3 +32,13 @@ Usar `**ID**` en etiquetas de checks, incertidumbres y seguimiento anterior del 
 ## Validación y publicación
 
 Probar variantes Desktop/nombre genérico/CLI, configuración y prioridad, conflictos y desconocidos, catálogo inválido, procedencia inválida, CLI real, persistencia de identidad durante todo el ciclo, lectura histórica sin catálogo, recuperación processing y rechazo de alteraciones. Probar negritas y anclas con texto hostil escapado. Ejecutar la suite completa, CLI y enlaces locales. Versión propuesta 2.10.0 pendiente de publicación; README sigue enlazando la release existente. Abrir PR y esperar aprobación; sin merge, tag, release ni cambios en el visor independiente en esta etapa. Documentar para consumidores el nuevo cierre sin cambiar final review ni trace.
+
+## Fuentes para la ampliación del catálogo
+
+Los IDs son convenciones CCR; registrar una interfaz no garantiza disponibilidad actual de la plataforma ni prueba compatibilidad automática con skills. Entornos no catalogados siguen siendo válidos con identidad desconocida. Un nombre genérico no infiere dónde se ejecutó. Mantener Windsurf y Devin como identidades separadas; no reinterpretar históricos por un cambio de marca.
+
+- [Cursor IDE](https://cursor.com/docs), [CLI](https://cursor.com/docs/cli/overview) y [web](https://docs.cursor.com/en/background-agent/web-and-mobile).
+- [Windsurf plugins](https://docs.windsurf.com/plugins) y [Devin Desktop](https://docs.devin.ai/desktop/getting-started).
+- [Gemini CLI](https://geminicli.com/docs/cli/cli-reference/), [OpenCode e interfaces](https://opencode.ai/docs/), [Cline CLI y editores](https://cline.bot/blog/introducing-cline-cli-2-0), [Roo Code](https://roocodeinc.github.io/Roo-Code/).
+- [Continue](https://docs.continue.dev/index), [Aider](https://aider.chat/docs/install.html), [Antigravity IDE](https://antigravity.google/docs/home).
+- [Copilot IDEs](https://docs.github.com/en/copilot/concepts/copilot-surfaces/copilot-in-ides), [Auggie](https://github.com/augmentcode/auggie), [Augment VS Code](https://www.augmentcode.com/signup), [OpenHands UI](https://docs.openhands.dev/api-reference/get-conversation).

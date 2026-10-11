@@ -2,6 +2,13 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.10.0 — Pendiente de publicación
+
+- Conservar el nombre original del harness y resolver una vez su ID mediante catálogo canónico versionado, con fuente, configuración explícita por sesión y diagnóstico de identidades desconocidas/contradictorias.
+- Ampliar el catálogo inicial a 52 identidades en 17 familias, distinguiendo las interfaces conocidas y conservando soporte para entornos personalizados no catalogados.
+- Archivo schema 6 conserva la identidad durante todo el ciclo y mantiene lectura de schemas 1–5 sin migración; final review 7 y trace 1 sin cambios. Sin sondas, telemetría ni mediciones adicionales.
+- Unificar etiquetas de IDs en negrita en reporte, comentario, seguimiento e incertidumbres y entregas completas/breves; preservar valores y anclas y escapar contenido aportado.
+
 ## 2.9.1 — 2026-10-09
 
 - Incluir el círculo de cada prioridad en los conteos de Hallazgos del reporte, comentario público y entregas completas/breves, también para conteos cero.

@@ -63,6 +63,38 @@ class HarnessTests(unittest.TestCase):
                 self.assertEqual(value['harness_diagnostics'], [code])
         self.assertEqual(self.resolve('private launcher', harness_id='claude-code-desktop')['harness_id'], 'claude-code-desktop')
 
+    def test_catalog_covers_additional_harnesses_without_guessing_generic_interfaces(self):
+        expected = [('Cursor', 'cursor'), ('Cursor CLI', 'cursor-cli'), ('Cursor IDE', 'cursor-ide'),
+                    ('Cursor Web', 'cursor-web'), ('Windsurf', 'windsurf'), ('Windsurf Editor', 'windsurf-editor'),
+                    ('Windsurf VS Code', 'windsurf-vscode'), ('Gemini CLI', 'gemini-cli'),
+                    ('OpenCode', 'opencode'), ('OpenCode Desktop', 'opencode-desktop'),
+                    ('OpenCode TUI', 'opencode-tui'), ('OpenCode CLI', 'opencode-cli'),
+                    ('OpenCode Web', 'opencode-web'), ('OpenCode IDE', 'opencode-ide'),
+                    ('Cline', 'cline'), ('Cline CLI', 'cline-cli'), ('Cline VS Code', 'cline-vscode'),
+                    ('Roo Code', 'roo-code'), ('Roo Code VS Code', 'roo-code-vscode'),
+                    ('Continue', 'continue'), ('Continue CLI', 'continue-cli'),
+                    ('Continue VS Code', 'continue-vscode'), ('Continue JetBrains', 'continue-jetbrains'),
+                    ('Aider', 'aider'), ('Aider CLI', 'aider-cli'),
+                    ('Google Antigravity', 'antigravity'), ('Antigravity IDE', 'antigravity-ide'),
+                    ('GitHub Copilot', 'copilot'), ('Copilot VS Code', 'copilot-vscode'),
+                    ('Copilot JetBrains', 'copilot-jetbrains'), ('Copilot Visual Studio', 'copilot-visual-studio'),
+                    ('Augment Code', 'augment-code'), ('Auggie', 'augment-code-cli'),
+                    ('Augment Code VS Code', 'augment-code-vscode'),
+                    ('OpenHands', 'openhands'), ('OpenHands Web', 'openhands-web'),
+                    ('Devin', 'devin'), ('Devin Desktop', 'devin-desktop')]
+        for name, identifier in expected:
+            with self.subTest(name=name):
+                self.assertEqual(self.resolve(name)['harness_id'], identifier)
+        for name, identifier in expected:
+            if identifier in {'cursor', 'windsurf', 'opencode', 'cline', 'roo-code', 'continue', 'aider',
+                              'antigravity', 'copilot', 'augment-code', 'openhands', 'devin'}:
+                entry = next(item for item in harness.load_catalog()['entries'] if item['id'] == identifier)
+                self.assertIsNone(entry['interface'])
+        self.assertEqual(self.resolve('Cursor', harness_id='cursor-cli')['harness_id'], 'cursor-cli')
+        self.assertEqual(self.resolve('Copilot VS Code', harness_id='copilot-jetbrains')['harness_diagnostics'], ['identity_conflict'])
+        for ambiguous in ('VS Code', 'JetBrains', 'Claude', 'Gemini', 'GPT', 'Sonnet', 'Python'):
+            self.assertIsNone(self.resolve(ambiguous)['harness_id'])
+
     def test_malformed_sources_and_ambiguous_catalog_fail_before_resolution(self):
         for source in ({}, {'kind': 'user', 'reference': ''}, {'kind': 'guess', 'reference': 'model'},
                        {'kind': 'user', 'reference': 'session', 'extra': True}, {'kind': 'platform', 'reference': []}):
@@ -164,6 +196,17 @@ class ArchiveHarnessTests(unittest.TestCase):
         result = subprocess.run(args, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, sorted(str(p) for p in self.output.rglob('*')))
+
+    def test_cli_null_source_is_rejected_before_writing_with_or_without_explicit_id(self):
+        source = self.write('null-source.json', None)
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+                '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
+                '--harness', 'Codex', '--output-root', str(self.output), '--harness-source-file', str(source)]
+        for extra in ([], ['--harness-id', 'codex-desktop']):
+            result = subprocess.run(args + extra, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('harness source', result.stderr)
+            self.assertFalse(self.output.exists())
 
 
 if __name__ == '__main__':

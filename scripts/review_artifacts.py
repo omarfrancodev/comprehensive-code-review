@@ -911,10 +911,12 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'prepare':
+            source = read_json(args.harness_source_file) if args.harness_source_file else None
+            if args.harness_source_file and (not isinstance(source, dict) or args.harness_id is None):
+                raise ValueError('harness source file requires an object and an explicit --harness-id')
             result = {'run_dir': prepare(args.repo, args.scope_file, args.skill_version, args.harness,
                                          args.output_root, args.previous_run, args.temporary_path,
-                                         harness_id=args.harness_id,
-                                         harness_source=read_json(args.harness_source_file) if args.harness_source_file else None)}
+                                         harness_id=args.harness_id, harness_source=source)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
                             args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input)

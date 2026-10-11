@@ -31,10 +31,10 @@
 
 **Interfaces:** `resolve(harness, harness_id=None, source=None, environ=None) -> dict`; `validate_identity(manifest) -> None` valida forma sin cargar catálogo. Resolver devuelve las cuatro propiedades canónicas sin modificar el texto original.
 
-- [ ] Añadir pruebas de nombre, alias, familia/interfaz, argumento sobre entorno, unknown, conflictos y entrada malformada; ejecutar y observar RED.
-- [ ] Implementar catálogo versión 1 y resolución conforme al diseño; entradas/alias duplicados o malformados fallan antes de escritura.
-- [ ] Ejecutar `python -B -X utf8 -m unittest discover -s tests -p test_review_harness.py -v`; esperado PASS.
-- [ ] Commit `feat(harness): resolver identidad mediante catálogo canónico`.
+- [x] Añadir pruebas de nombre, alias, familia/interfaz, argumento sobre entorno, unknown, conflictos y entrada malformada; ejecutar y observar RED.
+- [x] Implementar catálogo versión 1 y resolución conforme al diseño; entradas duplicadas o alias ambiguos/malformados fallan antes de escritura.
+- [x] Ejecutar `python -B -X utf8 -m unittest discover -s tests -p test_review_harness.py -v`; esperado PASS.
+- [x] Commit `feat(harness): resolver identidad mediante catálogo canónico`.
 
 ### Task 2: Archivo schema 6 y CLI
 
@@ -42,10 +42,10 @@
 
 **Interfaces:** Añadir argumentos keyword-only `harness_id=None, harness_source=None` a `prepare`; CLI `--harness-id`, `--harness-source-file`; fuente JSON existente validada antes de escritura.
 
-- [ ] Añadir regresiones de CLI real, cierre completo, alteración protegida y schemas 1–5 sin campos canónicos; comprobar RED.
-- [ ] Integrar resolución única, cargar schema 5 explícitamente y heredar las cuatro ramas `== 5` para 5/6; conservar requisitos de trace y recuperación.
-- [ ] Ejecutar pruebas de harness y trace; comprobar PASS e identidad igual desde prepare hasta complete con entorno cambiado.
-- [ ] Commit `feat(archivo): persistir identidad de harness en cierre schema 6`.
+- [x] Añadir regresiones de CLI real, cierre completo, alteración protegida y schemas 1–5 sin campos canónicos; comprobar RED.
+- [x] Integrar resolución única, cargar schema 5 explícitamente y heredar las cuatro ramas `== 5` para 5/6; conservar requisitos de trace y recuperación.
+- [x] Ejecutar pruebas de harness y trace; comprobar PASS e identidad igual desde prepare hasta complete con entorno cambiado.
+- [x] Commit `feat(archivo): persistir identidad de harness en cierre schema 6`.
 
 ### Task 3: Etiquetas de reporte y entrega
 
@@ -53,17 +53,24 @@
 
 **Interfaces:** Mantener `render(record, audience)` y `_brief(record)`; cambiar solo Markdown generado.
 
-- [ ] Añadir expectativas de `**C001**`, `**F001**` y seguimiento con contenido escapado; actualizar la expectativa antigua de anclas conservando espacios; comprobar fallo de brief.
-- [ ] Incorporar los tres cambios del usuario y extenderlos al resumen breve sin escapar marcadores generados; conservar enlaces e IDs históricos.
-- [ ] Ejecutar módulos de contract, traceability y delivery; comprobar PASS.
-- [ ] Commit `fix(reportes): unificar etiquetas de IDs en negrita`.
+- [x] Añadir expectativas de `**C001**`, `**F001**` y seguimiento con contenido escapado; actualizar la expectativa antigua de anclas conservando espacios; comprobar fallo de brief.
+- [x] Incorporar los tres cambios del usuario y extenderlos al resumen breve sin escapar marcadores generados; conservar enlaces e IDs históricos.
+- [x] Ejecutar módulos de contract, traceability y delivery; comprobar PASS.
+- [x] Commit `fix(reportes): unificar etiquetas de IDs en negrita`.
 
 ### Task 4: Instrucciones y PR
 
 **Files:** Modificar `SKILL.md`, `references/archive/artifacts.md`, `references/archive/lifecycle-trace.md`, `references/reporting/report-format.md`, `references/reporting/delivery.md`, `docs/usage.md`, `CHANGELOG.md`; crear registro de validación.
 
-- [ ] Documentar catálogo/configuración, fuente y fallback sin detección ni nuevas medidas; versión 2.10.0 pendiente, conservar enlaces a releases publicadas.
-- [ ] Ejecutar suite completa `python -B -X utf8 -m unittest discover -s tests -v`, CLI help, enlaces locales y `git diff --check`; corregir fallos del alcance.
-- [ ] Revisar diff completo y registrar resultados y límites en `docs/validation/2026-10-11-harness-catalog.md`.
-- [ ] Commit documentación, push y crear/adjuntar PR; verificar que main y los cambios originales del usuario siguen intactos.
+- [x] Documentar catálogo/configuración, fuente y fallback sin detección ni nuevas medidas; versión 2.10.0 pendiente, conservar enlaces a releases publicadas.
+- [x] Ejecutar suite completa `python -B -X utf8 -m unittest discover -s tests -v`, CLI help, enlaces locales y `git diff --check`; corregir fallos del alcance.
+- [x] Revisar diff completo y registrar resultados y límites en `docs/validation/2026-10-11-harness-catalog.md`.
+- [ ] Push y crear/adjuntar PR (handoff); verificar que main y los cambios originales del usuario siguen intactos.
 - [ ] Esperar revisión humana; merge/release y limpieza del worktree quedan pendientes.
+
+## Execution ledger
+
+- Tasks 1/2: implementación conjunta 042fe1d; resolver/archivo RED→GREEN, trace 27/27; sin cambios de interfaces entre tareas.
+- Task 3: 16e9a10 y corrección final de escape; brief RED→GREEN, traceability 19/19, suite integrada validada.
+- Task 4: catálogo ampliado a petición del usuario; null-source independiente RED→GREEN. Suite final 249 pruebas, 248 pass/una omisión del host; ver registro de validación para resultados y alcance. Sin decisiones de alcance pendientes ni menores diferidos.
+- PR es el gate humano restante; no merge/tag/release en esta ejecución.
