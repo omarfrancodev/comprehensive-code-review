@@ -85,3 +85,11 @@
 - [x] Verificar suite integrada: 250 pruebas, 249 pass/una omisión del host; AST, enlaces y diff válidos.
 - [x] Subir correcciones y actualizar descripción del PR con el estado actual de validación (748f6d7).
 - [ ] Esperar aprobación para merge/release. Los nuevos puntos sobre formato público/delegación quedan solo como propuesta, fuera de estas correcciones.
+
+## Seguimiento de re-review: F003
+
+- [x] Confirmar el caso de CCR_HARNESS_ID solo con whitespace y reproducirlo con una regresión RED (tres variantes fallaron).
+- [x] Normalizar el entorno vacío/en blanco como no configurado; conservar prioridad de IDs explícitos, conflictos y errores de argumento en blanco. Doce pruebas de harness GREEN.
+- [x] Actualizar spec, artifacts y changelog con la diferencia entre entorno no configurado y argumento explícito inválido.
+- [x] Verificar suite integrada: 251 pruebas, 250 pass/una omisión del host; AST, enlaces y diff válidos.
+- [ ] Publicar corrección F003 y actualizar descripción del PR #14.

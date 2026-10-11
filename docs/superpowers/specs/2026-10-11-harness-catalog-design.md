@@ -21,6 +21,8 @@ Los IDs declarados ignoran mayúsculas y espacios exteriores al buscar el ID can
 
 Catálogo inicial ampliado por petición del usuario: Codex, Claude Code, Copilot, Kiro, KiroCrew, Cursor, Windsurf, Gemini CLI, OpenCode, Cline, Roo Code, Continue, Aider, Antigravity, Augment Code/Auggie, OpenHands y Devin. Incluir las variantes de interfaz registradas en el JSON; mantener nombres genéricos con interfaz desconocida y no usar nombres de modelos como alias. Interfaz desconocida se representa con null. Alias iniciales limitados a nombres legibles y el nombre compuesto Codex ya observado; no usar nombres ambiguos de proveedores. La configuración debe ser por sesión/perfil, pues Desktop y CLI pueden compartir configuración global.
 
+Un `CCR_HARNESS_ID` vacío o compuesto solo por espacios se considera no configurado, por lo que aplica la resolución del nombre/alias. Un `--harness-id` explícito en blanco sigue siendo un error de entrada.
+
 ## Persistencia y compatibilidad
 
 Resolver antes de crear el run; conservar el resultado durante register, recuperación, record-event, retain y close. Las cuatro propiedades quedan unidas al hash del cierre existente. Validar forma, tipos y vocabulario de procedencia en schema 6; al leer no volver a resolver contra el catálogo instalado ni reinterpretar versiones históricas. Los lectores aceptan schemas 1–6; schema 6 hereda processing, fuentes temporales y referencias locales de schema 5. Archivos 1–5 continúan sin migración ni campos sintéticos, incluidos completos inmutables. El fallback nativo respeta el mismo catálogo y reglas. No requiere medir consumo ni añade barridos de contexto.

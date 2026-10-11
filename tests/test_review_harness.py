@@ -84,6 +84,23 @@ class HarnessTests(unittest.TestCase):
         self.assertIsNone(unknown['harness_id'])
         self.assertEqual(unknown['harness_diagnostics'], ['unknown_requested_id'])
 
+    def test_blank_session_configuration_is_unset_but_explicit_blank_id_is_invalid(self):
+        for configured in ('', ' ', '\t\n', '\r\n  '):
+            with self.subTest(configured=configured):
+                environment = {'CCR_HARNESS_ID': configured}
+                value = self.resolve('Codex Desktop', environ=environment)
+                self.assertEqual(value['harness_id'], 'codex-desktop')
+                self.assertEqual(value['harness_source'], {'kind': 'alias', 'reference': 'Codex Desktop'})
+                self.assertEqual(value['harness_diagnostics'], [])
+                unknown = self.resolve('custom launcher', environ=environment)
+                self.assertIsNone(unknown['harness_id'])
+                self.assertEqual(unknown['harness_diagnostics'], ['unknown_harness'])
+                explicit = self.resolve('Codex', harness_id='codex-cli', environ=environment)
+                self.assertEqual(explicit['harness_id'], 'codex-cli')
+                self.assertEqual(explicit['harness_source']['kind'], 'argument')
+                with self.assertRaisesRegex(ValueError, 'nonempty explicit harness ID'):
+                    self.resolve('Codex Desktop', harness_id=configured, environ=environment)
+
     def test_catalog_covers_additional_harnesses_without_guessing_generic_interfaces(self):
         expected = [('Cursor', 'cursor'), ('Cursor CLI', 'cursor-cli'), ('Cursor IDE', 'cursor-ide'),
                     ('Cursor Web', 'cursor-web'), ('Windsurf', 'windsurf'), ('Windsurf Editor', 'windsurf-editor'),

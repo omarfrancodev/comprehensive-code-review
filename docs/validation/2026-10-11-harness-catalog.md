@@ -42,3 +42,9 @@ Se atendieron las observaciones del [comentario de revisión](https://github.com
 - Reserva de compatibilidad: el changelog declara explícitamente que lectores de cierre.json, incluido el visor independiente, deben aceptar schema 6. No se presume ni se modifica la compatibilidad del proyecto externo.
 
 Verificación posterior: **250 pruebas en 212.910 segundos, 249 aprobadas/una omitida por permisos de symlinks de Windows**, sin errores ni fallos. Once pruebas de harness pasaron; AST/enlaces locales/diff check válidos. Este seguimiento solo modifica las observaciones del PR. Los puntos sobre publicación de detalles internos y cumplimiento de delegación se analizaron sin implementar cambios en perfiles, reportes o contratos; tampoco se reescribieron archivos de reviews ni comentarios publicados.
+
+## Re-review del PR #14 — F003
+
+Se verificó el [nuevo comentario CCR](https://github.com/omarfrancodev/comprehensive-code-review/pull/14#issuecomment-6114030476) contra el head 3f7a403. La prueba de regresión reprodujo tres fallos con espacios, tabuladores y saltos de línea antes de corregir la resolución. CCR_HARNESS_ID vacío o en blanco ahora se trata como no configurado, conservando el alias y su procedencia; un nombre desconocido conserva unknown_harness. El argumento explícito mantiene su prioridad y su rechazo cuando está en blanco. Se documentó el comportamiento en spec, artifacts y changelog.
+
+Resultado posterior: **251 pruebas en 197.383 segundos, 250 aprobadas/una omitida por permisos de symlinks de Windows**, sin fallos ni errores. Las doce pruebas de harness pasaron; sintaxis AST, enlaces Markdown cambiados y diff check válidos. La corrección es exclusiva de identidad de harness; no modifica los formatos/perfiles pendientes en la rama separada ni los archivos históricos.

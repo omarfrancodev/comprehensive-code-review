@@ -79,6 +79,8 @@ Keep `harness` exactly as received; schema 6 adds `harness_id` (canonical ID or 
 
 Resolution priority: explicit `--harness-id`, then session `CCR_HARNESS_ID`, then exact name/ID/alias (case-insensitive, ignoring outer whitespace). Declared IDs from arguments/configuration also ignore case and outer whitespace; they still must match a canonical ID, not an arbitrary display-name alias. An unknown declared ID yields null rather than silently falling back to a recognized harness name. Generic `claude-code`/`codex`/`kiro` identifies a family with unknown interface. A specific declared ID can refine a generic name of the same family; a generic ID does not erase a specific name. Unknown raw names stay literal with null ID and `unknown_harness`. Unknown requested IDs give null and `unknown_requested_id`; different families or incompatible known interfaces give null and `identity_conflict`. No fuzzy matching, provider/model inference or undocumented entrypoint detection. These diagnostics concern archive metadata, not code defects or the review verdict. Surface unknown/conflict diagnostics briefly to the user; do not rerun discovery or stop an otherwise valid review.
 
+An empty or whitespace-only CCR_HARNESS_ID is treated as unset, so name/alias resolution applies. An explicitly supplied empty or whitespace-only --harness-id remains an input error.
+
 Optional helper arguments (not agent request flags or npx options):
 
 ```text

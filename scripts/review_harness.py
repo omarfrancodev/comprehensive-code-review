@@ -85,7 +85,10 @@ def resolve(harness, harness_id=None, source=None, environ=None):
     by_id, aliases = validate_catalog(catalog)
     known = aliases.get(harness.strip().casefold())
     environment = os.environ if environ is None else environ
-    requested = harness_id if harness_id is not None else environment.get('CCR_HARNESS_ID') or None
+    configured_id = environment.get('CCR_HARNESS_ID') or None
+    if isinstance(configured_id, str):
+        configured_id = configured_id.strip() or None
+    requested = harness_id if harness_id is not None else configured_id
     provenance = dict(source) if source is not None else (
         {'kind': 'argument', 'reference': '--harness-id'} if harness_id is not None else
         {'kind': 'environment', 'reference': 'CCR_HARNESS_ID'} if requested is not None else
