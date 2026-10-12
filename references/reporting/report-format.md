@@ -97,6 +97,6 @@ Publishing uses publication.md. A draft or description correction does not autho
 
 ## Execution information by audience
 
-The schema 8 private metadata includes “Ejecución del perfil: cumplida/degradada”, alongside actual verification. Public metadata omits both the profile and its fulfillment mechanics. Do not present a degraded requested strategy as fulfilled.
+The schema 8/9 private metadata includes “Ejecución del perfil: cumplida/degradada”, alongside actual verification. Public metadata omits both the profile and its fulfillment mechanics. Do not present a degraded requested strategy as fulfilled.
 
 Schema 8 keeps full limitations/execution provenance in the private report/record. Public/manual rendering follows [publication.md](publication.md): relevant product/check/gate impact, no review mechanics. Material ABCDE gaps remain visible without the matrix; deduplicate uncertainties/reservations. Historical public limitations require source-bound classification. One coordinator draft pass covers all public fields; helpers do not certify arbitrary prose as semantically safe.

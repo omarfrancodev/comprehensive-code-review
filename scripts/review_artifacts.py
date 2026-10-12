@@ -25,6 +25,7 @@ import review_metrics
 import review_trace
 import review_harness
 from review_execution import validate_execution_sources
+from review_check_provenance import validate_check_sources
 
 
 FILES = ('review.json', 'informe.md')
@@ -608,8 +609,11 @@ def register(run_dir, temporary_paths):
     return manifest
 
 
-def validate(run_dir, require_retained=False, record_checkpoint=False):
+def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
+    if require_complete and record_checkpoint:
+        raise ValueError('complete gate is read-only; cannot record a checkpoint')
+    require_retained = require_retained or require_complete
     run, manifest, marker = _load_run(run_dir)
     if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
@@ -623,10 +627,17 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if value.get('schema_version') == 8:
+        if value.get('schema_version') in (8, 9):
             _execution_gate(run, manifest, value, {})
+    if require_complete:
+        if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
+                or manifest.get('residuals')):
+            raise ValueError('complete durable review and observed cleanup are required')
+        if (value['resources']['cleanup'] != manifest['cleanup']
+                or value['resources']['residuals'] != manifest.get('residuals', [])):
+            raise ValueError('retained review resources differ from completed closure')
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')
@@ -764,7 +775,13 @@ def _handoff_context(input_file, value, contents, manifest):
     return context
 
 
-def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None):
+def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
+    value = read_json(input_file)
+    if expected_schema is not None:
+        if type(expected_schema) is not int or expected_schema not in range(1, 10):
+            raise ValueError('expected schema must be a supported integer 1–9')
+        if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
+            raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     if manifest['state'] == 'complete':
@@ -772,13 +789,12 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     _verify_files(run, manifest)
     if handoff_context_input is not None and not handoff:
         raise ValueError('--handoff-context-input requires an explicit --handoff request')
-    value = read_json(input_file)
     errors = review_contract.validate(value)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
@@ -795,8 +811,8 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') != 8))
-    if value.get('schema_version') == 8:
+    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') not in (8, 9)))
+    if value.get('schema_version') in (8, 9):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
             context_bytes = _json_bytes(read_json(context_input))
@@ -806,7 +822,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
                     and read_json(context_input) != json.loads(contents['evidence/context.json'])):
                 raise ValueError('selected execution context conflicts with context_input')
             contents['evidence/context.json'] = context_bytes
-        _execution_gate(run, manifest, value, contents)
+        _execution_gate(run, dict(manifest, executors=executors), value, contents)
     if handoff_context_input is not None:
         manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
     if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):
@@ -876,6 +892,21 @@ def _execution_gate(run, manifest, value, contents):
         if resolved.get(row['reference']) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
     errors = validate_execution_sources(value, context, events, references)
+    if value.get('schema_version') == 9:
+        errors.extend(validate_check_sources(value, context.get('executors')))
+        errors.extend(validate_check_sources(value, manifest.get('executors', [])))
+        # Both retained sources must bind each used identity to the same inputs.
+        declared = context.get('executors', [])
+        projected = manifest.get('executors', [])
+        if isinstance(declared, list) and all(isinstance(row, dict) for row in declared + projected):
+            for check in value['checks']:
+                identity = check['execution']['executor']
+                if identity is None:
+                    continue
+                source_row = next((row for row in declared if row.get('executor') == identity), {})
+                closure_row = next((row for row in projected if row.get('executor') == identity), {})
+                if any(source_row.get(key) != closure_row.get(key) for key in ('revision', 'snapshot')):
+                    errors.append('checks.execution.sources: retained context and closure binding differ')
     if errors:
         raise ValueError('; '.join(errors))
 
@@ -896,7 +927,14 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest, required=True)
+    if 'previous_manifest_sha256' in marker:
+        # _load_run already bound these exact bytes to an owned old/new intent.
+        # A stop before manifest replacement leaves no pending_trace to replay;
+        # pin the authorized surviving manifest, then retry this mutation normally.
+        marker = dict(marker, manifest_sha256=_digest((run / 'cierre.json').read_bytes()))
+        marker.pop('previous_manifest_sha256')
+        atomic_write(run / MARKER, _json_bytes(marker))
+    validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')
     if cleanup_file is not None:
@@ -967,6 +1005,7 @@ def main():
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
+    gate.add_argument('--require-complete', action='store_true', help='Read-only gate for retained result and completed observed cleanup')
     gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5/6 archive')
     trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
     trace.add_argument('--run-dir', required=True)
@@ -975,6 +1014,7 @@ def main():
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
+    keep.add_argument('--expected-schema', type=int, choices=range(1, 10), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')
@@ -1000,11 +1040,12 @@ def main():
                                          harness_id=args.harness_id, harness_source=source)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
-                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input)
+                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input,
+                            expected_schema=args.expected_schema)
         elif args.command == 'register':
             result = register(args.run_dir, args.temporary_path)
         elif args.command == 'validate':
-            result = validate(args.run_dir, args.require_retained, args.record_checkpoint)
+            result = validate(args.run_dir, args.require_retained, args.record_checkpoint, require_complete=args.require_complete)
         elif args.command == 'record-event':
             result = record_event(args.run_dir, args.event_file, args.execution_metadata)
         else:

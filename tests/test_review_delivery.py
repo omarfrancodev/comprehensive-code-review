@@ -23,6 +23,126 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_forward_slash_unc_snapshot_refuses_both_deliveries(self):
+        for identity in ('//private-server/share/snapshot', 'snapshot //private-server/share/snapshot',
+                         r'//private-server\share/snapshot'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['snapshot'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                run = self.retained(value)
+                before = self.snapshot(run)
+                for mode in ('full', 'brief'):
+                    output = self.root / mode
+                    with self.assertRaises(ValueError) as caught:
+                        delivery.deliver(run, mode, self.repo, output)
+                    self.assertIn('scope.snapshot', str(caught.exception))
+                    self.assertNotIn(identity, str(caught.exception))
+                    self.assertFalse(output.exists())
+                    self.assertEqual(before, self.snapshot(run))
+
+    def test_structural_public_urls_and_relative_identities_remain_portable(self):
+        for identity in ('https://example.test/reviews//snapshot', 'http://example.test/a//b',
+                         'owner/repository', 'snapshots/review-123'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['snapshot'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                projection = delivery._Projection(value, {'repository_path': str(self.repo),
+                    'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+                portable = projection.value(value)
+                self.assertEqual(artifacts.review_contract.validate(portable), [])
+                self.assertEqual(portable['scope'], value['scope'])
+
+    def test_embedded_private_identity_refuses_both_deliveries(self):
+        for identity in ('snapshot /home/alice/private/state', r'snapshot C:\other\private\state',
+                         r'snapshot \\other-server\private\state', 'snapshot file:///private/state'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['head'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                run = self.retained(value)
+                before = self.snapshot(run)
+                for mode in ('full', 'brief'):
+                    output = self.root / mode
+                    with self.assertRaises(ValueError) as caught:
+                        delivery.deliver(run, mode, self.repo, output)
+                    self.assertIn('scope.head', str(caught.exception))
+                    self.assertNotIn(identity, str(caught.exception))
+                    self.assertFalse(output.exists())
+                    self.assertEqual(before, self.snapshot(run))
+
+    def test_description_identity_is_preserved_or_refused_as_structure(self):
+        value = record6()
+        identity = 'sha256:description-1'
+        value['description']['identity'] = identity
+        value['checks'] = [dict(check(), command=identity)]
+        self.assertEqual(artifacts.review_contract.validate(value), [])
+        projection = delivery._Projection(value, {'repository_path': str(self.repo),
+            'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+        self.assertEqual(projection.value(value)['description']['identity'], identity)
+        value['description']['identity'] = 'captured /private/description.md'
+        with self.assertRaisesRegex(ValueError, 'description.identity'):
+            projection.value(value)
+
+    def test_projection_preserves_structure_when_commands_collide(self):
+        for token in ('deep', 'passed', 'C001', 'head-456', 'F001'):
+            with self.subTest(token=token):
+                value = record6()
+                value.update(profile='deep')
+                value['checks'] = [dict(check(), command=token)]
+                item = finding()
+                item['id'] = 'F001'
+                value['findings'] = [item]
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                projection = delivery._Projection(value, {'repository_path': str(self.repo),
+                    'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+                portable = projection.value(value)
+                self.assertEqual(artifacts.review_contract.validate(portable), [])
+                for field in ('profile', 'scope'):
+                    self.assertEqual(portable[field], value[field])
+                for field in ('id', 'status', 'revision'):
+                    self.assertEqual(portable['checks'][0][field], value['checks'][0][field])
+                self.assertEqual(portable['findings'][0]['id'], 'F001')
+                self.assertEqual(portable['checks'][0]['command'], '[comprobación registrada; comando omitido]')
+
+    def test_private_structural_identity_refuses_delivery_without_writes(self):
+        value = legacy_record()
+        private = str(self.root / 'private' / 'snapshot')
+        value['scope']['head'] = private
+        self.assertEqual(artifacts.review_contract.validate(value), [])
+        run = self.retained(value)
+        before = self.snapshot(run)
+        output = self.root / 'export'
+        with self.assertRaises(ValueError) as caught:
+            delivery.deliver(run, 'brief', self.repo, output)
+        self.assertIn('scope.head', str(caught.exception))
+        self.assertNotIn(private, str(caught.exception))
+        self.assertFalse(output.exists())
+        self.assertEqual(before, self.snapshot(run))
+
+    def test_full_and_brief_share_typed_projection_and_lineage(self):
+        value = record6()
+        value['previous_reviews'] = [dict(review_id='CR-' + 'b' * 20,
+            reference='archive/old/review.json', verified=True)]
+        value['checks'] = [dict(check(), command='passed', reused=True,
+            reuse_reason='Inputs unchanged', reference='archive/old/check.log')]
+        value['rereview'] = [dict(id='F001', status='resolved', details='Fixed and verified',
+            previous_review_id='CR-' + 'b' * 20, previous_reference='archive/old/review.json',
+            previous_finding_id='F001', previous_title='Previous defect',
+            previous_url='https://example.test/review#F001', check_ids=['C001'])]
+        run = self.retained(value, closed=True)
+        before = self.snapshot(run)
+        for mode in ('full', 'brief'):
+            target = Path(delivery.deliver(run, mode, self.repo, self.root / mode))
+            self.assertIn('C001', (target / ('informe.md' if mode == 'full' else 'resumen.md')).read_text(encoding='utf-8'))
+            self.assertEqual(artifacts.read_json(target / '.ccr-delivery.json')['source_schema_version'], 6)
+            if mode == 'full':
+                projected = artifacts.read_json(target / 'review.json')
+                self.assertEqual(projected['rereview'][0]['previous_reference'], projected['previous_reviews'][0]['reference'])
+                self.assertEqual(projected['rereview'][0]['previous_url'], value['rereview'][0]['previous_url'])
+            self.assertEqual(before, self.snapshot(run))
+
     def test_brief_labels_bold_confirmed_checks_unresolved_and_historical_followup(self):
         value = record6()
         confirmed = finding()

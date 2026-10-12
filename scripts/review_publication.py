@@ -10,7 +10,7 @@ def publication_digest(record):
 
 def public_limitations(record, classification=None):
     original = record['coverage']['limitations']
-    if record['schema_version'] == 8:
+    if record['schema_version'] in (8, 9):
         if classification is not None:
             raise ValueError('schema 8 already contains limitation classification')
         rows = original
