@@ -44,4 +44,6 @@ Archive schemas 5/6 emission requires a local E plus six-digit target to exist i
 
 ## Profile fulfillment sources
 
-For schema 8, selected profile values and observed transitions link to retained context sources under [artifacts.md](artifacts.md). Coverage.execution references existing briefs/results/impediments; record actual agent/started dispatch and completed discovery/grouped-verification, including observed actor/executor contexts and null provider IDs when unknown. Failed dispatch is not a completed reviewer. No extra events per search, inferred transitions, invented timestamps or second audit. Recording sequence remains fallback order, not a claim of parallel causality.
+For schema 8/9, selected profile values and observed transitions link to retained context sources under [artifacts.md](artifacts.md). Coverage.execution references existing briefs/results/impediments; record actual agent/started dispatch and completed discovery/grouped-verification, including observed actor/executor contexts and null provider IDs when unknown. Failed dispatch is not a completed reviewer. No extra events per search, inferred transitions, invented timestamps or second audit. Recording sequence remains fallback order, not a claim of parallel causality.
+
+A completed discovery/check milestone is an observation, not a final result or executor registry. Durable completion additionally requires a retained final record/report/evidence and `validate --require-complete` under [artifacts.md](artifacts.md); preserve partial runs/resources when any gate fails.

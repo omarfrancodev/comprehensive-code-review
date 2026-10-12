@@ -2,6 +2,13 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.11.0 — Pendiente de publicación
+
+- Proyectar entregas full/brief por tipo de campo, preservando IDs, perfiles, estados y relaciones frente a colisiones con comandos; rechazar identidades privadas antes de escribir el destino.
+- Final review schema 9 vincula checks locales con ejecutores y versiones/snapshots retenidos; distingue inspección estática, CI externo y reuso sin inventar worktrees.
+- Retener con expectativa explícita del schema y exigir un gate completo de resultado, fuentes y limpieza antes de declarar cierre durable. El cierre revalida fuentes, también en reintentos idempotentes.
+- Mantener lectura de final schemas 1–8 sin migración, archive 6 y packet/trace 1. El visor independiente requiere soporte para final schema 9; no se verifica aquí.
+
 ## 2.10.0 — 2026-10-12
 
 - Proteger el contexto retenido automáticamente frente a evidencia ajena, manteniendo reintentos de archivos propios inventariados o planificados. La entrega breve declara el estado de ejecución schema 8 y las reservas públicas se deduplican contra detalle fuente y resumen proyectado.

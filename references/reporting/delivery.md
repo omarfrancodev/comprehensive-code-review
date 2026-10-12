@@ -56,6 +56,8 @@ Do not commit, publish or authorize fixes merely because delivery was requested.
 
 Use bold ID labels in full/brief delivery for confirmed findings (brief), checks, unresolved findings and previous-review ledger entries. Preserve the underlying IDs, historical source IDs and link targets; escape supplied text separately from generated formatting. Full delivery inherits report-format.md.
 
-## Schema 8 provenance
+## Schema 8/9 provenance
 
 Full/brief delivery preserves source schema/review ID and truthful execution status without collecting new sources. The portable JSON may contain sanitized provenance labels; validate its structure, not local filesystem references from another machine. The original archive verifies actual selected sources before cleanup. An explicitly private handoff retains relevant internal limitations; a public handoff uses the same typed/historical classification policy as comments. Delivery never grants permission to publish it.
+
+Both modes use the same typed portable projection: preserve enums, IDs, versions, snapshot identities and relationships; sanitize only prose/commands and reference/location fields according to their meaning. A private structural identity is refused with a field-only diagnostic before any output is created. Unclassified new string fields require an explicit policy; never rewrite IDs or weaken contract validation to make an export pass. The retained source and receipt lineage remain intact on failure.

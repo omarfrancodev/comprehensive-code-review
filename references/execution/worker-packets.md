@@ -1,6 +1,6 @@
 # Compact worker packets — packet version 1
 
-Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 8; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
+Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 9; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
 
 ## Common envelope
 
@@ -35,4 +35,6 @@ Merge emits a consolidation bundle, not a canonical/final record. Evidence/check
 
 ## Coordinator fulfillment record
 
-Schema 8 coverage.execution belongs to the coordinator and links these existing packets/results. Workers retain packet version 1, never add required execution IDs, infer other workers, delegate or write durable trace. The coordinator records observed reviewer contexts separately from shared context_id and classifies limitation deltas when completing the final result.
+Schema 8/9 coverage.execution belongs to the coordinator and links these existing packets/results. Workers retain packet version 1, never add required execution IDs, infer other workers, delegate or write durable trace. The coordinator records observed reviewer contexts separately from shared context_id and classifies limitation deltas when completing the final result.
+
+Workers keep provisional check ownership/observed execution facts in packets; the coordinator maps them to schema 9 check.execution and registered executor identities. A role or trace actor is not automatically a writing executor. No new required worker field or workspace per worker.
