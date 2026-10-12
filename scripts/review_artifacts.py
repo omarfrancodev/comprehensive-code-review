@@ -462,6 +462,12 @@ def _retained_name(name):
             and name[9:] == _evidence_name(name[9:]) and name[9:] not in {'.', '..'})
 
 
+def _check_evidence_target(run, manifest, name):
+    target = safe_path(run / name)
+    if target.exists() and name not in manifest['hashes'] and name not in manifest.get('planned_hashes', {}):
+        raise ValueError('refusing to clobber foreign evidence: ' + name)
+
+
 def _evidence_contents(run, manifest, inputs, *, create_directory=True):
     contents = {}
     for raw in inputs or []:
@@ -471,9 +477,7 @@ def _evidence_contents(run, manifest, inputs, *, create_directory=True):
         name = 'evidence/' + _evidence_name(source.name)
         if name in contents:
             raise ValueError('duplicate selected evidence name: ' + name)
-        target = safe_path(run / name)
-        if target.exists() and name not in manifest['hashes'] and name not in manifest.get('planned_hashes', {}):
-            raise ValueError('refusing to clobber foreign evidence: ' + name)
+        _check_evidence_target(run, manifest, name)
         contents[name] = source.read_bytes()
     # A retry must finish every previously selected artifact. Existing matching
     # planned bytes are reusable; missing sources require explicit resubmission.
@@ -794,6 +798,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') != 8))
     if value.get('schema_version') == 8:
         if context_input is not None:
+            _check_evidence_target(run, manifest, 'evidence/context.json')
             context_bytes = _json_bytes(read_json(context_input))
             if len(context_bytes) > 131072:
                 raise ValueError('execution context exceeds bounded retained context size')

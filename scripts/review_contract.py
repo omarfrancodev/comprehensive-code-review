@@ -5,7 +5,7 @@ Python 3.10+, standard library only. Structural checks never establish finding t
 """
 import argparse
 from review_execution import validate_execution
-from review_publication import public_limitations
+from review_publication import public_limitations, public_reservations
 import copy
 import html
 import json
@@ -798,8 +798,8 @@ def render(record, audience='user', publication_context=None):
         lines.extend(f"- **{f['id']}**: {markdown_text(f['title'])} — {markdown_text(f['scenario'])}" for f in unresolved)
         lines.extend(f"- {one_line(item['detail'])}" + (' [material]' if item['material'] else '') for item in limitations)
     conditions = [f"{f['id']}: {one_line(f['correction'])}" for f in confirmed if f['blocking']]
-    conditions.extend(one_line(r) for r in record['reservations']
-                      if audience != 'comment' or one_line(r) not in known_limits)
+    reservations = public_reservations(record, limitations) if audience == 'comment' else record['reservations']
+    conditions.extend(one_line(r) for r in reservations)
     if conditions:
         lines.extend(['', '### Condiciones y reservas', ''])
         lines.extend('- [ ] ' + condition for condition in conditions)
@@ -875,9 +875,10 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     pending = context.get('decisions_pending', [])
     if not isinstance(pending, list) or any(not isinstance(item, str) for item in pending):
         raise ValueError('decisions_pending must be a text array')
+    reservations = public_reservations(record, limitations) if audience == 'comment' else record['reservations']
     lines.extend(['', '### Incertidumbres y decisiones pendientes', ''])
-    lines.extend('- ' + markdown_text(item) for item in dict.fromkeys(uncertainties + pending + record['reservations']))
-    if not uncertainties and not pending and not record['reservations']:
+    lines.extend('- ' + markdown_text(item) for item in dict.fromkeys(uncertainties + pending + reservations))
+    if not uncertainties and not pending and not reservations:
         lines.append('- Ninguna registrada.')
     lines.extend(['', '### Comprobaciones y referencias', ''])
     for check in record['checks']:

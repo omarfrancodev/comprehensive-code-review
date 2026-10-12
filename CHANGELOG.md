@@ -4,6 +4,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.10.0 — Pendiente de publicación
 
+- Proteger el contexto retenido automáticamente frente a evidencia ajena, manteniendo reintentos de archivos propios inventariados o planificados. La entrega breve declara el estado de ejecución schema 8 y las reservas públicas se deduplican contra detalle fuente y resumen proyectado.
 - Final review schema 8 clasifica limitaciones de comportamiento, validación y ejecución: el informe privado conserva el detalle interno y la publicación comunica impacto relevante. Limitaciones históricas requieren clasificación efímera vinculada al JSON original para republicarse; lectura privada de schemas 1–7 permanece sin migración.
 - Registrar plan, resultados y fallback observado en coverage.execution. La invocación incluye la delegación prevista por el perfil; pocos slots usan tandas frescas. No presentar pases del mismo contexto como cumplimiento de deep/extended ni exigir una frase adicional solicitando subagentes.
 - Verificar fuentes ya retenidas contra contexto/traza antes de retener y limpiar. Mantener archive schema 6, packet/trace schema 1 y procedencia estructural en entregas completas/breves; sin otro auditor, sondeo o medida de créditos.

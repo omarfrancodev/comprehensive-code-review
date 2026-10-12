@@ -179,6 +179,9 @@ def _brief(record):
              + contract.markdown_text(scope['head'] or scope['snapshot']),
              '- **Verificación:** ' + contract.VERIFICATION[record['coverage']['verification']],
              '- **Cobertura obsoleta:** ' + ('sí' if record['coverage']['stale'] else 'no')]
+    if record['schema_version'] == 8:
+        status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
+        lines.append('- **Ejecución del perfil:** ' + status)
     if scope['snapshot']:
         lines.append('- **Snapshot:** ' + contract.markdown_text(scope['snapshot']))
     if scope['target']:

@@ -43,8 +43,20 @@ Las etiquetas y hashes no prueban que un revisor haya leído correctamente el c�
 
 ## Entrega
 
-[PR #16](https://github.com/omarfrancodev/comprehensive-code-review/pull/16) abierto contra main y adjunto al chat. Rama remota y descripción verificadas, implementación validada en eb3020f; los commits posteriores de cierre solo registran la entrega. Sin merge/tag/release; versión 2.10.0 pendiente. Los worktrees ya fusionados se retiraron y el worktree de esta rama permanece para la revisión humana. Scratch propio del plan se elimina después de guardar su validación/decisiones en Git.
-## Decisiones registradas
+[PR #16](https://github.com/omarfrancodev/comprehensive-code-review/pull/16) abierto contra main y adjunto al chat. Entrega inicial verificada con implementación validada en eb3020f; la atención posterior a comentarios CCR y sus comprobaciones se registran abajo. Sin merge/tag/release; versión 2.10.0 pendiente. Los worktrees ya fusionados se retiraron y el worktree de esta rama permanece para la revisión humana. Scratch propio se elimina después de guardar su validación/decisiones en Git.
+## Atención del code review del PR #16
+
+Fuente: [comentario CCR CR-9bb16936270f43f4aa4f](https://github.com/omarfrancodev/comprehensive-code-review/pull/16#issuecomment-6117979206), sobre 14487d3. Los tres hallazgos se contrastaron con código y regresiones; no se modificó el comentario original ni reviews cerradas.
+
+| Hallazgo | Corrección y evidencia |
+|---|---|
+| F001, bloqueante | El contexto automático comparte el guard de propiedad de evidencia seleccionada. Rechaza el destino sin inventariar antes de escribir y conserva snapshot/bytes ajenos. Reintentos con hashes planificados o ya inventariados siguen funcionando, incluido un fallo real después de escribir el contexto propio. |
+| F003 | Brief schema 8 muestra ejecución cumplida/degradada además de verificación. Un deep degradado válido con verificador independiente conserva ambas observaciones; los formatos históricos no adquieren el nuevo campo. |
+| F002 | Comentario y handoff deduplican reservas contra detalle fuente y texto público proyectado. Una condición distinta sigue visible; detalle privado, veredicto y JSON original permanecen intactos. Incluye clasificación histórica vinculada. |
+
+RED observado: F001 sobrescribe el archivo ajeno; F003 omite ambos estados; F002 repite detalle/resumen en schema 8 e histórico. GREEN focalizado: 29 tests de ejecución/archivo y 11 de publicación. Suite integrada posterior: 292 tests en 186.415 s, 291 aprobados y uno omitido por symlinks en Windows. AST, enlaces modificados y diff check válidos. Las incidencias de entorno del code review externo no se trataron como defectos de producto; esta suite local se informa por separado. Correcciones incorporadas a 2.10.0 pendiente, sin cambios de schemas ni nuevas dependencias.
+
+## Decisiones de la implementación inicial
 
 - Continuar la ejecución nativa autorizada y adelantar la integración de main: respeta el flujo elegido y adopta archive 6 antes del código dependiente. Coste si la interpretación del método fuera incorrecta: cambiar el método antes de integrar; adelantar la dependencia no cambia producto.
 - Resolver fragmentos únicamente en fuentes seleccionadas y distinguir procedencia portable de acceso a archivos: evita un nuevo barrido/auditor. Coste: enlaces no seleccionados o fragmentos no soportados requieren corregir la selección antes de retener.

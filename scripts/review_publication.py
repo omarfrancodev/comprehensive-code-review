@@ -69,3 +69,15 @@ def public_limitations(record, classification=None):
             indexed[key(detail)] = len(selected)
             selected.append(dict(detail=detail, material=row['material']))
     return selected
+
+
+def public_reservations(record, limitations):
+    """Exclude exact source/projected duplicates, retaining unrelated conditions."""
+    key = lambda detail: ' '.join(detail.split())
+    seen = {key(row['detail']) for row in record['coverage']['limitations'] + limitations}
+    selected = []
+    for reservation in record['reservations']:
+        if key(reservation) not in seen:
+            selected.append(reservation)
+            seen.add(key(reservation))
+    return selected

@@ -228,6 +228,22 @@ class ExecutionPolicyTests(unittest.TestCase):
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'
         self.assertInvalid(value, 'same context')
 
+    def test_schema8_brief_discloses_fulfillment_with_independent_verification(self):
+        for status, label in [('fulfilled', 'cumplida'), ('degraded', 'degradada')]:
+            with self.subTest(status=status):
+                value = record8('deep')
+                execution = value['coverage']['execution']
+                if status == 'degraded':
+                    execution['status'] = 'degraded'
+                    execution['results'].pop(1)
+                    execution['fallbacks'] = [dict(assignments=['D2'], reason='quota_exhausted',
+                        detail='Observed discovery quota exhausted', source='evidence/context.json#restriction')]
+                self.assertValid(value)
+                output = delivery_tests.delivery._brief(value)
+                self.assertIn('**Ejecución del perfil:** ' + label, output)
+                self.assertIn('**Verificación:** independiente', output)
+        self.assertNotIn('Ejecución del perfil', delivery_tests.delivery._brief(record7('deep')))
+
     def test_focused_allows_separate_required_project_gate(self):
         value = record8()
         execution = value['coverage']['execution']
@@ -322,6 +338,34 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
         self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_automatic_context_cannot_overwrite_uninventoried_evidence(self):
+        run, value, context, inputs = self.prepared()
+        (run / 'evidence').mkdir()
+        foreign = run / 'evidence' / 'context.json'
+        foreign.write_bytes(b'foreign evidence: preserve these exact bytes')
+        before = self.fixture.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'foreign evidence'):
+            self.artifacts.retain(run, self.fixture.write('final.json', value),
+                                  context_input=context, evidence_inputs=inputs)
+        self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_automatic_context_retries_owned_interrupted_and_inventoried_evidence(self):
+        from unittest.mock import patch
+        run, value, context, inputs = self.prepared()
+        final = self.fixture.write('final.json', value)
+        original = self.artifacts.atomic_write
+        def interrupt(path, data):
+            original(path, data)
+            if path == run / 'evidence' / 'context.json':
+                raise OSError('interrupted after owned context write')
+        with patch.object(self.artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
+        self.assertIn('evidence/context.json', self.artifacts.read_json(run / 'cierre.json')['planned_hashes'])
+        self.artifacts.retain(run, final, context_input=context)
+        self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
+        self.assertEqual(self.artifacts.read_json(run / 'evidence' / 'context.json')['profile'], 'deep')
+        self.assertTrue(self.artifacts.validate(run, require_retained=True)['retained'])
 
     def test_execution_sources_must_exist_before_retention(self):
         run, value, context, inputs = self.prepared()

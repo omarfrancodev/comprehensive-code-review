@@ -82,6 +82,28 @@ class PublicationPolicyTests(unittest.TestCase):
                 contract.render(value, 'comment', publication_context=bad)
         self.assertEqual(value, before)
 
+    def test_public_reservations_deduplicate_original_detail_without_hiding_other_conditions(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                value = record7() if legacy else record8()
+                detail = 'The optional consumer scenario remains unverified'
+                summary = 'Optional consumer compatibility remains pending'
+                condition = 'Deployment requires a coordinated restart'
+                value['coverage']['limitations'] = ([dict(detail=detail, material=False)] if legacy else
+                                                    [limit('validation', False, summary, detail)])
+                value['reservations'] = [detail, summary, condition]
+                value['verdict'] = 'approvable_with_reservations'
+                context = classification(value, 'validation', summary) if legacy else None
+                before = copy.deepcopy(value)
+                self.assertEqual(contract.validate(value), [])
+                for renderer in (contract.render, contract.render_handoff):
+                    output = renderer(value, audience='comment', publication_context=context)
+                    self.assertNotIn(detail, output)
+                    self.assertEqual(output.count(summary), 1)
+                    self.assertEqual(output.count(condition), 1)
+                    self.assertIn(detail, renderer(value))
+                self.assertEqual(value, before)
+
     def test_classified_summary_covers_duplicate_material_area_in_both_public_formats(self):
         for legacy in (False, True):
             with self.subTest(legacy=legacy):
