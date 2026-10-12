@@ -74,3 +74,9 @@ La corrección detecta `//` en los segmentos que no son URLs HTTP(S) válidas. R
 - GREEN focalizado: `python -B -X utf8 -m unittest discover -s tests -p test_review_delivery.py -v`: 27 tests aprobados en 50.470 s, exit 0.
 - Las regresiones cubren rutas UNC completas, incrustadas y con separadores mixtos en full/brief; verifican destino ausente, origen idéntico byte a byte y diagnóstico sin la identidad privada. Controles positivos preservan URLs HTTP(S) con dobles barras en su path y nombres relativos.
 - Suite integrada posterior al feedback: `python -B -X utf8 -m unittest discover -s tests -v`: 317 tests en 226.251 s; 316 aprobados y una omisión por permisos de symlinks en Windows, exit 0. AST de los dos Python del ajuste y `git diff --check` correctos. Este resultado complementa las ejecuciones históricas anteriores.
+
+## Integración y preparación de publicación
+
+El usuario autorizó merge y publicación tras el [re-review aprobable](https://github.com/omarfrancodev/comprehensive-code-review/pull/17#issuecomment-6132344988) de `48e362a8ff91ccaf1bac0b5039329433993635b2`, que confirma F001 resuelto. Antes de integrar se repitió la suite completa sobre ese head: 317 tests en 226.475 s; 316 aprobados y una omisión por permisos de symlinks en Windows, exit 0.
+
+El PR #17 se fusionó en `14aac4ff3c55f3b317d8d66ebe0006b2d51f1e55`. `main` local se actualizó mediante fast-forward; `git diff --exit-code 48e362a8ff91ccaf1bac0b5039329433993635b2 HEAD` confirmó árboles idénticos. El commit de preparación de release solo fecha 2.11.0, actualiza los enlaces de README/instalación y conserva este registro; no modifica runtime ni pruebas. La comprobación del ZIP y los resultados de publicación se informan en la release, sin atribuir verificación al visor independiente.
