@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.11.0 — Pendiente de publicación
+## 2.11.0 — 2026-10-12
 
 - Proyectar entregas full/brief por tipo de campo, preservando IDs, perfiles, estados y relaciones frente a colisiones con comandos; rechazar identidades privadas, incluidas rutas UNC normalizadas con `/`, antes de escribir el destino.
 - Final review schema 9 vincula checks locales con ejecutores y versiones/snapshots retenidos; distingue inspección estática, CI externo y reuso sin inventar worktrees.
