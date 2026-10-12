@@ -26,7 +26,8 @@ Las pruebas de contrato cubren prohibición explícita con fallback, sin indepen
 - AST de scripts y enlaces relativos de documentación modificada válidos.
 - Tres helpers CLI `--help` y diff check válidos.
 - `skill-creator/scripts/quick_validate.py` no pudo iniciarse: el intérprete disponible carece de PyYAML. No se instaló dependencia adicional. El frontmatter se contrasta con main; nombre, descripción y versión 2.10.0 se conservan.
-- Suite integrada y revisión independiente: pendientes al preparar este registro; se actualizará con el resultado observado antes del PR.
+- Suite integrada: 282 tests en 215.260 s, 281 aprobados y uno omitido por symlinks en Windows. La ejecución final incluye las correcciones de los dos fixtures históricos y las regresiones adicionales; no quedan fallos de esa suite.
+- Revisión independiente de la rama: pendiente; se actualizará con el resultado observado antes del PR.
 
 ## Límites
 
