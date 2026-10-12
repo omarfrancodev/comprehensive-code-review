@@ -25,6 +25,7 @@ import review_metrics
 import review_trace
 import review_harness
 from review_execution import validate_execution_sources
+from review_check_provenance import validate_check_sources
 
 
 FILES = ('review.json', 'informe.md')
@@ -623,9 +624,9 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if value.get('schema_version') == 8:
+        if value.get('schema_version') in (8, 9):
             _execution_gate(run, manifest, value, {})
     if record_checkpoint:
         if manifest['state'] == 'complete':
@@ -778,7 +779,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
@@ -795,8 +796,8 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') != 8))
-    if value.get('schema_version') == 8:
+    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') not in (8, 9)))
+    if value.get('schema_version') in (8, 9):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
             context_bytes = _json_bytes(read_json(context_input))
@@ -806,7 +807,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
                     and read_json(context_input) != json.loads(contents['evidence/context.json'])):
                 raise ValueError('selected execution context conflicts with context_input')
             contents['evidence/context.json'] = context_bytes
-        _execution_gate(run, manifest, value, contents)
+        _execution_gate(run, dict(manifest, executors=executors), value, contents)
     if handoff_context_input is not None:
         manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
     if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):
@@ -876,6 +877,21 @@ def _execution_gate(run, manifest, value, contents):
         if resolved.get(row['reference']) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
     errors = validate_execution_sources(value, context, events, references)
+    if value.get('schema_version') == 9:
+        errors.extend(validate_check_sources(value, context.get('executors')))
+        errors.extend(validate_check_sources(value, manifest.get('executors', [])))
+        # Both retained sources must bind each used identity to the same inputs.
+        declared = context.get('executors', [])
+        projected = manifest.get('executors', [])
+        if isinstance(declared, list) and all(isinstance(row, dict) for row in declared + projected):
+            for check in value['checks']:
+                identity = check['execution']['executor']
+                if identity is None:
+                    continue
+                source_row = next((row for row in declared if row.get('executor') == identity), {})
+                closure_row = next((row for row in projected if row.get('executor') == identity), {})
+                if any(source_row.get(key) != closure_row.get(key) for key in ('revision', 'snapshot')):
+                    errors.append('checks.execution.sources: retained context and closure binding differ')
     if errors:
         raise ValueError('; '.join(errors))
 
