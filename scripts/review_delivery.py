@@ -87,7 +87,7 @@ class _Projection:
         roots = self.repo_roots + self.private_roots
         spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
         private = any(not _public_url(span) and re.search(
-            r'(?i)(?:[a-z]:[\\/]|\\\\|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
+            r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()

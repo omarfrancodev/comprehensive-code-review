@@ -63,3 +63,14 @@ Sin menores diferidos. No se solicitó otra review tras el pase de correcciones.
 ## Entrega para revisión humana
 
 [PR #17](https://github.com/omarfrancodev/comprehensive-code-review/pull/17) creado y adjunto al chat; base main, rama fix/review-persistence-delivery. Cuerpo y head remoto comprobados. Worktree conservado para comentarios; merge, tag y release 2.11.0 esperan autorización. El scratch exclusivo del plan se elimina después de persistir este registro; otras rutas y planes permanecen intactos.
+
+## Feedback del PR #17: F001, rutas UNC normalizadas
+
+El [comentario CCR](https://github.com/omarfrancodev/comprehensive-code-review/pull/17#issuecomment-6130566362), sobre el head `0e1079a4190377d06058e225fb2e364afa8edd6c`, señaló que `scope.snapshot` con una ruta `//servidor/recurso/snapshot` pasaba la proyección estructural y se publicaba en full/brief. Se reprodujo: el detector cubría UNC con barras invertidas y rutas absolutas con una sola barra, pero no la representación normalizada con dos barras.
+
+La corrección detecta `//` en los segmentos que no son URLs HTTP(S) válidas. Rechaza la identidad con un diagnóstico que identifica el campo sin revelar su valor, antes de crear el destino. No cambia schemas ni reescribe fuentes retenidas.
+
+- RED: `python -B -X utf8 -m unittest discover -s tests -p test_review_delivery.py -k unc_snapshot -v`: un test con tres subcasos fallidos en 2.835 s; no se lanzaba el rechazo esperado.
+- GREEN focalizado: `python -B -X utf8 -m unittest discover -s tests -p test_review_delivery.py -v`: 27 tests aprobados en 50.470 s, exit 0.
+- Las regresiones cubren rutas UNC completas, incrustadas y con separadores mixtos en full/brief; verifican destino ausente, origen idéntico byte a byte y diagnóstico sin la identidad privada. Controles positivos preservan URLs HTTP(S) con dobles barras en su path y nombres relativos.
+- Suite integrada posterior al feedback: `python -B -X utf8 -m unittest discover -s tests -v`: 317 tests en 226.251 s; 316 aprobados y una omisión por permisos de symlinks en Windows, exit 0. AST de los dos Python del ajuste y `git diff --check` correctos. Este resultado complementa las ejecuciones históricas anteriores.

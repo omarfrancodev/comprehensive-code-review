@@ -164,3 +164,9 @@ Runtime verificado: `C:/Users/Developer.INSCORSOF2/.cache/codex-runtimes/codex-p
 - Review Focus: colisión y datos privados en Task 1; categorías y baseline/snapshot en Task 2; recursos eliminados entre Tasks 2–3; eventos/interrupciones/pendientes en Task 3.
 - Proporción: cuatro entregables con regresiones y commits propios; no transcribir algoritmos completos, añadir un auditor, duplicar fixtures históricos ni migrar archivos.
 - Estado: plan escrito y revisado inline; spec y plan aprobados por el usuario; ejecución nativa autorizada. Implementación y única revisión independiente final completadas; cuatro hallazgos corregidos y suite final de 315 tests (314 aprobados/1 omitido). Rama publicada y [PR #17](https://github.com/omarfrancodev/comprehensive-code-review/pull/17) abierto contra main y adjunto al chat. Worktree conservado para feedback; merge/tag/release pendientes de autorización.
+
+## Feedback del PR #17
+
+- [x] Contrastar F001 con el head revisado y reproducir la exposición de identidades UNC normalizadas en full/brief: tres subcasos fallidos antes de la corrección.
+- [x] Corregir el detector estructural y observar GREEN: 27 tests de delivery; fuentes inmutables, destino ausente y controles de URLs HTTP(S)/identidades relativas conservados. Ver evidencia en el documento de validación.
+- [x] Ejecutar suite integrada tras F001: 317 tests en 226.251 s (316 aprobados/1 omitido por permisos de symlinks en Windows). AST del ajuste y diff check correctos. Preparar el commit del feedback para el mismo PR; merge/tag/release siguen pendientes de autorización.

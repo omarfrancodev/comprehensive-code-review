@@ -4,7 +4,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.11.0 — Pendiente de publicación
 
-- Proyectar entregas full/brief por tipo de campo, preservando IDs, perfiles, estados y relaciones frente a colisiones con comandos; rechazar identidades privadas antes de escribir el destino.
+- Proyectar entregas full/brief por tipo de campo, preservando IDs, perfiles, estados y relaciones frente a colisiones con comandos; rechazar identidades privadas, incluidas rutas UNC normalizadas con `/`, antes de escribir el destino.
 - Final review schema 9 vincula checks locales con ejecutores y versiones/snapshots retenidos; distingue inspección estática, CI externo y reuso sin inventar worktrees.
 - Retener con expectativa explícita del schema y exigir un gate completo de resultado, fuentes y limpieza antes de declarar cierre durable. El cierre revalida fuentes, también en reintentos idempotentes.
 - Mantener lectura de final schemas 1–8 sin migración, archive 6 y packet/trace 1. El visor independiente requiere soporte para final schema 9; no se verifica aquí.

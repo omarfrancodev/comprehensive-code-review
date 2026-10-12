@@ -23,6 +23,37 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_forward_slash_unc_snapshot_refuses_both_deliveries(self):
+        for identity in ('//private-server/share/snapshot', 'snapshot //private-server/share/snapshot',
+                         r'//private-server\share/snapshot'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['snapshot'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                run = self.retained(value)
+                before = self.snapshot(run)
+                for mode in ('full', 'brief'):
+                    output = self.root / mode
+                    with self.assertRaises(ValueError) as caught:
+                        delivery.deliver(run, mode, self.repo, output)
+                    self.assertIn('scope.snapshot', str(caught.exception))
+                    self.assertNotIn(identity, str(caught.exception))
+                    self.assertFalse(output.exists())
+                    self.assertEqual(before, self.snapshot(run))
+
+    def test_structural_public_urls_and_relative_identities_remain_portable(self):
+        for identity in ('https://example.test/reviews//snapshot', 'http://example.test/a//b',
+                         'owner/repository', 'snapshots/review-123'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['snapshot'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                projection = delivery._Projection(value, {'repository_path': str(self.repo),
+                    'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+                portable = projection.value(value)
+                self.assertEqual(artifacts.review_contract.validate(portable), [])
+                self.assertEqual(portable['scope'], value['scope'])
+
     def test_embedded_private_identity_refuses_both_deliveries(self):
         for identity in ('snapshot /home/alice/private/state', r'snapshot C:\other\private\state',
                          r'snapshot \\other-server\private\state', 'snapshot file:///private/state'):
