@@ -33,7 +33,21 @@ def public_limitations(record, classification=None):
             indexed[row['index']] = row
         rows = [dict(item, kind=indexed[i]['kind'], public_summary=indexed[i]['public_summary'])
                 for i, item in enumerate(original)]
+    # Merge evidenced material gaps by original detail before selecting audience text.
+    # No semantic classification of unmatched prose; area-only gaps remain publishable.
+    rows = [dict(row) for row in rows]
+    key = lambda detail: ' '.join(detail.split())
+    for area in record['coverage'].get('areas', []):
+        if not area['material']:
+            continue
+        matching = [row for row in rows if key(row['detail']) == key(area['details'])]
+        if matching:
+            for row in matching:
+                row['material'] = True
+        else:
+            rows.append(dict(kind='validation', detail=area['details'], material=True, public_summary=None))
     selected = []
+    indexed = {}
     for row in rows:
         if row['kind'] not in ('behavior', 'validation', 'execution'):
             raise ValueError('invalid public limitation kind')
@@ -48,5 +62,10 @@ def public_limitations(record, classification=None):
                 if summary is not None:
                     raise ValueError('nonmaterial execution must not have a public summary')
                 continue
-        selected.append(dict(detail=summary if summary is not None else row['detail'], material=row['material']))
+        detail = summary if summary is not None else row['detail']
+        if key(detail) in indexed:
+            selected[indexed[key(detail)]]['material'] |= row['material']
+        else:
+            indexed[key(detail)] = len(selected)
+            selected.append(dict(detail=detail, material=row['material']))
     return selected

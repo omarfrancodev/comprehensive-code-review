@@ -785,7 +785,7 @@ def render(record, audience='user', publication_context=None):
             references = ', '.join(table_cell(identifier) for identifier in row['finding_ids']) or '—'
             lines.append(f"| {row['area']} — {AREAS[row['area']]} | {AREA_STATUS[row['status']]} | {table_cell(row['details'])} | {references} |")
     known_limits = {one_line(item['detail']): i for i, item in enumerate(limitations)}
-    for row in areas:
+    for row in areas if audience == 'user' else []:
         detail = one_line(row['details'])
         if row['material']:
             if detail in known_limits:
@@ -869,8 +869,9 @@ def render_handoff(record, context=None, audience='user', publication_context=No
         lines.append('- Ningún hallazgo confirmado.')
     uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
     uncertainties += [item['detail'] for item in limitations]
-    uncertainties += [row['details'] for row in record['coverage'].get('areas', [])
-                      if row['status'] in {'partial', 'not_evaluated'} and (audience == 'user' or row['material'])]
+    if audience == 'user':
+        uncertainties += [row['details'] for row in record['coverage'].get('areas', [])
+                          if row['status'] in {'partial', 'not_evaluated'}]
     pending = context.get('decisions_pending', [])
     if not isinstance(pending, list) or any(not isinstance(item, str) for item in pending):
         raise ValueError('decisions_pending must be a text array')

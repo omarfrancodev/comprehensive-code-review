@@ -144,8 +144,11 @@
 
 - Preparación histórica: base `d54be59`, PR #14 abierto con HEAD `3f7a403`; sin cambios de producto/helper ni artifacts de CCR.
 - Suite base observada: 237 tests, 236 pass, 1 skip del host. Este resultado no cubre cambios todavía no implementados.
-- Estado actual: Tasks 1–4 completadas; Task 5 en curso. Pendientes verificación integrada, revisión final y PR.
+- Estado actual: implementación de Tasks 1–5 y revisión final completadas; PR pendiente de creación/validación humana. No merge/tag/release en este paso.
 
 - Implementación autorizada el 2026-10-11; ejecución nativa. Rama actualizada desde main 28ef2fa en 8b0ee45. Tasks 1–2 se implementan juntas por gate inseparable. RED: schema 8 no soportado; GREEN: contrato y fuentes, compatibilidad de perfiles/trazabilidad.
 - Ruling: Contexto retenido registra profile/profile_reference y profile_history opcional; referencia apunta a la observación ya recogida. El gate contrasta dispatch/resultados de la traza, sin inferir identidad desde el contexto de inputs ni consultar provider history.
 - Ruling: El cargador del fixture de contrato añade scripts a sys.path, igual que el fixture de archive, para importar los módulos puros sin afectar el CLI de producción.
+
+- Verificación integrada inicial: 282 tests, 281 pass/una omisión del host; AST/enlaces/CLI/diff válidos. quick_validate opcional no disponible por PyYAML; frontmatter idéntico a main.
+- Revisión final fresca: dos Important y un Minor reclasificado Important por potencial filtración de detalle interno. Una pasada de corrección RED→GREEN de focused/gate independiente, transición de perfiles y proyección del gap ABCDE; sin re-review. Suite posterior: 288 tests, 287 pass/una omisión del host. Decisiones y límites persistidos en [validación](../../validation/2026-10-11-review-execution-policy.md).

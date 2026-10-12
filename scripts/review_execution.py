@@ -88,7 +88,9 @@ def validate_execution(record):
         if row['assignment_id'] not in assignments or row['assignment_id'] in observed:
             fail('unknown or duplicate completed assignment')
         observed[row['assignment_id']] = row
-    if profile == 'focused' and len({row['reviewer_context'] for row in observed.values()}) > 1:
+    ordinary_ids = {row['id'] for row in discovery + verification}
+    if profile == 'focused' and len({row['reviewer_context'] for identifier, row in observed.items()
+                                     if identifier in ordinary_ids}) > 1:
         fail('focused skeptical verification must use the same context as discovery')
     impeded = set()
     for row in fallbacks:
@@ -149,11 +151,23 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     if not isinstance(history, list) or not history:
         return [prefix + 'observed profile source required']
     previous_sequence = -1
-    for row in history:
+    previous_profile = None
+    rank = {'focused': 0, 'standard': 1, 'deep': 2, 'extended': 3}
+    work = [event for event in trace_events if event.get('kind') in ('agent', 'discovery', 'grouped-verification')
+            and event.get('status') in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped')]
+    ordinary_refs = {row['reference'] for row in execution['plan'] if row['role'] != 'project_gate'}
+    starts = [event for event in work if event.get('status') == 'started'
+              and ordinary_refs.intersection(event.get('evidence', []))]
+    for index, row in enumerate(history):
         if (not isinstance(row, dict) or set(row) != {'profile', 'reference'} or not _text(row.get('reference'))
                 or row.get('profile') not in ('focused', 'standard', 'deep', 'extended')):
             errors.append(prefix + 'invalid profile transition source')
             continue
+        if execution['selection_source'] == 'explicit' and row['profile'] != record['profile']:
+            errors.append(prefix + 'explicit profile must remain fixed')
+        if previous_profile is not None and rank[row['profile']] < rank[previous_profile]:
+            errors.append(prefix + 'automatic profile history must not downgrade')
+        previous_profile = row['profile']
         matches = [event for event in trace_events if event.get('kind') == 'profile'
                    and row['reference'] in event.get('evidence', []) and event.get('status') in ('selected', 'completed')]
         if row['reference'] not in retained_references or not matches:
@@ -162,6 +176,10 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             errors.append(prefix + 'profile transitions must follow observed recording order')
         else:
             previous_sequence = matches[-1].get('sequence', 0)
+            if index == 0 and any(event.get('sequence', 0) <= previous_sequence for event in work):
+                errors.append(prefix + 'initial profile selection must precede observed review work')
+            if index > 0 and not any(event.get('sequence', 0) > previous_sequence for event in (starts or work)):
+                errors.append(prefix + 'profile escalation must precede subsequent ordinary review work')
     if not isinstance(history[-1], dict) or history[-1].get('profile') != record['profile']:
         errors.append(prefix + 'last observed profile must match final profile')
     for row in execution['plan']:

@@ -82,6 +82,34 @@ class PublicationPolicyTests(unittest.TestCase):
                 contract.render(value, 'comment', publication_context=bad)
         self.assertEqual(value, before)
 
+    def test_classified_summary_covers_duplicate_material_area_in_both_public_formats(self):
+        for legacy in (False, True):
+            with self.subTest(legacy=legacy):
+                value = record7() if legacy else record8()
+                detail = 'Native worker denied by harness'
+                summary = 'Required consumer compatibility verification remains incomplete'
+                value['coverage']['limitations'] = ([dict(detail=detail, material=True)] if legacy else
+                                                    [limit('execution', True, summary, detail)])
+                value['coverage']['areas'][2].update(status='partial', material=True, details=detail)
+                value['verdict'] = 'insufficient_evidence'
+                context = classification(value, 'execution', summary) if legacy else None
+                before = copy.deepcopy(value)
+                for renderer in (contract.render, contract.render_handoff):
+                    output = renderer(value, audience='comment', publication_context=context)
+                    self.assertNotIn(detail, output)
+                    self.assertEqual(output.count(summary), 1)
+                self.assertEqual(value, before)
+
+    def test_material_area_cannot_disappear_behind_nonmaterial_execution_classification(self):
+        value = record8()
+        detail = 'Native worker unavailable'
+        value['coverage']['limitations'] = [limit(detail=detail)]
+        value['coverage']['areas'][2].update(status='partial', material=True, details=detail)
+        value['verdict'] = 'insufficient_evidence'
+        for renderer in (contract.render, contract.render_handoff):
+            with self.assertRaises(ValueError):
+                renderer(value, audience='comment')
+
     def test_public_handoff_uses_same_policy(self):
         value = record8()
         value['coverage']['limitations'] = [limit(detail='Worker tool denied by local harness')]

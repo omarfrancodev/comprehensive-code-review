@@ -228,6 +228,60 @@ class ExecutionPolicyTests(unittest.TestCase):
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'
         self.assertInvalid(value, 'same context')
 
+    def test_focused_allows_separate_required_project_gate(self):
+        value = record8()
+        execution = value['coverage']['execution']
+        execution['plan'].append(dict(id='G1', role='project_gate', independent=True, required=True,
+                                     reference='evidence/policy.json#G1'))
+        execution['results'].append(dict(assignment_id='G1', reviewer_context='fresh-gate', provider_id=None,
+                                        reference='evidence/results.json#G1'))
+        self.assertValid(value)
+        self.assertEqual(validate_execution_sources(value, *source_fixture(value)), [])
+        execution['results'][-1]['reviewer_context'] = 'coordinator'
+        self.assertInvalid(value, 'independence')
+
+    def test_observed_profiles_cannot_downgrade_or_change_explicit_selection(self):
+        for initial, final, selection, valid in [('focused', 'deep', 'automatic', True),
+                ('deep', 'focused', 'automatic', False), ('focused', 'deep', 'explicit', False)]:
+            with self.subTest(initial=initial, final=final, selection=selection):
+                value = record8(final, selection)
+                context, events, references = source_fixture(value)
+                initial_ref = 'evidence/initial.json#profile'
+                context['profile_history'] = [dict(profile=initial, reference=initial_ref),
+                                              dict(profile=final, reference=context['profile_reference'])]
+                references.add(initial_ref)
+                for event in events:
+                    event['sequence'] += 1
+                events.insert(0, dict(sequence=1, kind='profile', status='selected', evidence=[initial_ref]))
+                self.assertEqual(not validate_execution_sources(value, context, events, references), valid)
+
+    def test_profile_selection_must_precede_observed_work(self):
+        value = record8('deep', 'automatic')
+        context, events, references = source_fixture(value)
+        selection = events.pop(0)
+        selection['sequence'] = len(events) + 2
+        events.append(selection)
+        self.assertTrue(validate_execution_sources(value, context, events, references))
+
+    def test_automatic_escalation_can_reuse_prior_discovery_but_precedes_new_dispatch(self):
+        value = record8('deep', 'automatic')
+        context, events, references = source_fixture(value)
+        initial_ref = 'evidence/initial.json#profile'
+        context['profile_history'] = [dict(profile='focused', reference=initial_ref),
+                                      dict(profile='deep', reference=context['profile_reference'])]
+        references.add(initial_ref)
+        final_selection = events.pop(0)
+        events.insert(0, dict(kind='profile', status='selected', evidence=[initial_ref]))
+        events.insert(3, final_selection)
+        for sequence, event in enumerate(events, 1):
+            event['sequence'] = sequence
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+        events.remove(final_selection)
+        events.append(final_selection)
+        for sequence, event in enumerate(events, 1):
+            event['sequence'] = sequence
+        self.assertTrue(validate_execution_sources(value, context, events, references))
+
 
 if __name__ == '__main__':
     unittest.main()
