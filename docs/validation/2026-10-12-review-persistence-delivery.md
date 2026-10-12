@@ -59,3 +59,7 @@ Decisiones sobre asuntos apartados por el reviewer:
 - PR/publicación/release: se verificará el PR remoto tras corregir; publicación de la versión espera autorización. Coste: integración permanece pendiente.
 
 Sin menores diferidos. No se solicitó otra review tras el pase de correcciones.
+
+## Entrega para revisión humana
+
+[PR #17](https://github.com/omarfrancodev/comprehensive-code-review/pull/17) creado y adjunto al chat; base main, rama fix/review-persistence-delivery. Cuerpo y head remoto comprobados. Worktree conservado para comentarios; merge, tag y release 2.11.0 esperan autorización. El scratch exclusivo del plan se elimina después de persistir este registro; otras rutas y planes permanecen intactos.
