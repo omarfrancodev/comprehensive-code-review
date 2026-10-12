@@ -35,6 +35,35 @@ def _public_url(value):
 
 
 class _Projection:
+    # Contract fields are deliberately classified. New strings require an
+    # explicit portability policy rather than silently rewriting identities.
+    STRUCTURAL = set('''stage profile verdict review_id
+        scope.repository scope.mode scope.base scope.head scope.snapshot scope.target
+        findings[].id findings[].type findings[].status findings[].priority findings[].origin
+        findings[].evidence[].kind findings[].evidence[].check_id
+        checks[].id checks[].revision checks[].status checks[].failure_kind
+        checks[].execution.kind checks[].execution.executor
+        coverage.verification coverage.areas[].area coverage.areas[].status
+        coverage.areas[].finding_ids[] coverage.limitations[].kind
+        coverage.execution.selection_source coverage.execution.status
+        coverage.execution.plan[].id coverage.execution.plan[].role
+        coverage.execution.results[].assignment_id coverage.execution.results[].reviewer_context
+        coverage.execution.results[].provider_id coverage.execution.fallbacks[].assignments[]
+        coverage.execution.fallbacks[].reason responsible.name responsible.username
+        change_authors[].name change_authors[].username change_authors[].commits[]
+        presentation.kind previous_reviews[].review_id
+        grandfathered_ids.findings[] grandfathered_ids.checks[]
+        rereview[].id rereview[].status rereview[].previous_review_id
+        rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
+    PROSE = set('''profile_reason verdict_reason reservations[]
+        findings[].title findings[].scenario findings[].impact findings[].correction
+        findings[].blocking_reason findings[].evidence[].details findings[].location.section
+        checks[].evidence checks[].reuse_reason checks[].rerun_reason
+        coverage.flows[] coverage.limitations[].detail coverage.limitations[].public_summary
+        coverage.areas[].details coverage.execution.fallbacks[].detail
+        responsible.source change_authors[].source description.identity description.details
+        presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
+
     def __init__(self, record, manifest, project, source_hash):
         self.source_hash = source_hash
         self.commands = sorted({check['command'] for check in record['checks']}, key=len, reverse=True)
@@ -49,13 +78,21 @@ class _Projection:
     def reference(self, value):
         if _public_url(value):
             return value
-        projected = self.text(value)
+        projected = self.text(value, omit_commands=False)
         if re.match(r'^(?:[A-Za-z]:[\\/]|[\\/]|file:)', projected):
             return self.retained(value)
         return projected
 
-    def text(self, value):
-        for command in self.commands:
+    def structural(self, value, path):
+        roots = self.repo_roots + self.private_roots
+        if (re.search(r'(?i)(?:^[a-z]:[\\/]|^[/\\]|^file:)', value)
+                or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
+                       for root in roots if root)):
+            raise ValueError('private structural value cannot be delivered: ' + path)
+        return value
+
+    def text(self, value, omit_commands=True):
+        for command in self.commands if omit_commands else ():
             value = value.replace(command, '[comprobación registrada; comando omitido]')
             value = value.replace(contract.markdown_text(command), '[comprobación registrada; comando omitido]')
 
@@ -92,25 +129,35 @@ class _Projection:
 
     def value(self, value, path='record'):
         if isinstance(value, dict):
+            if path == 'record.aliases':
+                return {self.structural(key, path + ' key'): self.structural(item, path + ' value')
+                        for key, item in value.items()}
             return {key: self.value(item, path + '.' + key) for key, item in value.items()}
         if isinstance(value, list):
             return [self.value(item, path + '[' + str(index) + ']') for index, item in enumerate(value)]
         if not isinstance(value, str):
             return value
-        if path.endswith('.command'):
+        field = re.sub(r'\[\d+\]', '[]', path.removeprefix('record.'))
+        if field in self.STRUCTURAL:
+            projected = self.structural(value, path)
+        elif field == 'description.status':
+            projected = self.structural(value, path)
+        elif field == 'checks[].command':
             projected = '[comprobación registrada; comando omitido]'
         elif path.endswith(('.url', '.previous_url')):
             projected = value if _public_url(value) else None
-        elif path.endswith(('.reference', '.previous_reference')) and path != 'record.scope.reference' and not _public_url(value):
-            projected = self.retained(value)
+        elif (path.endswith(('.reference', '.previous_reference')) or field == 'coverage.execution.fallbacks[].source') and field != 'scope.reference':
+            projected = value if _public_url(value) else self.retained(value)
         elif path == 'record.scope.reference':
             projected = self.reference(value)
-        else:
+        elif field == 'findings[].location.path':
+            projected = self.text(value, omit_commands=False).replace('\\', '/')
+            if projected.startswith('/'):
+                projected = '[ubicación privada retenida]'
+        elif field in self.PROSE:
             projected = self.text(value)
-            if path.endswith('.location.path'):
-                projected = projected.replace('\\', '/')
-                if projected.startswith('/'):
-                    projected = '[ubicación privada retenida]'
+        else:
+            raise ValueError('unclassified portable field: ' + path)
         if projected != value:
             self.changed.append(path)
         return projected
