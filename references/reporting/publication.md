@@ -9,3 +9,11 @@ Use verified assignment and version-bound commit metadata for their respective r
 Publish only authorized content/action and verify returned evidence. Draft is not published. If completion is uncertain, inspect the remote result before retrying; avoid duplicates. Prior-comment updates need corresponding authorization, with stable IDs supporting consistent updates.
 
 Record an authorized publication observation in the open run's compact trace with actual authority and returned evidence. After closure, use a separate operation linked to the review ID/source; preserve the original immutable report/record/trace. A requested handoff or review source never supplies publication authority.
+
+## Audience selection and historical publication
+
+Schema 8 selects limitations by kind/material/public_summary under [result-contract.md](../contracts/result-contract.md). Nonmaterial execution stays private; material execution publishes relevant pending-check/gate impact. Product/validation limitations and material ABCDE gaps remain visible. Deduplicate the same uncertainty across limitations, area gaps and reservations; never downgrade materiality to hide mechanics.
+
+Before already-authorized publication, the coordinator makes one draft pass over verdict_reason, reservations, finding text, check evidence/reuse reasons and re-review details. These describe change/evidence/acceptance conditions. Internal permissions, models/harness, workers and local paths belong in execution/trace/internal limitations. Product sessions/agents remain valid terminology; no blacklist, extra reviewer or code sweep.
+
+Schemas 1–7 remain readable privately. Public historical limitations require ephemeral classification: --publication-context for render-comment, or publication_context for public renderer/handoff APIs. Exact fields: {source_sha256, limitations: [{index, kind, public_summary}]}. SHA-256 binds canonical JSON: ensure_ascii=False, sorted keys, compact separators, allow_nan=False, UTF-8. One row per original index; detail/materiality stay sourced. Reject duplicate/missing indices and wrong hash. Do not save classification by default, rewrite history or guess kind from wording. Unclassified limits leave publication pending privately. Historical records without limitations need no classification.

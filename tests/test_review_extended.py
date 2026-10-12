@@ -69,8 +69,13 @@ class ExtendedContractTests(unittest.TestCase):
                                              'material': True}]
         value['verdict'] = 'insufficient_evidence'
         self.assertEqual(contract.validate(value), [])
-        output = contract.render(value, 'comment')
-        self.assertIn('Independent sessions unavailable', output)
+        from review_publication import publication_digest
+        output = contract.render(value, 'comment', publication_context={
+            'source_sha256': publication_digest(value),
+            'limitations': [{'index': 0, 'kind': 'execution',
+                             'public_summary': 'Required invariant verification remains incomplete'}]})
+        self.assertIn('Required invariant verification remains incomplete', output)
+        self.assertNotIn('Independent sessions unavailable', output)
         self.assertIn('EVIDENCIA INSUFICIENTE', output)
         value['verdict'] = 'approvable'
         self.assertTrue(contract.validate(value))

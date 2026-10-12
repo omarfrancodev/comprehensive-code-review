@@ -1,6 +1,6 @@
 # Profile selection and closure
 
-Profiles describe review strategies: focused for demonstrated bounded scope, standard for one discovery with conditional independent verification, deep for independent perspectives on material mechanisms, and extended for further necessary distinct assignments. Request aliases economy → focused and balanced → standard remain supported and fixed when explicit; record any normalization in the existing profile_reason/context. New final records use schema7 canonical names; historical records keep their original names, schemas and rendering. Renaming changes no eligibility, passes, limits or verdict rules.
+Profiles describe review strategies: focused for demonstrated bounded scope, standard for one discovery with conditional independent verification, deep for independent perspectives on material mechanisms, and extended for further necessary distinct assignments. Request aliases economy → focused and balanced → standard remain supported and fixed when explicit; record any normalization in the existing profile_reason/context. New final records use schema8 canonical names; historical records keep their original names, schemas and rendering. Renaming changes no eligibility, passes, limits or verdict rules.
 
 Select once during shared scope/context discovery, before delegating. Reuse already collected facts; no separate selection agent, full audit, scoring system or measurement probe. Record selection source (explicit/automatic), effective profile and concrete basis in the existing profile_reason/context. Line count, urgency, model, available slots, technology names and ABCDE letters do not determine depth.
 
@@ -65,3 +65,7 @@ Priority expresses consequence; blocking depends on affected requirements and ve
 4. Otherwise: approvable within the exact scope.
 
 Only the user/verified policy accepts material exceptions. Reservations cannot waive unknown required behavior. A recommendation is not a remote approval action.
+
+## Observed profile fulfillment
+
+Invocation requests necessary profile delegation without an extra “use subagents” phrase. Schema 8 records coverage.execution under [result-contract.md](../contracts/result-contract.md): planned assignments, completed contexts and actual impediments. Fulfilled requires actual passes/independence; degraded preserves the requested profile and documents each unmet requirement. Same-session fallback is not independence. Few slots require fresh-context batches, not fallback. Real tool restriction/failure/quota permits fallback with an existing source. Degradation alone is not a product finding or public reservation; unmet project gates/material validation still affect the verdict.

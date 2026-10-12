@@ -32,7 +32,8 @@ def limit(kind='execution', material=False, summary=None, detail='Native dispatc
 
 
 def source_fixture(value):
-    context = dict(profile=value['profile'], profile_reference='evidence/context.json#profile', executors=[])
+    context = dict(profile=value['profile'], selection_source=value['coverage']['execution']['selection_source'],
+                   profile_reference='evidence/context.json#profile', executors=[])
     references = {context['profile_reference']}
     events = [dict(sequence=1, kind='profile', status='selected', evidence=[context['profile_reference']])]
     for row, result in zip(value['coverage']['execution']['plan'], value['coverage']['execution']['results']):
@@ -177,6 +178,14 @@ class ExecutionPolicyTests(unittest.TestCase):
         value['coverage']['verification'] = 'same_session'
         self.assertInvalid(value, 'verification')
 
+    def test_standard_unresolved_code_candidate_requires_fresh_verification(self):
+        value = record8('standard')
+        value['findings'] = [dict(finding(), id='F001', priority='P3', status='unresolved')]
+        value['coverage']['execution']['plan'][-1]['independent'] = False
+        value['coverage']['execution']['results'][-1]['reviewer_context'] = 'coordinator'
+        value['coverage']['verification'] = 'same_session'
+        self.assertInvalid(value, 'verification')
+
     def test_malformed_execution_returns_errors_without_crashing(self):
         for raw in (None, [], {}, {'plan': [None]}, {'selection_source': []}):
             value = record8()
@@ -190,6 +199,12 @@ class ExecutionPolicyTests(unittest.TestCase):
         context['profile_history'] = [dict(profile='standard', reference='evidence/initial.json#profile'),
                                       dict(profile='deep', reference=context['profile_reference'])]
         references.add('evidence/initial.json#profile')
+        self.assertTrue(validate_execution_sources(value, context, events, references))
+
+    def test_selection_source_cannot_bypass_automatic_extended_counts(self):
+        value = record8('extended')
+        context, events, references = source_fixture(value)
+        context['selection_source'] = 'automatic'
         self.assertTrue(validate_execution_sources(value, context, events, references))
 
     def test_failed_dispatch_is_not_a_completed_reviewer(self):

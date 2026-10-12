@@ -139,3 +139,7 @@ No modificar reviews cerradas, comentarios de otros autores, configuración del 
 ## Revisión del documento
 
 Comprobados alcance, requisitos, independencia de schemas, costes, permisos y compatibilidad histórica. Este documento fija las interfaces propuestas; sus decisiones requieren revisión antes de ejecutar el plan.
+
+## Decisiones de implementación autorizada
+
+El usuario autorizó implementar el 2026-10-11 y eligió incorporar el cambio a 2.10.0 pendiente, sin tag/release. Main integrado: 28ef2fa; rama actualizada antes de implementar. El contexto ya recogido se retiene una vez en evidence/context.json con profile/profile_reference y profile_history opcional; los fragmentos y milestones acreditan observaciones existentes, sin reconstruir ejecuciones históricas.

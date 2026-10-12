@@ -4,9 +4,14 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.10.0 — Pendiente de publicación
 
+- Final review schema 8 clasifica limitaciones de comportamiento, validación y ejecución: el informe privado conserva el detalle interno y la publicación comunica impacto relevante. Limitaciones históricas requieren clasificación efímera vinculada al JSON original para republicarse; lectura privada de schemas 1–7 permanece sin migración.
+- Registrar plan, resultados y fallback observado en coverage.execution. La invocación incluye la delegación prevista por el perfil; pocos slots usan tandas frescas. No presentar pases del mismo contexto como cumplimiento de deep/extended ni exigir una frase adicional solicitando subagentes.
+- Verificar fuentes ya retenidas contra contexto/traza antes de retener y limpiar. Mantener archive schema 6, packet/trace schema 1 y procedencia estructural en entregas completas/breves; sin otro auditor, sondeo o medida de créditos.
+- Los consumidores del resultado, incluido el visor independiente, deben admitir final review schema 8; su compatibilidad no se verifica ni implementa aquí.
+
 - Conservar el nombre original del harness y resolver una vez su ID mediante catálogo canónico versionado, con fuente, configuración explícita por sesión y diagnóstico de identidades desconocidas/contradictorias.
 - Ampliar el catálogo inicial a 52 identidades en 17 familias, distinguiendo las interfaces conocidas y conservando soporte para entornos personalizados no catalogados.
-- Archivo schema 6 conserva la identidad durante todo el ciclo y mantiene lectura de schemas 1–5 sin migración; final review 7 y trace 1 sin cambios. Sin sondas, telemetría ni mediciones adicionales.
+- Archivo schema 6 conserva la identidad durante todo el ciclo y mantiene lectura de schemas 1–5 sin migración; trace 1 permanece independiente. El cambio posterior de política de ejecución usa final review 8, con lectura de 1–7. Sin sondas, telemetría ni mediciones adicionales.
 - Los consumidores de cierre.json, incluido el visor independiente, deben aceptar archive schema 6 para leer los nuevos runs. La compatibilidad del visor no se presume ni se verifica en este repositorio; su actualización corresponde al proyecto independiente.
 - Normalizar mayúsculas y espacios exteriores de IDs declarados por argumento o CCR_HARNESS_ID; conservar conflictos reales y diagnósticos de IDs desconocidos sin sustituirlos silenciosamente por un alias del nombre.
 - Tratar CCR_HARNESS_ID vacío o compuesto solo por espacios como configuración ausente; mantener el rechazo de IDs explícitos en blanco.

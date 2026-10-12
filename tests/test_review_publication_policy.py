@@ -21,6 +21,17 @@ def classification(value, kind='validation', summary=None):
 
 
 class PublicationPolicyTests(unittest.TestCase):
+    def test_private_report_explicitly_discloses_degraded_profile(self):
+        value = record8('deep')
+        value['coverage']['execution'].update(status='degraded', results=[], fallbacks=[dict(
+            assignments=['D1', 'D2', 'V1'], reason='explicit_restriction', detail='Delegation prohibited',
+            source='evidence/context.json#restriction')])
+        value['coverage'].update(verification='unavailable', adequate=False)
+        value['coverage']['limitations'] = [limit(material=True, summary='Required validation incomplete')]
+        value['verdict'] = 'insufficient_evidence'
+        self.assertIn('**Ejecución del perfil:** degradada', contract.render(value))
+        self.assertNotIn('Ejecución del perfil', contract.render(value, 'comment'))
+
     def test_internal_execution_detail_stays_private(self):
         value = record8()
         value['coverage']['limitations'] = [limit(detail='Worker tool denied by local harness')]

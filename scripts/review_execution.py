@@ -63,7 +63,7 @@ def validate_execution(record):
     if not minimum <= len(discovery) <= maximum:
         fail('discovery cardinality does not match profile/selection')
     independent_profile = profile in ('deep', 'extended')
-    substantive = any(isinstance(row, dict) and row.get('type') == 'code' and row.get('status') == 'confirmed'
+    substantive = any(isinstance(row, dict) and row.get('type') == 'code' and row.get('status') in ('confirmed', 'unresolved')
                       for row in (record.get('findings') if isinstance(record.get('findings'), list) else []))
     material = any(isinstance(row, dict) and row.get('material') is True
                    for key in ('limitations', 'areas') for row in (coverage.get(key) or [])
@@ -143,12 +143,15 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     prefix = 'coverage.execution.sources: '
     if not isinstance(context, dict) or context.get('profile') != record['profile']:
         return [prefix + 'context profile differs from final profile']
+    if context.get('selection_source') != execution['selection_source']:
+        return [prefix + 'selection_source differs from observed context']
     history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
     if not isinstance(history, list) or not history:
         return [prefix + 'observed profile source required']
     previous_sequence = -1
     for row in history:
-        if not isinstance(row, dict) or set(row) != {'profile', 'reference'} or not _text(row.get('reference')):
+        if (not isinstance(row, dict) or set(row) != {'profile', 'reference'} or not _text(row.get('reference'))
+                or row.get('profile') not in ('focused', 'standard', 'deep', 'extended')):
             errors.append(prefix + 'invalid profile transition source')
             continue
         matches = [event for event in trace_events if event.get('kind') == 'profile'

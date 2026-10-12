@@ -547,7 +547,7 @@ def canonicalize_ids(record, reserved_ids=None):
     Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
     """
     if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8):
-        raise ValueError('canonical ID allocation requires schema 6 or 7')
+        raise ValueError('canonical ID allocation requires schema 6, 7 or 8')
     errors = [error for error in validate(record) if 'expected canonical' not in error]
     if errors:
         raise ValueError('; '.join(errors))
@@ -725,6 +725,9 @@ def render(record, audience='user', publication_context=None):
     if audience == 'user':
         lines.extend([f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.",
                       f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}."])
+        if record['schema_version'] == 8:
+            status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
+            lines.append('- **Ejecución del perfil:** ' + status + '.')
     description = record['description']
     if description['status'] != 'not_applicable':
         lines.append(f"- **Descripción:** {DESCRIPTION[description['status']]} — {markdown_text(description['details'])}")
