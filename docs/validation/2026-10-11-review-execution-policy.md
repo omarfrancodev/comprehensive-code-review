@@ -40,6 +40,10 @@ Las pruebas de contrato cubren prohibición explícita con fallback, sin indepen
 ## Límites
 
 Las etiquetas y hashes no prueban que un revisor haya leído correctamente el código. El gate contrasta estructura, fuentes y observaciones retenidas; el coordinador hace un único pase sobre la prosa pública. No hay filtro semántico universal, auditor adicional, medición de créditos o migration de históricos. El visor independiente deberá aceptar final schema 8 además de archive 6; su compatibilidad no se valida ni modifica aquí.
+
+## Entrega
+
+[PR #16](https://github.com/omarfrancodev/comprehensive-code-review/pull/16) abierto contra main y adjunto al chat. Rama remota y descripción verificadas, implementación validada en eb3020f; los commits posteriores de cierre solo registran la entrega. Sin merge/tag/release; versión 2.10.0 pendiente. Los worktrees ya fusionados se retiraron y el worktree de esta rama permanece para la revisión humana. Scratch propio del plan se elimina después de guardar su validación/decisiones en Git.
 ## Decisiones registradas
 
 - Continuar la ejecución nativa autorizada y adelantar la integración de main: respeta el flujo elegido y adopta archive 6 antes del código dependiente. Coste si la interpretación del método fuera incorrecta: cambiar el método antes de integrar; adelantar la dependencia no cambia producto.
