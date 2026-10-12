@@ -83,6 +83,16 @@ class CheckProvenanceTests(unittest.TestCase):
         value['checks'] = [check()]
         self.assertEqual(contract.validate(value), [])
 
+    def test_snapshot_executor_cannot_claim_clean_revision(self):
+        value = record9()
+        value['scope']['snapshot'] = 'snapshot-123'
+        for revision in (value['scope']['base'], value['scope']['head']):
+            with self.subTest(revision=revision):
+                value['checks'] = [dict(check(), revision=revision, execution=dict(kind='local', executor='X1'))]
+                self.assertEqual(contract.validate(value), [])
+                executors = [dict(executor='X1', revision=revision, snapshot='snapshot-123')]
+                self.assertTrue(self.provenance.validate_check_sources(value, executors))
+
 
 class ArchiveCheckProvenanceTests(unittest.TestCase):
     def setUp(self):

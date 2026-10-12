@@ -34,6 +34,52 @@ def record():
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_close_recovers_owned_marker_manifest_interruption(self):
+        for boundary in ('before', 'after'):
+            with self.subTest(boundary=boundary):
+                run = self.prepare()
+                self.retain(run)
+                original = artifacts.atomic_write
+                interrupted = False
+                def interrupt(path, data):
+                    nonlocal interrupted
+                    if Path(path).name == 'cierre.json' and not interrupted:
+                        interrupted = True
+                        if boundary == 'after':
+                            original(path, data)
+                        raise OSError('owned close manifest interrupted')
+                    original(path, data)
+                with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+                    self.close(run)
+                before = self.snapshot(run)
+                with self.assertRaises(ValueError):
+                    artifacts.validate(run, require_complete=True)
+                self.assertEqual(before, self.snapshot(run))
+                self.close(run)
+                self.assertEqual(artifacts.validate(run, require_complete=True)['state'], 'complete')
+                self.assertNotIn('previous_manifest_sha256', self.read(run / artifacts.MARKER))
+                before = self.snapshot(run)
+                self.close(run)
+                self.assertEqual(before, self.snapshot(run))
+
+    def test_close_recovery_refuses_foreign_manifest_bytes(self):
+        run = self.prepare()
+        self.retain(run)
+        original = artifacts.atomic_write
+        def interrupt(path, data):
+            if Path(path).name == 'cierre.json':
+                raise OSError('owned close manifest interrupted')
+            original(path, data)
+        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            self.close(run)
+        value = self.read(run / 'cierre.json')
+        value['updated_at'] = 'foreign modification'
+        (run / 'cierre.json').write_text(json.dumps(value), encoding='utf-8')
+        before = self.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.close(run)
+        self.assertEqual(before, self.snapshot(run))
+
     def snapshot(self, run):
         return {str(path.relative_to(run)): path.read_bytes() for path in run.rglob('*') if path.is_file()}
 

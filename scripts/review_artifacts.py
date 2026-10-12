@@ -927,6 +927,13 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
+    if 'previous_manifest_sha256' in marker:
+        # _load_run already bound these exact bytes to an owned old/new intent.
+        # A stop before manifest replacement leaves no pending_trace to replay;
+        # pin the authorized surviving manifest, then retry this mutation normally.
+        marker = dict(marker, manifest_sha256=_digest((run / 'cierre.json').read_bytes()))
+        marker.pop('previous_manifest_sha256')
+        atomic_write(run / MARKER, _json_bytes(marker))
     validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')

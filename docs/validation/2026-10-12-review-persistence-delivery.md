@@ -26,7 +26,7 @@ Suite integrada: `python -B -X utf8 -m unittest discover -s tests -v`, 310 tests
 ## Comprobaciones complementarias
 
 - AST de 8 archivos Python modificados: válido.
-- 62 enlaces relativos a archivos Markdown modificados: destinos presentes; no se verificaron sitios remotos ni todas las anclas.
+- 64 enlaces relativos a archivos Markdown modificados: destinos presentes; no se verificaron sitios remotos ni todas las anclas.
 - Help de contract/delivery y archive retain/validate: operativo; muestra `--expected-schema {1,...,9}` y `--require-complete`.
 - `git diff --check`: sin errores.
 - Main remoto continúa en la base indicada; identidad local `omarfrancodev` / `fofe2803@gmail.com`.
@@ -41,4 +41,21 @@ Suite integrada: `python -B -X utf8 -m unittest discover -s tests -v`, 310 tests
 
 ## Revisión independiente
 
-Pendiente de la única revisión final de toda la rama y, si procede, de su pase de correcciones con regresiones.
+Una revisión fresca de toda la rama (base indicada → c4a6204), en lectura y con reproducciones puras, señaló tres defectos importantes y uno etiquetado menor. Se reclasificó la colisión de description.identity como importante porque destruye la identidad de la descripción capturada y su comparación de frescura. Los cuatro entraron en un único pase de corrección, sin segundo reviewer:
+
+| Hallazgo | Regresión |
+|---|---|
+| Rutas privadas incrustadas en identidades | `test_embedded_private_identity_refuses_both_deliveries`: cuatro variantes Unix/Windows/UNC/file; origen intacto y destino ausente |
+| description.identity tratada como prosa | `test_description_identity_is_preserved_or_refused_as_structure`: preservar hash seguro o rechazar ruta privada |
+| Snapshot atribuido a una revisión limpia | `test_snapshot_executor_cannot_claim_clean_revision`: rechazo de baseline/HEAD con snapshot; controles positivos anteriores |
+| Cierre propio bloqueado entre marker/manifest | `test_close_recovers_owned_marker_manifest_interruption`: interrupción antes/después, reintento e idempotencia; `test_close_recovery_refuses_foreign_manifest_bytes` conserva rechazo de bytes ajenos |
+
+RED: delivery 5 fallos en 25 tests; provenance 2 fallos en 11 tests; archivo 1 error en 45 tests y 1 omisión. Los fallos corresponden a los escenarios señalados. GREEN: delivery 25 tests en 43.269 s; provenance 11 en 13.372 s; archivo 45 en 66.177 s (44 aprobados/1 omitido). Suite posterior: 315 tests en 237.047 s, 314 aprobados/1 omitido, exit 0. AST 8/enlaces relativos 64/diff check revalidados.
+
+Decisiones sobre asuntos apartados por el reviewer:
+
+- Visor independiente: fuera del alcance aprobado; se documenta necesidad de schema 9. Coste si falla: actualizar ese consumidor.
+- Reviewer no ejecutó la suite que escribe ni symlinks: respetó lectura; se usa la evidencia de ejecución del implementador. Coste: symlinks omitidos permanecen sin verificar en este host.
+- PR/publicación/release: se verificará el PR remoto tras corregir; publicación de la versión espera autorización. Coste: integración permanece pendiente.
+
+Sin menores diferidos. No se solicitó otra review tras el pase de correcciones.

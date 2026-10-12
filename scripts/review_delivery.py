@@ -51,7 +51,7 @@ class _Projection:
         coverage.execution.results[].provider_id coverage.execution.fallbacks[].assignments[]
         coverage.execution.fallbacks[].reason responsible.name responsible.username
         change_authors[].name change_authors[].username change_authors[].commits[]
-        presentation.kind previous_reviews[].review_id
+        presentation.kind description.identity previous_reviews[].review_id
         grandfathered_ids.findings[] grandfathered_ids.checks[]
         rereview[].id rereview[].status rereview[].previous_review_id
         rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
@@ -61,7 +61,7 @@ class _Projection:
         checks[].evidence checks[].reuse_reason checks[].rerun_reason
         coverage.flows[] coverage.limitations[].detail coverage.limitations[].public_summary
         coverage.areas[].details coverage.execution.fallbacks[].detail
-        responsible.source change_authors[].source description.identity description.details
+        responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
 
     def __init__(self, record, manifest, project, source_hash):
@@ -85,7 +85,11 @@ class _Projection:
 
     def structural(self, value, path):
         roots = self.repo_roots + self.private_roots
-        if (re.search(r'(?i)(?:^[a-z]:[\\/]|^[/\\]|^file:)', value)
+        spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
+        private = any(not _public_url(span) and re.search(
+            r'(?i)(?:[a-z]:[\\/]|\\\\|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
+            for span in spans)
+        if (private
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
             raise ValueError('private structural value cannot be delivered: ' + path)

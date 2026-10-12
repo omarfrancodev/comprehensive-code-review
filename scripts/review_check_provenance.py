@@ -57,9 +57,8 @@ def validate_check_sources(record, executors):
             continue
         revision, snapshot = executor.get('revision'), executor.get('snapshot')
         baseline = revision == scope['base'] and snapshot is None
-        pinned = revision in (scope['head'], scope['base']) and (baseline or snapshot == scope['snapshot'])
-        matches = check['revision'] == revision or (scope['snapshot'] is not None
-                  and check['revision'] == scope['snapshot'] and snapshot == scope['snapshot'])
+        pinned = baseline or revision == scope['head'] and snapshot == scope['snapshot']
+        matches = check['revision'] == (snapshot if snapshot is not None else revision)
         if not pinned or not matches:
             errors.append(prefix + 'executor revision/snapshot differs from check and pinned scope')
     return errors

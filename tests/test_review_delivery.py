@@ -23,6 +23,37 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_embedded_private_identity_refuses_both_deliveries(self):
+        for identity in ('snapshot /home/alice/private/state', r'snapshot C:\other\private\state',
+                         r'snapshot \\other-server\private\state', 'snapshot file:///private/state'):
+            with self.subTest(identity=identity):
+                value = legacy_record()
+                value['scope']['head'] = identity
+                self.assertEqual(artifacts.review_contract.validate(value), [])
+                run = self.retained(value)
+                before = self.snapshot(run)
+                for mode in ('full', 'brief'):
+                    output = self.root / mode
+                    with self.assertRaises(ValueError) as caught:
+                        delivery.deliver(run, mode, self.repo, output)
+                    self.assertIn('scope.head', str(caught.exception))
+                    self.assertNotIn(identity, str(caught.exception))
+                    self.assertFalse(output.exists())
+                    self.assertEqual(before, self.snapshot(run))
+
+    def test_description_identity_is_preserved_or_refused_as_structure(self):
+        value = record6()
+        identity = 'sha256:description-1'
+        value['description']['identity'] = identity
+        value['checks'] = [dict(check(), command=identity)]
+        self.assertEqual(artifacts.review_contract.validate(value), [])
+        projection = delivery._Projection(value, {'repository_path': str(self.repo),
+            'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+        self.assertEqual(projection.value(value)['description']['identity'], identity)
+        value['description']['identity'] = 'captured /private/description.md'
+        with self.assertRaisesRegex(ValueError, 'description.identity'):
+            projection.value(value)
+
     def test_projection_preserves_structure_when_commands_collide(self):
         for token in ('deep', 'passed', 'C001', 'head-456', 'F001'):
             with self.subTest(token=token):
