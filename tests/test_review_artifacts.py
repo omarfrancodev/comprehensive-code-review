@@ -34,6 +34,92 @@ def record():
 
 
 class ArchiveTests(unittest.TestCase):
+    def snapshot(self, run):
+        return {str(path.relative_to(run)): path.read_bytes() for path in run.rglob('*') if path.is_file()}
+
+    def test_trace_without_final_result_cannot_pass_complete_gate(self):
+        run = self.prepare()
+        artifacts.record_event(run, self.write('event.json', dict(kind='discovery', status='completed', summary='Static review completed')))
+        before = self.snapshot(run)
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True)
+        self.assertEqual(before, self.snapshot(run))
+        self.assertFalse((run / 'review.json').exists())
+
+    def test_expected_schema_blocks_legacy_emission_without_rewriting_history(self):
+        run = self.prepare()
+        before = self.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.retain(run, expected_schema=9)
+        self.assertEqual(before, self.snapshot(run))
+        self.retain(run)
+        self.close(run)
+        before = self.snapshot(run)
+        self.assertTrue(artifacts.validate(run, require_complete=True)['retained'])
+        self.assertEqual(before, self.snapshot(run))
+
+    def test_pending_and_interrupted_runs_are_not_complete(self):
+        run = self.prepare()
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True)
+        original = artifacts.atomic_write
+        def interrupt(path, data):
+            if Path(path).name == 'informe.md':
+                raise OSError('interrupted')
+            original(path, data)
+        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            self.retain(run)
+        before = self.snapshot(run)
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True)
+        self.assertEqual(before, self.snapshot(run))
+        self.retain(run)
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True)
+        self.close(run)
+        self.assertEqual(artifacts.validate(run, require_complete=True)['state'], 'complete')
+
+    def test_complete_gate_is_read_only_and_matches_resources(self):
+        run = self.prepare()
+        self.retain(run)
+        self.close(run)
+        before = self.snapshot(run)
+        artifacts.validate(run, require_complete=True)
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True, record_checkpoint=True)
+        self.assertEqual(before, self.snapshot(run))
+        value = self.read(run / 'review.json')
+        value['resources']['cleanup'] = 'pending'
+        data = artifacts._json_bytes(value)
+        artifacts.atomic_write(run / 'review.json', data)
+        _, manifest, marker = artifacts._load_run(run)
+        manifest['hashes']['review.json'] = artifacts._digest(data)
+        artifacts._save_manifest(run, manifest, marker)
+        before = self.snapshot(run)
+        with self.assertRaises(ValueError):
+            artifacts.validate(run, require_complete=True)
+        with self.assertRaises(ValueError):
+            self.close(run)
+        self.assertEqual(before, self.snapshot(run))
+
+    def test_complete_cli_and_expected_schema_cli(self):
+        run = self.prepare()
+        def invoke(*args):
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
+                                  capture_output=True, text=True, encoding='utf-8')
+        refused = invoke('retain', '--run-dir', run, '--input', self.final, '--expected-schema', 9)
+        self.assertEqual(refused.returncode, 1, refused.stderr)
+        self.assertIn('expected schema', json.loads(refused.stderr)['error'])
+        self.retain(run)
+        before = self.snapshot(run)
+        refused = invoke('validate', '--run-dir', run, '--require-complete')
+        self.assertEqual(refused.returncode, 1)
+        self.assertEqual(before, self.snapshot(run))
+        self.close(run)
+        result = invoke('validate', '--run-dir', run, '--require-complete')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['state'], 'complete')
+
     def setUp(self):
         self.assertIsNotNone(artifacts, 'persistent archive helper is missing')
         self.temp = tempfile.TemporaryDirectory()

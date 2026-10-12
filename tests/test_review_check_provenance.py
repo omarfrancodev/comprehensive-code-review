@@ -146,3 +146,31 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
             self.assertIn('C001', text)
         portable = self.artifacts.read_json(Path(self.fixture.root / 'full').rglob('review.json').__next__())
         self.assertEqual(portable['checks'][0]['execution'], dict(kind='static', executor=None))
+
+    def test_close_rechecks_execution_sources_before_completion(self):
+        run, value, context, inputs = self.prepared()
+        value['checks'] = [dict(check(), execution=dict(kind='static', executor=None))]
+        self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context,
+                              evidence_inputs=inputs)
+        value['checks'][0]['execution'] = dict(kind='local', executor='missing')
+        data = self.artifacts._json_bytes(value)
+        self.artifacts.atomic_write(run / 'review.json', data)
+        _, manifest, marker = self.artifacts._load_run(run)
+        manifest['hashes']['review.json'] = self.artifacts._digest(data)
+        self.artifacts._save_manifest(run, manifest, marker)
+        before = self.fixture.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.artifacts.close(run, cleanup='not_needed')
+        self.assertEqual(before, self.fixture.snapshot(run))
+
+    def test_expected_schema8_rejected_but_legacy_read_remains_valid(self):
+        run, value, context, inputs = self.policy.prepared('focused')
+        before = self.fixture.snapshot(run)
+        with self.assertRaises(ValueError):
+            self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context,
+                                  evidence_inputs=inputs, expected_schema=9)
+        self.assertEqual(before, self.fixture.snapshot(run))
+        self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
+        self.artifacts.close(run, cleanup='not_needed')
+        self.assertTrue(self.artifacts.validate(run, require_complete=True)['retained'])
+        delivery.deliver(run, 'brief', self.fixture.repo, output_root=self.fixture.root / 'legacy')

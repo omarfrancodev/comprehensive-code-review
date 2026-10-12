@@ -609,8 +609,11 @@ def register(run_dir, temporary_paths):
     return manifest
 
 
-def validate(run_dir, require_retained=False, record_checkpoint=False):
+def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
+    if require_complete and record_checkpoint:
+        raise ValueError('complete gate is read-only; cannot record a checkpoint')
+    require_retained = require_retained or require_complete
     run, manifest, marker = _load_run(run_dir)
     if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
@@ -628,6 +631,13 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
             raise ValueError('retained review ID differs from archive run ID')
         if value.get('schema_version') in (8, 9):
             _execution_gate(run, manifest, value, {})
+    if require_complete:
+        if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
+                or manifest.get('residuals')):
+            raise ValueError('complete durable review and observed cleanup are required')
+        if (value['resources']['cleanup'] != manifest['cleanup']
+                or value['resources']['residuals'] != manifest.get('residuals', [])):
+            raise ValueError('retained review resources differ from completed closure')
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')
@@ -765,7 +775,13 @@ def _handoff_context(input_file, value, contents, manifest):
     return context
 
 
-def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None):
+def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
+    value = read_json(input_file)
+    if expected_schema is not None:
+        if type(expected_schema) is not int or expected_schema not in range(1, 10):
+            raise ValueError('expected schema must be a supported integer 1–9')
+        if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
+            raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     if manifest['state'] == 'complete':
@@ -773,7 +789,6 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     _verify_files(run, manifest)
     if handoff_context_input is not None and not handoff:
         raise ValueError('--handoff-context-input requires an explicit --handoff request')
-    value = read_json(input_file)
     errors = review_contract.validate(value)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
@@ -912,7 +927,7 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest, required=True)
+    validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')
     if cleanup_file is not None:
@@ -983,6 +998,7 @@ def main():
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
+    gate.add_argument('--require-complete', action='store_true', help='Read-only gate for retained result and completed observed cleanup')
     gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5/6 archive')
     trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
     trace.add_argument('--run-dir', required=True)
@@ -991,6 +1007,7 @@ def main():
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
+    keep.add_argument('--expected-schema', type=int, choices=range(1, 10), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')
@@ -1016,11 +1033,12 @@ def main():
                                          harness_id=args.harness_id, harness_source=source)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
-                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input)
+                            args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input,
+                            expected_schema=args.expected_schema)
         elif args.command == 'register':
             result = register(args.run_dir, args.temporary_path)
         elif args.command == 'validate':
-            result = validate(args.run_dir, args.require_retained, args.record_checkpoint)
+            result = validate(args.run_dir, args.require_retained, args.record_checkpoint, require_complete=args.require_complete)
         elif args.command == 'record-event':
             result = record_event(args.run_dir, args.event_file, args.execution_metadata)
         else:
