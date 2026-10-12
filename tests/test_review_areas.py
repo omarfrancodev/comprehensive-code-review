@@ -113,7 +113,10 @@ class ReviewAreaRenderingTests(unittest.TestCase):
         record['coverage']['limitations'] = [{'detail': detail, 'material': False}]
         record['verdict'] = 'insufficient_evidence'
         snapshot = copy.deepcopy(record)
-        output = contract.render(record, audience='comment')
+        from review_publication import publication_digest
+        output = contract.render(record, audience='comment', publication_context={
+            'source_sha256': publication_digest(record),
+            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
         self.assertEqual(output.count(detail), 1)
         self.assertIn(detail + ' [material]', output)
         self.assertEqual(record, snapshot)

@@ -24,6 +24,7 @@ import review_contract
 import review_metrics
 import review_trace
 import review_harness
+from review_execution import validate_execution_sources
 
 
 FILES = ('review.json', 'informe.md')
@@ -461,7 +462,13 @@ def _retained_name(name):
             and name[9:] == _evidence_name(name[9:]) and name[9:] not in {'.', '..'})
 
 
-def _evidence_contents(run, manifest, inputs):
+def _check_evidence_target(run, manifest, name):
+    target = safe_path(run / name)
+    if target.exists() and name not in manifest['hashes'] and name not in manifest.get('planned_hashes', {}):
+        raise ValueError('refusing to clobber foreign evidence: ' + name)
+
+
+def _evidence_contents(run, manifest, inputs, *, create_directory=True):
     contents = {}
     for raw in inputs or []:
         source = safe_path(raw)
@@ -470,9 +477,7 @@ def _evidence_contents(run, manifest, inputs):
         name = 'evidence/' + _evidence_name(source.name)
         if name in contents:
             raise ValueError('duplicate selected evidence name: ' + name)
-        target = safe_path(run / name)
-        if target.exists() and name not in manifest['hashes'] and name not in manifest.get('planned_hashes', {}):
-            raise ValueError('refusing to clobber foreign evidence: ' + name)
+        _check_evidence_target(run, manifest, name)
         contents[name] = source.read_bytes()
     # A retry must finish every previously selected artifact. Existing matching
     # planned bytes are reusable; missing sources require explicit resubmission.
@@ -485,7 +490,7 @@ def _evidence_contents(run, manifest, inputs):
             if _digest(data) != expected:
                 raise ValueError('modified interrupted evidence: ' + name)
             contents[name] = data
-    if contents:
+    if contents and create_directory:
         safe_path(run / 'evidence').mkdir(exist_ok=True)
     return contents
 
@@ -618,8 +623,10 @@ def validate(run_dir, require_retained=False, record_checkpoint=False):
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
+        if value.get('schema_version') == 8:
+            _execution_gate(run, manifest, value, {})
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')
@@ -639,6 +646,8 @@ def _retain_data(run, manifest, marker, contents, *, record_retention=True):
                     planned_hashes={name: _digest(data) for name, data in contents.items()})
     marker = _save_manifest(run, manifest, marker)
     for name, data in contents.items():
+        if name.startswith('evidence/'):
+            safe_path(run / 'evidence').mkdir(exist_ok=True)
         atomic_write(run / name, data)
     hashes = dict(manifest['hashes'])
     hashes.update(manifest.pop('planned_hashes'))
@@ -769,7 +778,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') in (6, 7) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7, 8) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
@@ -786,7 +795,18 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs))
+    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') != 8))
+    if value.get('schema_version') == 8:
+        if context_input is not None:
+            _check_evidence_target(run, manifest, 'evidence/context.json')
+            context_bytes = _json_bytes(read_json(context_input))
+            if len(context_bytes) > 131072:
+                raise ValueError('execution context exceeds bounded retained context size')
+            if ('evidence/context.json' in contents
+                    and read_json(context_input) != json.loads(contents['evidence/context.json'])):
+                raise ValueError('selected execution context conflicts with context_input')
+            contents['evidence/context.json'] = context_bytes
+        _execution_gate(run, manifest, value, contents)
     if handoff_context_input is not None:
         manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
     if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):
@@ -797,6 +817,67 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     manifest['residuals'] = present
     manifest['executors'] = executors
     return _retain_data(run, manifest, marker, contents)
+
+
+def _execution_gate(run, manifest, value, contents):
+    """Read only selected source bytes and observed same-run trace; no archive scan."""
+    def source(name):
+        if not _retained_name(name):
+            raise ValueError('execution reference must identify retained local evidence')
+        if name in contents:
+            return contents[name]
+        if name in manifest['hashes']:
+            return safe_path(run / name).read_bytes()
+        raise ValueError('execution source is not selected for retention: ' + name)
+
+    context = json.loads(source('evidence/context.json'))
+    if not isinstance(context, dict):
+        raise ValueError('execution context must be an object')
+    events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
+    execution = value['coverage']['execution']
+    requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
+    requested.update(row['source'] for row in execution['fallbacks'])
+    history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
+    if not isinstance(history, list) or any(not isinstance(row, dict) or not isinstance(row.get('reference'), str) for row in history):
+        raise ValueError('execution context needs observed profile source/history')
+    requested.update(row['reference'] for row in history)
+    references = set()
+    resolved = {}
+    for reference in requested:
+        parsed = urlsplit(reference)
+        if parsed.scheme or parsed.netloc or parsed.query:
+            raise ValueError('execution source must resolve inside the retained run')
+        raw = source(parsed.path)
+        if not parsed.fragment:
+            resolved[reference] = raw
+        elif parsed.path.endswith('.json'):
+            document = json.loads(raw)
+            keys = parsed.fragment.lstrip('/').split('/')
+            for key in keys:
+                key = key.replace('~1', '/').replace('~0', '~')
+                try:
+                    document = document[int(key)] if isinstance(document, list) else document[key]
+                except (KeyError, IndexError, ValueError, TypeError) as exc:
+                    raise ValueError('missing execution source fragment: ' + reference) from exc
+            resolved[reference] = document
+        elif parsed.path == review_trace.NAME:
+            matching = [row for row in events if row['event_id'] == parsed.fragment]
+            if not matching:
+                raise ValueError('missing observed trace event source: ' + reference)
+            resolved[reference] = matching[0]
+        elif parsed.path.endswith('.md') and re.search(
+                r'(?:<a\s+id=["\x27]' + re.escape(parsed.fragment) + r'["\x27]|^#{1,6}\s+'
+                + re.escape(parsed.fragment) + r'(?:\s|$))', raw.decode('utf-8'), re.MULTILINE):
+            resolved[reference] = raw
+        else:
+            raise ValueError('unresolved execution source fragment: ' + reference)
+        references.add(reference)
+    for row in history:
+        if resolved.get(row['reference']) != row.get('profile'):
+            raise ValueError('profile source fragment differs from declared transition')
+    errors = validate_execution_sources(value, context, events, references)
+    if errors:
+        raise ValueError('; '.join(errors))
 
 
 def _present_resources(registered):

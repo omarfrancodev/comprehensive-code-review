@@ -7,12 +7,14 @@ The coordinator discovers shared facts once per reviewed version. Skills do not 
 | Native agents and terminal | Delegate only required profile sessions; native tools preferred |
 | Few slots | Queue independent sessions with fresh contexts |
 | Installed external CLI | Load external-cli.md only for an established adapter |
-| No independent agents | Disclosed single-agent passes |
+| No independent agents | Actual impediment/source and degraded plan; same-session passes do not fulfill independence |
 | Missing remote connector | Permitted authenticated CLI/API or supplied exact inputs |
 | Worktree creation blocked | Use the harness's approval mechanism if available; otherwise static inspection and explicit blocked validation. Copies require explicit user authorization, never an automatic fallback. |
 | No terminal/write access | Embedded records and supplied code; disclose unexecuted checks |
 
 ## Shared context
+
+Invocation includes required profile delegation; omitting the word “subagents” is not a restriction. Respect explicit prohibitions and tool permissions. Never launch another CLI solely to manufacture independence. Native fresh contexts may run sequentially when slots are scarce; record observed dispatch/results without inventing provider IDs or querying execution history.
 
 Use evidence/context.json in an owned session registered under artifacts.md. With no-create/write restrictions, embed the brief or read existing supplied inputs. Follow the owned-session bootstrap before creating scope/context and register before discovery/validation. Record a context_id binding exact scope/code/description inputs, complete scope/version, effective profile/reason with explicit/automatic selection source, observable requirements/sources, applicable instructions, relevant stack/configuration/conventions with paths, affected flows/owners/invariants and explicit ABCDE assignments with justified independent discovery needs, MR/PR description identity/check owner, operational responsible identity/source and separate version-bound commit authors, safe commands/required gates/executors and capability limitations. Include persistent run and owned execution locations as separate facts under artifacts.md. Give workers only their relevant neutral subset and accessible raw sources. Embed binding instructions inaccessible to workers.
 

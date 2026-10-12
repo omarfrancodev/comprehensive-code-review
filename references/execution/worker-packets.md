@@ -1,6 +1,6 @@
 # Compact worker packets — packet version 1
 
-Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 7; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
+Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 8; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
 
 ## Common envelope
 
@@ -32,3 +32,7 @@ python /absolute/skill/scripts/review_packets.py merge --context /absolute/conte
 ```
 
 Merge emits a consolidation bundle, not a canonical/final record. Evidence/check revisions remain; amendments retain superseded claim fields and missing judgments stay absent. Complete final fields through actual assessment, then validate under result-contract.md; amendments stay internal. Keep raw packets. For clean scopes eligible to skip verification, omit --verification; candidates/material questions require an explicit packet. Without helpers use the same contracts in supported structured tools/chat.
+
+## Coordinator fulfillment record
+
+Schema 8 coverage.execution belongs to the coordinator and links these existing packets/results. Workers retain packet version 1, never add required execution IDs, infer other workers, delegate or write durable trace. The coordinator records observed reviewer contexts separately from shared context_id and classifies limitation deltas when completing the final result.

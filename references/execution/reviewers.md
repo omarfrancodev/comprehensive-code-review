@@ -2,6 +2,10 @@
 
 ## Assignments
 
+The selected profile requests its necessary native delegation. Preserve the plan before dispatch; independence requires an actual separate reviewer context with neutral inputs and source access, not a second mental pass or a new label for the coordinator. Shared input `context_id` may remain identical. Queue fresh contexts in batches when slots are limited. No separate authorization phrase is required; explicit restrictions and actual tool permissions still govern execution.
+
+Record assignments/results/fallback in `coverage.execution` under [result-contract.md](../contracts/result-contract.md), linking existing briefs/results and trace milestones. Only completed observed results count; failed attempts belong in trace/fallback. A native tool without a provider ID can still supply an observed independent context; keep the ID null. Do not retry indefinitely or reconstruct history. Project gates require their own verified policy source, separate from discovery limits.
+
 The coordinator preserves actual worker/session names and provider IDs available from dispatch/results for compact trace milestones; unavailable identities/times remain unknown. Shared packet schema 1 stays unchanged. Workers do not write the durable trace, query provider history or infer links to other agents' work. See [lifecycle-trace.md](../archive/lifecycle-trace.md).
 
 One reviewer can combine functional, data/architecture and integration/security perspectives. Use profiles.md for discovery limits and automatic extended eligibility. In existing context, map every applicable ABCDE mechanism and affected flow/interface to a primary owner, including adjacent unchanged code and consumers. Group areas sharing a flow, sources and questions. Split only for a distinct mechanism/perspective or verified independent gate; one reviewer per area is permitted when justified, never automatic. Each brief names its areas and expected coverage. Report unowned mechanisms for targeted reassignment; overlapping areas are valid when boundaries are explicit, overlapping work requires a named cross-interface risk/gate.

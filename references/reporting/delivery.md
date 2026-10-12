@@ -55,3 +55,7 @@ This input contains only supported observations already available, bound to thei
 Do not commit, publish or authorize fixes merely because delivery was requested. Report the actual delivery path and any source/destination limitation. When the helper is unavailable, a native export follows the same contents, projection, path and non-overwrite rules. A delivery failure does not erase the retained review or fabricate successful delivery.
 
 Use bold ID labels in full/brief delivery for confirmed findings (brief), checks, unresolved findings and previous-review ledger entries. Preserve the underlying IDs, historical source IDs and link targets; escape supplied text separately from generated formatting. Full delivery inherits report-format.md.
+
+## Schema 8 provenance
+
+Full/brief delivery preserves source schema/review ID and truthful execution status without collecting new sources. The portable JSON may contain sanitized provenance labels; validate its structure, not local filesystem references from another machine. The original archive verifies actual selected sources before cleanup. An explicitly private handoff retains relevant internal limitations; a public handoff uses the same typed/historical classification policy as comments. Delivery never grants permission to publish it.
