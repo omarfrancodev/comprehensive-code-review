@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 2.10.0 — Pendiente de publicación
+## 2.10.0 — 2026-10-12
 
 - Proteger el contexto retenido automáticamente frente a evidencia ajena, manteniendo reintentos de archivos propios inventariados o planificados. La entrega breve declara el estado de ejecución schema 8 y las reservas públicas se deduplican contra detalle fuente y resumen proyectado.
 - Final review schema 8 clasifica limitaciones de comportamiento, validación y ejecución: el informe privado conserva el detalle interno y la publicación comunica impacto relevante. Limitaciones históricas requieren clasificación efímera vinculada al JSON original para republicarse; lectura privada de schemas 1–7 permanece sin migración.
