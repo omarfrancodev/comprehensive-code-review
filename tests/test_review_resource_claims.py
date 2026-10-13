@@ -56,7 +56,7 @@ class ResourceClaimTests(unittest.TestCase):
         session = self.workspace_session()
         source = self.create_run([session])
         self.register(source, session, 'source-context.json')
-        successor = self.create_run([session])
+        successor = self.create_run()
         before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
 
         with self.assertRaisesRegex(ValueError, 'already claimed|different review'):

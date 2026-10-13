@@ -118,7 +118,7 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
     for field in ('run_id', 'owner_id', 'repository_key', 'repository_path'):
         if manifest.get(field) != actual.get(field):
             raise ValueError('claim plan manifest differs from the durable review run')
-    if str(session) not in actual.get('temporary_paths', []) and source_run is None:
+    if str(session) not in manifest.get('temporary_paths', []) and source_run is None:
         raise ValueError('review session must be registered as a temporary resource before claiming')
     import review_artifacts
     if review_artifacts.repository_identity(workspace['repo']) != actual.get('repository_identity'):

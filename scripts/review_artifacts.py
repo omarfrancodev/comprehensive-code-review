@@ -1024,7 +1024,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
             *, profile_input=None, controller=None, harness_id=None, harness_source=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
-    scope = read_json(scope_file)
+    scope = _input_object(scope_file, 'scope')
     _scope(scope)
     selection = _initial_selection(profile_input)
     controller_value = _controller(controller, selection['actor'])
@@ -1142,6 +1142,8 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
     executors = _executors(context_input, manifest, temporary)
+    claim_manifest = copy.deepcopy(manifest)
+    claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
     if manifest['schema_version'] == 7 and context_input is not None:
         context = read_json(context_input)
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
@@ -1150,7 +1152,7 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
             raise ValueError('executor context must preserve the profile history captured by the archive')
     rows = list(manifest.get('resource_claims', []))
     for raw in temporary:
-        plan = review_resource_claims.plan_claim(raw, run, manifest, authority=authority)
+        plan = review_resource_claims.plan_claim(raw, run, claim_manifest, authority=authority)
         if plan['action'] == 'not_workspace':
             continue
         if plan['action'] == 'transfer':
@@ -1411,6 +1413,319 @@ def _validate_transfer_intent(value):
         if item['session_dir'] in seen_paths or item['new_claim'].get('claim_id') != item['claim_id']:
             raise ValueError('resource transfer paths and claims must be unique and bound')
         seen_paths.add(item['session_dir'])
+
+
+def _recovery_event(manifest, summary, *, status='completed', authority=None, source=None, relation=None):
+    event = {'kind': 'interruption', 'status': status, 'summary': summary,
+             'actor': copy.deepcopy(manifest.get('controller', {}).get('identity',
+                 {'kind': 'coordinator', 'name': 'review coordinator', 'provider_id': None})),
+             'provenance': {'kind': 'tool' if source else 'helper',
+                            'source': source or 'review_artifacts:recovery'},
+             'evidence': ['cierre.json'], 'authority': authority,
+             'occurred_at': datetime.now(timezone.utc).isoformat()}
+    if relation is not None:
+        event['relations'] = [relation]
+    return event
+
+
+@_locked_run
+def pause(run_dir, *, authority, reason, phase):
+    """Record an explicit user-directed pause without discarding the open run."""
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest['schema_version'] != 7:
+        raise ValueError('new pause transitions require archive 7; preserve legacy history and start a linked run')
+    authority = review_resource_claims._authority(authority)
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000 or any(ord(c) < 32 for c in reason):
+        raise ValueError('pause reason must be bounded nonempty text')
+    if phase not in review_profiles.PHASES:
+        raise ValueError('pause phase must identify a known review phase')
+    operation = manifest['operation']
+    if operation['disposition'] == 'paused' and operation['reason'] == reason and operation['phase'] == phase:
+        return manifest
+    if operation['disposition'] != 'open' or manifest['state'] in {'retaining', 'closing', 'complete'}:
+        raise ValueError('only an open review can be paused')
+    operation.update(disposition='paused', reason=reason.strip(), source='explicit-user-pause',
+                     phase=phase, successor=None)
+    _append_trace(run, manifest, marker, _recovery_event(
+        manifest, 'Review paused by explicit request: ' + reason.strip(), status='blocked', authority=authority))
+    return manifest
+
+
+@_locked_run
+def block(run_dir, *, source, reason, phase):
+    """Record an observed failure; never infer a crash or harness failure."""
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest['schema_version'] != 7:
+        raise ValueError('new block transitions require archive 7; preserve legacy history and start a linked run')
+    if not isinstance(source, str) or not source.strip() or len(source) > 500 or any(ord(c) < 32 for c in source):
+        raise ValueError('block source must identify an observed failure source')
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000 or any(ord(c) < 32 for c in reason):
+        raise ValueError('block reason must be bounded nonempty text')
+    if phase not in review_profiles.PHASES:
+        raise ValueError('block phase must identify a known review phase')
+    operation = manifest['operation']
+    if (operation['disposition'] == 'blocked' and operation['source'] == source
+            and operation['reason'] == reason and operation['phase'] == phase):
+        return manifest
+    if operation['disposition'] not in {'open', 'paused', 'blocked'} or manifest['state'] in {'retaining', 'closing', 'complete'}:
+        raise ValueError('only an open, paused or blocked review can record an observed blocker')
+    operation.update(disposition='blocked', reason=reason.strip(), source=source.strip(),
+                     phase=phase, successor=None)
+    _append_trace(run, manifest, marker, _recovery_event(
+        manifest, 'Observed review blocker: ' + reason.strip(), status='blocked', source=source.strip()))
+    return manifest
+
+
+@_locked_run
+def resume(run_dir, *, controller, authority, current_inputs):
+    """Reopen an unchanged archive after explicit continuation/takeover authority."""
+    import review_recovery
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest['schema_version'] != 7:
+        raise ValueError('legacy runs cannot be resumed in place; create a linked archive-7 restart')
+    if manifest['state'] in {'retaining', 'closing', 'complete'}:
+        raise ValueError('retention/closure has started or completed; recover its transaction or create a new run')
+    normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+    operation = manifest['operation']
+    if operation['disposition'] not in {'open', 'paused', 'blocked'}:
+        raise ValueError('superseded or completed review cannot be resumed')
+    normalized_controller = _controller(controller, manifest['controller']['identity'])
+    changed_controller = normalized_controller != manifest['controller']
+    if operation['disposition'] in {'paused', 'blocked'} and authority is None:
+        raise ValueError('continuing a paused or blocked review requires explicit user authority')
+    if changed_controller and authority is None:
+        raise ValueError('controller takeover is unknown; explicit authority is required before resuming')
+    if authority is not None:
+        authority = review_resource_claims._authority(authority)
+    if operation['disposition'] == 'open' and not changed_controller:
+        return manifest
+    for row in manifest.get('resource_claims', []):
+        if row.get('status') == 'owned':
+            review_resource_claims.verify_claim(row['session_dir'], run)
+    prior_controller = manifest['controller']['identity']['name']
+    manifest['controller'] = normalized_controller
+    manifest['operation'].update(disposition='open', reason=None, source='resume', successor=None)
+    manifest['operation']['phase'] = manifest['operation']['phase'] or 'discovery'
+    summary = 'Review resumed by ' + normalized_controller['identity']['name']
+    if changed_controller:
+        summary += '; prior controller recorded as ' + prior_controller
+    _append_trace(run, manifest, marker, _recovery_event(
+        manifest, summary, authority=authority, relation={'relation': 'follows', 'target': 'E' +
+            str(manifest['trace']['events']).zfill(6)}))
+    return manifest
+
+
+def recover(run_dir, *, controller, authority, current_inputs):
+    """Recover only exact helper-owned transactions; return a plan for external work."""
+    import review_recovery
+    run_path = safe_path(run_dir)
+    run, manifest, _ = _load_run(run_path)
+    review_recovery.validate_current_inputs(current_inputs, manifest)
+    authority = review_resource_claims._authority(authority)
+    fallback = manifest.get('controller', {}).get('identity',
+        {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
+    _controller(controller, fallback)
+    transfer = manifest.get('resource_transfer')
+    if isinstance(transfer, dict) and transfer.get('status') != 'complete':
+        _validate_transfer_intent(transfer)
+        if authority != transfer['authority']:
+            raise ValueError('resource transfer recovery authority differs from its preserved intent')
+        transfer_resources(transfer['source_run'], transfer['successor_run'],
+                           [item['session_dir'] for item in transfer['items']],
+                           authority=transfer['authority'], controller=transfer['controller'])
+
+    with run_locks([run_path]):
+        run, manifest, marker = _load_run(run_path)
+        review_recovery.validate_current_inputs(current_inputs, manifest)
+        if manifest.get('pending_trace') is not None:
+            marker = _recover_trace(run, manifest, marker)
+            run, manifest, marker = _load_run(run)
+        checkpoint_transaction = manifest.get('checkpoint_transaction')
+        if checkpoint_transaction is not None:
+            if manifest['schema_version'] != 7 or manifest['state'] == 'complete':
+                raise ValueError('checkpoint transaction is invalid for this review state')
+            _verify_files(run, manifest, allow_checkpoint_transaction=True,
+                          allow_resource_transfer=True)
+            payloads = {}
+            missing = []
+            for name, expected in checkpoint_transaction['planned_hashes'].items():
+                path = safe_path(run / name)
+                try:
+                    data = path.read_bytes()
+                except FileNotFoundError:
+                    missing.append(name)
+                    continue
+                current_hash = _digest(data)
+                previous_hash = checkpoint_transaction['previous_hashes'].get(name)
+                if current_hash == expected:
+                    payloads[name] = data
+                elif current_hash == previous_hash:
+                    missing.append(name)
+                else:
+                    raise ValueError('foreign or modified checkpoint bytes block recovery: ' + name)
+            if missing:
+                return {'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+                        'actions': [{'action': 'retry_checkpoint',
+                                     'reason': 'Resupply the original selected inputs: ' + ', '.join(sorted(missing))}]}
+            _checkpoint_commit(run, manifest, marker, checkpoint_transaction, payloads)
+            run, manifest, marker = _load_run(run)
+
+        if manifest['state'] in {'retaining', 'closing'}:
+            return {'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+                    'actions': [{'action': 'retry_retention' if manifest['state'] == 'retaining' else 'retry_close',
+                                 'reason': 'The original final input or cleanup observation must be supplied; no external work was run.'}]}
+        if manifest.get('resource_transfer', {}).get('status') == 'pending':
+            raise ValueError('resource transfer remains pending; retry recovery from its recorded source run')
+        _verify_files(run, manifest)
+        for row in manifest.get('resource_claims', []):
+            if row.get('status') == 'owned':
+                review_resource_claims.verify_claim(row['session_dir'], run)
+        disposition = manifest.get('operation', {}).get('disposition', 'complete' if manifest['state'] == 'complete' else 'open')
+        if disposition in {'paused', 'blocked'}:
+            return {'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+                    'actions': [{'action': 'resume', 'reason': 'Explicit continuation authority is required before more work.'},
+                                {'action': 'restart', 'reason': 'Create a linked new run when the original scope or sources cannot be continued.'}]}
+        if disposition in {'complete', 'superseded'} or manifest['state'] == 'complete':
+            return {'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+                    'actions': [{'action': 'show', 'reason': 'Preserve and show the existing immutable result.'},
+                                {'action': 'restart', 'reason': 'A repeat must use a new review ID.'}]}
+        checkpoint = manifest.get('checkpoint')
+        if isinstance(checkpoint, dict) and checkpoint.get('gate_errors'):
+            return {'status': 'provisional', 'run_dir': str(run), 'run_id': manifest['run_id'],
+                    'checkpoint_id': checkpoint['id'], 'gate_errors': checkpoint['gate_errors'],
+                    'actions': [{'action': 'continue', 'reason': 'The checkpoint remains provisional; its gates still apply.'},
+                                {'action': 'restart', 'reason': 'A new run is available if history or scope cannot be repaired.'}]}
+        return {'status': 'recovered' if checkpoint_transaction is not None or manifest.get('checkpoint') else 'ready',
+                'run_dir': str(run), 'run_id': manifest['run_id'],
+                'checkpoint_id': checkpoint.get('id') if isinstance(checkpoint, dict) else None,
+                'actions': [{'action': 'continue', 'reason': 'Recovery did not dispatch agents, run checks or alter prior worker identity.'}]}
+
+
+def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=()):
+    source_path, successor_path = safe_path(source_run), safe_path(successor_run)
+    authority = review_resource_claims._authority(authority)
+    with run_locks([source_path, successor_path]):
+        source, old, old_marker = _load_run(source_path)
+        successor, new, _ = _load_run(successor_path)
+        _verify_files(source, old)
+        _verify_files(successor, new)
+        if old['schema_version'] != 7 or old['state'] == 'complete':
+            return
+        if old['operation']['disposition'] == 'superseded':
+            if old['operation']['successor'] == str(successor) and new.get('previous_run') == str(source):
+                return
+            raise ValueError('source review already has a different successor')
+        if old['operation']['disposition'] not in {'open', 'paused', 'blocked'}:
+            raise ValueError('source review cannot be superseded from its current disposition')
+        if any(row.get('status') == 'owned' for row in old.get('resource_claims', [])):
+            raise ValueError('owned resources require explicit transfer before restart')
+        normalized_controller = _controller(controller, new['controller']['identity'])
+        old['operation'].update(disposition='superseded', reason=authority,
+                                source='restart', phase='restart', successor=str(successor))
+        old['temporary_paths'] = [path for path in old.get('temporary_paths', []) if path not in set(moved_paths)]
+        old['temporary_manifests'] = _temporary_manifests(old['temporary_paths'], old)
+        _append_trace(source, old, old_marker, {'kind': 'handoff', 'status': 'completed',
+            'summary': 'Review superseded by linked successor ' + new['run_id'],
+            'actor': normalized_controller['identity'],
+            'authority': authority, 'evidence': ['cierre.json'],
+            'relations': [{'relation': 'supersedes', 'target': str(successor)}]})
+
+
+def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None):
+    """Create a fresh archive-7 run linked to a verified source, preserving its history."""
+    import review_recovery
+    source_path = safe_path(source_run)
+    authority = review_resource_claims._authority(authority)
+    requested_selection = _initial_selection(profile_input)
+    with run_locks([source_path]):
+        source, manifest, marker = _load_run(source_path)
+        marker = _recover_trace(source, manifest, marker)
+        _verify_files(source, manifest)
+        normalized_inputs = review_recovery.validate_current_inputs(
+            current_inputs, manifest, require_same_scope=False, compare_sources=False)
+        if normalized_inputs['scope']['repository'] != manifest['scope']['repository']:
+            raise ValueError('restart cannot change the source repository identity')
+        disposition = manifest.get('operation', {}).get('disposition',
+            'complete' if manifest.get('state') == 'complete' else 'open')
+        if disposition == 'superseded':
+            existing = manifest.get('operation', {}).get('successor')
+            if existing:
+                successor, successor_manifest, _ = _load_run(existing)
+                existing_selection = successor_manifest.get('profile_history', [{}])[0]
+                same_selection = all(existing_selection.get(key) == requested_selection[key]
+                                     for key in review_profiles.INPUT_FIELDS)
+                same_controller = (_controller(controller, successor_manifest['controller']['identity'])
+                                   == successor_manifest['controller'])
+                if (successor_manifest.get('previous_run') == str(source)
+                        and successor_manifest.get('scope') == normalized_inputs['scope']
+                        and same_selection and same_controller):
+                    return str(successor)
+            raise ValueError('source review was superseded; inspect its recorded successor')
+        if manifest.get('state') in {'retaining', 'closing'}:
+            raise ValueError('recover the pending retain/close transaction before restarting')
+        if disposition not in {'open', 'paused', 'blocked', 'complete'}:
+            raise ValueError('source review cannot be restarted from its current operation state')
+        active_claims = [row for row in manifest.get('resource_claims', []) if row.get('status') == 'owned']
+        for row in active_claims:
+            review_resource_claims.verify_claim(row['session_dir'], source)
+        selected_transfers = sorted({str(safe_path(path)) for path in (transfer_paths or [])})
+        if len(selected_transfers) != len(transfer_paths or []):
+            raise ValueError('restart transfer paths must be unique explicit absolute paths')
+        active_paths = {row['session_dir'] for row in active_claims}
+        registered_paths = set(manifest.get('temporary_paths', []))
+        if active_claims and not selected_transfers:
+            raise ValueError('explicit transfer paths are required to preserve owned sessions across restart')
+        if active_claims and set(selected_transfers) != active_paths:
+            raise ValueError('restart transfer paths must identify every active source claim exactly')
+        if active_claims and normalized_inputs['scope'] != manifest['scope']:
+            raise ValueError('owned sessions cannot transfer across changed review scopes; close or preserve the source resources first')
+        if selected_transfers and set(selected_transfers) - registered_paths:
+            raise ValueError('restart transfer paths must already be registered to the source run')
+        adopt_paths = not active_claims and bool(selected_transfers)
+        if adopt_paths:
+            for path in selected_transfers:
+                if review_resource_claims._workspace(path) is None:
+                    raise ValueError('only verified review workspace sessions can be adopted during restart')
+        repo = manifest['repository_path']
+        output_root = manifest['archive_root']
+        harness = manifest['harness']
+        harness_id = manifest.get('harness_id')
+        source_version = manifest['skill_version']
+        current_scope = normalized_inputs['scope']
+
+    version_path = Path(__file__).resolve().parents[1] / 'SKILL.md'
+    try:
+        skill_text = version_path.read_text(encoding='utf-8')
+        version_match = re.search(r'(?m)^\s+version:\s*["\']?([0-9]+\.[0-9]+\.[0-9]+)', skill_text)
+        skill_version = version_match.group(1) if version_match else source_version
+    except OSError:
+        skill_version = source_version
+    successor_path = prepare(repo, current_scope, skill_version, harness, output_root,
+                              source, selected_transfers, profile_input=profile_input,
+                              controller=controller, harness_id=harness_id)
+    if selected_transfers:
+        if active_claims:
+            transfer_resources(source_path, successor_path, selected_transfers,
+                               authority=authority, controller=controller)
+        elif adopt_paths:
+            successor, successor_manifest, _ = _load_run(successor_path)
+            selection = successor_manifest['profile_history'][0]
+            context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                       'profile_reference': selection['reference'],
+                       'profile_history': successor_manifest['profile_history'], 'executors': []}
+            register(successor_path, selected_transfers, context_input=context, authority=authority)
+            if manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
+                _link_restart(source_path, successor_path, authority=authority,
+                              controller=controller, moved_paths=selected_transfers)
+    elif manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
+        _link_restart(source_path, successor_path, authority=authority, controller=controller)
+    return successor_path
 
 
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
@@ -1851,6 +2166,38 @@ def main():
     transfer.add_argument('--resource-path', action='append', required=True)
     transfer.add_argument('--authority', required=True)
     transfer.add_argument('--controller-input', required=True)
+    inspect = commands.add_parser('inspect', help='Read-only status/integrity inspection of one explicit review run')
+    inspect.add_argument('--run-dir', required=True)
+    inspect.add_argument('--current-inputs', help='Existing JSON {scope, sources} verified by the coordinator')
+    pause_command = commands.add_parser('pause', help='Record an explicit user-directed review pause')
+    pause_command.add_argument('--run-dir', required=True)
+    pause_command.add_argument('--authority-input', required=True,
+                               help='JSON string or {"authority": text} with explicit user direction')
+    pause_command.add_argument('--reason', required=True)
+    pause_command.add_argument('--phase', required=True, choices=sorted(review_profiles.PHASES))
+    block_command = commands.add_parser('block', help='Record an observed review failure without inferring a crash')
+    block_command.add_argument('--run-dir', required=True)
+    block_command.add_argument('--source', required=True)
+    block_command.add_argument('--reason', required=True)
+    block_command.add_argument('--phase', required=True, choices=sorted(review_profiles.PHASES))
+    resume_command = commands.add_parser('resume', help='Resume a verified unchanged archive after explicit authority')
+    resume_command.add_argument('--run-dir', required=True)
+    resume_command.add_argument('--controller-input', required=True)
+    resume_command.add_argument('--authority-input', required=True)
+    resume_command.add_argument('--current-inputs', required=True)
+    recover_command = commands.add_parser('recover', help='Complete exact helper-owned transactions or return a plan')
+    recover_command.add_argument('--run-dir', required=True)
+    recover_command.add_argument('--controller-input', required=True)
+    recover_command.add_argument('--authority-input', required=True)
+    recover_command.add_argument('--current-inputs', required=True)
+    restart_command = commands.add_parser('restart', help='Create a fresh linked archive-7 review run')
+    restart_command.add_argument('--run-dir', required=True, help='Verified source review run')
+    restart_command.add_argument('--profile-input', required=True)
+    restart_command.add_argument('--controller-input', required=True)
+    restart_command.add_argument('--authority-input', required=True)
+    restart_command.add_argument('--current-inputs', required=True)
+    restart_command.add_argument('--transfer-path', action='append',
+                                 help='Explicit owned session path to transfer; repeat for every active claim')
     select = commands.add_parser('select-profile', help='Atomically capture a profile transition before using it')
     select.add_argument('--run-dir', required=True)
     select.add_argument('--selection-input', required=True)
@@ -1892,6 +2239,13 @@ def main():
     finish.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
     args = parser.parse_args()
     try:
+        authority_input = None
+        if getattr(args, 'authority_input', None):
+            authority_input = read_json(args.authority_input)
+            if isinstance(authority_input, dict) and set(authority_input) == {'authority'}:
+                authority_input = authority_input['authority']
+            if not isinstance(authority_input, str):
+                raise ValueError('authority input must be a JSON string or an object with exactly the authority field')
         if args.command == 'prepare':
             source = read_json(args.harness_source_file) if args.harness_source_file else None
             if args.harness_source_file and (not isinstance(source, dict) or args.harness_id is None):
@@ -1919,6 +2273,24 @@ def main():
         elif args.command == 'transfer-resources':
             result = transfer_resources(args.source_run, args.successor_run, args.resource_path,
                                         authority=args.authority, controller=read_json(args.controller_input))
+        elif args.command == 'inspect':
+            import review_recovery
+            current = read_json(args.current_inputs) if args.current_inputs else None
+            result = review_recovery.inspect_run(args.run_dir, current_inputs=current)
+        elif args.command == 'pause':
+            result = pause(args.run_dir, authority=authority_input, reason=args.reason, phase=args.phase)
+        elif args.command == 'block':
+            result = block(args.run_dir, source=args.source, reason=args.reason, phase=args.phase)
+        elif args.command == 'resume':
+            result = resume(args.run_dir, controller=read_json(args.controller_input), authority=authority_input,
+                            current_inputs=read_json(args.current_inputs))
+        elif args.command == 'recover':
+            result = recover(args.run_dir, controller=read_json(args.controller_input), authority=authority_input,
+                             current_inputs=read_json(args.current_inputs))
+        elif args.command == 'restart':
+            result = {'run_dir': restart(args.run_dir, profile_input=args.profile_input,
+                         controller=read_json(args.controller_input), authority=authority_input,
+                         current_inputs=read_json(args.current_inputs), transfer_paths=args.transfer_path)}
         elif args.command == 'select-profile':
             result = select_profile(args.run_dir, args.selection_input)
         elif args.command == 'validate':

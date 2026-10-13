@@ -53,6 +53,11 @@ def context10(record):
     }
 
 
+def current_inputs(scope, sources=None):
+    """Build a bounded caller-verified scope/source identity fixture."""
+    return {'scope': copy.deepcopy(scope), 'sources': copy.deepcopy(sources or {})}
+
+
 def source_events(record):
     execution = record['coverage']['execution']
     events = []
@@ -111,4 +116,5 @@ def legacy_prepare(artifacts, repo, scope, **kwargs):
     return run
 
 
-__all__ = ['selection', 'selection_input', 'record10', 'context10', 'source_events', 'legacy_prepare']
+__all__ = ['selection', 'selection_input', 'record10', 'context10', 'current_inputs',
+           'source_events', 'legacy_prepare']
