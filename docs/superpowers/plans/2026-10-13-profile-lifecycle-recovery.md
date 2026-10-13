@@ -165,7 +165,7 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Produces: `verify_claim(session_dir: Path, run_dir: Path) -> dict`; `plan_claim(session_dir: Path, run_dir: Path, manifest: dict, *, source_run=None, authority=None) -> dict` con bytes/intención esperados, sin escribir cierre. review_artifacts escribe `.review-run-owner.json` y resource_claims; los tokens de sesión permanecen privados.
 - Produces: `transfer_resources(source_run, successor_run, paths, *, authority, controller) -> dict`; intención hash-bound a ambos runs y claims. CLI transfer-resources requiere paths explícitos y fuente de autoridad, sin escaneo global. Cleanup valida claim cuando existe; nuevas sesiones reclamadas no se limpian desde otro run.
 
-- [ ] **Step 1: Añadir regresiones.** `test_duplicate_resource_claim_is_refused`, `test_transfer_records_both_runs_and_claim`, `test_transfer_crash_boundaries_are_recoverable`, `test_cleanup_refuses_other_run_claim`, `test_missing_resource_does_not_prove_own_cleanup`, `test_legacy_session_adoption_requires_authority`, `test_claim_reparse_or_foreign_owner_preserves_files`. Usar dos runs y las mismas sesiones como !785, registrando continuidad verificable.
+- [x] **Step 1: Añadir regresiones.** `test_duplicate_resource_claim_is_refused`, `test_transfer_records_both_runs_and_claim`, `test_transfer_crash_boundaries_are_recoverable`, `test_cleanup_refuses_other_run_claim`, `test_missing_resource_does_not_prove_own_cleanup`, `test_legacy_session_adoption_requires_authority`, `test_claim_reparse_or_foreign_owner_preserves_files`. Usar dos runs y las mismas sesiones como !785, registrando continuidad verificable.
 
   ```python
   before = self.snapshot([source, successor, session])
@@ -177,10 +177,10 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
   self.assertEqual(claims.verify_claim(session, successor)['run_id'], self.run_id(successor))
   ```
 
-- [ ] **Step 2: Observar RED.** resource_claims/workspace focalizados; observar rechazo faltante o falta de intención. No usar --force/remove manual como sustituto del test de cleanup.
-- [ ] **Step 3: Implementar claims/transferencia.** Comprobar ruta absoluta, sesión/owner_token, repo y run. Adquirir locks en orden; congelar intento en fuente/destino antes de cambiar claim. Estado superseded del run abierto compatible y vínculo successor; legacy se conserva y el sucesor registra adopción/lineage. En interrupción, gates de ambos runs/cleanup bloquean hasta resolver la intención propia. Sin índices de recursos, timers ni daemon.
-- [ ] **Step 4: Observar GREEN.** Claims/workspace/archive. Revisar estado principal antes/después de fixture cleanup; evidencia ajena y worktrees del usuario permanecen. Repetir transferencia verificada sin duplicar eventos.
-- [ ] **Step 5: Commit.** `feat(workspaces): vincular y transferir recursos entre runs de review`.
+- [x] **Step 2: Observar RED.** La transferencia focalizada falló al verificar el owner porque las filas archivadas omitían los campos de adopción/lineage que la verificación exigía. El test de doble claim también se corrigió para declarar el recurso en el successor y llegar a la condición bajo prueba.
+- [x] **Step 3: Implementar claims/transferencia.** Comprobar ruta absoluta, sesión/owner_token, repo y run. Adquirir locks en orden; congelar intento en fuente/destino antes de cambiar claim. Estado superseded del run abierto compatible y vínculo successor; legacy se conserva y el sucesor registra adopción/lineage. En interrupción, gates de ambos runs/cleanup bloquean hasta resolver la intención propia. Sin índices de recursos, timers ni daemon.
+- [x] **Step 4: Observar GREEN.** `test_review_resource_claims.py`: 7/7; `test_review_artifacts.py`: 51 aprobados/2 omitidos por privilegios de Windows; `test_workspace_layout.py`: 1/1. Transferencia repetida tras fallos inyectados conserva un solo evento y verifica el claim destino.
+- [x] **Step 5: Commit.** `feat(workspaces): vincular y transferir recursos entre runs de review`.
 
 ### Task 5: Inspección, pausa y continuación
 
@@ -256,4 +256,4 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Interfaces: puro vs IO vs escritor durable delimitados; recovery/claims no escriben cierre por su cuenta. Cross-run transfer emplea locks ordenados y la misma intención verificable.
 - Compatibilidad: read históricos y fixtures de emisión legacy separados de prepare actual; archive 7 exige selección/final 10, sin escape por schema antiguo. Trace/packet/workspace 1 no adquieren campos nuevos.
 - Proporción: siete entregables con un ciclo TDD/commit propio y una única revisión independiente final. Tests mantienen escenarios/efectos; cuerpos de funciones no están transcritos.
-- Estado: plan aprobado y en ejecución nativa. Tasks 1–2 implementadas y verificadas; Task 3 sigue pendiente. La revisión de la rama y el PR se realizan al completar Task 7.
+- Estado: plan aprobado y en ejecución nativa. Tasks 1–4 implementadas y verificadas; Tasks 5–7 siguen pendientes. La revisión de la rama y el PR se realizan al completar Task 7.
