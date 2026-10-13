@@ -186,4 +186,4 @@ Suite antes de implementación sobre `5507c48`: 317 tests en 264.225 s, 316 apro
 - Separación: provisional no equivale a retenido; operation no equivale a proceso vivo; cambiar perfil no altera scope ni eventos antiguos.
 - Compatibilidad: nuevos contratos delimitados; fuentes históricas y completed runs permanecen intactos; módulos puros no hacen IO.
 - Economía: lectura por necesidad, checkpoints en hitos existentes, reutilización explicitada y control sin polling/caché/telemetría.
-- Estado: especificación escrita y autorrevisada; revisión del usuario pendiente. Plan e implementación se preparan después de esa aprobación.
+- Estado: especificación escrita, autorrevisada y aprobada por el usuario el 2026-10-13. Preparar el plan; su revisión precede a la implementación.
