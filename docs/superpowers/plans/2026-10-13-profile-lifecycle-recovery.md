@@ -42,7 +42,7 @@
 - [x] Base `5507c48`: 317 tests en 264.225 s; 316 aprobados/1 omitido por privilegios de symlinks en Windows.
 - [x] Spec guardada en `a270eda`, autorrevisada y aprobada.
 - [x] Crear este plan y comprobar cobertura/interfaces/proporción.
-- [ ] Obtener revisión del usuario antes de implementar; conservar ejecución nativa previamente acordada.
+- [x] Obtener aprobación del usuario antes de implementar; conservar ejecución nativa previamente acordada.
 
 Intérprete: `C:/Users/Developer.INSCORSOF2/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`. En los comandos, `python` representa ese ejecutable; PowerShell usa `& '<ruta>'`. Baseline ya comprobado: repetirlo solo si cambian base/runtime o aparece un fallo pertinente.
 
@@ -84,7 +84,7 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Produces: `validate_selection(raw: dict, previous: dict | None = None) -> dict` (normaliza o ValueError); `validate_history(history: list[dict]) -> list[str]`; `validate_profile_execution(record: dict, trace_events: list[dict] | None = None) -> list[str]`. integrate validate_execution/sources solo para schema 10; schemas anteriores conservan rutas existentes.
 - Produces: schema 10 con campos comunes anteriores; check.execution local/static/external/reused sigue vinculando revisión/snapshot y ejecutor, también en schema 10.
 
-- [ ] **Step 1: Escribir regresiones.** `test_selection_aliases_and_first_identity`, `test_explicit_transition_requires_user_source`, `test_automatic_upgrade_and_supported_downgrade`, `test_same_selection_replay_preserves_first`, `test_history_limit_is_visible`, `test_downgrade_preserves_started_obligations`, `test_supersession_cannot_cancel_project_gate`, `test_prior_coordinator_pass_is_not_new_independent_discovery`, `test_schema10_does_not_relax_local_check_bindings`. Verificar fuentes/eventos, no solo etiquetas.
+- [x] **Step 1: Escribir regresiones.** `test_selection_aliases_and_first_identity`, `test_explicit_transition_requires_user_source`, `test_automatic_upgrade_and_supported_downgrade`, `test_same_selection_replay_preserves_first`, `test_history_limit_is_visible`, `test_downgrade_preserves_started_obligations`, `test_supersession_cannot_cancel_project_gate`, `test_prior_coordinator_pass_is_not_new_independent_discovery`, `test_schema10_does_not_relax_local_check_bindings`. Verificar fuentes/eventos, no solo etiquetas.
 
   ```python
   raw = selection('balanced')
@@ -98,10 +98,10 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
   ```
 
   El test de downgrade parte de deep con dos resultados independientes y verificación pendiente, cambia a focused con fuente y exige mantener verificador fresco; eliminarlo falla. El de supersession intenta cancelar una fila ya iniciada y un project_gate y debe fallar; una fila no iniciada con necesidad invalidada admite sustitución.
-- [ ] **Step 2: Observar RED.** Ejecutar `python -B -X utf8 -m unittest discover -s tests -p test_review_profiles.py -v` y `-p test_review_check_provenance.py -v`. Esperar falta del módulo/schema o violación concreta, no fixture inválida de otro tipo.
-- [ ] **Step 3: Implementar el modelo.** Separar shape del historial de su contraste con eventos/fuentes. Usar las firmas/valores comunes; exigir primer id S001, changed_from=null y phase=prepare, IDs siguientes contiguos y event_id distinto para cada transición. No inferir autoridad o tiempos. Resolver obligaciones preservadas para validar cardinalidad/independencia sin reinterpretar schemas 1–9.
-- [ ] **Step 4: Observar GREEN.** Repetir pruebas nuevas y execution_policy/contract/check_provenance. Control histórico conserva bytes de fixture y comportamiento de selección/precedencia/downgrade del schema 9.
-- [ ] **Step 5: Commit.** Stage explícito; `feat(profiles): conservar selecciones y obligaciones por fase del review`.
+- [x] **Step 2: Observar RED.** Ejecutar `python -B -X utf8 -m unittest discover -s tests -p test_review_profiles.py -v` y `-p test_review_check_provenance.py -v`. Esperar falta del módulo/schema o violación concreta, no fixture inválida de otro tipo.
+- [x] **Step 3: Implementar el modelo.** Separar shape del historial de su contraste con eventos/fuentes. Usar las firmas/valores comunes; exigir primer id S001, changed_from=null y phase=prepare, IDs siguientes contiguos y event_id distinto para cada transición. No inferir autoridad o tiempos. Resolver obligaciones preservadas para validar cardinalidad/independencia sin reinterpretar schemas 1–9.
+- [x] **Step 4: Observar GREEN.** Repetir pruebas nuevas y execution_policy/contract/check_provenance. Control histórico conserva bytes de fixture y comportamiento de selección/precedencia/downgrade del schema 9.
+- [x] **Step 5: Commit.** Stage explícito; `feat(profiles): conservar selecciones y obligaciones por fase del review`.
 
 ### Task 2: Archive 7, exclusión y preparación con perfil
 
@@ -113,7 +113,7 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Produces: `prepare(..., *, profile_input=None, controller=None, ...existing kwargs) -> str` con validación de selección obligatoria para nuevas emisiones; `select_profile(run_dir, selection_input) -> dict`; `register(run_dir, temporary_paths, *, context_input=None) -> dict`. Comandos --profile-input, select-profile --selection-input, register --context-input.
 - Produces: archive 7 con metadata de spec §1 y primeros hitos prepare/profile en una intención común. Nuevos runs requieren final 10 al retener; APIs de operaciones sobre archives existentes 1–6 conservan su comportamiento. Omitir una selección no debe permitir emitir archive antiguo desde el helper actual.
 
-- [ ] **Step 1: Añadir tests de integración.** `test_prepare_requires_selection_before_directory_creation`, `test_prepare_records_selection_atomically`, `test_select_profile_idempotent_retry`, `test_work_start_without_profile_is_refused_without_changes`, `test_paused_operation_cannot_start_work`, `test_register_executor_survives_retention_failure`, `test_mutating_lock_conflicts_between_processes`, `test_lock_releases_after_exception`, `test_multi_run_locks_use_stable_order`. Crash injection antes/después de marker, manifest y ambos eventos; verificar bytes/IDs y reintento.
+- [x] **Step 1: Añadir tests de integración.** `test_prepare_requires_selection_before_directory_creation`, `test_prepare_records_selection_atomically`, `test_select_profile_idempotent_retry`, `test_work_start_without_profile_is_refused_without_changes`, `test_paused_operation_cannot_start_work`, `test_register_executor_survives_retention_failure`, `test_mutating_lock_conflicts_between_processes`, `test_lock_releases_after_exception`, `test_multi_run_locks_use_stable_order`. Crash injection antes/después de marker, manifest y ambos eventos; verificar bytes/IDs y reintento.
 
   ```python
   before = self.snapshot_archive_root()
@@ -125,10 +125,10 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
   self.assertEqual([e['kind'] for e in self.events(run)][:2], ['prepare', 'profile'])
   ```
 
-- [ ] **Step 2: Observar RED.** Ejecutar artifact/trace/run_lock focalizados; fallos deben corresponder a contrato o lock ausente. Las factories históricas mantienen snapshots propios y no dependen de aceptar legacy final en nuevos runs.
-- [ ] **Step 3: Implementar transiciones protegidas.** Validar perfil antes de reservar carpeta; preservar intención propia de prepare/selection; aplicar precondición al trabajo y gates finales. Bloquear escrituras concurrentes de todas las mutaciones, incluidas operaciones históricas, sin escribir locks en inspect/validate. Capturar ejecutores en register con `_executors` y revalidar al retener. operation.controller no acredita actividad viva. completed continúa inmutable.
-- [ ] **Step 4: Observar GREEN.** Artifact/trace/run_lock y layout existentes. Confirmar que un worker arbitrario no es interceptado por el helper; la precondición del coordinador se implementa en documentación de Task 7. Help de prepare/select-profile/register muestra argumentos nuevos.
-- [ ] **Step 5: Commit.** `feat(archive): preparar perfiles y proteger mutaciones del review`.
+- [x] **Step 2: Observar RED.** Ejecutar artifact/trace/run_lock focalizados; fallos deben corresponder a contrato o lock ausente. Las factories históricas mantienen snapshots propios y no dependen de aceptar legacy final en nuevos runs.
+- [x] **Step 3: Implementar transiciones protegidas.** Validar perfil antes de reservar carpeta; preservar intención propia de prepare/selection; aplicar precondición al trabajo y gates finales. Bloquear escrituras concurrentes de todas las mutaciones, incluidas operaciones históricas, sin escribir locks en inspect/validate. Capturar ejecutores en register con `_executors` y revalidar al retener. operation.controller no acredita actividad viva. completed continúa inmutable.
+- [x] **Step 4: Observar GREEN.** Artifact/trace/run_lock y layout existentes. Confirmar que un worker arbitrario no es interceptado por el helper; la precondición del coordinador se implementa en documentación de Task 7. Help de prepare/select-profile/register muestra argumentos nuevos.
+- [x] **Step 5: Commit.** `feat(archive): preparar perfiles y proteger mutaciones del review`.
 
 ### Task 3: Checkpoints provisionales recuperables
 
@@ -256,4 +256,4 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Interfaces: puro vs IO vs escritor durable delimitados; recovery/claims no escriben cierre por su cuenta. Cross-run transfer emplea locks ordenados y la misma intención verificable.
 - Compatibilidad: read históricos y fixtures de emisión legacy separados de prepare actual; archive 7 exige selección/final 10, sin escape por schema antiguo. Trace/packet/workspace 1 no adquieren campos nuevos.
 - Proporción: siete entregables con un ciclo TDD/commit propio y una única revisión independiente final. Tests mantienen escenarios/efectos; cuerpos de funciones no están transcritos.
-- Estado: plan escrito y autorrevisado. Revisión del usuario pendiente; después usar superpowers:executing-plans y el método nativo conservado. Ningún runtime ha sido modificado.
+- Estado: plan aprobado y en ejecución nativa. Tasks 1–2 implementadas y verificadas; Task 3 sigue pendiente. La revisión de la rama y el PR se realizan al completar Task 7.

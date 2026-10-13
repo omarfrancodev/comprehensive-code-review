@@ -177,10 +177,11 @@ class DeliveryTests(unittest.TestCase):
         return path
 
     def retained(self, value=None, temporary=None, closed=False):
+        from recovery_fixtures import legacy_prepare
         value = copy.deepcopy(value or record6())
         scope = self.write('scope.json', value['scope'])
-        run = Path(artifacts.prepare(self.repo, scope, '2.8.0', 'codex', output_root=self.archive,
-                                    temporary_paths=temporary))
+        run = legacy_prepare(artifacts, self.repo, scope, skill_version='2.8.0', harness='codex',
+                             output_root=self.archive, temporary_paths=temporary)
         if value['schema_version'] in (6, 7):
             value['review_id'] = 'CR-' + artifacts.read_json(run / 'cierre.json')['run_id']
         artifacts.retain(run, self.write('final.json', value))
@@ -265,8 +266,9 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse((self.root / 'other').exists())
 
     def test_prepared_archive_cannot_be_delivered(self):
-        run = Path(artifacts.prepare(self.repo, self.write('scope.json', record6()['scope']),
-                                    '2.8.0', 'codex', output_root=self.archive))
+        from recovery_fixtures import legacy_prepare
+        run = legacy_prepare(artifacts, self.repo, self.write('scope.json', record6()['scope']),
+                             skill_version='2.8.0', harness='codex', output_root=self.archive)
         before = self.snapshot(run)
         with self.assertRaises(ValueError):
             delivery.deliver(run, 'brief', self.repo)

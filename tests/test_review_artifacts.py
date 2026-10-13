@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location('review_artifacts', SCRIPTS / 'review_artifacts.py') if (SCRIPTS / 'review_artifacts.py').exists() else None
@@ -194,8 +195,9 @@ class ArchiveTests(unittest.TestCase):
         return path
 
     def prepare(self, **kwargs):
-        return Path(artifacts.prepare(self.repo, self.scope, '2.3.0', 'codex',
-                                     output_root=kwargs.pop('output_root', self.output), **kwargs))
+        from recovery_fixtures import legacy_prepare
+        return legacy_prepare(artifacts, self.repo, self.scope, skill_version='2.3.0', harness='codex',
+                              output_root=kwargs.pop('output_root', self.output), **kwargs)
 
     def read(self, path):
         return json.loads(path.read_text(encoding='utf-8'))
@@ -249,8 +251,9 @@ class ArchiveTests(unittest.TestCase):
         self.git('worktree', 'add', '--detach', str(worktree), 'HEAD')
         self.assertEqual(artifacts.repository_identity(self.repo), artifacts.repository_identity(worktree))
         first = self.prepare()
-        second = Path(artifacts.prepare(worktree, self.scope, '2.3.0', 'codex',
-                                      output_root=self.output, previous_run=first))
+        from recovery_fixtures import legacy_prepare
+        second = legacy_prepare(artifacts, worktree, self.scope, skill_version='2.3.0', harness='codex',
+                                output_root=self.output, previous_run=first)
         self.assertEqual(first.parent.parent, second.parent.parent)
         self.assertEqual(self.read(second / 'cierre.json')['previous_run'], str(first))
 
@@ -407,8 +410,9 @@ class ArchiveTests(unittest.TestCase):
         subdirectory = self.repo / 'source'
         subdirectory.mkdir()
         with self.assertRaises(ValueError):
-            artifacts.prepare(subdirectory, self.scope, '2.3.0', 'codex',
-                              output_root=self.output, temporary_paths=[self.repo / 'code.txt'])
+            from recovery_fixtures import legacy_prepare
+            legacy_prepare(artifacts, subdirectory, self.scope, skill_version='2.3.0', harness='codex',
+                           output_root=self.output, temporary_paths=[self.repo / 'code.txt'])
 
     def test_interrupted_manifest_marker_transition_can_be_retried(self):
         run = self.prepare()
@@ -664,23 +668,172 @@ class ArchiveTests(unittest.TestCase):
         self.close(run)
 
     def test_cli_prepare_retain_close_and_invalid_input_are_json(self):
+        from recovery_fixtures import selection_input
         def invoke(*args):
             return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
                                   capture_output=True, text=True, encoding='utf-8')
+        profile = self.write('profile.json', selection_input())
         result = invoke('prepare', '--repo', self.repo, '--scope-file', self.scope,
-                        '--skill-version', '2.3.0', '--harness', 'codex', '--output-root', self.output)
+                        '--skill-version', '2.12.0', '--harness', 'codex', '--output-root', self.output,
+                        '--profile-input', profile)
         self.assertEqual(result.returncode, 0, result.stderr)
         run = Path(json.loads(result.stdout)['run_dir'])
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 7)
         result = invoke('retain', '--run-dir', run, '--input', self.final,
                         '--unavailable-reason', 'Native counters unavailable')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        cleanup = self.write('cleanup.json', {'cleanup': 'not_needed', 'residuals': []})
-        result = invoke('close', '--run-dir', run, '--cleanup-file', cleanup)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)['state'], 'complete')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('schema 10', json.loads(result.stderr)['error'])
         result = invoke('retain', '--run-dir', self.root, '--input', self.final)
         self.assertEqual(result.returncode, 1)
         self.assertIn('error', json.loads(result.stderr))
+
+
+class Archive7Tests(unittest.TestCase):
+    setUp = ArchiveTests.setUp
+    git = ArchiveTests.git
+    write = ArchiveTests.write
+    read = ArchiveTests.read
+    snapshot = ArchiveTests.snapshot
+
+    def profile_input(self, profile='focused', source='automatic', **updates):
+        from recovery_fixtures import selection_input
+        value = selection_input(profile, source, reference='evidence/context.json#profile_history/0/profile')
+        value.update(updates)
+        return value
+
+    def prepare7(self, profile='focused', source='automatic'):
+        return Path(artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
+                                      profile_input=self.profile_input(profile, source)))
+
+    def events(self, run):
+        return [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_text(encoding='utf-8').splitlines()]
+
+    def test_prepare_requires_selection_before_directory_creation(self):
+        with self.assertRaisesRegex(ValueError, 'profile selection'):
+            artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_prepare_records_selection_atomically(self):
+        run = self.prepare7('deep')
+        manifest = self.read(run / 'cierre.json')
+        history = manifest['profile_history']
+        self.assertEqual(history[0]['id'], 'S001')
+        self.assertEqual(history[0]['profile'], 'deep')
+        self.assertEqual([event['kind'] for event in self.events(run)][:2], ['prepare', 'profile'])
+        self.assertEqual(self.events(run)[1]['event_id'], history[0]['event_id'])
+
+    def test_prepare_crash_boundaries_keep_the_selection_and_event_pair(self):
+        import re
+        original = artifacts.atomic_write
+        boundaries = [(artifacts.MARKER, 1, 'before'), (artifacts.MARKER, 1, 'after'),
+                      ('cierre.json', 1, 'before'), ('cierre.json', 1, 'after'),
+                      (artifacts.MARKER, 2, 'before'), (artifacts.MARKER, 2, 'after'),
+                      ('trazabilidad.jsonl', 1, 'before'), ('trazabilidad.jsonl', 1, 'after')]
+        for filename, target_write, timing in boundaries:
+            with self.subTest(filename=filename, write=target_write, timing=timing):
+                self.output = self.root / ('archive-' + filename.replace('.', '-') + str(target_write) + timing)
+                profile = self.profile_input()
+                writes = 0
+
+                def interrupt(path, data):
+                    nonlocal writes
+                    if Path(path).name == filename:
+                        writes += 1
+                        if writes == target_write:
+                            if timing == 'after':
+                                original(path, data)
+                            raise OSError('injected prepare boundary')
+                    original(path, data)
+
+                unrecoverable = ((filename == artifacts.MARKER and target_write == 1)
+                                 or (filename == 'cierre.json' and timing == 'before'))
+                with patch.object(artifacts, 'atomic_write', side_effect=interrupt):
+                    if unrecoverable:
+                        with self.assertRaises(OSError):
+                            artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex',
+                                              output_root=self.output, profile_input=profile)
+                        self.assertFalse(any(re.fullmatch(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}', path.name)
+                                             for path in self.output.rglob('*') if path.is_dir()))
+                        continue
+                    result = artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex',
+                                               output_root=self.output, profile_input=profile)
+                run = Path(result)
+                manifest = self.read(run / 'cierre.json')
+                events = self.events(run)
+                self.assertEqual([event['kind'] for event in events], ['prepare', 'profile'])
+                self.assertEqual(manifest['profile_history'][0]['event_id'], events[1]['event_id'])
+
+    def test_select_profile_idempotent_retry(self):
+        run = self.prepare7()
+        selected_input = self.profile_input('deep', 'automatic', phase='discovery',
+            reference='evidence/context.json#profile_history/1/profile', changed_from='focused',
+            affected_assignments=['D1', 'D2'])
+        selected = artifacts.select_profile(run, selected_input)
+        snapshot = self.snapshot(run)
+        replay = artifacts.select_profile(run, selected_input)
+        self.assertEqual(replay['profile_history'], selected['profile_history'])
+        self.assertEqual(len(replay['profile_history']), 2)
+        self.assertEqual(self.snapshot(run), snapshot)
+
+    def test_work_start_without_profile_is_refused_without_changes(self):
+        run = self.prepare7()
+        manifest = self.read(run / 'cierre.json')
+        marker = self.read(run / artifacts.MARKER)
+        manifest['profile_history'] = []
+        artifacts._save_manifest(run, manifest, marker)
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'profile selection'):
+            artifacts.record_event(run, self.write('start.json',
+                dict(kind='discovery', status='started', summary='Synthetic work start')))
+        self.assertEqual(self.snapshot(run), before)
+
+    def test_paused_operation_cannot_start_work(self):
+        run = self.prepare7()
+        manifest = self.read(run / 'cierre.json')
+        marker = self.read(run / artifacts.MARKER)
+        manifest['operation'].update(disposition='paused', reason='Synthetic user stop', source='fixture')
+        artifacts._save_manifest(run, manifest, marker)
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'paused'):
+            artifacts.record_event(run, self.write('start.json',
+                dict(kind='discovery', status='started', summary='Synthetic work start')))
+        self.assertEqual(self.snapshot(run), before)
+
+    def test_register_executor_survives_retention_failure(self):
+        from recovery_fixtures import record10
+        run = self.prepare7()
+        workspace = self.root / 'authorized-copy'
+        workspace.mkdir()
+        manifest = self.read(run / 'cierre.json')
+        history = manifest['profile_history']
+        final = record10('focused', 'automatic')
+        final['scope'] = record()['scope']
+        final['review_id'] = 'CR-' + manifest['run_id']
+        context = {'profile': 'focused', 'selection_source': 'automatic',
+                   'profile_reference': history[0]['reference'], 'profile_history': history,
+                   'executors': [{'executor': 'X1', 'method': 'authorized-copy', 'workspace': str(workspace),
+                       'revision': final['scope']['head'], 'snapshot': None, 'manifest': None,
+                       'dependencies': 'none', 'dependency_reason': 'Synthetic isolated fixture',
+                       'authorization': 'User authorized the synthetic test copy'}]}
+        context_file = self.write('context.json', context)
+        artifacts.register(run, [workspace], context_input=context_file)
+        with self.assertRaises(ValueError):
+            artifacts.retain(run, self.write('final.json', final), context_input=context_file)
+        retained_manifest = self.read(run / 'cierre.json')
+        self.assertEqual([row['executor'] for row in retained_manifest['executors']], ['X1'])
+
+    def test_register_requires_context_even_for_static_execution(self):
+        run = self.prepare7()
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'requires captured context'):
+            artifacts.register(run, [])
+        self.assertEqual(self.snapshot(run), before)
+        history = self.read(run / 'cierre.json')['profile_history']
+        context = {'profile': 'focused', 'selection_source': 'automatic',
+                   'profile_reference': history[0]['reference'], 'profile_history': history,
+                   'executors': []}
+        manifest = artifacts.register(run, [], context_input=self.write('static-context.json', context))
+        self.assertEqual(manifest['executors'], [])
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ deletes registered resources and must not be used to infer disposal authority.
 import argparse
 import copy
 from datetime import datetime, timezone
+from functools import wraps
 import hashlib
 import json
 import os
@@ -24,6 +25,8 @@ import review_contract
 import review_metrics
 import review_trace
 import review_harness
+import review_profiles
+from review_run_lock import run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
 
@@ -32,8 +35,8 @@ FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
 TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
-ARCHIVE_SCHEMA_VERSION = 6
-TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6})
+ARCHIVE_SCHEMA_VERSION = 7
+TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6, 7})
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
@@ -70,6 +73,19 @@ def _json_bytes(value):
 
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def _locked_run(function=None, *, when=None):
+    """Serialize durable mutations; read-only validation stays lock-free."""
+    def decorate(target):
+        @wraps(target)
+        def wrapped(run_dir, *args, **kwargs):
+            if when is not None and not when(args, kwargs):
+                return target(run_dir, *args, **kwargs)
+            with run_locks([run_dir]):
+                return target(run_dir, *args, **kwargs)
+        return wrapped
+    return decorate(function) if function is not None else decorate
 
 
 def read_json(path):
@@ -308,12 +324,27 @@ def _load_run(run_dir):
     if not _contains(root, run) or run == root:
         raise ValueError('run escaped its registered archive root')
     _scope(manifest.get('scope'))
-    if manifest.get('schema_version') not in (1, 2, 3, 4, 5, ARCHIVE_SCHEMA_VERSION):
+    if manifest.get('schema_version') not in (1, 2, 3, 4, 5, 6, ARCHIVE_SCHEMA_VERSION):
         raise ValueError('unsupported archive schema')
-    if manifest['schema_version'] == 6:
+    if manifest['schema_version'] in (6, 7):
         review_harness.validate_identity(manifest)
+    if manifest['schema_version'] == 7:
+        if not manifest.get('profile_history'):
+            raise ValueError('profile selection is required before review work starts')
+        errors = review_profiles.validate_history(manifest.get('profile_history'))
+        if errors:
+            raise ValueError('; '.join(errors))
+        operation = manifest.get('operation')
+        fields = {'disposition', 'reason', 'source', 'phase', 'successor'}
+        if (not isinstance(operation, dict) or set(operation) != fields
+                or operation['disposition'] not in {'open', 'paused', 'blocked', 'superseded', 'complete'}):
+            raise ValueError('invalid archive operation disposition')
+        controller = manifest.get('controller')
+        if (not isinstance(controller, dict) or set(controller) != {'identity', 'source'}
+                or not isinstance(controller['identity'], dict) or not isinstance(controller['source'], str)):
+            raise ValueError('invalid archive controller identity')
     states = {'prepared', 'retaining', 'closing', 'complete'}
-    if manifest['schema_version'] in (5, 6):
+    if manifest['schema_version'] in (5, 6, 7):
         states.add('processing')
     if manifest.get('state') not in states:
         raise ValueError('invalid archive state')
@@ -422,6 +453,77 @@ def _starts_processing(event):
             and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
 
 
+def _input_object(value, label):
+    result = read_json(value) if isinstance(value, (str, os.PathLike)) else copy.deepcopy(value)
+    if not isinstance(result, dict):
+        raise ValueError(label + ' must be a JSON object')
+    return result
+
+
+def _initial_selection(profile_input):
+    if profile_input is None:
+        raise ValueError('profile selection is required before preparing a new archive')
+    raw = _input_object(profile_input, 'profile selection')
+    if set(raw) != review_profiles.INPUT_FIELDS:
+        raise ValueError('initial profile selection must contain exactly the required decision fields')
+    try:
+        value = review_profiles.validate_selection(
+            {key: raw[key] for key in review_profiles.INPUT_FIELDS})
+    except KeyError as exc:
+        raise ValueError('profile selection is missing required field: ' + str(exc.args[0])) from exc
+    if value['phase'] != 'prepare' or value['affected_assignments']:
+        raise ValueError('initial profile selection must use prepare phase and have no affected assignments')
+    value.update(id='S001', changed_from=None, event_id='E000002')
+    return value
+
+
+def _profile_event(selection):
+    return {'kind': 'profile', 'status': 'selected',
+            'summary': 'Profile selected: ' + selection['profile'],
+            'actor': selection['actor'], 'authority': selection['authority'],
+            'provenance': {'kind': 'helper', 'source': 'review_artifacts:profile-selection'},
+            'evidence': [selection['reference']]}
+
+
+def _controller(value, fallback):
+    if value is None:
+        return {'identity': copy.deepcopy(fallback), 'source': 'profile-input'}
+    item = _input_object(value, 'controller')
+    identity = item.get('identity')
+    source = item.get('source')
+    if (set(item) != {'identity', 'source'} or not isinstance(identity, dict)
+            or set(identity) != {'kind', 'name', 'provider_id'}
+            or identity['kind'] not in {'helper', 'coordinator', 'agent', 'tool'}
+            or not isinstance(identity['name'], str) or not identity['name'].strip() or len(identity['name']) > 160
+            or any(ord(char) < 32 for char in identity['name'])
+            or identity['provider_id'] is not None and (not isinstance(identity['provider_id'], str)
+                or not identity['provider_id'].strip() or len(identity['provider_id']) > 160
+                or any(ord(char) < 32 for char in identity['provider_id']))
+            or not isinstance(source, str) or not source.strip() or len(source) > 500
+            or any(ord(char) < 32 for char in source)):
+        raise ValueError('controller requires a trace identity and nonempty source')
+    return {'identity': copy.deepcopy(identity), 'source': source}
+
+
+def _remove_unowned_prepare_directory(run, marker):
+    """Remove only an empty run dir or its own marker when no closure exists."""
+    try:
+        closure = run / 'cierre.json'
+        if closure.exists():
+            return
+        ownership = run / MARKER
+        if ownership.exists():
+            value = read_json(ownership)
+            if (value.get('owner_id') != marker['owner_id'] or value.get('run_dir') != str(run)
+                    or value.get('scope_sha256') != marker['scope_sha256']):
+                return
+            ownership.unlink()
+        run.rmdir()
+    except (OSError, ValueError, TypeError):
+        return
+
+
+@_locked_run
 def record_event(run_dir, event_file, execution_metadata=None):
     """Coordinator-only durable writer for a bounded, structured worker milestone."""
     event = review_trace.event_input(read_json(event_file))
@@ -437,11 +539,19 @@ def record_event(run_dir, event_file, execution_metadata=None):
         raise ValueError('completed review history is immutable')
     if manifest['state'] == 'retaining':
         raise ValueError('retention is interrupted; finish retention before recording milestones')
-    if manifest['schema_version'] in (5, 6) and event['occurred_at'] is not None and event['provenance']['source'] is None:
+    if manifest['schema_version'] in (5, 6, 7) and event['occurred_at'] is not None and event['provenance']['source'] is None:
         raise ValueError('observed execution time requires an identifiable provenance source')
-    if manifest['schema_version'] in (5, 6):
+    if manifest['schema_version'] in (5, 6, 7):
         review_trace.validate_local_event_targets(event, (run / review_trace.NAME).read_bytes())
-    if manifest['schema_version'] in (5, 6) and manifest['state'] == 'prepared' and _starts_processing(event):
+    if manifest['schema_version'] == 7 and event['kind'] == 'profile':
+        raise ValueError('use select-profile to record structured profile transitions')
+    if manifest['schema_version'] == 7 and _starts_processing(event):
+        if not manifest.get('profile_history'):
+            raise ValueError('profile selection is required before review work starts')
+        disposition = manifest.get('operation', {}).get('disposition')
+        if disposition != 'open':
+            raise ValueError('review operation is ' + str(disposition) + '; resume or recover before starting work')
+    if manifest['schema_version'] in (5, 6, 7) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
     return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
@@ -547,11 +657,13 @@ def _measurements(inputs, unavailable_reason):
 
 
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
-            *, harness_id=None, harness_source=None):
+            *, profile_input=None, controller=None, harness_id=None, harness_source=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = read_json(scope_file)
     _scope(scope)
+    selection = _initial_selection(profile_input)
+    controller_value = _controller(controller, selection['actor'])
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
     harness_identity = review_harness.resolve(harness, harness_id, harness_source)
@@ -570,7 +682,14 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'repository_key': repository_key, 'repository_identity': identity, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
                 'state': 'prepared', 'retained': False, 'cleanup': 'pending', 'residuals': [],
-                'temporary_paths': [], 'temporary_manifests': [], 'executors': [], 'hashes': {}}
+                'temporary_paths': [], 'temporary_manifests': [], 'executors': [], 'hashes': {},
+                'profile_history': [selection],
+                'operation': {'disposition': 'open', 'reason': None, 'source': None,
+                              'phase': None, 'successor': None},
+                'controller': controller_value,
+                'checkpoint': None,
+                'lineage': {'kind': 'restart' if previous else 'new', 'source_run': previous},
+                'resource_claims': []}
     manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
@@ -591,24 +710,86 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         raise ValueError('cannot allocate a unique owned review run')
     marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run), 'archive_root': str(root),
               'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
-    _append_trace(run, manifest, marker, _milestone('prepare', 'Owned archive prepared with pinned scope'))
+    try:
+        _append_trace_events(run, manifest, marker,
+                             [_milestone('prepare', 'Owned archive prepared with pinned scope'),
+                              _profile_event(selection)])
+    except OSError:
+        try:
+            recovered_run, recovered, recovered_marker = _load_run(run)
+            recovered_marker = _recover_trace(recovered_run, recovered, recovered_marker)
+            _verify_files(recovered_run, recovered)
+            if (recovered['profile_history'] == [selection]
+                    and recovered['trace']['events'] >= 2):
+                return str(run)
+        except (OSError, ValueError, TypeError, KeyError):
+            _remove_unowned_prepare_directory(run, marker)
+        raise
     return str(run)
 
 
-def register(run_dir, temporary_paths):
+@_locked_run
+def select_profile(run_dir, selection_input):
+    """Capture a profile transition and its trace event as one idempotent mutation."""
+    raw = _input_object(selection_input, 'profile selection')
+    run, manifest, marker = _load_run(run_dir)
+    if manifest['schema_version'] != 7:
+        raise ValueError('profile transitions require an archive 7 run')
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest['state'] in {'retaining', 'closing', 'complete'}:
+        raise ValueError('profile cannot change after retention or closure starts')
+    if manifest.get('operation', {}).get('disposition') != 'open':
+        raise ValueError('review operation is not open; resume or recover before selecting a profile')
+    if set(raw) - review_profiles.INPUT_FIELDS - {'changed_from'}:
+        raise ValueError('profile transition input cannot supply archive-assigned identity fields')
+    history = manifest['profile_history']
+    previous = history[-1]
+    try:
+        candidate = review_profiles.validate_selection(raw, previous=previous)
+    except ValueError:
+        raise
+    if candidate == previous:
+        return manifest
+    if candidate['phase'] == 'prepare':
+        raise ValueError('profile transitions cannot use prepare phase')
+    if len(history) >= review_profiles.MAX_HISTORY:
+        raise ValueError('profile history reached its selection limit')
+    candidate.update(id='S' + str(len(history) + 1).zfill(3),
+                     changed_from=previous['profile'],
+                     event_id='E' + str(manifest['trace']['events'] + 1).zfill(6))
+    manifest['profile_history'] = history + [candidate]
+    _append_trace(run, manifest, marker, _profile_event(candidate))
+    return manifest
+
+
+@_locked_run
+def register(run_dir, temporary_paths, *, context_input=None):
     """Register coordinator-verified owned resources before discovery/execution."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
     if manifest['state'] not in {'prepared', 'processing'}:
         raise ValueError('register temporary resources before retention')
+    if manifest['schema_version'] == 7 and manifest.get('operation', {}).get('disposition') != 'open':
+        raise ValueError('review operation is not open; resume or recover before registering resources')
+    if manifest['schema_version'] == 7 and context_input is None:
+        raise ValueError('archive 7 registration requires captured context, including executors or an explicit empty list')
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
-    manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
+    executors = _executors(context_input, manifest, temporary)
+    if manifest['schema_version'] == 7 and context_input is not None:
+        context = read_json(context_input)
+        if (context.get('profile') != manifest['profile_history'][-1]['profile']
+                or context.get('selection_source') != manifest['profile_history'][0]['selection_source']
+                or context.get('profile_history') != manifest['profile_history']):
+            raise ValueError('executor context must preserve the profile history captured by the archive')
+    manifest.update(temporary_paths=temporary, temporary_manifests=manifests, executors=executors)
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
 
+@_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
 def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
     if require_complete and record_checkpoint:
@@ -627,9 +808,11 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if value.get('schema_version') in (8, 9):
+        if manifest['schema_version'] == 7 and value.get('schema_version') != 10:
+            raise ValueError('archive 7 requires final review schema 10')
+        if value.get('schema_version') in (8, 9, 10):
             _execution_gate(run, manifest, value, {})
     if require_complete:
         if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
@@ -775,11 +958,12 @@ def _handoff_context(input_file, value, contents, manifest):
     return context
 
 
+@_locked_run
 def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
     value = read_json(input_file)
     if expected_schema is not None:
-        if type(expected_schema) is not int or expected_schema not in range(1, 10):
-            raise ValueError('expected schema must be a supported integer 1–9')
+        if type(expected_schema) is not int or expected_schema not in range(1, 11):
+            raise ValueError('expected schema must be a supported integer 1–10')
         if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
             raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
     run, manifest, marker = _load_run(run_dir)
@@ -787,6 +971,13 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
     if manifest['state'] == 'complete':
         raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
     _verify_files(run, manifest)
+    if manifest['schema_version'] == 7:
+        if value.get('schema_version') != 10:
+            raise ValueError('archive 7 requires final review schema 10')
+        if value.get('coverage', {}).get('execution', {}).get('profile_history') != manifest.get('profile_history'):
+            raise ValueError('final profile history differs from the archive selections')
+        if manifest.get('operation', {}).get('disposition') != 'open':
+            raise ValueError('review operation is not open; recover or restart before retaining')
     if handoff_context_input is not None and not handoff:
         raise ValueError('--handoff-context-input requires an explicit --handoff request')
     errors = review_contract.validate(value)
@@ -794,7 +985,7 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') in (6, 7, 8, 9) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
@@ -811,8 +1002,8 @@ def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') not in (8, 9)))
-    if value.get('schema_version') in (8, 9):
+    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') not in (8, 9, 10)))
+    if value.get('schema_version') in (8, 9, 10):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
             context_bytes = _json_bytes(read_json(context_input))
@@ -892,7 +1083,7 @@ def _execution_gate(run, manifest, value, contents):
         if resolved.get(row['reference']) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
     errors = validate_execution_sources(value, context, events, references)
-    if value.get('schema_version') == 9:
+    if value.get('schema_version') in (9, 10):
         errors.extend(validate_check_sources(value, context.get('executors')))
         errors.extend(validate_check_sources(value, manifest.get('executors', [])))
         # Both retained sources must bind each used identity to the same inputs.
@@ -923,6 +1114,7 @@ def _present_resources(registered):
     return present
 
 
+@_locked_run
 def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
@@ -980,6 +1172,9 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
                     state='complete' if cleanup != 'pending' else 'closing')
     if manifest['state'] == 'complete':
         manifest['closed_at'] = datetime.now(timezone.utc).isoformat()
+        if manifest['schema_version'] == 7:
+            manifest['operation']['disposition'] = 'complete'
+            manifest['operation']['phase'] = 'close'
     _append_trace(run, manifest, marker, _milestone('close', 'Observed resource closure: ' + cleanup,
                   status='pending' if cleanup == 'pending' else 'completed', evidence=['review.json', 'informe.md']))
     return manifest
@@ -997,16 +1192,24 @@ def main():
     create.add_argument('--output-root')
     create.add_argument('--previous-run')
     create.add_argument('--temporary-path', action='append')
+    create.add_argument('--profile-input', required=True,
+                        help='Existing JSON selection captured before the new run is created')
+    create.add_argument('--controller-input',
+                        help='Existing JSON {identity, source} for the coordinating context')
     create.add_argument('--harness-id', help='Declared canonical catalog ID; overrides session CCR_HARNESS_ID')
     create.add_argument('--harness-source-file', help='Existing JSON {kind: user|platform, reference: text}; requires --harness-id')
     resources = commands.add_parser('register', help='Register verified owned temporary paths before use')
     resources.add_argument('--run-dir', required=True)
     resources.add_argument('--temporary-path', action='append', required=True)
+    resources.add_argument('--context-input', help='Existing neutral context JSON with executor provenance')
+    select = commands.add_parser('select-profile', help='Atomically capture a profile transition before using it')
+    select.add_argument('--run-dir', required=True)
+    select.add_argument('--selection-input', required=True)
     gate = commands.add_parser('validate', help='Read-only ownership, layout and retained hash checks')
     gate.add_argument('--run-dir', required=True)
     gate.add_argument('--require-retained', action='store_true', help='Require complete retained evidence before cleanup')
     gate.add_argument('--require-complete', action='store_true', help='Read-only gate for retained result and completed observed cleanup')
-    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open schema4/5/6 archive')
+    gate.add_argument('--record-checkpoint', action='store_true', help='Record a passed milestone in an open trace archive')
     trace = commands.add_parser('record-event', help='Coordinator records one bounded structured milestone')
     trace.add_argument('--run-dir', required=True)
     trace.add_argument('--event-file', required=True)
@@ -1014,7 +1217,7 @@ def main():
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', required=True)
-    keep.add_argument('--expected-schema', type=int, choices=range(1, 10), help='Require the caller-selected final contract before retention')
+    keep.add_argument('--expected-schema', type=int, choices=range(1, 11), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')
@@ -1037,13 +1240,17 @@ def main():
                 raise ValueError('harness source file requires an object and an explicit --harness-id')
             result = {'run_dir': prepare(args.repo, args.scope_file, args.skill_version, args.harness,
                                          args.output_root, args.previous_run, args.temporary_path,
+                                         profile_input=args.profile_input,
+                                         controller=read_json(args.controller_input) if args.controller_input else None,
                                          harness_id=args.harness_id, harness_source=source)}
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
                             args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input,
                             expected_schema=args.expected_schema)
         elif args.command == 'register':
-            result = register(args.run_dir, args.temporary_path)
+            result = register(args.run_dir, args.temporary_path, context_input=args.context_input)
+        elif args.command == 'select-profile':
+            result = select_profile(args.run_dir, args.selection_input)
         elif args.command == 'validate':
             result = validate(args.run_dir, args.require_retained, args.record_checkpoint, require_complete=args.require_complete)
         elif args.command == 'record-event':

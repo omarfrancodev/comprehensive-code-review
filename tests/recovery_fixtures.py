@@ -1,5 +1,6 @@
 """Shared synthetic data for profile lifecycle and recovery tests."""
 import copy
+import json
 
 from test_review_execution_policy import record8, source_fixture
 
@@ -88,11 +89,26 @@ def source_events(record):
 
 
 def legacy_prepare(artifacts, repo, scope, **kwargs):
-    """Create a historical run using the current artifact test fixture/API."""
+    """Create an archive-6 fixture through the test-only historical adapter."""
     from pathlib import Path
+    from review_trace import FIELDS, append
     version = kwargs.pop('skill_version', '2.11.0')
     harness = kwargs.pop('harness', 'codex')
-    return Path(artifacts.prepare(repo, scope, version, harness, **kwargs))
+    run = Path(artifacts.prepare(repo, scope, version, harness,
+                                profile_input=selection_input(), **kwargs))
+    manifest = artifacts.read_json(run / 'cierre.json')
+    marker = artifacts.read_json(run / artifacts.MARKER)
+    event = json.loads((run / 'trazabilidad.jsonl').read_text(encoding='utf-8').splitlines()[0])
+    trace_data, descriptor, _ = append(b'', {'run_id': manifest['run_id']},
+                                       {key: event[key] for key in FIELDS}, helper=True)
+    artifacts.atomic_write(run / 'trazabilidad.jsonl', trace_data)
+    manifest['schema_version'] = 6
+    manifest['trace'] = descriptor
+    manifest['hashes']['trazabilidad.jsonl'] = artifacts._digest(trace_data)
+    for field in ('profile_history', 'operation', 'controller', 'checkpoint', 'lineage', 'resource_claims'):
+        manifest.pop(field, None)
+    artifacts._save_manifest(run, manifest, marker)
+    return run
 
 
 __all__ = ['selection', 'selection_input', 'record10', 'context10', 'source_events', 'legacy_prepare']
