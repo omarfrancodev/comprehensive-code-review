@@ -37,6 +37,11 @@ TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
 ARCHIVE_SCHEMA_VERSION = 7
 TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6, 7})
+PENDING_CONTEXT_LIMIT = 131072
+CHECKPOINT_EVIDENCE_COUNT_LIMIT = 64
+CHECKPOINT_METADATA_LIMIT = 16 * 1024 * 1024
+CHECKPOINT_EVIDENCE_LIMIT = 64 * 1024 * 1024
+CHECKPOINT_HASH = re.compile(r'[0-9a-f]{64}')
 SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
@@ -354,9 +359,148 @@ def _load_run(run_dir):
     return run, manifest, marker
 
 
-def _verify_files(run, manifest, required=False):
+def _pending_file_name(name):
+    if not isinstance(name, str):
+        return False
+    if name in {'pending/context.json', 'pending/review.json', 'pending/informe.md'}:
+        return True
+    return (isinstance(name, str) and name.startswith('pending/evidence/')
+            and name.count('/') == 2 and name[17:] == _evidence_name(name[17:])
+            and name[17:] not in {'.', '..'})
+
+
+def _verify_pending(run, manifest, *, allow_transaction=False):
+    if manifest.get('schema_version') != 7:
+        if any(key in manifest for key in ('pending_hashes', 'checkpoint', 'checkpoint_transaction')):
+            raise ValueError('legacy archive cannot contain provisional checkpoint metadata')
+        return
+    hashes = manifest.get('pending_hashes', {})
+    if not isinstance(hashes, dict) or len(hashes) > CHECKPOINT_EVIDENCE_COUNT_LIMIT + 3 or any(not _pending_file_name(name)
+                                           or not isinstance(value, str)
+                                           or not CHECKPOINT_HASH.fullmatch(value)
+                                           for name, value in hashes.items()):
+        raise ValueError('invalid provisional checkpoint hash inventory')
+    checkpoint = manifest.get('checkpoint')
+    transaction = manifest.get('checkpoint_transaction')
+    accepted = {name: {digest} for name, digest in hashes.items()}
+    may_be_missing = set()
+    if transaction is not None:
+        fields = {'input_signature', 'previous_hashes', 'planned_hashes', 'removed_hashes', 'checkpoint'}
+        if not isinstance(transaction, dict) or set(transaction) != fields:
+            raise ValueError('invalid checkpoint transaction intent')
+        previous, planned, removed = (transaction['previous_hashes'], transaction['planned_hashes'],
+                                       transaction['removed_hashes'])
+        if previous != hashes or not isinstance(planned, dict) or any(
+                not _pending_file_name(name) or not isinstance(value, str)
+                or not CHECKPOINT_HASH.fullmatch(value) for name, value in planned.items()):
+            raise ValueError('checkpoint transaction differs from its owned prior inventory')
+        if (not isinstance(removed, dict) or any(
+                name not in {'pending/review.json', 'pending/informe.md'}
+                or previous.get(name) != digest or name in planned
+                or not isinstance(digest, str) or not CHECKPOINT_HASH.fullmatch(digest)
+                for name, digest in removed.items())):
+            raise ValueError('checkpoint transaction has an invalid owned removal intent')
+        if not isinstance(transaction['input_signature'], str) or not CHECKPOINT_HASH.fullmatch(transaction['input_signature']):
+            raise ValueError('invalid checkpoint input signature')
+        accepted = {name: {digest} for name, digest in previous.items()}
+        for name, digest in planned.items():
+            accepted.setdefault(name, set()).add(digest)
+            if name not in previous:
+                may_be_missing.add(name)
+        may_be_missing.update(removed)
+        if not allow_transaction:
+            raise ValueError('checkpoint transaction is pending; retry the checkpoint with its selected inputs')
+        checkpoint = transaction['checkpoint']
+    elif hashes and not isinstance(checkpoint, dict):
+        raise ValueError('checkpoint hash inventory has no checkpoint record')
+
+    if checkpoint is not None:
+        if (not isinstance(checkpoint, dict) or set(checkpoint) != {
+                'id', 'phase', 'recorded_at', 'input_signature', 'inventory', 'gate_errors'}
+                or not isinstance(checkpoint['id'], str) or not re.fullmatch(r'K[0-9]{3,}', checkpoint['id'])
+                or not isinstance(checkpoint['phase'], str)
+                or checkpoint['phase'] not in review_profiles.PHASES - {'prepare'}
+                or not isinstance(checkpoint['recorded_at'], str)
+                or not isinstance(checkpoint['input_signature'], str)
+                or not CHECKPOINT_HASH.fullmatch(checkpoint['input_signature'])
+                or not isinstance(checkpoint['inventory'], list)
+                or not isinstance(checkpoint['gate_errors'], list)):
+            raise ValueError('invalid checkpoint metadata')
+        try:
+            recorded_at = datetime.fromisoformat(checkpoint['recorded_at'].replace('Z', '+00:00'))
+            if recorded_at.utcoffset() is None:
+                raise ValueError('timezone required')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid checkpoint recording time') from exc
+        if len(checkpoint['inventory']) > CHECKPOINT_EVIDENCE_COUNT_LIMIT + 3:
+            raise ValueError('checkpoint inventory exceeds its entry limit')
+        inventory = {}
+        for row in checkpoint['inventory']:
+            if (not isinstance(row, dict) or set(row) != {'name', 'size', 'sha256'}
+                    or not _pending_file_name(row['name']) or type(row['size']) is not int or row['size'] < 0
+                    or not isinstance(row['sha256'], str) or not CHECKPOINT_HASH.fullmatch(row['sha256'])
+                    or row['name'] in inventory):
+                raise ValueError('invalid checkpoint inventory row')
+            inventory[row['name']] = row['sha256']
+        inventory_hashes = transaction['planned_hashes'] if transaction is not None else hashes
+        if inventory != inventory_hashes:
+            raise ValueError('checkpoint inventory differs from provisional hashes')
+        evidence_size = sum(row['size'] for row in checkpoint['inventory']
+                            if row['name'].startswith('pending/evidence/'))
+        metadata_size = sum(row['size'] for row in checkpoint['inventory']
+                            if row['name'].lower().endswith(('.json', '.md')))
+        context_row = next((row for row in checkpoint['inventory'] if row['name'] == 'pending/context.json'), None)
+        if (evidence_size > CHECKPOINT_EVIDENCE_LIMIT or metadata_size > CHECKPOINT_METADATA_LIMIT
+                or context_row is None or context_row['size'] > PENDING_CONTEXT_LIMIT):
+            raise ValueError('checkpoint inventory exceeds its declared size bounds')
+        if (len(checkpoint['gate_errors']) > 64 or any(not isinstance(item, str) or not item.strip()
+                or len(item) > 2000 for item in checkpoint['gate_errors'])):
+            raise ValueError('checkpoint gate diagnostics are invalid or unbounded')
+    elif hashes or transaction is not None:
+        raise ValueError('checkpoint metadata is incomplete')
+
+    root = run / 'pending'
+    if root.exists():
+        if not root.is_dir() or root.is_symlink():
+            raise ValueError('pending checkpoint root is not a regular directory')
+        observed = set()
+        for path in root.rglob('*'):
+            safe_path(path)
+            if path.is_dir():
+                continue
+            name = path.relative_to(run).as_posix()
+            if not _pending_file_name(name):
+                raise ValueError('foreign file in pending checkpoint: ' + name)
+            observed.add(name)
+        if observed - set(accepted):
+            raise ValueError('foreign pending checkpoint files are present')
+    elif accepted and any(name not in may_be_missing for name in accepted):
+        raise ValueError('pending checkpoint inventory is missing its directory')
+
+    for name, allowed_digests in accepted.items():
+        path = safe_path(run / name)
+        try:
+            data = path.read_bytes()
+        except FileNotFoundError:
+            if name in may_be_missing:
+                continue
+            raise ValueError('pending checkpoint file is missing: ' + name)
+        if _digest(data) not in allowed_digests:
+            raise ValueError('modified pending checkpoint file: ' + name)
+        if transaction is None:
+            expected_size = next(row['size'] for row in checkpoint['inventory'] if row['name'] == name)
+            if len(data) != expected_size:
+                raise ValueError('pending checkpoint file size differs from its inventory: ' + name)
+        elif name in transaction['planned_hashes'] and _digest(data) == transaction['planned_hashes'][name]:
+            planned_size = next(row['size'] for row in checkpoint['inventory'] if row['name'] == name)
+            if len(data) != planned_size:
+                raise ValueError('pending checkpoint file size differs from its transaction: ' + name)
+
+
+def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=False):
     if manifest.get('pending_trace') is not None:
         raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
+    _verify_pending(run, manifest, allow_transaction=allow_checkpoint_transaction)
     hashes = manifest.get('hashes')
     if not isinstance(hashes, dict) or any(not _retained_name(name) for name in hashes):
         raise ValueError('invalid retained file manifest')
@@ -604,6 +748,219 @@ def _evidence_contents(run, manifest, inputs, *, create_directory=True):
     if contents and create_directory:
         safe_path(run / 'evidence').mkdir(exist_ok=True)
     return contents
+
+
+def _checkpoint_diagnostics(values):
+    if values is None:
+        return []
+    if not isinstance(values, list) or len(values) > 64:
+        raise ValueError('checkpoint gate errors must be a bounded array')
+    result = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip() or len(value) > 2000:
+            raise ValueError('checkpoint gate error must be bounded nonempty text')
+        if value not in result:
+            result.append(value)
+    if sum(len(value.encode('utf-8')) for value in result) > 131072:
+        raise ValueError('checkpoint gate errors exceed the metadata limit')
+    return result
+
+
+def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input_record,
+                            phase, gate_errors, max_evidence_bytes):
+    if phase not in review_profiles.PHASES - {'prepare'}:
+        raise ValueError('checkpoint phase must identify review work after preparation')
+    if (type(max_evidence_bytes) is not int or not 0 <= max_evidence_bytes <= CHECKPOINT_EVIDENCE_LIMIT):
+        raise ValueError('checkpoint evidence limit must be between 0 and 64 MiB')
+    context_path = safe_path(context_input)
+    if not stat.S_ISREG(context_path.stat().st_mode):
+        raise ValueError('checkpoint context must be a regular JSON file')
+    context = read_json(context_path)
+    if not isinstance(context, dict):
+        raise ValueError('checkpoint context must be a JSON object')
+    context_bytes = _json_bytes(context)
+    if len(context_bytes) > PENDING_CONTEXT_LIMIT:
+        raise ValueError('execution context exceeds the 131072-byte checkpoint limit')
+    payloads = {'pending/context.json': context_bytes}
+    source_contents = {'evidence/context.json': context_bytes}
+    evidence_total = 0
+    evidence_count = 0
+    seen = set()
+    for raw in evidence_inputs or []:
+        source = safe_path(raw)
+        if not stat.S_ISREG(source.stat().st_mode):
+            raise ValueError('selected checkpoint evidence must be a regular file')
+        name = _evidence_name(source.name)
+        if name in seen:
+            raise ValueError('duplicate selected checkpoint evidence name: ' + name)
+        seen.add(name)
+        evidence_count += 1
+        if evidence_count > CHECKPOINT_EVIDENCE_COUNT_LIMIT:
+            raise ValueError('checkpoint accepts at most 64 selected evidence files')
+        data = source.read_bytes()
+        evidence_total += len(data)
+        if evidence_total > max_evidence_bytes:
+            raise ValueError('selected checkpoint evidence exceeds the configured byte limit')
+        payloads['pending/evidence/' + name] = data
+        source_contents['evidence/' + name] = data
+
+    for name, digest in manifest.get('pending_hashes', {}).items():
+        if name.startswith('pending/evidence/') and name not in payloads:
+            prior = safe_path(run / name).read_bytes()
+            if _digest(prior) != digest:
+                raise ValueError('modified prior checkpoint evidence: ' + name)
+            source_contents['evidence/' + name.split('/', 2)[2]] = prior
+
+    diagnostics = _checkpoint_diagnostics(gate_errors)
+    final = None
+    if input_record is not None:
+        try:
+            final = _input_object(input_record, 'checkpoint final review')
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            diagnostics.append('final review input could not be parsed: ' + str(exc)[:500])
+        else:
+            errors = review_contract.validate(final)
+            if errors or final.get('stage') != 'final':
+                diagnostics.extend('final structure: ' + error for error in errors[:48])
+                if not errors:
+                    diagnostics.append('final structure: stage must be final')
+            else:
+                if final.get('schema_version') != 10:
+                    diagnostics.append('final structure: archive 7 checkpoints require review schema 10')
+                else:
+                    if final.get('review_id') != 'CR-' + manifest['run_id']:
+                        diagnostics.append('archive identity gate: review ID differs from the run')
+                    execution = final.get('coverage', {}).get('execution', {})
+                    if execution.get('profile_history') != manifest.get('profile_history'):
+                        diagnostics.append('archive profile history differs from the captured run selections')
+                    try:
+                        _execution_gate(run, manifest, final, source_contents)
+                    except (OSError, ValueError, TypeError, KeyError) as exc:
+                        diagnostics.append('final source gate: ' + str(exc)[:1500])
+                    payloads['pending/review.json'] = _json_bytes(final)
+                    payloads['pending/informe.md'] = review_contract.render(final).encode('utf-8')
+
+    diagnostics = _checkpoint_diagnostics(diagnostics)
+    selected_names = set(payloads)
+    previous = {}
+    pending_removals = manifest.get('checkpoint_transaction', {}).get('removed_hashes', {})
+    for name, digest in manifest.get('pending_hashes', {}).items():
+        if name not in payloads and name not in pending_removals:
+            previous[name] = safe_path(run / name).read_bytes()
+            if _digest(previous[name]) != digest:
+                raise ValueError('modified prior checkpoint bytes: ' + name)
+    combined = dict(previous, **payloads)
+    metadata_size = sum(len(data) for name, data in combined.items()
+                        if name.lower().endswith(('.json', '.md')))
+    if metadata_size > CHECKPOINT_METADATA_LIMIT:
+        raise ValueError('checkpoint JSON/Markdown metadata exceeds 16 MiB')
+    total_evidence = sum(len(data) for name, data in combined.items() if name.startswith('pending/evidence/'))
+    if total_evidence > max_evidence_bytes:
+        raise ValueError('cumulative checkpoint evidence exceeds the configured byte limit')
+    if sum(name.startswith('pending/evidence/') for name in combined) > CHECKPOINT_EVIDENCE_COUNT_LIMIT:
+        raise ValueError('checkpoint inventory exceeds 64 selected evidence files')
+    signature = _digest(_json_bytes({'phase': phase,
+                                     'input_hashes': {name: _digest(data) for name, data in sorted(payloads.items())},
+                                     'gate_errors': diagnostics}))
+    return combined, diagnostics, signature, selected_names
+
+
+def _checkpoint_commit(run, manifest, marker, transaction, payloads):
+    planned = transaction['planned_hashes']
+    for name, expected in planned.items():
+        data = payloads.get(name)
+        if data is None:
+            path = safe_path(run / name)
+            try:
+                data = path.read_bytes()
+            except FileNotFoundError as exc:
+                raise ValueError('retry checkpoint with missing selected input: ' + name) from exc
+        if _digest(data) != expected:
+            raise ValueError('checkpoint retry input differs from its preserved intent: ' + name)
+        path = safe_path(run / name)
+        try:
+            current = path.read_bytes()
+        except FileNotFoundError:
+            current = None
+        if current is not None and _digest(current) == expected:
+            continue
+        allowed_old = transaction['previous_hashes'].get(name)
+        if current is not None and _digest(current) != allowed_old:
+            raise ValueError('foreign or modified pending checkpoint bytes: ' + name)
+        if name.startswith('pending/evidence/'):
+            safe_path(run / 'pending' / 'evidence').mkdir(parents=True, exist_ok=True)
+        else:
+            safe_path(run / 'pending').mkdir(exist_ok=True)
+        atomic_write(path, data)
+    for name, expected in transaction['removed_hashes'].items():
+        path = safe_path(run / name)
+        try:
+            current = path.read_bytes()
+        except FileNotFoundError:
+            continue
+        if _digest(current) != expected:
+            raise ValueError('foreign or modified pending checkpoint bytes: ' + name)
+        path.unlink()
+    manifest['pending_hashes'] = planned
+    manifest['checkpoint'] = transaction['checkpoint']
+    manifest.pop('checkpoint_transaction', None)
+    _save_manifest(run, manifest, marker)
+    return manifest
+
+
+@_locked_run
+def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=None, phase,
+               gate_errors=None, max_evidence_bytes=CHECKPOINT_EVIDENCE_LIMIT):
+    """Preserve explicitly selected provisional inputs/results without retaining a verdict."""
+    run, manifest, marker = _load_run(run_dir)
+    if manifest['schema_version'] != 7:
+        raise ValueError('provisional checkpoints require archive 7')
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest, allow_checkpoint_transaction=True)
+    if manifest['state'] == 'complete' or manifest.get('operation', {}).get('disposition') in {'complete', 'superseded'}:
+        raise ValueError('completed or superseded review cannot accept a checkpoint')
+    payloads, diagnostics, signature, selected_names = _checkpoint_input_files(
+        run, manifest, context_input, evidence_inputs, input_record, phase, gate_errors, max_evidence_bytes)
+    transaction = manifest.get('checkpoint_transaction')
+    if transaction is None:
+        current = manifest.get('checkpoint')
+        if isinstance(current, dict) and current.get('input_signature') == signature:
+            return current
+        prior_hashes = manifest.get('pending_hashes', {})
+        removed_hashes = {}
+        if 'pending/review.json' not in selected_names:
+            removed_hashes = {name: prior_hashes[name]
+                              for name in ('pending/review.json', 'pending/informe.md')
+                              if name in prior_hashes}
+        planned = {name: digest for name, digest in prior_hashes.items() if name not in removed_hashes}
+        planned.update({name: _digest(payloads[name]) for name in selected_names})
+        sequence = int(current['id'][1:]) + 1 if isinstance(current, dict) else 1
+        inventory = []
+        for name, digest in sorted(planned.items()):
+            data = payloads[name] if name in payloads else safe_path(run / name).read_bytes()
+            inventory.append({'name': name, 'size': len(data), 'sha256': digest})
+        checkpoint_record = {'id': 'K' + str(sequence).zfill(3), 'phase': phase,
+                             'recorded_at': datetime.now(timezone.utc).isoformat(),
+                             'input_signature': signature,
+                             'inventory': inventory,
+                             'gate_errors': diagnostics}
+        transaction = {'input_signature': signature, 'previous_hashes': prior_hashes,
+                       'planned_hashes': planned, 'removed_hashes': removed_hashes,
+                       'checkpoint': checkpoint_record}
+        manifest['checkpoint_transaction'] = transaction
+        marker = _save_manifest(run, manifest, marker)
+    elif transaction['input_signature'] != signature:
+        raise ValueError('a different checkpoint is already pending; retry its selected inputs first')
+    planned = transaction['planned_hashes']
+    for name in planned:
+        if name not in payloads:
+            path = safe_path(run / name)
+            try:
+                payloads[name] = path.read_bytes()
+            except FileNotFoundError:
+                pass
+    manifest = _checkpoint_commit(run, manifest, marker, transaction, payloads)
+    return manifest['checkpoint']
 
 
 def _measurements(inputs, unavailable_reason):
@@ -959,18 +1316,31 @@ def _handoff_context(input_file, value, contents, manifest):
 
 
 @_locked_run
-def retain(run_dir, input_file, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
+def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    if manifest['state'] == 'complete':
+        raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
+    _verify_files(run, manifest)
+    if input_file is None:
+        if manifest['schema_version'] != 7 or not isinstance(manifest.get('checkpoint'), dict):
+            raise ValueError('retention requires an explicit final review input or a provisional final checkpoint')
+        candidate = run / 'pending' / 'review.json'
+        if not candidate.is_file():
+            raise ValueError('provisional checkpoint has no structurally valid final review to promote')
+        input_file = candidate
+    if manifest['schema_version'] == 7 and isinstance(manifest.get('checkpoint'), dict):
+        if context_input is None and (run / 'pending' / 'context.json').is_file():
+            context_input = run / 'pending' / 'context.json'
+        if evidence_inputs is None:
+            evidence_inputs = [run / name for name in manifest.get('pending_hashes', {})
+                               if name.startswith('pending/evidence/')]
     value = read_json(input_file)
     if expected_schema is not None:
         if type(expected_schema) is not int or expected_schema not in range(1, 11):
             raise ValueError('expected schema must be a supported integer 1–10')
         if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
             raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
-    run, manifest, marker = _load_run(run_dir)
-    marker = _recover_trace(run, manifest, marker)
-    if manifest['state'] == 'complete':
-        raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
-    _verify_files(run, manifest)
     if manifest['schema_version'] == 7:
         if value.get('schema_version') != 10:
             raise ValueError('archive 7 requires final review schema 10')
@@ -1214,9 +1584,18 @@ def main():
     trace.add_argument('--run-dir', required=True)
     trace.add_argument('--event-file', required=True)
     trace.add_argument('--execution-metadata', help='Optional existing review_runner run.json; no timing or identity inference')
+    pending = commands.add_parser('checkpoint', help='Preserve selected inputs/results provisionally without retaining a verdict')
+    pending.add_argument('--run-dir', required=True)
+    pending.add_argument('--context-input', required=True)
+    pending.add_argument('--evidence-input', action='append')
+    pending.add_argument('--input', help='Optional structurally final review JSON; source gates remain mandatory for promotion')
+    pending.add_argument('--phase', required=True, choices=sorted(review_profiles.PHASES - {'prepare'}))
+    pending.add_argument('--diagnostic-input', help='Optional JSON array or {gate_errors: [...]} of bounded observed gate errors')
+    pending.add_argument('--max-evidence-bytes', type=int, default=CHECKPOINT_EVIDENCE_LIMIT,
+                         help='Selected checkpoint evidence byte limit, from 0 to 67108864')
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
-    keep.add_argument('--input', required=True)
+    keep.add_argument('--input', help='Final review JSON; omit only when promoting the archive-owned final checkpoint')
     keep.add_argument('--expected-schema', type=int, choices=range(1, 11), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
@@ -1243,6 +1622,14 @@ def main():
                                          profile_input=args.profile_input,
                                          controller=read_json(args.controller_input) if args.controller_input else None,
                                          harness_id=args.harness_id, harness_source=source)}
+        elif args.command == 'checkpoint':
+            diagnostic = read_json(args.diagnostic_input) if args.diagnostic_input else None
+            if isinstance(diagnostic, dict) and set(diagnostic) == {'gate_errors'}:
+                diagnostic = diagnostic['gate_errors']
+            result = checkpoint(args.run_dir, context_input=args.context_input,
+                                evidence_inputs=args.evidence_input, input_record=args.input,
+                                phase=args.phase, gate_errors=diagnostic,
+                                max_evidence_bytes=args.max_evidence_bytes)
         elif args.command == 'retain':
             result = retain(args.run_dir, args.input, args.measurement_input,
                             args.unavailable_reason, args.temporary_path, args.evidence_input, args.context_input, args.handoff, args.handoff_context_input,
