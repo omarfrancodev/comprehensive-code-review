@@ -1,5 +1,7 @@
 """Pure validation of observed reviewer assignments; no dispatch, IO or inference."""
 
+from review_profiles import validate_profile_execution
+
 
 def _text(value):
     return isinstance(value, str) and bool(value.strip()) and len(value) <= 4000
@@ -27,13 +29,20 @@ def validate_execution(record):
                 valid.append(row)
         return valid
 
-    if not isinstance(execution, dict) or set(execution) != {'selection_source', 'status', 'plan', 'results', 'fallbacks'}:
+    schema_version = record.get('schema_version')
+    execution_fields = {'selection_source', 'status', 'plan', 'results', 'fallbacks'}
+    if schema_version == 10:
+        execution_fields.add('profile_history')
+    if not isinstance(execution, dict) or set(execution) != execution_fields:
         return [prefix + ': exact execution fields required']
     if execution['selection_source'] not in ('explicit', 'automatic'):
         fail('invalid selection_source')
     if execution['status'] not in ('fulfilled', 'degraded'):
         fail('invalid status')
-    plan = rows('plan', {'id', 'role', 'independent', 'required', 'reference'})
+    plan_fields = {'id', 'role', 'independent', 'required', 'reference'}
+    if schema_version == 10:
+        plan_fields |= {'selection_id', 'superseded_by'}
+    plan = rows('plan', plan_fields)
     results = rows('results', {'assignment_id', 'reviewer_context', 'provider_id', 'reference'})
     fallbacks = rows('fallbacks', {'assignments', 'reason', 'detail', 'source'})
     assignments = {}
@@ -48,17 +57,35 @@ def validate_execution(record):
             fail('invalid assignment role')
         if type(row['independent']) is not bool or type(row['required']) is not bool:
             fail('assignment flags must be booleans')
-        if row['required'] is not True:
+        if row['required'] is not True and not (schema_version == 10 and row['required'] is False
+                                                 and isinstance(row.get('superseded_by'), str)):
             fail('planned assignments must be required; omit unnecessary passes')
         if row['role'] == 'project_gate' and row['independent'] is not True:
             fail('project_gate must be independent with a policy reference')
+        if schema_version == 10 and row.get('superseded_by') is not None and row.get('role') == 'project_gate':
+            fail('project_gate cannot be superseded')
     if errors:
         return errors
-    discovery = [row for row in plan if row['role'] == 'discovery']
-    verification = [row for row in plan if row['role'] == 'verification']
+    active_plan = [row for row in plan if row.get('superseded_by') is None]
+    discovery = [row for row in active_plan if row['role'] == 'discovery']
+    verification = [row for row in active_plan if row['role'] == 'verification']
     profile = record.get('profile')
+    profile_source = execution['selection_source']
+    if schema_version == 10 and isinstance(execution.get('profile_history'), list):
+        history_by_id = {row.get('id'): row for row in execution['profile_history'] if isinstance(row, dict)}
+        active_rows = [row for row in plan if row.get('superseded_by') is None]
+        rank = {'focused': 0, 'standard': 1, 'deep': 2, 'extended': 3}
+        active_profiles = [history_by_id[row.get('selection_id')]['profile'] for row in active_rows
+                           if row.get('selection_id') in history_by_id]
+        active_profiles.append(record.get('profile'))
+        if active_profiles:
+            profile = max(active_profiles, key=lambda item: rank.get(item, -1))
+            selected = next((row for row in reversed(execution['profile_history'])
+                             if isinstance(row, dict) and row.get('profile') == profile), None)
+            if selected is not None:
+                profile_source = selected.get('selection_source', profile_source)
     limits = {'focused': (1, 1), 'standard': (1, 1), 'deep': (2, 3),
-              'extended': (4, 5) if execution['selection_source'] == 'automatic' else (2, 5)}
+              'extended': (4, 5) if profile_source == 'automatic' else (2, 5)}
     minimum, maximum = limits.get(profile, (0, 0)) if isinstance(profile, str) else (0, 0)
     if not minimum <= len(discovery) <= maximum:
         fail('discovery cardinality does not match profile/selection')
@@ -105,7 +132,11 @@ def validate_execution(record):
         if not _text(row['detail']) or not _text(row['source']):
             fail('fallback needs observed source and internal detail')
         impeded.update(ids)
-    missing = set(assignments) - set(observed)
+    active_ids = {row['id'] for row in active_plan}
+    missing = active_ids - set(observed)
+    if any(identifier in assignments and assignments[identifier].get('superseded_by') is not None
+           for identifier in observed):
+        fail('superseded assignment cannot have a completed result')
     for identifier, row in observed.items():
         assignment = assignments.get(identifier)
         if assignment is None or assignment['independent'] is not True:
@@ -130,7 +161,7 @@ def validate_execution(record):
         effective = 'skipped'
     if coverage.get('verification') != effective:
         fail('coverage.verification contradicts completed verification/independence')
-    unmet_gates = [row for row in plan if row['role'] == 'project_gate' and row.get('id') in missing]
+    unmet_gates = [row for row in active_plan if row['role'] == 'project_gate' and row.get('id') in missing]
     if unmet_gates and not material:
         fail('unmet required project_gate needs a material coverage gap')
     return errors
@@ -142,12 +173,18 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     if errors:
         return errors
     execution = record['coverage']['execution']
+    schema10 = record.get('schema_version') == 10
     prefix = 'coverage.execution.sources: '
     if not isinstance(context, dict) or context.get('profile') != record['profile']:
         return [prefix + 'context profile differs from final profile']
     if context.get('selection_source') != execution['selection_source']:
         return [prefix + 'selection_source differs from observed context']
-    history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
+    if schema10:
+        errors.extend(validate_profile_execution(record, trace_events))
+        if context.get('profile_history') != execution.get('profile_history'):
+            errors.append(prefix + 'profile history differs from the captured context')
+    history = (execution.get('profile_history') if schema10 else
+               context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))]))
     if not isinstance(history, list) or not history:
         return [prefix + 'observed profile source required']
     previous_sequence = -1
@@ -159,17 +196,19 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     starts = [event for event in work if event.get('status') == 'started'
               and ordinary_refs.intersection(event.get('evidence', []))]
     for index, row in enumerate(history):
-        if (not isinstance(row, dict) or set(row) != {'profile', 'reference'} or not _text(row.get('reference'))
+        if (not isinstance(row, dict) or (not schema10 and set(row) != {'profile', 'reference'})
+                or not _text(row.get('reference'))
                 or row.get('profile') not in ('focused', 'standard', 'deep', 'extended')):
             errors.append(prefix + 'invalid profile transition source')
             continue
-        if execution['selection_source'] == 'explicit' and row['profile'] != record['profile']:
+        if not schema10 and execution['selection_source'] == 'explicit' and row['profile'] != record['profile']:
             errors.append(prefix + 'explicit profile must remain fixed')
-        if previous_profile is not None and rank[row['profile']] < rank[previous_profile]:
+        if not schema10 and previous_profile is not None and rank[row['profile']] < rank[previous_profile]:
             errors.append(prefix + 'automatic profile history must not downgrade')
         previous_profile = row['profile']
         matches = [event for event in trace_events if event.get('kind') == 'profile'
-                   and row['reference'] in event.get('evidence', []) and event.get('status') in ('selected', 'completed')]
+                   and row['reference'] in event.get('evidence', []) and event.get('status') in ('selected', 'completed')
+                   and (not schema10 or event.get('event_id') == row.get('event_id'))]
         if row['reference'] not in retained_references or not matches:
             errors.append(prefix + 'profile transition needs retained source and observed milestone')
         elif matches[-1].get('sequence', 0) <= previous_sequence:
@@ -178,7 +217,13 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             previous_sequence = matches[-1].get('sequence', 0)
             if index == 0 and any(event.get('sequence', 0) <= previous_sequence for event in work):
                 errors.append(prefix + 'initial profile selection must precede observed review work')
-            if index > 0 and not any(event.get('sequence', 0) > previous_sequence for event in (starts or work)):
+            if schema10 and index > 0:
+                assigned_refs = {item['reference'] for item in execution['plan']
+                                 if item.get('selection_id') == row.get('id')}
+                if any(event.get('sequence', 0) <= previous_sequence and assigned_refs.intersection(event.get('evidence', []))
+                       for event in starts):
+                    errors.append(prefix + 'profile transition must precede work under its selection')
+            if not schema10 and index > 0 and not any(event.get('sequence', 0) > previous_sequence for event in (starts or work)):
                 errors.append(prefix + 'profile escalation must precede subsequent ordinary review work')
     if not isinstance(history[-1], dict) or history[-1].get('profile') != record['profile']:
         errors.append(prefix + 'last observed profile must match final profile')
