@@ -2,6 +2,12 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 2.12.0 — unreleased
+
+- Registrar el ciclo de vida del perfil desde su selección inicial, transiciones posteriores y asignaciones afectadas; validar la selección inicial y las obligaciones del perfil efectivo antes de retener.
+- Añadir lookup acotado, lectura de vigencia y decisiones explícitas para mostrar, continuar, recuperar o iniciar una revisión vinculada, sin selección automática ni exploración global del archivo.
+- Publicar el contrato de archive schema 7 y final schema 10, preservar lecturas históricas, y alinear las proyecciones full/brief y publicación con el nuevo resultado.
+
 ## 2.11.0 — 2026-10-12
 
 - Proyectar entregas full/brief por tipo de campo, preservando IDs, perfiles, estados y relaciones frente a colisiones con comandos; rechazar identidades privadas, incluidas rutas UNC normalizadas con `/`, antes de escribir el destino.

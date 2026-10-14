@@ -14,6 +14,8 @@
 
 Confirm repository identity rather than assuming MR/PR numbers are globally unique. Multiple projects get separate scope records and verdicts. Record base/head, target branch, source, relevant requirements and the comparison method. If a user supplied a particular range, preserve it.
 
+Before preparing another run for the same MR/PR or stable local scope, use the bounded lookup in [recovery.md](../archive/recovery.md). Inspect and compare the exact candidate; a match by scope alone does not establish freshness, and date/order never selects the current report.
+
 Capture MR/PR assignees/creator separately from actual commit authors at that exact version. For Git ranges use the selected change set, not the entire branch history or only HEAD. Platform account/commit mapping supports mentions; Git authors/co-author trailers support recorded display names with source commit IDs. Uncommitted local authors need explicit snapshot attribution or remain unknown. Collect this neutral metadata once, alongside the description; no author-specific reviewer or second discovery sweep.
 
 ## Remote requests

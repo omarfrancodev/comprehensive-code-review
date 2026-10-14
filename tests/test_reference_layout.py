@@ -9,7 +9,7 @@ GROUPS = {
     'workflow': ('scopes', 'profiles', 'capabilities', 'reading-strategy', 're-review', 'review-areas'),
     'execution': ('reviewers', 'worker-packets', 'workspaces', 'external-cli'),
     'contracts': ('result-contract', 'identifiers'),
-    'archive': ('artifacts', 'lifecycle-trace'),
+    'archive': ('artifacts', 'lifecycle-trace', 'recovery'),
     'reporting': ('report-format', 'publication', 'delivery', 'handoff'),
     'maintenance': ('evaluation', 'measurements'),
 }
