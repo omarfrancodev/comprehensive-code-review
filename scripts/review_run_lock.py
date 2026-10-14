@@ -27,7 +27,31 @@ def _lock_identity(run_dir):
             continue
         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
             raise ValueError('run lock refuses linked path components')
-    identity = os.path.normcase(str(run))
+    # realpath asks the OS for the final path of an existing directory. On
+    # Windows this also expands 8.3 aliases, so long and short spellings share
+    # one process lock and one lock file.
+    canonical = os.path.realpath(str(run))
+    if os.name == 'nt':
+        # Python's realpath resolves junctions but does not expand every 8.3
+        # spelling. Ask Windows for the long name of the existing directory.
+        try:
+            import ctypes
+            get_long_path = ctypes.windll.kernel32.GetLongPathNameW
+            get_long_path.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint)
+            get_long_path.restype = ctypes.c_uint
+            buffer = ctypes.create_unicode_buffer(32768)
+            length = get_long_path(canonical, buffer, len(buffer))
+            if 0 < length < len(buffer):
+                canonical = buffer.value
+        except (AttributeError, OSError):
+            pass
+        if canonical.startswith('\\\\?\\UNC\\'):
+            canonical = '\\\\' + canonical[8:]
+        elif canonical.startswith('\\\\?\\'):
+            canonical = canonical[4:]
+    canonical = os.path.normcase(os.path.normpath(canonical))
+    run = Path(canonical)
+    identity = canonical
     lock_root = run.parent / '.review-locks'
     if lock_root.exists() and (lock_root.is_symlink() or not lock_root.is_dir()
                                or getattr(lock_root.lstat(), 'st_file_attributes', 0) & 0x400):

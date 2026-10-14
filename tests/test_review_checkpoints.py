@@ -191,16 +191,16 @@ class CheckpointTests(unittest.TestCase):
                     final_file = self.write('final.json', final)
                     interrupted = False
 
-                    def fail_once(path, data):
+                    def fail_once(path, data, **kwargs):
                         nonlocal interrupted
                         selected = Path(path)
                         if (not interrupted and selected.name == name
                                 and 'pending' in selected.parts):
                             interrupted = True
                             if timing == 'after':
-                                original(path, data)
+                                original(path, data, **kwargs)
                             raise OSError('injected checkpoint boundary')
-                        original(path, data)
+                        original(path, data, **kwargs)
 
                     with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
                         artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
@@ -223,15 +223,15 @@ class CheckpointTests(unittest.TestCase):
                 packets = self.packet_files()
                 calls = 0
 
-                def fail_once(path, data):
+                def fail_once(path, data, **kwargs):
                     nonlocal calls
                     if Path(path).name == filename:
                         calls += 1
                         if calls == target_write:
                             if timing == 'after':
-                                original(path, data)
+                                original(path, data, **kwargs)
                             raise OSError('injected checkpoint ownership boundary')
-                    original(path, data)
+                    original(path, data, **kwargs)
 
                 with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
                     artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')

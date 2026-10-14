@@ -8,12 +8,13 @@ deletes registered resources and must not be used to infer disposal authority.
 """
 import argparse
 import copy
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
@@ -88,13 +89,48 @@ def _locked_run(function=None, *, when=None):
         def wrapped(run_dir, *args, **kwargs):
             if when is not None and not when(args, kwargs):
                 return target(run_dir, *args, **kwargs)
-            with run_locks([run_dir]):
+            with _owned_run_locks([run_dir]):
                 return target(run_dir, *args, **kwargs)
         return wrapped
     return decorate(function) if function is not None else decorate
 
 
-def read_json(path):
+@contextmanager
+def _owned_run_locks(run_dirs, *, reservation=None):
+    """Verify each run before creating lock files, then revalidate under lock."""
+    paths = list(run_dirs)
+    if not paths:
+        raise ValueError('at least one owned review run is required')
+    if reservation is not None:
+        raise ValueError('restart reservations are not available for ordinary run mutations')
+    for path in paths:
+        _load_run(path)
+    with run_locks(paths):
+        loaded = [_load_run(path) for path in paths]
+        yield loaded
+
+
+def read_bounded(path, limit):
+    """Read a regular file within a byte budget, including growth after stat."""
+    if type(limit) is not int or limit < 0:
+        raise ValueError('read limit must be a nonnegative integer')
+    path = safe_path(path)
+    try:
+        with path.open('rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                raise ValueError('bounded input must be a regular file: ' + str(path))
+            if info.st_size > limit:
+                raise ValueError('input exceeds the ' + str(limit) + '-byte limit: ' + str(path))
+            data = stream.read(limit + 1)
+    except FileNotFoundError:
+        raise
+    if len(data) > limit:
+        raise ValueError('input exceeds the ' + str(limit) + '-byte limit: ' + str(path))
+    return data
+
+
+def read_json(path, *, max_bytes=None):
     def unique(pairs):
         result = {}
         for key, value in pairs:
@@ -104,20 +140,43 @@ def read_json(path):
         return result
     def invalid_constant(value):
         raise ValueError('nonfinite JSON number: ' + value)
-    return json.loads(safe_path(path).read_text(encoding='utf-8'),
-                      object_pairs_hook=unique, parse_constant=invalid_constant)
+    if max_bytes is None:
+        data = safe_path(path).read_bytes()
+    else:
+        data = read_bounded(path, max_bytes)
+    return json.loads(data.decode('utf-8'), object_pairs_hook=unique,
+                      parse_constant=invalid_constant)
 
 
-def atomic_write(path, data):
+def atomic_write(path, data, *, staging_path=None):
     """Replace one validated path atomically, using an exclusive local staging file."""
     path = safe_path(path)
-    staging = path.parent / ('.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
-    with staging.open('xb') as stream:
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
-    safe_path(path)
-    os.replace(staging, path)
+    staging = safe_path(staging_path) if staging_path is not None else path.parent / (
+        '.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
+    if staging.parent != path.parent or staging == path:
+        raise ValueError('atomic staging file must be a sibling of its destination')
+    created = False
+    failure = None
+    try:
+        with staging.open('xb') as stream:
+            created = True
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        safe_path(path)
+        os.replace(staging, path)
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        if created:
+            try:
+                staging.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                detail = 'atomic write staging remains at ' + str(staging) + ': ' + str(cleanup_error)
+                if failure is None:
+                    raise OSError(detail) from cleanup_error
+                failure.args = (str(failure) + '; ' + detail,)
 
 
 def _git(repo, *args, optional=False):
@@ -381,13 +440,16 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
                                            or not CHECKPOINT_HASH.fullmatch(value)
                                            for name, value in hashes.items()):
         raise ValueError('invalid provisional checkpoint hash inventory')
+    if len({name.casefold() for name in hashes}) != len(hashes):
+        raise ValueError('provisional checkpoint contains case-insensitive destination collisions')
     checkpoint = manifest.get('checkpoint')
     transaction = manifest.get('checkpoint_transaction')
     accepted = {name: {digest} for name, digest in hashes.items()}
     may_be_missing = set()
+    staging_paths = {}
     if transaction is not None:
-        fields = {'input_signature', 'previous_hashes', 'planned_hashes', 'removed_hashes', 'checkpoint'}
-        if not isinstance(transaction, dict) or set(transaction) != fields:
+        base_fields = {'input_signature', 'previous_hashes', 'planned_hashes', 'removed_hashes', 'checkpoint'}
+        if not isinstance(transaction, dict) or set(transaction) not in (base_fields, base_fields | {'staging'}):
             raise ValueError('invalid checkpoint transaction intent')
         previous, planned, removed = (transaction['previous_hashes'], transaction['planned_hashes'],
                                        transaction['removed_hashes'])
@@ -395,6 +457,8 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
                 not _pending_file_name(name) or not isinstance(value, str)
                 or not CHECKPOINT_HASH.fullmatch(value) for name, value in planned.items()):
             raise ValueError('checkpoint transaction differs from its owned prior inventory')
+        if len({name.casefold() for name in planned}) != len(planned):
+            raise ValueError('checkpoint transaction contains case-insensitive destination collisions')
         if (not isinstance(removed, dict) or any(
                 name not in {'pending/review.json', 'pending/informe.md'}
                 or previous.get(name) != digest or name in planned
@@ -403,6 +467,26 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
             raise ValueError('checkpoint transaction has an invalid owned removal intent')
         if not isinstance(transaction['input_signature'], str) or not CHECKPOINT_HASH.fullmatch(transaction['input_signature']):
             raise ValueError('invalid checkpoint input signature')
+        if 'staging' in transaction:
+            staging = transaction['staging']
+            if not isinstance(staging, dict) or set(staging) - set(planned):
+                raise ValueError('invalid checkpoint staging inventory')
+            occupied = {name.casefold() for name in set(previous) | set(planned)}
+            for destination, row in staging.items():
+                if (not isinstance(row, dict) or set(row) != {'name', 'sha256'}
+                        or not isinstance(row['name'], str) or not isinstance(row['sha256'], str)
+                        or row['sha256'] != planned[destination]
+                        or not CHECKPOINT_HASH.fullmatch(row['sha256'])):
+                    raise ValueError('invalid checkpoint staging row')
+                stage = PurePosixPath(row['name'])
+                target = PurePosixPath(destination)
+                if (str(stage) != row['name'] or stage.is_absolute() or '\\' in row['name']
+                        or any(part in {'', '.', '..'} for part in stage.parts)
+                        or stage.parent != target.parent or row['name'].casefold() in occupied):
+                    raise ValueError('checkpoint staging path is not an owned sibling')
+                if row['name'].casefold() in {item.casefold() for item in staging_paths.values()}:
+                    raise ValueError('duplicate checkpoint staging path')
+                staging_paths[destination] = row['name']
         accepted = {name: {digest} for name, digest in previous.items()}
         for name, digest in planned.items():
             accepted.setdefault(name, set()).add(digest)
@@ -440,7 +524,7 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
             if (not isinstance(row, dict) or set(row) != {'name', 'size', 'sha256'}
                     or not _pending_file_name(row['name']) or type(row['size']) is not int or row['size'] < 0
                     or not isinstance(row['sha256'], str) or not CHECKPOINT_HASH.fullmatch(row['sha256'])
-                    or row['name'] in inventory):
+                    or row['name'] in inventory or row['name'].casefold() in {key.casefold() for key in inventory}):
                 raise ValueError('invalid checkpoint inventory row')
             inventory[row['name']] = row['sha256']
         inventory_hashes = transaction['planned_hashes'] if transaction is not None else hashes
@@ -470,24 +554,46 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
             if path.is_dir():
                 continue
             name = path.relative_to(run).as_posix()
+            staging_owner = next((destination for destination, staged_name in staging_paths.items()
+                                  if staged_name == name), None)
+            if staging_owner is not None:
+                info = path.lstat()
+                if not stat.S_ISREG(info.st_mode) or info.st_size > (
+                        CHECKPOINT_EVIDENCE_LIMIT if staging_owner.startswith('pending/evidence/')
+                        else CHECKPOINT_METADATA_LIMIT):
+                    raise ValueError('checkpoint staging is not a bounded regular file: ' + name)
+                observed.add(name)
+                continue
             if not _pending_file_name(name):
                 raise ValueError('foreign file in pending checkpoint: ' + name)
             observed.add(name)
-        if observed - set(accepted):
+        if observed - set(accepted) - set(staging_paths.values()):
             raise ValueError('foreign pending checkpoint files are present')
     elif accepted and any(name not in may_be_missing for name in accepted):
         raise ValueError('pending checkpoint inventory is missing its directory')
 
+    evidence_size_read = 0
+    metadata_size_read = 0
     for name, allowed_digests in accepted.items():
         path = safe_path(run / name)
         try:
-            data = path.read_bytes()
+            if name.startswith('pending/evidence/'):
+                limit = CHECKPOINT_EVIDENCE_LIMIT - evidence_size_read
+            elif name == 'pending/context.json':
+                limit = PENDING_CONTEXT_LIMIT
+            else:
+                limit = CHECKPOINT_METADATA_LIMIT - metadata_size_read
+            data = read_bounded(path, limit)
         except FileNotFoundError:
             if name in may_be_missing:
                 continue
             raise ValueError('pending checkpoint file is missing: ' + name)
         if _digest(data) not in allowed_digests:
             raise ValueError('modified pending checkpoint file: ' + name)
+        if name.startswith('pending/evidence/'):
+            evidence_size_read += len(data)
+        else:
+            metadata_size_read += len(data)
         if transaction is None:
             expected_size = next(row['size'] for row in checkpoint['inventory'] if row['name'] == name)
             if len(data) != expected_size:
@@ -604,8 +710,8 @@ def _starts_processing(event):
             and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
 
 
-def _input_object(value, label):
-    result = read_json(value) if isinstance(value, (str, os.PathLike)) else copy.deepcopy(value)
+def _input_object(value, label, *, max_bytes=None):
+    result = read_json(value, max_bytes=max_bytes) if isinstance(value, (str, os.PathLike)) else copy.deepcopy(value)
     if not isinstance(result, dict):
         raise ValueError(label + ' must be a JSON object')
     return result
@@ -732,13 +838,15 @@ def _check_evidence_target(run, manifest, name):
 
 def _evidence_contents(run, manifest, inputs, *, create_directory=True):
     contents = {}
+    seen = {'evidence/context.json'.casefold()}
     for raw in inputs or []:
         source = safe_path(raw)
         if not stat.S_ISREG(source.stat().st_mode):
             raise ValueError('selected evidence must be a regular file')
         name = 'evidence/' + _evidence_name(source.name)
-        if name in contents:
+        if name.casefold() in seen:
             raise ValueError('duplicate selected evidence name: ' + name)
+        seen.add(name.casefold())
         _check_evidence_target(run, manifest, name)
         contents[name] = source.read_bytes()
     # A retry must finish every previously selected artifact. Existing matching
@@ -782,7 +890,12 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
     context_path = safe_path(context_input)
     if not stat.S_ISREG(context_path.stat().st_mode):
         raise ValueError('checkpoint context must be a regular JSON file')
-    context = read_json(context_path)
+    try:
+        context = read_json(context_path, max_bytes=PENDING_CONTEXT_LIMIT)
+    except ValueError as exc:
+        if 'input exceeds' in str(exc):
+            raise ValueError('execution context exceeds the 131072-byte checkpoint limit') from exc
+        raise
     if not isinstance(context, dict):
         raise ValueError('checkpoint context must be a JSON object')
     context_bytes = _json_bytes(context)
@@ -792,19 +905,19 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
     source_contents = {'evidence/context.json': context_bytes}
     evidence_total = 0
     evidence_count = 0
-    seen = set()
+    seen = {'context.json'.casefold()}
     for raw in evidence_inputs or []:
         source = safe_path(raw)
         if not stat.S_ISREG(source.stat().st_mode):
             raise ValueError('selected checkpoint evidence must be a regular file')
         name = _evidence_name(source.name)
-        if name in seen:
+        if name.casefold() in seen:
             raise ValueError('duplicate selected checkpoint evidence name: ' + name)
-        seen.add(name)
+        seen.add(name.casefold())
         evidence_count += 1
         if evidence_count > CHECKPOINT_EVIDENCE_COUNT_LIMIT:
             raise ValueError('checkpoint accepts at most 64 selected evidence files')
-        data = source.read_bytes()
+        data = read_bounded(source, max_evidence_bytes - evidence_total)
         evidence_total += len(data)
         if evidence_total > max_evidence_bytes:
             raise ValueError('selected checkpoint evidence exceeds the configured byte limit')
@@ -813,16 +926,18 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
 
     for name, digest in manifest.get('pending_hashes', {}).items():
         if name.startswith('pending/evidence/') and name not in payloads:
-            prior = safe_path(run / name).read_bytes()
+            remaining = max_evidence_bytes - evidence_total
+            prior = read_bounded(run / name, remaining)
             if _digest(prior) != digest:
                 raise ValueError('modified prior checkpoint evidence: ' + name)
             source_contents['evidence/' + name.split('/', 2)[2]] = prior
+            evidence_total += len(prior)
 
     diagnostics = _checkpoint_diagnostics(gate_errors)
     final = None
     if input_record is not None:
         try:
-            final = _input_object(input_record, 'checkpoint final review')
+            final = _input_object(input_record, 'checkpoint final review', max_bytes=CHECKPOINT_METADATA_LIMIT)
         except (OSError, ValueError, TypeError, KeyError) as exc:
             diagnostics.append('final review input could not be parsed: ' + str(exc)[:500])
         else:
@@ -853,7 +968,18 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
     pending_removals = manifest.get('checkpoint_transaction', {}).get('removed_hashes', {})
     for name, digest in manifest.get('pending_hashes', {}).items():
         if name not in payloads and name not in pending_removals:
-            previous[name] = safe_path(run / name).read_bytes()
+            if name.startswith('pending/evidence/'):
+                remaining = max_evidence_bytes - sum(
+                    len(data) for selected, data in previous.items()
+                    if selected.startswith('pending/evidence/'))
+                previous[name] = read_bounded(run / name, remaining)
+            elif name == 'pending/context.json':
+                previous[name] = read_bounded(run / name, PENDING_CONTEXT_LIMIT)
+            else:
+                remaining = CHECKPOINT_METADATA_LIMIT - sum(
+                    len(data) for selected, data in previous.items()
+                    if not selected.startswith('pending/evidence/'))
+                previous[name] = read_bounded(run / name, remaining)
             if _digest(previous[name]) != digest:
                 raise ValueError('modified prior checkpoint bytes: ' + name)
     combined = dict(previous, **payloads)
@@ -874,22 +1000,32 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
 
 def _checkpoint_commit(run, manifest, marker, transaction, payloads):
     planned = transaction['planned_hashes']
+    staging = transaction.get('staging', {})
     for name, expected in planned.items():
         data = payloads.get(name)
+        read_limit = (CHECKPOINT_EVIDENCE_LIMIT if name.startswith('pending/evidence/')
+                      else CHECKPOINT_METADATA_LIMIT)
         if data is None:
             path = safe_path(run / name)
             try:
-                data = path.read_bytes()
+                data = read_bounded(path, read_limit)
             except FileNotFoundError as exc:
                 raise ValueError('retry checkpoint with missing selected input: ' + name) from exc
         if _digest(data) != expected:
             raise ValueError('checkpoint retry input differs from its preserved intent: ' + name)
         path = safe_path(run / name)
         try:
-            current = path.read_bytes()
+            current = read_bounded(path, read_limit)
         except FileNotFoundError:
             current = None
         if current is not None and _digest(current) == expected:
+            staged = staging.get(name)
+            if staged is not None:
+                stage_path = safe_path(run / staged['name'])
+                try:
+                    stage_path.unlink()
+                except FileNotFoundError:
+                    pass
             continue
         allowed_old = transaction['previous_hashes'].get(name)
         if current is not None and _digest(current) != allowed_old:
@@ -898,7 +1034,21 @@ def _checkpoint_commit(run, manifest, marker, transaction, payloads):
             safe_path(run / 'pending' / 'evidence').mkdir(parents=True, exist_ok=True)
         else:
             safe_path(run / 'pending').mkdir(exist_ok=True)
-        atomic_write(path, data)
+        staged = staging.get(name)
+        if staged is not None:
+            stage_path = safe_path(run / staged['name'])
+            try:
+                staged_data = read_bounded(stage_path, read_limit)
+            except FileNotFoundError:
+                staged_data = None
+            if staged_data is not None:
+                if _digest(staged_data) == expected:
+                    os.replace(stage_path, path)
+                    continue
+                stage_path.unlink()
+            atomic_write(path, data, staging_path=stage_path)
+        else:
+            atomic_write(path, data)
     for name, expected in transaction['removed_hashes'].items():
         path = safe_path(run / name)
         try:
@@ -944,7 +1094,14 @@ def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=Non
         sequence = int(current['id'][1:]) + 1 if isinstance(current, dict) else 1
         inventory = []
         for name, digest in sorted(planned.items()):
-            data = payloads[name] if name in payloads else safe_path(run / name).read_bytes()
+            if name in payloads:
+                data = payloads[name]
+            elif name.startswith('pending/evidence/'):
+                data = read_bounded(run / name, CHECKPOINT_EVIDENCE_LIMIT)
+            elif name == 'pending/context.json':
+                data = read_bounded(run / name, PENDING_CONTEXT_LIMIT)
+            else:
+                data = read_bounded(run / name, CHECKPOINT_METADATA_LIMIT)
             inventory.append({'name': name, 'size': len(data), 'sha256': digest})
         checkpoint_record = {'id': 'K' + str(sequence).zfill(3), 'phase': phase,
                              'recorded_at': datetime.now(timezone.utc).isoformat(),
@@ -954,6 +1111,11 @@ def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=Non
         transaction = {'input_signature': signature, 'previous_hashes': prior_hashes,
                        'planned_hashes': planned, 'removed_hashes': removed_hashes,
                        'checkpoint': checkpoint_record}
+        transaction['staging'] = {}
+        for name in selected_names:
+            target = PurePosixPath(name)
+            staging_name = str(target.parent / ('.' + target.name + '.' + uuid.uuid4().hex + '.tmp'))
+            transaction['staging'][name] = {'name': staging_name, 'sha256': planned[name]}
         manifest['checkpoint_transaction'] = transaction
         marker = _save_manifest(run, manifest, marker)
     elif transaction['input_signature'] != signature:
@@ -1917,7 +2079,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         if evidence_inputs is None:
             evidence_inputs = [run / name for name in manifest.get('pending_hashes', {})
                                if name.startswith('pending/evidence/')]
-    value = read_json(input_file)
+    value = read_json(input_file, max_bytes=CHECKPOINT_METADATA_LIMIT)
     if expected_schema is not None:
         if type(expected_schema) is not int or expected_schema not in range(1, 11):
             raise ValueError('expected schema must be a supported integer 1–10')
@@ -1958,7 +2120,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if value.get('schema_version') in (8, 9, 10):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
-            context_bytes = _json_bytes(read_json(context_input))
+            context_bytes = _json_bytes(read_json(context_input, max_bytes=PENDING_CONTEXT_LIMIT))
             if len(context_bytes) > 131072:
                 raise ValueError('execution context exceeds bounded retained context size')
             if ('evidence/context.json' in contents
