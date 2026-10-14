@@ -233,6 +233,10 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
         rows = [row for row in actual.get('resource_claims', []) if row.get('claim_id') == current.get('claim_id')]
         if len(rows) > 1:
             raise ValueError('duplicate resource claim rows in review archive')
+        if rows and rows[0].get('status') == 'releasing':
+            raise ValueError('resource cleanup is pending; recover or retry cleanup before registration')
+        if rows and rows[0].get('status') == 'released':
+            raise ValueError('resource claim was released; it cannot be registered again')
         transfer_id = rows[0].get('transfer_id') if rows else None
         if transfer_id is not None and (not isinstance(transfer_id, str)
                                         or not re.fullmatch(r'RT-[0-9a-f]{32}', transfer_id)):
@@ -304,11 +308,14 @@ def verify_claim(session_dir, run_dir):
         raise ValueError('resource claim is owned by another review run')
     sidecar_hash = _digest(_encoded(sidecar))
     rows = [row for row in manifest.get('resource_claims', []) if row.get('claim_id') == sidecar['claim_id']]
+    if len(rows) == 1 and rows[0].get('status') not in {'owned', 'releasing'}:
+        raise ValueError('resource claim is no longer active in this review archive')
     transfer_id = rows[0].get('transfer_id') if len(rows) == 1 else None
     if transfer_id is not None and (not isinstance(transfer_id, str)
                                     or not re.fullmatch(r'RT-[0-9a-f]{32}', transfer_id)):
         raise ValueError('archive resource claim has an invalid transfer identity')
-    expected_row = _claim_row(sidecar, claim_sha256=sidecar_hash,
+    expected_row = _claim_row(sidecar, status=rows[0]['status'] if len(rows) == 1 else 'owned',
+                              claim_sha256=sidecar_hash,
                               transfer_id=transfer_id,
                               adopted=sidecar['adopted'], authority=sidecar['authority'],
                               transferred_from=sidecar['transferred_from'])
@@ -327,6 +334,9 @@ def validate_release_observation(manifest, present_paths, released_claims):
     for receipt in released_claims:
         if (not isinstance(receipt, dict) or set(receipt) != {'session_id', 'run_id', 'claim_id', 'claim_sha256'}
                 or not all(isinstance(receipt.get(key), str) and receipt[key] for key in receipt)
+                or not re.fullmatch(r'[0-9a-f]{32}', receipt['session_id'])
+                or not re.fullmatch(r'[0-9a-f]{20}', receipt['run_id'])
+                or not re.fullmatch(r'RC-[0-9a-f]{32}', receipt['claim_id'])
                 or not HASH.fullmatch(receipt['claim_sha256']) or receipt['claim_id'] in by_id):
             raise ValueError('invalid or duplicate resource release receipt')
         by_id[receipt['claim_id']] = receipt
@@ -334,21 +344,35 @@ def validate_release_observation(manifest, present_paths, released_claims):
     expected_ids = set()
     run_id = manifest.get('run_id')
     for row in rows:
-        if row.get('status') not in {'owned', 'releasing'}:
+        status = row.get('status')
+        if status not in {'owned', 'releasing', 'released'}:
             continue
         expected_ids.add(row['claim_id'])
         path = str(_safe_path(row['session_dir']))
+        receipt = by_id.get(row['claim_id'])
         if path in present:
-            if row['claim_id'] in by_id:
+            if status == 'released':
+                raise ValueError('released resource path exists again; preserve and inspect it')
+            if receipt is not None:
                 raise ValueError('resource release receipt conflicts with a still-present claimed session')
             continue
-        receipt = by_id.get(row['claim_id'])
+        if (status == 'released' and receipt is None
+                and 'cleanup_receipts' not in manifest and 'resource_cleanup' not in manifest
+                and row.get('released_by') == 'review_workspace.cleanup'
+                and row.get('release_claim_sha256') == row.get('claim_sha256')):
+            # Archive-7 files written before durable cleanup receipts already
+            # recorded the release in their hash-bound claim row.
+            continue
         if (receipt is None or receipt['session_id'] != row['session_id'] or receipt['run_id'] != run_id
                 or receipt['claim_sha256'] != row['claim_sha256']):
             raise ValueError('missing claimed resource does not prove its own cleanup; release evidence is required')
-        row['status'] = 'released'
-        row['released_by'] = 'review_workspace.cleanup'
-        row['release_claim_sha256'] = receipt['claim_sha256']
+        if status == 'released':
+            if row.get('release_claim_sha256') != receipt['claim_sha256']:
+                raise ValueError('resource release receipt does not match the durable released claim')
+        else:
+            row['status'] = 'released'
+            row['released_by'] = 'review_workspace.cleanup'
+            row['release_claim_sha256'] = receipt['claim_sha256']
     if set(by_id) - expected_ids:
         raise ValueError('release receipt identifies a claim absent from this review archive')
     return rows

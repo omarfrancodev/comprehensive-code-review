@@ -168,7 +168,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - [x] **Step 2: Observar RED.** Las regresiones reprodujeron la importación aún ausente del módulo común, la omisión de identidad de descripción marcada como vigente, inputs incompletos rechazados por forma distinta, confusión de outputs internos con fuentes, retención no-object como `AttributeError` y metadata de runs antiguos sin `run_id`.
 - [x] **Step 3: Implementar.** Unificar normalización/comparación y la captura de fuentes externas antes de trabajo; legacy sin captura queda unknown. Validar cada shape antes de pre-gates y convertir excepciones específicas en las fronteras. Mantener JSON de error compatible, sin catch genérico que oculte interrupciones.
 - [x] **Step 4: Observar GREEN.** `test_review_inputs.py` 7/7; recovery 34/34; checkpoints 11/11 más regresión de hash de fuente 1/1; artifacts 54 con 52 aprobadas y 2 omitidas por permisos Windows; resource claims 8/8; contract 34/34. `py_compile` y `git diff --check` se repetirán antes del commit.
-- [ ] **Step 5: Commit.** `fix(review): unificar vigencia de inputs y diagnósticos de archivos históricos`.
+- [x] **Step 5: Commit.** `fix(review): unificar vigencia de inputs y diagnósticos de archivos históricos` (commit 9bc2819).
 
 ### Task 4: Claims y transferencias repetibles
 
@@ -195,13 +195,13 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - [x] **Step 2: Observar RED.** Las regresiones iniciales reprodujeron la pérdida del ID entrante, la transferencia parcial aceptada, el replay con autoridad distinta aceptado, la falta de límite, el lineage ajeno aceptado y el error al registrar workspaces en archives 1–6. Una primera versión de la prueba encadenada también mostró que las rutas deben compararse con normalización de Windows.
 - [x] **Step 3: Implementar.** Centralizar preflight de todas las rutas, separar historial entrante/saliente, validar replay completo y lineage. Rechazar parcial y estados retaining/closing antes de intención; transferir bajo ambos locks con hashes y recuperación existente. El registro conserva el `transfer_id` de entrada y no edita sidecars ajenos.
 - [x] **Step 4: Observar GREEN.** `test_review_resource_claims.py`: 18/18; `test_review_recovery.py`: 34/34; `test_review_artifacts.py`: 54/54 (2 skips de permisos de junction/symlink). Replays, transferencias encadenadas, legacy singular, preparación/registro/cierre y límites pasan; `py_compile` y `git diff --check` pasan.
-- [ ] **Step 5: Commit.** `fix(workspaces): preservar ownership y reintentos de transferencias encadenadas`.
+- [x] **Step 5: Commit.** `fix(workspaces): preservar ownership y reintentos de transferencias encadenadas` (commit 40727b6).
 
 ### Task 5: Recibos de cleanup y cierre idempotente
 
 **Feedback:** F005, F017, F033.
 
-**Files:** Modify `scripts/review_artifacts.py`, `scripts/review_workspace.py`, `scripts/review_resource_claims.py`, `scripts/review_recovery.py`; Test `tests/test_review_resource_claims.py`, `tests/test_review_workspace.py`, `tests/test_review_artifacts.py`, `tests/test_review_recovery.py`.
+**Files:** Modify `scripts/review_artifacts.py`, `scripts/review_workspace.py`, `scripts/review_resource_claims.py`, `scripts/review_recovery.py`; Test `tests/test_review_resource_claims.py`, `tests/test_review_artifacts.py`, `tests/test_review_recovery.py`. Workspace cleanup regressions remain in the existing claims suite; the repository has no separate workspace test module.
 
 **Interfaces:**
 - Consumes: Task 4 claims/historial y locks; appraisal de Task 3.
@@ -209,7 +209,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Produces: resource_cleanup/cleanup_receipts privados; close `released_claims=None` y CLI `--released-claims-input`, en combinación con la vía inline. Sin recibos explícitos usa los durables observados; no los fabrica.
 - Produces: validate_release_observation acepta replay de fila released solo con recibo exacto; disponibilidad missing_unknown no se interpreta como released. Inspect y mutadores comparten diagnóstico/condiciones.
 
-- [ ] **Step 1: Añadir regresiones.** `test_cleanup_records_receipt_before_return`, `test_cleanup_claim_requires_run_dir`, `test_close_inline_uses_durable_receipt`, `test_close_same_cleanup_observation_after_interruption_and_complete`, `test_cleanup_crash_after_delete_recovers_own_intent`, `test_missing_without_receipt_remains_unknown`, `test_missing_resource_allows_linked_restart_without_transfer`, `test_cleanup_conflicts_with_transfer`, `test_altered_replay_receipt_refused`.
+- [x] **Step 1: Añadir regresiones.** `test_cleanup_records_receipt_before_return`, `test_cleanup_claim_requires_run_dir`, `test_close_same_cleanup_observation_after_interruption_and_complete`, `test_cleanup_crash_after_delete_recovers_own_intent`, `test_pending_cleanup_is_visible_and_recovery_does_not_delete`, `test_pending_close_advances_after_cleanup_receipt`, `test_missing_without_receipt_is_reported_as_unknown`, `test_cleanup_conflicts_with_transfer`, `test_altered_replay_receipt_refused`, `test_archive7_with_pre_receipt_released_claim_remains_readable`, `test_close_refuses_reappeared_released_workspace`, `test_cleanup_source_refuses_claim_transferred_to_successor`. The missing-resource linked-restart regression moves to Task 6, which owns that API.
 
   ```python
   review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(run)))
@@ -221,10 +221,10 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   self.assertEqual(self.snapshot(run), before)
   ```
 
-- [ ] **Step 2: Observar RED.** Ejecutar resource_claims/workspace/artifacts/recovery. Confirmar F005/F033: recibo aplicado debe poder repetirse sin cambiarlo; la falta de receipt no se corrige omitiendo ese campo.
-- [ ] **Step 3: Implementar.** Guardar intención previa a eliminación y recibo posterior con el mismo lock; validar registrations para recovery de cleanup. Close consume observación durable, conserva gate fuente/ownership en replay y no pierde recibos durante retaining. Ausencia sin intención permanece diagnosticada y permite únicamente las acciones condicionadas de la spec.
-- [ ] **Step 4: Observar GREEN.** Inyectar interrupción antes/después de eliminación y de review/informe/manifest; replay mantiene bytes completos. Probar dueño distinto, ruta reaparecida modificada y claim transferred cuyo sidecar confirma otro propietario: preservar o excluir del cleanup del origen, nunca borrarlo.
-- [ ] **Step 5: Commit.** `fix(cleanup): conservar recibos de liberación y permitir reintentar el cierre`.
+- [x] **Step 2: Observar RED.** Los nuevos casos reprodujeron que el cleanup no dejaba recibo durable, el replay de un claim released se rechazaba, `inspect` no distinguía missing_unknown, y close no podía reintentar tras una interrupción al escribir `informe.md`.
+- [x] **Step 3: Implementar.** Cleanup queda bajo el lock del archive, guarda intención y marca el claim `releasing` antes de borrar. Solo al confirmar que no existen la sesión ni sus worktrees registra el recibo; `recover` completa únicamente esa intención. Close consume recibos durables por defecto, exige replay exacto y reescribe el retenido tras una interrupción. Una observación `pending` puede avanzar al concluir cleanup; archives schema 7 anteriores siguen legibles sin inventar recibos históricos.
+- [x] **Step 4: Observar GREEN.** Claims 21/21 en 238.073 s; recovery 41/41 en 231.556 s; artifacts 54/54 con 2 skips de permisos junction/symlink en Windows. Las dos regresiones añadidas después pasaron en focal: rechazo de cleanup por el dueño anterior de un claim transferido y rechazo al reaparecer una sesión liberada. `py_compile` y `git diff --check` pasaron.
+- [x] **Step 5: Commit.** `fix(cleanup): conservar recibos de liberación y permitir reintentar el cierre`.
 
 ### Task 6: Restart transaccional, adopción y takeover
 

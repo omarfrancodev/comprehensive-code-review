@@ -422,6 +422,7 @@ def _load_run(run_dir):
         if (not isinstance(controller, dict) or set(controller) != {'identity', 'source'}
                 or not isinstance(controller['identity'], dict) or not isinstance(controller['source'], str)):
             raise ValueError('invalid archive controller identity')
+        _validate_cleanup_metadata(manifest)
     states = {'prepared', 'retaining', 'closing', 'complete'}
     if manifest['schema_version'] in (5, 6, 7):
         states.add('processing')
@@ -1264,6 +1265,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'checkpoint': None,
                 'lineage': {'kind': 'restart' if previous else 'new', 'source_run': previous},
                 'resource_claims': [], 'resource_transfers': [],
+                'resource_cleanup': None, 'cleanup_receipts': [],
                 'assignment_registry': [], 'review_inputs': captured_inputs}
     manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
@@ -1430,6 +1432,128 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
 
 
 TRANSFER_HISTORY_LIMIT = 64
+CLEANUP_RECEIPT_LIMIT = 64
+
+
+def _validate_cleanup_metadata(manifest):
+    """Validate archive-7 cleanup intent and its bounded receipt inventory."""
+    if ('cleanup_receipts' in manifest) != ('resource_cleanup' in manifest):
+        raise ValueError('resource cleanup metadata fields must be introduced together')
+    receipts = manifest.get('cleanup_receipts', [])
+    if not isinstance(receipts, list) or len(receipts) > CLEANUP_RECEIPT_LIMIT:
+        raise ValueError('invalid or oversized resource cleanup receipt history')
+    by_id = {}
+    for receipt in receipts:
+        if (not isinstance(receipt, dict)
+                or set(receipt) != {'session_id', 'run_id', 'claim_id', 'claim_sha256'}
+                or not all(isinstance(receipt.get(key), str) and receipt[key] for key in receipt)
+                or receipt['run_id'] != manifest.get('run_id')
+                or not re.fullmatch(r'RC-[0-9a-f]{32}', receipt['claim_id'])
+                or not CHECKPOINT_HASH.fullmatch(receipt['claim_sha256'])
+                or receipt['claim_id'] in by_id):
+            raise ValueError('invalid or duplicate resource cleanup receipt')
+        by_id[receipt['claim_id']] = receipt
+    claim_rows = [row for row in manifest.get('resource_claims', [])
+                  if isinstance(row, dict) and isinstance(row.get('claim_id'), str)]
+    claims = {row['claim_id']: row for row in claim_rows}
+    if len(claims) != len(claim_rows):
+        raise ValueError('duplicate resource claim IDs block cleanup verification')
+    for claim_id, receipt in by_id.items():
+        row = claims.get(claim_id)
+        if (row is None or row.get('status') != 'released'
+                or any(row.get(key) != receipt[key]
+                       for key in ('session_id', 'claim_sha256'))
+                or row.get('release_claim_sha256') != receipt['claim_sha256']):
+            raise ValueError('resource cleanup receipt does not match a released claim')
+    if 'cleanup_receipts' in manifest:
+        for claim_id, row in claims.items():
+            if row.get('status') == 'released' and claim_id not in by_id:
+                raise ValueError('released resource claim has no durable cleanup receipt')
+
+    intent = manifest.get('resource_cleanup')
+    if intent is None:
+        if any(row.get('status') == 'releasing' for row in manifest.get('resource_claims', [])
+               if isinstance(row, dict)):
+            raise ValueError('resource claim is releasing without a durable cleanup intent')
+        return
+    fields = {'schema_version', 'operation_id', 'status', 'run_id', 'session_id', 'claim_id',
+              'claim_sha256', 'session_dir', 'repository_path', 'worktrees', 'started_at',
+              'completed_at', 'completion_source'}
+    if (not isinstance(intent, dict) or set(intent) != fields or intent.get('schema_version') != 1
+            or intent.get('status') not in {'pending', 'complete'}
+            or not isinstance(intent.get('operation_id'), str)
+            or not re.fullmatch(r'CL-[0-9a-f]{32}', intent['operation_id'])
+            or intent.get('run_id') != manifest.get('run_id')
+            or intent.get('repository_path') != manifest.get('repository_path')
+            or not isinstance(intent.get('session_id'), str) or not intent['session_id']
+            or not isinstance(intent.get('claim_id'), str)
+            or not re.fullmatch(r'RC-[0-9a-f]{32}', intent['claim_id'])
+            or not isinstance(intent.get('claim_sha256'), str)
+            or not CHECKPOINT_HASH.fullmatch(intent['claim_sha256'])
+            or not isinstance(intent.get('session_dir'), str)
+            or not isinstance(intent.get('repository_path'), str)
+            or not isinstance(intent.get('worktrees'), list) or len(intent['worktrees']) > 32
+            or any(not isinstance(path, str) for path in intent['worktrees'])
+            or len(set(intent['worktrees'])) != len(intent['worktrees'])):
+        raise ValueError('invalid durable resource cleanup intent')
+    safe_path(intent['session_dir'])
+    safe_path(intent['repository_path'])
+    for path in intent['worktrees']:
+        safe_path(path)
+    for key in ('started_at', 'completed_at'):
+        value = intent.get(key)
+        if value is not None:
+            try:
+                parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                if parsed.utcoffset() is None:
+                    raise ValueError('timezone required')
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError('invalid resource cleanup timestamp') from exc
+    row = claims.get(intent['claim_id'])
+    if (row is None or any(row.get(key) != intent[key]
+                           for key in ('session_id', 'session_dir', 'claim_sha256'))):
+        raise ValueError('resource cleanup intent does not match its claimed session')
+    if intent['status'] == 'pending':
+        if (row.get('status') != 'releasing' or intent.get('completed_at') is not None
+                or intent.get('completion_source') is not None
+                or intent['claim_id'] in by_id):
+            raise ValueError('pending resource cleanup intent conflicts with claim state')
+    elif (row.get('status') != 'released' or intent.get('completed_at') is None
+          or intent.get('completion_source') not in {'review_workspace.cleanup', 'review_artifacts.recovery'}
+          or row.get('released_by') != intent.get('completion_source')
+          or row.get('release_claim_sha256') != intent.get('claim_sha256')
+          or by_id.get(intent['claim_id']) != {key: intent[key] for key in
+              ('session_id', 'run_id', 'claim_id', 'claim_sha256')}):
+        raise ValueError('completed resource cleanup intent has no exact release receipt')
+
+    close_observation = manifest.get('close_observation')
+    if close_observation is not None:
+        observed_receipts = close_observation.get('released_claims') if isinstance(close_observation, dict) else None
+        receipts_match = (observed_receipts == receipts if isinstance(close_observation, dict)
+                          and close_observation.get('cleanup') != 'pending'
+                          else isinstance(observed_receipts, list)
+                          and receipts[:len(observed_receipts)] == observed_receipts)
+        if ('cleanup_receipts' not in manifest or 'resource_cleanup' not in manifest
+                or not isinstance(close_observation, dict)
+                or set(close_observation) != {'cleanup', 'residuals', 'released_claims'}
+                or close_observation.get('cleanup') not in {'complete', 'not_needed', 'pending'}
+                or not isinstance(close_observation.get('residuals'), list)
+                or not isinstance(close_observation.get('released_claims'), list)
+                or not receipts_match):
+            raise ValueError('invalid or detached durable close observation')
+        residuals = [safe_path(raw) for raw in close_observation['residuals']
+                     if isinstance(raw, str)]
+        registered_paths = {safe_path(raw) for raw in manifest.get('temporary_paths', [])}
+        if (len(residuals) != len(close_observation['residuals'])
+                or len(set(residuals)) != len(residuals)
+                or set(residuals) - registered_paths
+                or close_observation['cleanup'] in {'complete', 'not_needed'} and residuals
+                or close_observation['cleanup'] == 'not_needed' and manifest.get('temporary_paths')):
+            raise ValueError('durable close observation has invalid residual resources')
+        if manifest.get('state') == 'complete' and (
+                close_observation['cleanup'] != manifest.get('cleanup')
+                or [str(path) for path in residuals] != manifest.get('residuals', [])):
+            raise ValueError('completed archive differs from its durable close observation')
 
 
 def normalize_transfer_history(manifest):
@@ -1785,6 +1909,180 @@ def _recovery_event(manifest, summary, *, status='completed', authority=None, so
     return event
 
 
+def _cleanup_identity(intent):
+    return {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
+
+
+def _cleanup_rows(manifest, claim_id):
+    return [row for row in manifest.get('resource_claims', [])
+            if isinstance(row, dict) and row.get('claim_id') == claim_id]
+
+
+def _cleanup_resources_remain(intent):
+    import review_workspace
+    repo = safe_path(intent['repository_path'])
+    registered = {str(path.resolve()) for path in review_workspace.registrations(repo)}
+    for raw in intent['worktrees']:
+        path = safe_path(raw)
+        if str(path) in registered or path.exists():
+            return True
+    return safe_path(intent['session_dir']).exists()
+
+
+@_locked_run
+def begin_resource_cleanup(run_dir, session_dir):
+    """Persist a cleanup intent and mark the exact workspace claim as releasing."""
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest.get('schema_version') != 7:
+        raise ValueError('durable resource cleanup requires archive schema 7')
+    if manifest.get('state') in {'retaining', 'complete'}:
+        raise ValueError('resource cleanup cannot begin during retention or after closure')
+    if manifest.get('operation', {}).get('disposition') in {'complete', 'superseded'}:
+        raise ValueError('completed or superseded review cannot begin resource cleanup')
+    session = safe_path(session_dir)
+    if not session.exists() or not session.is_dir():
+        raise ValueError('cleanup requires the existing claimed session directory')
+    sidecar = review_resource_claims.verify_claim(session, run)
+    rows = _cleanup_rows(manifest, sidecar['claim_id'])
+    if len(rows) != 1:
+        raise ValueError('cleanup requires one exact durable resource claim')
+    row = rows[0]
+    if row.get('status') not in {'owned', 'releasing'}:
+        raise ValueError('resource claim is not active for cleanup')
+    intent = manifest.get('resource_cleanup')
+    if isinstance(intent, dict) and intent.get('status') == 'pending':
+        if (_cleanup_identity(intent) == {
+                'session_id': sidecar['session_id'], 'run_id': manifest['run_id'],
+                'claim_id': sidecar['claim_id'], 'claim_sha256': review_resource_claims._digest(
+                    review_resource_claims._encoded(sidecar))}
+                and intent.get('session_dir') == str(session)):
+            return copy.deepcopy(intent)
+        raise ValueError('another resource cleanup is pending; recover it before starting cleanup')
+    receipts = manifest.get('cleanup_receipts', [])
+    if len(receipts) >= CLEANUP_RECEIPT_LIMIT:
+        raise ValueError('resource cleanup receipt history reached the 64-entry limit')
+    if any(receipt.get('claim_id') == sidecar['claim_id'] for receipt in receipts):
+        raise ValueError('resource claim already has a durable cleanup receipt')
+    if row.get('status') != 'owned':
+        raise ValueError('releasing resource claim has no matching pending cleanup intent')
+
+    workspace_data = review_resource_claims._workspace(session)
+    if workspace_data is None:
+        raise ValueError('cleanup requires a valid owned workspace session')
+    workspace = workspace_data[1]
+    import review_workspace
+    registered = {str(path.resolve()) for path in review_workspace.registrations(safe_path(workspace['repo']))}
+    worktrees = []
+    for entry in workspace['workspaces']:
+        path = safe_path(entry['path'])
+        if path.exists() and str(path) not in registered:
+            raise ValueError('workspace is no longer registered; preserve and inspect it: ' + str(path))
+        if str(path) in registered:
+            worktrees.append(str(path))
+    if len(worktrees) > 32:
+        raise ValueError('cleanup worktree inventory exceeds the 32-entry limit')
+    claim_hash = review_resource_claims._digest(review_resource_claims._encoded(sidecar))
+    intent = {'schema_version': 1, 'operation_id': 'CL-' + uuid.uuid4().hex,
+              'status': 'pending', 'run_id': manifest['run_id'], 'session_id': sidecar['session_id'],
+              'claim_id': sidecar['claim_id'], 'claim_sha256': claim_hash,
+              'session_dir': str(session), 'repository_path': str(safe_path(workspace['repo'])),
+              'worktrees': worktrees, 'started_at': datetime.now(timezone.utc).isoformat(),
+              'completed_at': None, 'completion_source': None}
+    row['status'] = 'releasing'
+    manifest['resource_cleanup'] = intent
+    _append_trace(run, manifest, marker, _milestone('cleanup',
+                  'Cleanup started for a verified claimed review workspace', status='started',
+                  evidence=['cierre.json#resource_cleanup']))
+    return copy.deepcopy(intent)
+
+
+def _finish_resource_cleanup_locked(run, manifest, marker, observation, *, completion_source):
+    intent = manifest.get('resource_cleanup')
+    if not isinstance(intent, dict):
+        raise ValueError('no durable resource cleanup intent exists')
+    fields = {'operation_id', 'run_id', 'session_id', 'claim_id', 'claim_sha256'}
+    if not isinstance(observation, dict) or set(observation) != fields:
+        raise ValueError('cleanup completion must identify its exact durable operation and claim')
+    expected = {'operation_id': intent['operation_id'], **_cleanup_identity(intent)}
+    if observation != expected:
+        raise ValueError('cleanup completion differs from the durable cleanup intent')
+    if intent['status'] == 'complete':
+        receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
+        if receipt not in manifest.get('cleanup_receipts', []):
+            raise ValueError('completed cleanup has no durable matching receipt')
+        return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
+    if intent['status'] != 'pending':
+        raise ValueError('unknown resource cleanup state')
+    if _cleanup_resources_remain(intent):
+        raise ValueError('cleanup cannot be completed while its session or registered worktrees remain')
+    rows = _cleanup_rows(manifest, intent['claim_id'])
+    if len(rows) != 1 or rows[0].get('status') != 'releasing':
+        raise ValueError('cleanup intent no longer matches one releasing resource claim')
+    receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
+    receipts = manifest.setdefault('cleanup_receipts', [])
+    existing = [row for row in receipts if row.get('claim_id') == intent['claim_id']]
+    if existing and existing != [receipt]:
+        raise ValueError('resource cleanup retry conflicts with a different durable receipt')
+    if not existing:
+        if len(receipts) >= CLEANUP_RECEIPT_LIMIT:
+            raise ValueError('resource cleanup receipt history reached the 64-entry limit')
+        receipts.append(receipt)
+    rows[0].update(status='released', released_by=completion_source,
+                   release_claim_sha256=intent['claim_sha256'])
+    intent.update(status='complete', completed_at=datetime.now(timezone.utc).isoformat(),
+                   completion_source=completion_source)
+    _append_trace(run, manifest, marker, _milestone('cleanup',
+                  'Verified workspace cleanup and recorded its release receipt', status='completed',
+                  evidence=['cierre.json#cleanup_receipts']))
+    return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
+
+
+@_locked_run
+def finish_resource_cleanup(run_dir, observation):
+    """Record a receipt only after the exact session and its worktrees are absent."""
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest.get('schema_version') != 7:
+        raise ValueError('durable resource cleanup requires archive schema 7')
+    return _finish_resource_cleanup_locked(run, manifest, marker, observation,
+                                           completion_source='review_workspace.cleanup')
+
+
+@_locked_run
+def recover_resource_cleanup(run_dir):
+    """Finish a pending cleanup record only when its exact resources are already absent."""
+    run, manifest, marker = _load_run(run_dir)
+    marker = _recover_trace(run, manifest, marker)
+    _verify_files(run, manifest)
+    if manifest.get('schema_version') != 7:
+        raise ValueError('durable resource cleanup requires archive schema 7')
+    intent = manifest.get('resource_cleanup')
+    if intent is None:
+        return {'status': 'none', 'run_id': manifest['run_id']}
+    if intent['status'] == 'complete':
+        receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
+        return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
+    if intent['status'] != 'pending':
+        raise ValueError('unknown durable resource cleanup status')
+    session = safe_path(intent['session_dir'])
+    if session.exists():
+        sidecar = review_resource_claims.verify_claim(session, run)
+        if (sidecar.get('session_id') != intent['session_id']
+                or sidecar.get('claim_id') != intent['claim_id']
+                or review_resource_claims._digest(review_resource_claims._encoded(sidecar))
+                != intent['claim_sha256']):
+            raise ValueError('pending cleanup session differs from the exact verified cleanup intent')
+    if _cleanup_resources_remain(intent):
+        return {'status': 'pending', 'operation_id': intent['operation_id'],
+                'reason': 'The recorded session or one of its worktrees still exists; retry workspace cleanup.'}
+    observation = {'operation_id': intent['operation_id'], **_cleanup_identity(intent)}
+    return _finish_resource_cleanup_locked(run, manifest, marker, observation,
+                                           completion_source='review_artifacts.recovery')
+
+
 @_locked_run
 def pause(run_dir, *, authority, reason, phase):
     """Record an explicit user-directed pause without discarding the open run."""
@@ -1890,6 +2188,16 @@ def recover(run_dir, *, controller, authority, current_inputs):
     fallback = manifest.get('controller', {}).get('identity',
         {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
     _controller(controller, fallback)
+    cleanup_intent = manifest.get('resource_cleanup')
+    if isinstance(cleanup_intent, dict) and cleanup_intent.get('status') == 'pending':
+        cleanup_result = recover_resource_cleanup(run_path)
+        if cleanup_result.get('status') == 'pending':
+            return _recovery_outcome({'status': 'plan', 'run_dir': str(run_path),
+                    'run_id': manifest['run_id'],
+                    'actions': [{'action': 'retry_cleanup',
+                                 'reason': cleanup_result.get('reason', 'The recorded workspace cleanup is incomplete.')}]
+                    }, input_appraisal)
+        run, manifest, _ = _load_run(run_path)
     pending_transfers = [row for row in normalize_transfer_history(manifest) if row['status'] == 'pending']
     if pending_transfers:
         transfer = pending_transfers[0]
@@ -2483,7 +2791,7 @@ def _present_resources(registered):
 
 
 @_locked_run
-def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
+def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
     """Observe exact registered resources and persist closure; never remove resources."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
@@ -2494,15 +2802,28 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
         marker = dict(marker, manifest_sha256=_digest((run / 'cierre.json').read_bytes()))
         marker.pop('previous_manifest_sha256')
         atomic_write(run / MARKER, _json_bytes(marker))
-    validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
+    pending_close = (manifest['state'] == 'retaining'
+                     and isinstance(manifest.get('close_observation'), dict))
+    if pending_close:
+        _verify_files(run, manifest)
+        candidate = read_json(run / 'review.json')
+        errors = review_contract.validate(candidate) if isinstance(candidate, dict) else ['retained review is not an object']
+        if errors or candidate.get('stage') != 'final' or candidate.get('scope') != manifest['scope']:
+            raise ValueError('; '.join(errors) if errors else 'interrupted close has no valid retained final review')
+        if manifest['schema_version'] == 7:
+            _execution_gate(run, manifest, candidate, {})
+    else:
+        validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')
     if cleanup_file is not None:
-        if residuals is not None:
-            raise ValueError('residuals belong to the cleanup file or inline observation, not both')
+        if residuals is not None or released_claims is not None:
+            raise ValueError('residuals and release receipts belong to the cleanup file or inline observation, not both')
         observed = read_json(cleanup_file)
     else:
         observed = {'cleanup': cleanup, 'residuals': residuals if residuals is not None else []}
+        if released_claims is not None:
+            observed['released_claims'] = released_claims
     if (not isinstance(observed, dict) or set(observed) not in ({'cleanup', 'residuals'},
                                                                   {'cleanup', 'residuals', 'released_claims'})
             or observed['cleanup'] not in {'complete', 'not_needed', 'pending'}
@@ -2516,12 +2837,33 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     if set(residuals) != set(present):
         raise ValueError('observed cleanup does not disclose every existing registered resource')
     if manifest['schema_version'] == 7:
+        has_durable_cleanup = 'cleanup_receipts' in manifest and 'resource_cleanup' in manifest
+        durable_receipts = manifest.get('cleanup_receipts', []) if has_durable_cleanup else []
+        supplied_receipts = observed.get('released_claims')
+        if has_durable_cleanup and supplied_receipts is not None and supplied_receipts != durable_receipts:
+            raise ValueError('supplied release receipts differ from the durable cleanup receipt history')
+        if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
+            raise ValueError('resource cleanup intent is pending; recover or retry cleanup before closing the review')
         manifest['resource_claims'] = review_resource_claims.validate_release_observation(
-            manifest, present, observed.get('released_claims', []))
+            manifest, present, durable_receipts if has_durable_cleanup else (supplied_receipts or []))
         review_resource_claims.validate_claims_for_close(run, manifest)
     cleanup = observed['cleanup']
     if (cleanup in {'complete', 'not_needed'} and residuals) or (cleanup == 'not_needed' and registered):
         raise ValueError('cleanup conflicts with registered resources or residuals')
+    durable_close = None
+    if manifest['schema_version'] == 7 and has_durable_cleanup:
+        durable_close = {'cleanup': cleanup, 'residuals': residuals,
+                         'released_claims': copy.deepcopy(durable_receipts)}
+        prior_close = manifest.get('close_observation')
+        if prior_close is not None and prior_close != durable_close:
+            prior_receipts = prior_close.get('released_claims', [])
+            may_advance_pending = (manifest['state'] == 'closing'
+                                   and prior_close.get('cleanup') == 'pending'
+                                   and cleanup in {'pending', 'complete'}
+                                   and set(residuals).issubset(set(prior_close.get('residuals', [])))
+                                   and durable_close['released_claims'][:len(prior_receipts)] == prior_receipts)
+            if not may_advance_pending:
+                raise ValueError('close retry differs from the exact durable cleanup observation')
     if manifest['state'] == 'complete':
         if cleanup != manifest['cleanup'] or residuals != manifest['residuals']:
             raise ValueError('completed review history cannot be reopened')
@@ -2535,7 +2877,10 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None):
     if errors:
         raise ValueError('; '.join(errors))
     report = review_contract.render(value).encode('utf-8')
-    if value != read_json(run / 'review.json'):
+    if durable_close is not None and manifest.get('close_observation') != durable_close:
+        manifest['close_observation'] = durable_close
+        marker = _save_manifest(run, manifest, marker)
+    if value != read_json(run / 'review.json') or pending_close:
         contents = {'review.json': _json_bytes(value), 'informe.md': report}
         if 'handoff.md' in manifest['hashes']:
             contents['handoff.md'] = review_contract.render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
@@ -2661,6 +3006,8 @@ def main():
     observed.add_argument('--cleanup', choices=('complete', 'not_needed', 'pending'),
                           help='Observed state without creating a post-cleanup temporary file')
     finish.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
+    finish.add_argument('--released-claims-input',
+                        help='Existing JSON list of exact durable cleanup receipts for inline close')
     args = parser.parse_args()
     try:
         authority_input = None
@@ -2729,7 +3076,11 @@ def main():
         elif args.command == 'record-event':
             result = record_event(args.run_dir, args.event_file, args.execution_metadata)
         else:
-            result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup, residuals=args.residual)
+            receipts = read_json(args.released_claims_input) if args.released_claims_input else None
+            if receipts is not None and not isinstance(receipts, list):
+                raise ValueError('released claims input must be a JSON list')
+            result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup,
+                           residuals=args.residual, released_claims=receipts)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError) as exc:

@@ -297,20 +297,28 @@ def inspect_run(run_dir, *, current_inputs=None):
         'disposition': 'complete' if manifest.get('state') == 'complete' else 'open',
         'phase': None, 'reason': None, 'source': None, 'successor': None})
     pending = []
+    errors = []
     if manifest.get('pending_trace') is not None:
         pending.append({'kind': 'trace_append', 'status': 'pending'})
     if manifest.get('checkpoint_transaction') is not None:
         pending.append({'kind': 'checkpoint', 'status': 'pending'})
-    transfer = manifest.get('resource_transfer')
-    if isinstance(transfer, dict) and transfer.get('status') != 'complete':
-        pending.append({'kind': 'resource_transfer', 'status': 'pending',
-                        'transfer_id': transfer.get('transfer_id')})
+    try:
+        transfers = artifacts.normalize_transfer_history(manifest)
+        for transfer in transfers:
+            if transfer.get('status') != 'complete':
+                pending.append({'kind': 'resource_transfer', 'status': 'pending',
+                                'transfer_id': transfer.get('transfer_id')})
+    except (ValueError, TypeError, KeyError) as exc:
+        errors.append(str(exc)[:1000])
+    cleanup = manifest.get('resource_cleanup')
+    if isinstance(cleanup, dict) and cleanup.get('status') == 'pending':
+        pending.append({'kind': 'resource_cleanup', 'status': 'pending',
+                        'operation_id': cleanup.get('operation_id')})
     if manifest.get('state') == 'retaining':
         pending.append({'kind': 'retention', 'status': 'pending'})
     if manifest.get('state') == 'closing':
         pending.append({'kind': 'closure', 'status': 'pending'})
 
-    errors = []
     try:
         if not manifest.get('pending_trace'):
             artifacts._verify_files(run, manifest, allow_checkpoint_transaction=True,
@@ -318,7 +326,7 @@ def inspect_run(run_dir, *, current_inputs=None):
         if not manifest.get('pending_trace') and not pending:
             import review_resource_claims
             for claim in manifest.get('resource_claims', []):
-                if claim.get('status') == 'owned' and Path(claim['session_dir']).exists():
+                if claim.get('status') in {'owned', 'releasing'} and Path(claim['session_dir']).exists():
                     review_resource_claims.verify_claim(claim['session_dir'], run)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(str(exc)[:1000])
@@ -331,7 +339,23 @@ def inspect_run(run_dir, *, current_inputs=None):
     for raw in manifest.get('temporary_paths', []):
         path = Path(raw)
         row = claim_by_path.get(raw, {})
-        resources.append({'path': raw, 'present': path.exists(), 'claim_status': row.get('status')})
+        present = path.exists()
+        status = row.get('status')
+        receipt_ids = {receipt.get('claim_id') for receipt in manifest.get('cleanup_receipts', [])
+                       if isinstance(receipt, dict)}
+        if status == 'transferred':
+            availability = 'transferred'
+        elif status == 'released':
+            availability = 'unexpected_present' if present else 'released'
+        elif status in {'owned', 'releasing'}:
+            if present:
+                availability = 'cleanup_pending' if status == 'releasing' else 'available'
+            else:
+                availability = 'released' if row.get('claim_id') in receipt_ids else 'missing_unknown'
+        else:
+            availability = 'available' if present else 'missing_unclaimed'
+        resources.append({'path': raw, 'present': present, 'claim_status': status,
+                          'availability': availability})
 
     freshness = {'status': 'unknown', 'reasons': [], 'differences': []}
     if current_inputs is not None:

@@ -132,6 +132,24 @@ class ResourceClaimTests(unittest.TestCase):
         self.assertEqual(replay['transfer_id'], result['transfer_id'])
         self.assertEqual(before_replay, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
 
+    def test_cleanup_source_refuses_claim_transferred_to_successor(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        artifacts.transfer_resources(source, successor, [str(session)],
+            authority='User authorized transfer', controller=self.controller())
+        before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session),
+                  review_workspace.registrations(self.repo))
+
+        with self.assertRaisesRegex(review_workspace.ReviewError, 'claim|owner|verification'):
+            review_workspace.cleanup(argparse.Namespace(
+                manifest=str(session / 'manifest.json'), run_dir=str(source)))
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session),
+                                  review_workspace.registrations(self.repo)))
+
     def test_register_after_incoming_transfer_is_idempotent(self):
         session = self.workspace_session()
         source = self.create_run([session])
@@ -339,6 +357,18 @@ class ResourceClaimTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot(session))
         self.assertEqual(registered, review_workspace.registrations(self.repo))
 
+    def test_cleanup_claim_requires_run_dir(self):
+        session = self.workspace_session()
+        owner = self.create_run([session])
+        self.register(owner, session, 'owner-context.json')
+        before = (self.snapshot(session), review_workspace.registrations(self.repo))
+
+        with self.assertRaisesRegex(review_workspace.ReviewError, 'requires its owning --run-dir'):
+            review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json')))
+
+        self.assertTrue(session.exists())
+        self.assertEqual(before, (self.snapshot(session), review_workspace.registrations(self.repo)))
+
     def test_missing_resource_does_not_prove_own_cleanup(self):
         session = self.workspace_session()
         run = self.create_run([session])
@@ -353,6 +383,42 @@ class ResourceClaimTests(unittest.TestCase):
                    'claim_id': claim['claim_id'], 'claim_sha256': claim['claim_sha256']}
         released = claims.validate_release_observation(manifest, [], [receipt])
         self.assertEqual(released[0]['status'], 'released')
+
+    def test_released_receipt_replay_requires_exact_identity(self):
+        session = self.workspace_session()
+        run = self.create_run([session])
+        self.register(run, session, 'context.json')
+        manifest = self.read(run / 'cierre.json')
+        claim = manifest['resource_claims'][0]
+        receipt = {'session_id': claim['session_id'], 'run_id': manifest['run_id'],
+                   'claim_id': claim['claim_id'], 'claim_sha256': claim['claim_sha256']}
+        manifest['resource_claims'] = claims.validate_release_observation(manifest, [], [receipt])
+
+        replay = claims.validate_release_observation(manifest, [], [receipt])
+
+        self.assertEqual(replay, manifest['resource_claims'])
+        altered = dict(receipt, claim_sha256='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'receipt|release'):
+            claims.validate_release_observation(manifest, [], [altered])
+
+    def test_archive7_with_pre_receipt_released_claim_remains_readable(self):
+        session = self.workspace_session()
+        run = self.create_run([session])
+        self.register(run, session, 'legacy-release-context.json')
+        manifest = self.read(run / 'cierre.json')
+        claim = manifest['resource_claims'][0]
+        shutil.rmtree(session)
+        claim.update(status='released', released_by='review_workspace.cleanup',
+                     release_claim_sha256=claim['claim_sha256'])
+        manifest.pop('resource_cleanup')
+        manifest.pop('cleanup_receipts')
+        marker = self.read(run / artifacts.MARKER)
+        artifacts._save_manifest(run, manifest, marker)
+
+        loaded = artifacts._load_run(run)[1]
+        replay = claims.validate_release_observation(loaded, [], [])
+
+        self.assertEqual(replay, loaded['resource_claims'])
 
     def test_legacy_session_adoption_requires_authority(self):
         session = self.workspace_session()

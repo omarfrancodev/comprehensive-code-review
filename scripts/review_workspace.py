@@ -308,6 +308,32 @@ def record_artifact(args):
 
 def cleanup(args):
     manifest = load(args.manifest)
+    session = Path(manifest['session_dir'])
+    claim_path = session / '.review-run-owner.json'
+    if not claim_path.exists():
+        if getattr(args, 'run_dir', None):
+            raise ReviewError('--run-dir is only valid for a session with an active review claim')
+        return _cleanup_locked(args)
+    no_links(claim_path)
+    claim = json.loads(claim_path.read_text(encoding='utf-8'))
+    if claim.get('status') != 'owned':
+        if getattr(args, 'run_dir', None):
+            raise ReviewError('--run-dir is only valid for a session with an active review claim')
+        return _cleanup_locked(args)
+    if not getattr(args, 'run_dir', None):
+        raise ReviewError('Cleaning a claimed session requires its owning --run-dir')
+    try:
+        import review_artifacts
+        with review_artifacts._owned_run_locks([args.run_dir]):
+            return _cleanup_locked(args, review_artifacts=review_artifacts)
+    except (ValueError, KeyError, TypeError) as exc:
+        if isinstance(exc, ReviewError):
+            raise
+        raise ReviewError('Resource claim verification or cleanup failed; preserve the session: ' + str(exc)) from exc
+
+
+def _cleanup_locked(args, *, review_artifacts=None):
+    manifest = load(args.manifest)
     repo, session = Path(manifest["repo"]), Path(manifest["session_dir"])
     claim_path = session / ".review-run-owner.json"
     claim = None
@@ -354,12 +380,14 @@ def cleanup(args):
             if not path.is_file() or expected_hash is None or digest(path.read_bytes()) != expected_hash:
                 raise ReviewError(f"Unrecorded/changed file; preserve or record an owned fixture: {path}")
     main_changed = state(repo, session, manifest["included_files"]) != manifest["main_baseline"]
-    released_claim = None
+    cleanup_intent = None
     if claim is not None and claim.get("status") == "owned":
-        released_claim = {"session_id": claim["session_id"], "run_id": claim["run_id"],
-                          "claim_id": claim["claim_id"],
-                          "claim_sha256": hashlib.sha256(json.dumps(claim, ensure_ascii=False, sort_keys=True,
-                              indent=2, allow_nan=False).encode("utf-8") + b"\n").hexdigest()}
+        if review_artifacts is None:
+            raise ReviewError('Claimed workspace cleanup requires the review archive mutation lock')
+        try:
+            cleanup_intent = review_artifacts.begin_resource_cleanup(args.run_dir, session)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise ReviewError('Could not record durable cleanup intent; preserve the session: ' + str(exc)) from exc
     for entry in reversed(manifest["workspaces"]):
         workspace = Path(entry["path"])
         if workspace.resolve() in registrations(repo):
@@ -371,8 +399,15 @@ def cleanup(args):
     result = {"status": "closed", "session_id": manifest["session_id"], "session_dir": str(session),
             "all_registered_removed": True, "main_changed": main_changed,
             "remaining_worktrees": [str(p) for p in remaining]}
-    if released_claim is not None:
-        result["released_claims"] = [released_claim]
+    if cleanup_intent is not None:
+        observation = {'operation_id': cleanup_intent['operation_id'], 'run_id': cleanup_intent['run_id'],
+                       'session_id': cleanup_intent['session_id'], 'claim_id': cleanup_intent['claim_id'],
+                       'claim_sha256': cleanup_intent['claim_sha256']}
+        try:
+            released = review_artifacts.finish_resource_cleanup(args.run_dir, observation)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise ReviewError('Workspace was removed but durable cleanup completion is pending recovery: ' + str(exc)) from exc
+        result['released_claims'] = [released['receipt']]
     return result
 
 

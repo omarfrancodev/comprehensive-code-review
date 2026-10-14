@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import unittest
@@ -18,7 +19,7 @@ import review_recovery as recovery
 import review_workspace
 import review_resource_claims
 import review_artifacts as recovery_artifacts
-from recovery_fixtures import context10, current_inputs, legacy_prepare, record10
+from recovery_fixtures import context10, current_inputs, legacy_prepare, record10, source_events
 
 
 class ReviewRecoveryTests(unittest.TestCase):
@@ -53,6 +54,43 @@ class ReviewRecoveryTests(unittest.TestCase):
         return current_inputs(scope if scope is not None else manifest['scope'],
                               sources if sources is not None else captured.get('sources', {}),
                               source_set_complete=True, **identities)
+
+    def retained_claimed_run(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        run = self.prepare7('focused')
+        manifest = self.read(run / 'cierre.json')
+        manifest['review_inputs']['description_identity'] = None
+        artifacts._save_manifest(run, manifest, self.read(run / artifacts.MARKER))
+        manifest = self.read(run / 'cierre.json')
+        history = manifest['profile_history']
+        final = record10('focused', 'automatic')
+        final['scope'] = manifest['scope']
+        final['description'] = {'status': 'not_applicable', 'identity': None, 'details': ''}
+        final['review_id'] = 'CR-' + manifest['run_id']
+        final['coverage']['execution']['profile_history'] = history
+        context = context10(final)
+        context['profile_history'] = history
+        context['profile_reference'] = history[-1]['reference']
+        context_path = self.write('claimed-context.json', context)
+        artifacts.register(run, [str(session)], context_input=context_path)
+        for event in source_events(final):
+            if event['kind'] == 'profile':
+                continue
+            identity = event.get('actor', {'name': 'coordinator', 'provider_id': None})
+            observed = {'kind': event['kind'], 'status': event['status'],
+                        'summary': 'Observed synthetic review step',
+                        'actor': dict(identity, kind='agent'), 'executor': event.get('executor'),
+                        'provenance': {'kind': 'tool', 'source': 'synthetic cleanup test'},
+                        'evidence': event['evidence'], 'relations': [], 'authority': None,
+                        'occurred_at': None}
+            artifacts.record_event(run, self.write('cleanup-event.json', observed))
+        plan = final['coverage']['execution']['plan']
+        briefs = self.write('briefs.json', {row['id']: {'questions': ['Check invariant']} for row in plan})
+        results = self.write('results.json', {row['id']: {'result': 'completed'} for row in plan})
+        artifacts.retain(run, self.write('cleanup-final.json', final), context_input=context_path,
+                         evidence_inputs=[briefs, results])
+        return run, session
 
     def test_same_inputs_shape_for_lookup_inspect_and_resume(self):
         run = self.prepare7()
@@ -576,6 +614,177 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(self.read(successor / 'cierre.json')['resource_claims'][0]['status'], 'owned')
         review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
                                                       run_dir=str(successor)))
+
+    def test_cleanup_records_receipt_before_return(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        run = self.prepare7('focused')
+        selection = self.read(run / 'cierre.json')['profile_history'][0]
+        context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': []}
+        artifacts.register(run, [str(session)], context_input=self.write('cleanup-register-context.json', context))
+
+        result = review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                               run_dir=str(run)))
+
+        manifest = self.read(run / 'cierre.json')
+        self.assertFalse(session.exists())
+        self.assertEqual(result['released_claims'], manifest['cleanup_receipts'])
+        self.assertEqual(manifest['resource_claims'][0]['status'], 'released')
+
+    def test_close_same_cleanup_observation_after_interruption_and_complete(self):
+        run, session = self.retained_claimed_run()
+        review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                     run_dir=str(run)))
+        receipts = self.read(run / 'cierre.json')['cleanup_receipts']
+        self.assertEqual(len(receipts), 1)
+
+        receipts_input = self.write('released-claims.json', receipts)
+        original = artifacts.atomic_write
+        interrupted = False
+
+        def fail_report_once(path, data):
+            nonlocal interrupted
+            if Path(path).name == 'informe.md' and not interrupted:
+                interrupted = True
+                raise OSError('simulated close interruption after review.json')
+            original(path, data)
+
+        with patch.object(artifacts, 'atomic_write', side_effect=fail_report_once), self.assertRaisesRegex(
+                OSError, 'simulated close interruption'):
+            artifacts.close(run, cleanup='complete', released_claims=receipts)
+
+        interrupted_snapshot = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'differs from the exact durable cleanup observation'):
+            artifacts.close(run, cleanup='pending')
+        self.assertEqual(interrupted_snapshot, self.snapshot(run))
+
+        closed = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'close',
+                                 '--run-dir', str(run), '--cleanup', 'complete',
+                                 '--released-claims-input', str(receipts_input)],
+                                capture_output=True, text=True, encoding='utf-8')
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+        before_replay = self.snapshot(run)
+        artifacts.close(run, cleanup='complete')
+
+        self.assertEqual(self.snapshot(run), before_replay)
+
+        altered = dict(receipts[0], claim_sha256='0' * 64)
+        with self.assertRaisesRegex(ValueError, 'receipt|cleanup|closed|complete'):
+            artifacts.close(run, cleanup='complete', released_claims=[altered])
+
+    def test_close_refuses_reappeared_released_workspace(self):
+        run, session = self.retained_claimed_run()
+        review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                     run_dir=str(run)))
+        session.mkdir()
+        before = self.snapshot(run)
+
+        with self.assertRaisesRegex(ValueError, 'released resource path exists again'):
+            artifacts.close(run, cleanup='pending', residuals=[str(session)])
+
+        self.assertEqual(before, self.snapshot(run))
+        shutil.rmtree(session)
+
+    def test_cleanup_crash_after_delete_recovers_own_intent(self):
+        run, session = self.retained_claimed_run()
+        original = shutil.rmtree
+
+        def delete_then_interrupt(path, *args, **kwargs):
+            original(path, *args, **kwargs)
+            if Path(path) == session:
+                raise OSError('simulated stop after session deletion')
+
+        with patch.object(review_workspace.shutil, 'rmtree', side_effect=delete_then_interrupt):
+            with self.assertRaisesRegex(OSError, 'simulated stop'):
+                review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                              run_dir=str(run)))
+
+        manifest = self.read(run / 'cierre.json')
+        recovered = artifacts.recover(run, controller=manifest['controller'],
+                                      authority='User requested cleanup recovery',
+                                      current_inputs=self.current(run))
+        manifest = self.read(run / 'cierre.json')
+        self.assertEqual(recovered['status'], 'plan')
+        self.assertEqual(recovered['actions'][0]['action'], 'retry_close')
+        self.assertEqual(len(manifest['cleanup_receipts']), 1)
+        self.assertEqual(manifest['resource_claims'][0]['status'], 'released')
+
+    def test_pending_cleanup_is_visible_and_recovery_does_not_delete(self):
+        run, session = self.retained_claimed_run()
+        artifacts.begin_resource_cleanup(run, session)
+        before_run = self.snapshot(run)
+        before_session = self.snapshot(session)
+
+        inspected = recovery.inspect_run(run, current_inputs=self.current(run))
+        recovered = artifacts.recover(run, controller=self.read(run / 'cierre.json')['controller'],
+                                      authority='User requested cleanup recovery',
+                                      current_inputs=self.current(run))
+
+        resource = next(row for row in inspected['resources'] if row['path'] == str(session))
+        self.assertEqual(resource['availability'], 'cleanup_pending')
+        self.assertIn({'kind': 'resource_cleanup', 'status': 'pending',
+                       'operation_id': self.read(run / 'cierre.json')['resource_cleanup']['operation_id']},
+                      inspected['pending_transaction'])
+        self.assertEqual(recovered['actions'][0]['action'], 'retry_cleanup')
+        self.assertEqual(before_run, self.snapshot(run))
+        self.assertEqual(before_session, self.snapshot(session))
+
+    def test_pending_close_advances_after_cleanup_receipt(self):
+        run, session = self.retained_claimed_run()
+        artifacts.close(run, cleanup='pending', residuals=[str(session)])
+        self.assertEqual(self.read(run / 'cierre.json')['state'], 'closing')
+
+        review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                     run_dir=str(run)))
+        closed = artifacts.close(run, cleanup='complete')
+
+        self.assertEqual(closed['state'], 'complete')
+        self.assertEqual(closed['resource_claims'][0]['status'], 'released')
+        self.assertEqual(closed['close_observation']['cleanup'], 'complete')
+
+    def test_cleanup_conflicts_with_transfer(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        source = self.prepare7('focused')
+        selection = self.read(source / 'cierre.json')['profile_history'][0]
+        context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': []}
+        artifacts.register(source, [str(session)], context_input=self.write('cleanup-conflict-context.json', context))
+        successor = self.prepare7('focused')
+        artifacts.register(successor, [], context_input=self.write('cleanup-successor-context.json', {
+            'profile': self.read(successor / 'cierre.json')['profile_history'][0]['profile'],
+            'selection_source': 'automatic',
+            'profile_reference': self.read(successor / 'cierre.json')['profile_history'][0]['reference'],
+            'profile_history': self.read(successor / 'cierre.json')['profile_history'],
+            'execution_plan': [], 'executors': []}))
+        artifacts.begin_resource_cleanup(source, session)
+        before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+
+        with self.assertRaisesRegex(ValueError, 'cleanup|releasing'):
+            artifacts.transfer_resources(source, successor, [str(session)], authority='User requested transfer',
+                                         controller=self.controller())
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_missing_without_receipt_is_reported_as_unknown(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        run = self.prepare7('focused')
+        selection = self.read(run / 'cierre.json')['profile_history'][0]
+        context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': []}
+        artifacts.register(run, [str(session)], context_input=self.write('missing-context.json', context))
+        shutil.rmtree(session)
+
+        inspected = recovery.inspect_run(run, current_inputs=self.current(run))
+
+        resource = next(row for row in inspected['resources'] if row['path'] == str(session))
+        self.assertEqual(resource['availability'], 'missing_unknown')
+        self.assertEqual(resource['claim_status'], 'owned')
 
     def test_legacy_recovery_creates_linked7_without_migration(self):
         source = self.prepare_legacy()
