@@ -28,6 +28,7 @@ import review_trace
 import review_harness
 import review_profiles
 import review_inputs
+import review_restart
 import review_resource_claims
 from review_run_lock import run_locks
 from review_execution import validate_execution_sources
@@ -105,10 +106,210 @@ def _owned_run_locks(run_dirs, *, reservation=None):
     if reservation is not None:
         raise ValueError('restart reservations are not available for ordinary run mutations')
     for path in paths:
-        _load_run(path)
+        _, manifest, _ = _load_run(path)
+        if _active_restart_operation(path, manifest) is not None:
+            raise ValueError('a durable restart is pending; retry that exact restart or recover it first')
     with run_locks(paths):
         loaded = [_load_run(path) for path in paths]
+        for path, (_, manifest, _) in zip(paths, loaded):
+            if _active_restart_operation(path, manifest) is not None:
+                raise ValueError('a durable restart is pending; retry that exact restart or recover it first')
         yield loaded
+
+
+def _restart_local_dir(source_run, manifest):
+    source = safe_path(source_run)
+    directory = source.parent / '.restart-intents' / manifest['run_id']
+    return safe_path(directory)
+
+
+def _restart_intent_path(source_run, source_manifest, request):
+    """Return a stable local path keyed by source identity and normalized request."""
+    source = safe_path(source_run)
+    digest = review_restart._sha(review_restart._request_identity(request))
+    return _restart_local_dir(source, source_manifest) / (digest + '.json')
+
+
+def _active_restart_paths(source_run, source_manifest):
+    directory = _restart_local_dir(source_run, source_manifest)
+    return directory / 'active.json', directory / 'active.owner.json'
+
+
+def _restart_completion_path(intent_path):
+    return Path(intent_path).with_suffix('.complete.json')
+
+
+def _restart_source_identity(run, manifest):
+    return {key: manifest[key] if key != 'run_dir' else str(run)
+            for key in review_restart.SOURCE_FIELDS}
+
+
+def _validate_restart_completion(path, intent):
+    try:
+        value = read_json(path)
+    except FileNotFoundError:
+        return None
+    fields = {'schema_version', 'operation_id', 'source_run', 'source_owner_id',
+              'intent_sha256', 'successor_run_dir', 'successor_owner_id', 'receipt_sha256'}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError('restart completion receipt has an invalid shape')
+    unsigned = {key: item for key, item in value.items() if key != 'receipt_sha256'}
+    if (value['schema_version'] != 1 or value['receipt_sha256'] != _digest(_json_bytes(unsigned))
+            or value['operation_id'] != intent['operation_id']
+            or value['source_run'] != intent['source']['run_dir']
+            or value['source_owner_id'] != intent['source']['owner_id']
+            or value['intent_sha256'] != intent['intent_sha256']
+            or value['successor_run_dir'] != intent['successor']['run_dir']
+            or value['successor_owner_id'] != intent['successor']['owner_id']):
+        raise ValueError('restart completion receipt differs from its reserved operation')
+    return value
+
+
+def _read_restart_intent(path, source_run, source_manifest):
+    value = read_json(path)
+    errors = review_restart.validate_restart_intent(value)
+    if errors:
+        raise ValueError('; '.join(errors))
+    if value['source'] != _restart_source_identity(source_run, source_manifest):
+        raise ValueError('restart intent belongs to a different source owner')
+    if safe_path(path) != _restart_intent_path(source_run, source_manifest, value['request']):
+        raise ValueError('restart intent path differs from its source/request identity')
+    return value
+
+
+def _active_restart_operation(source_run, source_manifest):
+    """Read the one source-bound active descriptor; never scan other reviews."""
+    active_path, owner_path = _active_restart_paths(source_run, source_manifest)
+    if not active_path.exists() and not owner_path.exists():
+        return None
+    if not owner_path.exists():
+        raise ValueError('restart active descriptor has no ownership transition record')
+    owner = read_json(owner_path)
+    fields = {'schema_version', 'source_run', 'source_owner_id', 'active_sha256',
+              'previous_active_sha256', 'active_descriptor', 'previous_descriptor'}
+    if (not isinstance(owner, dict) or set(owner) != fields or owner['schema_version'] != 1
+            or owner['source_run'] != str(safe_path(source_run))
+            or owner['source_owner_id'] != source_manifest.get('owner_id')):
+        raise ValueError('restart active descriptor ownership differs from its source')
+    descriptor = owner['active_descriptor']
+    previous = owner['previous_descriptor']
+    if not isinstance(descriptor, dict):
+        raise ValueError('restart active descriptor transition is invalid')
+    if active_path.exists():
+        raw = read_json(active_path)
+        digest = _digest(_json_bytes(raw))
+        if digest == owner['active_sha256']:
+            descriptor = raw
+        elif digest == owner.get('previous_active_sha256') and isinstance(previous, dict):
+            descriptor = raw
+        else:
+            raise ValueError('restart active descriptor bytes are outside the authorized transition')
+    if (descriptor.get('schema_version') != 1 or descriptor.get('source_run') != str(safe_path(source_run))
+            or descriptor.get('source_owner_id') != source_manifest.get('owner_id')
+            or descriptor.get('status') not in {'pending', 'complete'}):
+        raise ValueError('restart active descriptor is invalid')
+    intent = descriptor.get('intent')
+    errors = review_restart.validate_restart_intent(intent)
+    if errors:
+        raise ValueError('; '.join(errors))
+    if (descriptor.get('operation_id') != intent['operation_id']
+            or descriptor.get('intent_path') != str(_restart_intent_path(source_run, source_manifest, intent['request']))
+            or descriptor.get('intent_sha256') != intent['intent_sha256']
+            or descriptor.get('successor_run_dir') != intent['successor']['run_dir']):
+        raise ValueError('restart active descriptor differs from its intent')
+    intent_path = Path(descriptor['intent_path'])
+    if intent_path.exists():
+        stored = _read_restart_intent(intent_path, source_run, source_manifest)
+        if stored != intent:
+            raise ValueError('restart active intent differs from its immutable request file')
+    if descriptor['status'] == 'complete' or _validate_restart_completion(
+            _restart_completion_path(intent_path), intent) is not None:
+        return None
+    return descriptor
+
+
+def _write_restart_intent(path, intent, source_run, source_manifest):
+    errors = review_restart.validate_restart_intent(intent)
+    if errors:
+        raise ValueError('; '.join(errors))
+    if path.exists():
+        existing = _read_restart_intent(path, source_run, source_manifest)
+        if existing != intent:
+            raise ValueError('restart intent already exists with different reserved bytes')
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(path, _json_bytes(intent))
+
+
+def _write_active_restart(source_run, source_manifest, intent_path, intent, *, status='pending'):
+    active_path, owner_path = _active_restart_paths(source_run, source_manifest)
+    descriptor = {'schema_version': 1, 'source_run': str(safe_path(source_run)),
+                  'source_owner_id': source_manifest['owner_id'], 'operation_id': intent['operation_id'],
+                  'intent_path': str(intent_path), 'intent_sha256': intent['intent_sha256'],
+                  'successor_run_dir': intent['successor']['run_dir'], 'status': status,
+                  'intent': copy.deepcopy(intent)}
+    previous = None
+    previous_digest = None
+    if active_path.exists():
+        previous = read_json(active_path)
+        previous_digest = _digest(_json_bytes(previous))
+    transition = {'schema_version': 1, 'source_run': str(safe_path(source_run)),
+                  'source_owner_id': source_manifest['owner_id'],
+                  'active_sha256': _digest(_json_bytes(descriptor)),
+                  'previous_active_sha256': previous_digest,
+                  'active_descriptor': descriptor, 'previous_descriptor': previous}
+    owner_path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write(owner_path, _json_bytes(transition))
+    atomic_write(active_path, _json_bytes(descriptor))
+    final = dict(transition, previous_active_sha256=None, previous_descriptor=None)
+    atomic_write(owner_path, _json_bytes(final))
+
+
+def _retire_active_restart(intent_path, intent, source_run, source_manifest):
+    active_path, owner_path = _active_restart_paths(source_run, source_manifest)
+    _write_active_restart(source_run, source_manifest, intent_path, intent, status='complete')
+    active_path.unlink(missing_ok=True)
+    owner_path.unlink(missing_ok=True)
+
+
+def _retire_completed_descriptor_if_present(intent_path, intent, source_run, source_manifest):
+    active_path, owner_path = _active_restart_paths(source_run, source_manifest)
+    if active_path.exists() or owner_path.exists():
+        _retire_active_restart(intent_path, intent, source_run, source_manifest)
+
+
+def _record_restart_completion(intent_path, intent):
+    path = _restart_completion_path(intent_path)
+    fields = {'schema_version': 1, 'operation_id': intent['operation_id'],
+              'source_run': intent['source']['run_dir'], 'source_owner_id': intent['source']['owner_id'],
+              'intent_sha256': intent['intent_sha256'], 'successor_run_dir': intent['successor']['run_dir'],
+              'successor_owner_id': intent['successor']['owner_id']}
+    value = dict(fields, receipt_sha256=_digest(_json_bytes(fields)))
+    if path.exists():
+        _validate_restart_completion(path, intent)
+        return
+    atomic_write(path, _json_bytes(value))
+
+
+@contextmanager
+def _restart_lock(source_path, *, timeout=30.0):
+    """Retry only transient cross-process lock conflicts, then re-read the intent."""
+    import time
+    deadline = time.monotonic() + timeout
+    lock = None
+    while True:
+        lock = run_locks([source_path])
+        try:
+            lock.__enter__()
+            break
+        except ValueError as exc:
+            if 'mutation lock conflict' not in str(exc) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        lock.__exit__(None, None, None)
 
 
 def read_bounded(path, limit):
@@ -418,6 +619,19 @@ def _load_run(run_dir):
         if (not isinstance(operation, dict) or set(operation) != fields
                 or operation['disposition'] not in {'open', 'paused', 'blocked', 'superseded', 'complete'}):
             raise ValueError('invalid archive operation disposition')
+        restart_operation = manifest.get('restart_operation')
+        if restart_operation is not None:
+            restart_fields = {'operation_id', 'request_sha256', 'intent_sha256', 'source_run',
+                              'source_owner_id', 'reservation_id'}
+            if (not isinstance(restart_operation, dict) or set(restart_operation) != restart_fields
+                    or not re.fullmatch(r'[0-9a-f]{32}', str(restart_operation['operation_id']))
+                    or not CHECKPOINT_HASH.fullmatch(str(restart_operation['request_sha256']))
+                    or not CHECKPOINT_HASH.fullmatch(str(restart_operation['intent_sha256']))
+                    or not isinstance(restart_operation['source_run'], str)
+                    or restart_operation['source_run'] != manifest.get('previous_run')
+                    or not isinstance(restart_operation['source_owner_id'], str)
+                    or not isinstance(restart_operation['reservation_id'], str)):
+                raise ValueError('invalid reserved restart identity in archive')
         controller = manifest.get('controller')
         if (not isinstance(controller, dict) or set(controller) != {'identity', 'source'}
                 or not isinstance(controller['identity'], dict) or not isinstance(controller['source'], str)):
@@ -1231,7 +1445,8 @@ def _measurements(inputs, unavailable_reason):
 
 
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
-            *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None):
+            *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None,
+            _restart_reservation=None, _harness_identity=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = _input_object(scope_file, 'scope')
@@ -1241,14 +1456,25 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
     controller_value = _controller(controller, selection['actor'])
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
-    harness_identity = review_harness.resolve(harness, harness_id, harness_source)
+    if _harness_identity is None:
+        harness_identity = review_harness.resolve(harness, harness_id, harness_source)
+    else:
+        review_harness.validate_identity(_harness_identity)
+        harness_identity = copy.deepcopy(_harness_identity)
     identity = repository_identity(repo)
     repository_key = _digest(identity.encode('utf-8'))[:20]
     root = select_output_root(repo, output_root)
     previous = None
     if previous_run is not None:
         old, old_manifest, _ = _load_run(previous_run)
-        _verify_files(old, old_manifest)
+        active_restart = _active_restart_operation(old, old_manifest)
+        if (active_restart is not None
+                and (_restart_reservation is None
+                     or active_restart['operation_id'] != _restart_reservation['operation_id'])):
+            raise ValueError('a durable restart is pending; only its exact reserved prepare may continue')
+        _verify_files(old, old_manifest,
+                      allow_checkpoint_transaction=_restart_reservation is not None,
+                      allow_resource_transfer=_restart_reservation is not None)
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
@@ -1268,24 +1494,72 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'resource_cleanup': None, 'cleanup_receipts': [],
                 'assignment_registry': [], 'review_inputs': captured_inputs}
     manifest.update(harness_identity)
+    if _restart_reservation is not None:
+        intent = _restart_reservation
+        errors = review_restart.validate_restart_intent(intent)
+        if errors:
+            raise ValueError('; '.join(errors))
+        reserved = intent['successor']
+        manifest.update(run_id=reserved['run_id'], owner_id=reserved['owner_id'],
+                        created_at=reserved['created_at'], restart_operation={
+                            'operation_id': intent['operation_id'],
+                            'request_sha256': intent['request_sha256'],
+                            'intent_sha256': intent['intent_sha256'],
+                            'source_run': intent['source']['run_dir'],
+                            'source_owner_id': intent['source']['owner_id'],
+                            'reservation_id': reserved['reservation_id']})
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
     review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
     scoped = root / _repository_group(identity) / _scope_group(scope)
     safe_path(scoped).mkdir(parents=True, exist_ok=True)
-    # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
-    for _ in range(8):
-        created = datetime.now(timezone.utc)
-        manifest.update(created_at=created.isoformat(), run_id=uuid.uuid4().hex[:20])
-        run = scoped / (created.strftime('%Y%m%dT%H%M%S') + '-' + manifest['run_id'])
+    reservation_file = '.review-restart-reservation.json'
+    if _restart_reservation is not None:
+        reserved = _restart_reservation['successor']
+        run = safe_path(reserved['run_dir'])
+        created = datetime.fromisoformat(reserved['created_at'])
+        expected_parent = safe_path(scoped)
+        if run.parent != expected_parent:
+            raise ValueError('reserved successor escaped its repository/scope group')
         _validate_layout(run, manifest)
-        try:
+        reservation = {'operation_id': _restart_reservation['operation_id'],
+                       'intent_sha256': _restart_reservation['intent_sha256'],
+                       'reservation_id': reserved['reservation_id'], 'run_dir': str(run),
+                       'owner_id': reserved['owner_id']}
+        if run.exists():
+            try:
+                existing, existing_manifest, existing_marker = _load_run(run)
+                if existing_manifest.get('restart_operation') == manifest['restart_operation']:
+                    existing_marker = _recover_trace(existing, existing_manifest, existing_marker)
+                    _verify_files(existing, existing_manifest)
+                    (existing / reservation_file).unlink(missing_ok=True)
+                    return str(existing)
+            except (ValueError, OSError, TypeError, KeyError):
+                pass
+            marker_path = run / reservation_file
+            if not marker_path.is_file() or read_json(marker_path) != reservation:
+                raise ValueError('reserved successor path is occupied by foreign or invalid data')
+            entries = {item.name for item in run.iterdir()}
+            if entries != {reservation_file}:
+                raise ValueError('partially prepared reserved successor contains unowned data')
+            marker_path.unlink()
+        else:
             run.mkdir()
-            break
-        except FileExistsError:
-            continue
+            atomic_write(run / reservation_file, _json_bytes(reservation))
     else:
-        raise ValueError('cannot allocate a unique owned review run')
+        # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
+        for _ in range(8):
+            created = datetime.now(timezone.utc)
+            manifest.update(created_at=created.isoformat(), run_id=uuid.uuid4().hex[:20])
+            run = scoped / (created.strftime('%Y%m%dT%H%M%S') + '-' + manifest['run_id'])
+            _validate_layout(run, manifest)
+            try:
+                run.mkdir()
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise ValueError('cannot allocate a unique owned review run')
     marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run), 'archive_root': str(root),
               'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
     try:
@@ -1299,10 +1573,12 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
             _verify_files(recovered_run, recovered)
             if (recovered['profile_history'] == [selection]
                     and recovered['trace']['events'] >= 2):
+                (recovered_run / reservation_file).unlink(missing_ok=True)
                 return str(run)
         except (OSError, ValueError, TypeError, KeyError):
             _remove_unowned_prepare_directory(run, marker)
         raise
+    (run / reservation_file).unlink(missing_ok=True)
     return str(run)
 
 
@@ -1616,7 +1892,8 @@ def _store_transfer(manifest, intent):
     return rows
 
 
-def transfer_resources(source_run, successor_run, paths, *, authority, controller):
+def transfer_resources(source_run, successor_run, paths, *, authority, controller,
+                       _restart_operation_id=None):
     """Transfer explicitly selected claimed workspaces under both run locks."""
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
     selected_raw_paths = [str(safe_path(path)) for path in paths]
@@ -1627,6 +1904,10 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
     with run_locks([source_path, successor_path]):
         source, source_manifest, source_marker = _load_run(source_path)
         successor, next_manifest, next_marker = _load_run(successor_path)
+        active_restart = _active_restart_operation(source, source_manifest)
+        if (active_restart is not None
+                and active_restart['operation_id'] != _restart_operation_id):
+            raise ValueError('a durable restart is pending; only its exact restart-owned transfer may continue')
         source_marker = _recover_trace(source, source_manifest, source_marker)
         next_marker = _recover_trace(successor, next_manifest, next_marker)
         _verify_files(source, source_manifest, allow_resource_transfer=True)
@@ -1909,6 +2190,29 @@ def _recovery_event(manifest, summary, *, status='completed', authority=None, so
     return event
 
 
+def _takeover_controller(run, manifest, marker, controller, authority):
+    """Persist an authorized controller change once, shared by resume and recover."""
+    normalized = _controller(controller, manifest.get('controller', {}).get('identity',
+        {'kind': 'coordinator', 'name': 'review coordinator', 'provider_id': None}))
+    previous = manifest.get('controller')
+    if normalized == previous:
+        return normalized, marker
+    operation = manifest.get('operation', {})
+    if manifest.get('state') == 'complete' or operation.get('disposition') in {'complete', 'superseded'}:
+        return previous, marker
+    if authority is None:
+        raise ValueError('controller takeover requires explicit user authority')
+    authority = review_resource_claims._authority(authority)
+    prior = previous.get('identity', {}).get('name', 'unknown') if isinstance(previous, dict) else 'unknown'
+    manifest['controller'] = normalized
+    marker = _append_trace(run, manifest, marker, _recovery_event(
+        manifest, 'Controller takeover by ' + normalized['identity']['name']
+        + '; prior controller recorded as ' + prior,
+        authority=authority, relation={'relation': 'follows', 'target': 'E'
+            + str(manifest.get('trace', {}).get('events', 0)).zfill(6)}))
+    return normalized, marker
+
+
 def _cleanup_identity(intent):
     return {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
 
@@ -2155,8 +2459,6 @@ def resume(run_dir, *, controller, authority, current_inputs):
     changed_controller = normalized_controller != manifest['controller']
     if operation['disposition'] in {'paused', 'blocked'} and authority is None:
         raise ValueError('continuing a paused or blocked review requires explicit user authority')
-    if changed_controller and authority is None:
-        raise ValueError('controller takeover is unknown; explicit authority is required before resuming')
     if authority is not None:
         authority = review_resource_claims._authority(authority)
     if operation['disposition'] == 'open' and not changed_controller:
@@ -2164,13 +2466,11 @@ def resume(run_dir, *, controller, authority, current_inputs):
     for row in manifest.get('resource_claims', []):
         if row.get('status') == 'owned':
             review_resource_claims.verify_claim(row['session_dir'], run)
-    prior_controller = manifest['controller']['identity']['name']
-    manifest['controller'] = normalized_controller
+    normalized_controller, marker = _takeover_controller(
+        run, manifest, marker, normalized_controller, authority)
     manifest['operation'].update(disposition='open', reason=None, source='resume', successor=None)
     manifest['operation']['phase'] = manifest['operation']['phase'] or 'discovery'
     summary = 'Review resumed by ' + normalized_controller['identity']['name']
-    if changed_controller:
-        summary += '; prior controller recorded as ' + prior_controller
     _append_trace(run, manifest, marker, _recovery_event(
         manifest, summary, authority=authority, relation={'relation': 'follows', 'target': 'E' +
             str(manifest['trace']['events']).zfill(6)}))
@@ -2182,12 +2482,38 @@ def recover(run_dir, *, controller, authority, current_inputs):
     import review_recovery
     run_path = safe_path(run_dir)
     run, manifest, _ = _load_run(run_path)
-    normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+    normalized_inputs = review_recovery.validate_current_inputs(
+        current_inputs, manifest, require_same_scope=False)
     input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
-    authority = review_resource_claims._authority(authority)
+    authority = review_resource_claims._authority(authority) if authority is not None else None
     fallback = manifest.get('controller', {}).get('identity',
         {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
-    _controller(controller, fallback)
+    normalized_controller = _controller(controller, fallback)
+    active_restart = _active_restart_operation(run_path, manifest)
+    if active_restart is not None:
+        intent = active_restart['intent']
+        if authority is None:
+            raise ValueError('recovering a pending restart requires explicit authority')
+        requested_inputs = review_inputs.normalize_inputs(current_inputs)
+        requested_inputs.pop('profile', None)
+        restart_profile = intent['request']['profile_input']['profile']
+        expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
+        expected_inputs['profile'] = restart_profile
+        requested_inputs['profile'] = restart_profile
+        restart_appraisal = review_inputs.compare_inputs(expected_inputs, requested_inputs)
+        if restart_appraisal['applicability'] != 'applicable':
+            return {'status': 'restart_pending', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
+                    'successor_run_dir': active_restart['successor_run_dir'],
+                    'input_appraisal': restart_appraisal,
+                    'actions': [{'action': 'retry_restart',
+                                 'reason': 'The pending reservation can continue only with the exact current inputs captured by its intent.'}]}
+        intent_path = Path(active_restart['intent_path'])
+        if not intent_path.exists():
+            _write_restart_intent(intent_path, intent, run_path, manifest)
+        successor = _complete_restart_intent(intent_path, run_path, manifest)
+        return {'status': 'restarted', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
+                'successor_run_dir': successor,
+                'actions': [{'action': 'inspect_successor', 'reason': 'The exact reserved restart completed; no review work was dispatched.'}]}
     cleanup_intent = manifest.get('resource_cleanup')
     if isinstance(cleanup_intent, dict) and cleanup_intent.get('status') == 'pending':
         cleanup_result = recover_resource_cleanup(run_path)
@@ -2209,7 +2535,8 @@ def recover(run_dir, *, controller, authority, current_inputs):
 
     with run_locks([run_path]):
         run, manifest, marker = _load_run(run_path)
-        normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+        normalized_inputs = review_recovery.validate_current_inputs(
+            current_inputs, manifest, require_same_scope=False)
         input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
         if manifest.get('pending_trace') is not None:
             marker = _recover_trace(run, manifest, marker)
@@ -2244,6 +2571,10 @@ def recover(run_dir, *, controller, authority, current_inputs):
                                         input_appraisal)
             _checkpoint_commit(run, manifest, marker, checkpoint_transaction, payloads)
             run, manifest, marker = _load_run(run)
+
+        if manifest.get('schema_version') == 7:
+            normalized_controller, marker = _takeover_controller(
+                run, manifest, marker, normalized_controller, authority)
 
         if manifest['state'] in {'retaining', 'closing'}:
             return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
@@ -2293,13 +2624,13 @@ def _recovery_outcome(result, appraisal):
     return result
 
 
-def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=()):
+def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=(), preserve_claims=False):
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
     authority = review_resource_claims._authority(authority)
     with run_locks([source_path, successor_path]):
         source, old, old_marker = _load_run(source_path)
         successor, new, _ = _load_run(successor_path)
-        _verify_files(source, old)
+        _verify_files(source, old, allow_checkpoint_transaction=True, allow_resource_transfer=True)
         _verify_files(successor, new)
         if old['schema_version'] != 7 or old['state'] == 'complete':
             return
@@ -2309,7 +2640,7 @@ def _link_restart(source_run, successor_run, *, authority, controller, moved_pat
             raise ValueError('source review already has a different successor')
         if old['operation']['disposition'] not in {'open', 'paused', 'blocked'}:
             raise ValueError('source review cannot be superseded from its current disposition')
-        if any(row.get('status') == 'owned' for row in old.get('resource_claims', [])):
+        if not preserve_claims and any(row.get('status') == 'owned' for row in old.get('resource_claims', [])):
             raise ValueError('owned resources require explicit transfer before restart')
         normalized_controller = _controller(controller, new['controller']['identity'])
         old['operation'].update(disposition='superseded', reason=authority,
@@ -2323,96 +2654,207 @@ def _link_restart(source_run, successor_run, *, authority, controller, moved_pat
             'relations': [{'relation': 'supersedes', 'target': str(successor)}]})
 
 
-def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None):
-    """Create a fresh archive-7 run linked to a verified source, preserving its history."""
-    import review_recovery
-    source_path = safe_path(source_run)
-    authority = review_resource_claims._authority(authority)
-    requested_selection = _initial_selection(profile_input)
-    with run_locks([source_path]):
-        source, manifest, marker = _load_run(source_path)
-        marker = _recover_trace(source, manifest, marker)
-        _verify_files(source, manifest)
-        normalized_inputs = review_recovery.validate_current_inputs(
-            current_inputs, manifest, require_same_scope=False, compare_sources=False)
-        if normalized_inputs['scope']['repository'] != manifest['scope']['repository']:
-            raise ValueError('restart cannot change the source repository identity')
-        disposition = manifest.get('operation', {}).get('disposition',
-            'complete' if manifest.get('state') == 'complete' else 'open')
-        if disposition == 'superseded':
-            existing = manifest.get('operation', {}).get('successor')
-            if existing:
-                successor, successor_manifest, _ = _load_run(existing)
-                existing_selection = successor_manifest.get('profile_history', [{}])[0]
-                same_selection = all(existing_selection.get(key) == requested_selection[key]
-                                     for key in review_profiles.INPUT_FIELDS)
-                same_controller = (_controller(controller, successor_manifest['controller']['identity'])
-                                   == successor_manifest['controller'])
-                if (successor_manifest.get('previous_run') == str(source)
-                        and successor_manifest.get('scope') == normalized_inputs['scope']
-                        and same_selection and same_controller):
-                    return str(successor)
-            raise ValueError('source review was superseded; inspect its recorded successor')
-        if manifest.get('state') in {'retaining', 'closing'}:
-            raise ValueError('recover the pending retain/close transaction before restarting')
-        if disposition not in {'open', 'paused', 'blocked', 'complete'}:
-            raise ValueError('source review cannot be restarted from its current operation state')
-        active_claims = [row for row in manifest.get('resource_claims', []) if row.get('status') == 'owned']
-        for row in active_claims:
-            review_resource_claims.verify_claim(row['session_dir'], source)
-        selected_transfers = sorted({str(safe_path(path)) for path in (transfer_paths or [])})
-        if len(selected_transfers) != len(transfer_paths or []):
-            raise ValueError('restart transfer paths must be unique explicit absolute paths')
-        active_paths = {row['session_dir'] for row in active_claims}
-        registered_paths = set(manifest.get('temporary_paths', []))
-        if active_claims and not selected_transfers:
-            raise ValueError('explicit transfer paths are required to preserve owned sessions across restart')
-        if active_claims and set(selected_transfers) != active_paths:
-            raise ValueError('restart transfer paths must identify every active source claim exactly')
-        if active_claims and normalized_inputs['scope'] != manifest['scope']:
-            raise ValueError('owned sessions cannot transfer across changed review scopes; close or preserve the source resources first')
-        if selected_transfers and set(selected_transfers) - registered_paths:
-            raise ValueError('restart transfer paths must already be registered to the source run')
-        adopt_paths = not active_claims and bool(selected_transfers)
-        if adopt_paths:
-            for path in selected_transfers:
-                if review_resource_claims._workspace(path) is None:
-                    raise ValueError('only verified review workspace sessions can be adopted during restart')
-        repo = manifest['repository_path']
-        output_root = manifest['archive_root']
-        harness = manifest['harness']
-        harness_id = manifest.get('harness_id')
-        source_version = manifest['skill_version']
-        current_scope = normalized_inputs['scope']
+def _restart_operation_row(intent):
+    return {'operation_id': intent['operation_id'], 'request_sha256': intent['request_sha256'],
+            'intent_sha256': intent['intent_sha256'], 'source_run': intent['source']['run_dir'],
+            'source_owner_id': intent['source']['owner_id'],
+            'reservation_id': intent['successor']['reservation_id']}
 
+
+def _restart_adoption_context(request):
+    selection = _initial_selection(request['profile_input'])
+    context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+               'profile_reference': selection['reference'], 'profile_history': [selection],
+               'execution_plan': [], 'executors': [], 'review_inputs': copy.deepcopy(request['current_inputs'])}
+    errors = review_profiles.validate_history(context['profile_history'])
+    if errors or not isinstance(context['execution_plan'], list) or not isinstance(context['executors'], list):
+        raise ValueError('restart adoption context is invalid: ' + '; '.join(errors))
+    return _input_object(context, 'restart adoption context')
+
+
+def _prepare_from_restart_intent(intent_path):
+    """Create or resume only the exact destination reserved by the intent."""
+    intent_file = safe_path(intent_path)
+    intent = read_json(intent_file)
+    errors = review_restart.validate_restart_intent(intent)
+    if errors:
+        raise ValueError('; '.join(errors))
+    source_path = safe_path(intent['source']['run_dir'])
+    source, source_manifest, _ = _load_run(source_path)
+    intent = _read_restart_intent(intent_file, source, source_manifest) if intent_file.exists() else intent
+    request = intent['request']
+    source_claims = [row for row in source_manifest.get('resource_claims', []) if row.get('status') == 'owned']
+    selected = request['transfer_paths']
+    active_present = [row for row in source_claims if Path(row['session_dir']).exists()]
+    transfer_records = normalize_transfer_history(source_manifest)
+    is_transferring = bool(source_claims) or any(
+        row.get('source_run') == str(source_path)
+        and row.get('successor_run') == intent['successor']['run_dir']
+        and {item.get('session_dir') for item in row.get('items', [])} == set(selected)
+        for row in transfer_records)
+    has_adoption = bool(selected) and not is_transferring
+    adoption_context = _restart_adoption_context(request) if has_adoption else None
+    current_scope = request['current_inputs']['scope']
     version_path = Path(__file__).resolve().parents[1] / 'SKILL.md'
     try:
         skill_text = version_path.read_text(encoding='utf-8')
         version_match = re.search(r'(?m)^\s+version:\s*["\']?([0-9]+\.[0-9]+\.[0-9]+)', skill_text)
-        skill_version = version_match.group(1) if version_match else source_version
+        skill_version = version_match.group(1) if version_match else source_manifest['skill_version']
     except OSError:
-        skill_version = source_version
-    successor_path = prepare(repo, current_scope, skill_version, harness, output_root,
-                              source, selected_transfers, profile_input=profile_input,
-                              controller=controller, harness_id=harness_id)
-    if selected_transfers:
-        if active_claims:
-            transfer_resources(source_path, successor_path, selected_transfers,
-                               authority=authority, controller=controller)
-        elif adopt_paths:
-            successor, successor_manifest, _ = _load_run(successor_path)
-            selection = successor_manifest['profile_history'][0]
-            context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
-                       'profile_reference': selection['reference'],
-                       'profile_history': successor_manifest['profile_history'],
-                       'execution_plan': [], 'executors': []}
-            register(successor_path, selected_transfers, context_input=context, authority=authority)
-            if manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
-                _link_restart(source_path, successor_path, authority=authority,
-                              controller=controller, moved_paths=selected_transfers)
-    elif manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
-        _link_restart(source_path, successor_path, authority=authority, controller=controller)
-    return successor_path
+        skill_version = source_manifest['skill_version']
+    harness = request['harness']
+    successor = prepare(source_manifest['repository_path'], current_scope, skill_version, harness['harness'],
+        source_manifest['archive_root'], source_path, selected,
+        profile_input=request['profile_input'], controller=request['controller'],
+        current_inputs=request['current_inputs'], _restart_reservation=intent,
+        _harness_identity={key: harness[key] for key in ('harness_id', 'harness_catalog_version',
+                                                          'harness_source', 'harness_diagnostics')})
+    if selected:
+        if is_transferring:
+            transfer_resources(source_path, successor, selected, authority=request['authority'],
+                               controller=request['controller'],
+                               _restart_operation_id=intent['operation_id'])
+        elif has_adoption:
+            register(successor, selected, context_input=adoption_context, authority=request['authority'])
+    if source_manifest.get('schema_version') == 7 and source_manifest.get('state') != 'complete':
+        moved = set(selected) if is_transferring else set()
+        preserve_claims = any(row.get('status') == 'owned' and row['session_dir'] not in moved
+                              for row in source_manifest.get('resource_claims', []))
+        _link_restart(source_path, successor, authority=request['authority'],
+                      controller=request['controller'], moved_paths=moved,
+                      preserve_claims=preserve_claims)
+    return str(successor)
+
+
+def _complete_restart_intent(intent_path, source_path, source_manifest):
+    intent = _read_restart_intent(intent_path, source_path, source_manifest)
+    active = _active_restart_operation(source_path, source_manifest)
+    if active is not None and active['operation_id'] != intent['operation_id']:
+        raise ValueError('another restart operation is active for this source')
+    _write_restart_intent(intent_path, intent, source_path, source_manifest)
+    if active is None:
+        completion = _validate_restart_completion(_restart_completion_path(intent_path), intent)
+        if completion is not None:
+            successor, successor_manifest, _ = _load_run(completion['successor_run_dir'])
+            _verify_files(successor, successor_manifest)
+            if successor_manifest.get('restart_operation') != _restart_operation_row(intent):
+                raise ValueError('completed restart successor differs from its durable receipt')
+            _retire_completed_descriptor_if_present(intent_path, intent, source_path, source_manifest)
+            return str(successor)
+        _write_active_restart(source_path, source_manifest, intent_path, intent)
+    successor_path = _prepare_from_restart_intent(intent_path)
+    successor, successor_manifest, _ = _load_run(successor_path)
+    _verify_files(successor, successor_manifest, allow_resource_transfer=True)
+    if successor_manifest.get('restart_operation') != _restart_operation_row(intent):
+        raise ValueError('prepared successor does not match the reserved restart operation')
+    _record_restart_completion(intent_path, intent)
+    _retire_active_restart(intent_path, intent, source_path, source_manifest)
+    return str(successor)
+
+
+def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None,
+            harness=None):
+    """Create or replay one durable, source-bound archive-7 restart operation."""
+    import review_recovery
+    source_path = safe_path(source_run)
+    with _restart_lock(source_path):
+        source, manifest, marker = _load_run(source_path)
+        is_immutable = manifest.get('state') == 'complete' or manifest.get('schema_version') != 7
+        if not is_immutable:
+            marker = _recover_trace(source, manifest, marker)
+        _verify_files(source, manifest, allow_checkpoint_transaction=True,
+                      allow_resource_transfer=True)
+        normalized_inputs = review_recovery.validate_current_inputs(
+            current_inputs, manifest, require_same_scope=False, compare_sources=False)
+        if normalized_inputs['scope']['repository'] != manifest['scope']['repository']:
+            raise ValueError('restart cannot change the source repository identity')
+        raw_harness = harness
+        if raw_harness is None:
+            raw_harness = {'harness': 'unknown', 'harness_id': None, 'harness_source': None}
+        request = review_restart.normalize_restart_request(profile_input, controller, authority,
+            normalized_inputs, list(transfer_paths or []), raw_harness)
+        disposition = manifest.get('operation', {}).get('disposition',
+            'complete' if manifest.get('state') == 'complete' else 'open')
+        if manifest.get('state') in {'retaining', 'closing'}:
+            raise ValueError('recover the pending retain/close transaction before restarting')
+        if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
+            raise ValueError('recover pending resource cleanup before restarting')
+        if disposition not in {'open', 'paused', 'blocked', 'superseded', 'complete'}:
+            raise ValueError('source review cannot be restarted from its current operation state')
+        active = _active_restart_operation(source, manifest)
+        intent_path = _restart_intent_path(source, manifest, request)
+        if active is not None:
+            active_intent = active['intent']
+            if (active_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request))
+                    or active_intent['request'] != dict(request, authority=active_intent['request']['authority'])):
+                raise ValueError('a different restart request is already active for this source')
+            intent_path = Path(active['intent_path'])
+            if not intent_path.exists():
+                _write_restart_intent(intent_path, active_intent, source, manifest)
+        elif intent_path.exists():
+            existing_intent = _read_restart_intent(intent_path, source, manifest)
+            completion = _validate_restart_completion(_restart_completion_path(intent_path), existing_intent)
+            if completion is not None:
+                successor, successor_manifest, _ = _load_run(completion['successor_run_dir'])
+                _verify_files(successor, successor_manifest)
+                if successor_manifest.get('restart_operation') != _restart_operation_row(existing_intent):
+                    raise ValueError('completed restart successor differs from its durable receipt')
+                _retire_completed_descriptor_if_present(intent_path, existing_intent, source, manifest)
+                return str(successor)
+            if existing_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request)):
+                raise ValueError('restart intent identity collision; preserve the reserved operation')
+            request = existing_intent['request']
+            intent = existing_intent
+            _write_active_restart(source, manifest, intent_path, intent)
+        else:
+            if disposition == 'superseded':
+                raise ValueError('source review was superseded; inspect its recorded successor')
+            source_claims = [row for row in manifest.get('resource_claims', []) if row.get('status') == 'owned']
+            selected = request['transfer_paths']
+            active_present, active_missing = [], []
+            for row in source_claims:
+                session = Path(row['session_dir'])
+                if session.exists():
+                    review_resource_claims.verify_claim(session, source)
+                    active_present.append(row['session_dir'])
+                else:
+                    active_missing.append(row['session_dir'])
+            if selected:
+                selected_paths = [str(safe_path(path)) for path in selected]
+                selected_keys = {os.path.normcase(path) for path in selected_paths}
+                active_keys = {os.path.normcase(path) for path in active_present}
+                if source_claims and (active_missing or selected_keys != active_keys):
+                    raise ValueError('restart transfer must include every present owned claim; missing claims cannot be transferred')
+                if source_claims and normalized_inputs['scope'] != manifest['scope']:
+                    raise ValueError('owned sessions stay with the source when the review scope changes; do not transfer them')
+                registered = {os.path.normcase(path) for path in manifest.get('temporary_paths', [])}
+                if source_claims and not selected_keys.issubset(registered):
+                    raise ValueError('restart transfer paths must already be registered to the source run')
+                if not source_claims:
+                    _restart_adoption_context(request)
+                    from_claims = {'schema_version': 7, 'repository_path': manifest['repository_path'],
+                                   'repository_identity': manifest['repository_identity'],
+                                   'repository_key': manifest['repository_key'], 'archive_root': manifest['archive_root'],
+                                   'temporary_paths': []}
+                    plans = review_resource_claims.plan_resource_registration(
+                        selected_paths, from_claims, authority=request['authority'])
+                    if any(plan.get('action') not in {'adopt_pending', 'claim_pending'} for plan in plans):
+                        raise ValueError('only verified review workspace sessions can be adopted during restart')
+            elif active_present and normalized_inputs['scope'] == manifest['scope']:
+                raise ValueError('explicit transfer paths are required to preserve present owned sessions across a same-scope restart')
+            candidate_successor = datetime.now(timezone.utc)
+            run_id = uuid.uuid4().hex[:20]
+            scoped = Path(manifest['archive_root']) / _repository_group(manifest['repository_identity']) / _scope_group(normalized_inputs['scope'])
+            successor_info = {'run_dir': str(scoped / (candidate_successor.strftime('%Y%m%dT%H%M%S') + '-' + run_id)),
+                              'run_id': run_id, 'owner_id': uuid.uuid4().hex,
+                              'reservation_id': uuid.uuid4().hex,
+                              'created_at': candidate_successor.isoformat()}
+            intent = review_restart.build_restart_intent(
+                _restart_source_identity(source, manifest), request, successor_info)
+            intent_path = _restart_intent_path(source, manifest, request)
+            _write_active_restart(source, manifest, intent_path, intent)
+            _write_restart_intent(intent_path, intent, source, manifest)
+        return _complete_restart_intent(intent_path, source, manifest)
 
 
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
@@ -2492,7 +2934,7 @@ def _executors(context_input, manifest, temporary):
     previous = manifest.get('executors', [])
     if context_input is None:
         return previous
-    context = read_json(context_input)
+    context = _input_object(context_input, 'execution context')
     if not isinstance(context, dict) or not isinstance(context.get('executors'), list):
         raise ValueError('context.executors must be an array')
     entries = {item['executor']: item for item in previous}
@@ -2965,6 +3407,9 @@ def main():
     restart_command.add_argument('--controller-input', required=True)
     restart_command.add_argument('--authority-input', required=True)
     restart_command.add_argument('--current-inputs', required=True)
+    restart_command.add_argument('--harness', default='unknown', help='Harness observed for this restart invocation')
+    restart_command.add_argument('--harness-id', help='Canonical current harness ID from the CCR catalog')
+    restart_command.add_argument('--harness-source-input', help='JSON provenance for an explicit harness ID')
     restart_command.add_argument('--transfer-path', action='append',
                                  help='Explicit owned session path to transfer; repeat for every active claim')
     select = commands.add_parser('select-profile', help='Atomically capture a profile transition before using it')
@@ -3066,9 +3511,12 @@ def main():
             result = recover(args.run_dir, controller=read_json(args.controller_input), authority=authority_input,
                              current_inputs=read_json(args.current_inputs))
         elif args.command == 'restart':
+            harness_source = read_json(args.harness_source_input) if args.harness_source_input else None
             result = {'run_dir': restart(args.run_dir, profile_input=args.profile_input,
                          controller=read_json(args.controller_input), authority=authority_input,
-                         current_inputs=read_json(args.current_inputs), transfer_paths=args.transfer_path)}
+                         current_inputs=read_json(args.current_inputs), transfer_paths=args.transfer_path,
+                         harness={'harness': args.harness, 'harness_id': args.harness_id,
+                                  'harness_source': harness_source})}
         elif args.command == 'select-profile':
             result = select_profile(args.run_dir, args.selection_input)
         elif args.command == 'validate':

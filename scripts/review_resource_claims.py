@@ -135,6 +135,10 @@ def _preflight_unbound(session_dir, manifest, *, authority=None):
         return {'action': 'claim_pending', 'session_dir': str(session)}
     _validate_sidecar(current, session, workspace, token_digest)
     verify_claim(session, current['archive_path'])
+    if (manifest.get('restart_operation') is not None
+            and current.get('run_id') == manifest.get('run_id')
+            and current.get('owner_id') == manifest.get('owner_id')):
+        return {'action': 'existing', 'session_dir': str(session)}
     if manifest.get('previous_run') == current['archive_path']:
         return {'action': 'transfer_pending', 'session_dir': str(session)}
     raise ValueError('review session is already claimed by another review run; use transfer-resources with explicit authority')

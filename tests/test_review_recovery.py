@@ -200,6 +200,12 @@ class ReviewRecoveryTests(unittest.TestCase):
     def events(self, run):
         return [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_text(encoding='utf-8').splitlines()]
 
+    def restart_request(self, source, *, scope=None, controller_name='Restart coordinator', authority=None, **extra):
+        return {'profile_input': self.profile_input('deep'),
+                'controller': self.controller(controller_name),
+                'authority': authority or 'User requested a fresh linked review',
+                'current_inputs': self.current(source, scope=scope), **extra}
+
     def test_inspect_is_read_only_for_all_states(self):
         prepared = self.prepare7()
         processing = self.prepare7()
@@ -470,7 +476,9 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(before, self.snapshot(run))
 
     def test_recovery_plan_does_not_dispatch_or_execute(self):
-        run = self.prepare7()
+        # Keep the same controller so this read/plan assertion does not also
+        # request the durable takeover behavior covered by the test below.
+        run = self.prepare7(controller=self.controller())
         before = self.snapshot(run)
         with patch.object(subprocess, 'run', side_effect=AssertionError('recovery must not execute commands')):
             result = artifacts.recover(run, controller=self.controller(),
@@ -603,10 +611,20 @@ class ReviewRecoveryTests(unittest.TestCase):
                               authority='User requested a restart', current_inputs=self.current(source))
         self.assertEqual(before, self.snapshot(session))
 
-        successor = Path(artifacts.restart(
-            source, profile_input=self.profile_input('deep'), controller=self.controller('Successor coordinator'),
-            authority='User requested a restart after stopping the source', current_inputs=self.current(source),
-            transfer_paths=[str(session)]))
+        request = self.restart_request(source, controller_name='Successor coordinator',
+                                       authority='User requested a restart after stopping the source',
+                                       transfer_paths=[str(session)])
+        original_transfer = artifacts.transfer_resources
+
+        def interrupt_after_transfer(*args, **kwargs):
+            original_transfer(*args, **kwargs)
+            raise OSError('transfer committed before restart interruption')
+
+        with patch.object(artifacts, 'transfer_resources', side_effect=interrupt_after_transfer):
+            with self.assertRaisesRegex(OSError, 'transfer committed'):
+                artifacts.restart(source, **request)
+
+        successor = Path(artifacts.restart(source, **request))
 
         self.assertEqual(review_resource_claims.verify_claim(session, successor)['run_id'],
                          self.read(successor / 'cierre.json')['run_id'])
@@ -614,6 +632,277 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(self.read(successor / 'cierre.json')['resource_claims'][0]['status'], 'owned')
         review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
                                                       run_dir=str(successor)))
+
+    def test_restart_link_failure_retry_reuses_reserved_successor(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+        with patch.object(artifacts, '_link_restart', side_effect=OSError('link interrupted')):
+            with self.assertRaisesRegex(OSError, 'link interrupted'):
+                artifacts.restart(source, **request)
+
+        result = Path(artifacts.restart(source, **request))
+        successors = [path.parent for path in self.output.rglob('cierre.json')
+                      if self.read(path).get('previous_run') == str(source)]
+        self.assertEqual(successors, [result])
+        self.assertEqual(Path(artifacts.restart(source, **request)), result)
+
+    def test_restart_missing_owned_resource_links_without_claiming_cleanup(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        source = self.prepare7('standard')
+        selection = self.read(source / 'cierre.json')['profile_history'][0]
+        context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': []}
+        artifacts.register(source, [str(session)], context_input=self.write('missing-context.json', context))
+        session_manifest = self.read(session / 'manifest.json')
+        workspace = Path(session_manifest['workspaces'][0]['path'])
+        removed = subprocess.run(['git', 'worktree', 'remove', '--force', str(workspace)], cwd=self.repo,
+                                 capture_output=True, text=True)
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        shutil.rmtree(session, ignore_errors=True)
+
+        successor = Path(artifacts.restart(source, **self.restart_request(source)))
+
+        old = self.read(source / 'cierre.json')
+        self.assertEqual(old['resource_claims'][0]['status'], 'owned')
+        self.assertIsNone(old.get('resource_cleanup'))
+        inspected = recovery.inspect_run(source)
+        self.assertEqual(inspected['resources'][0]['availability'], 'missing_unknown')
+        self.assertEqual(self.read(successor / 'cierre.json')['previous_run'], str(source))
+        self.assertEqual(self.read(successor / 'cierre.json')['resource_claims'], [])
+
+    def test_pending_restart_blocks_other_source_mutations(self):
+        source = self.prepare7('standard')
+        transfer_target = self.prepare7('standard')
+        request = self.restart_request(source)
+        with patch.object(artifacts, '_link_restart', side_effect=OSError('link interrupted')):
+            with self.assertRaisesRegex(OSError, 'link interrupted'):
+                artifacts.restart(source, **request)
+        before = self.snapshot(source)
+
+        with self.assertRaisesRegex(ValueError, 'restart|pending|intent'):
+            artifacts.transfer_resources(source, transfer_target, [str(self.root)],
+                                         authority='User requested unrelated transfer',
+                                         controller=self.controller())
+
+        with self.assertRaisesRegex(ValueError, 'restart|pending|intent'):
+            artifacts.recover_resource_cleanup(source)
+
+        with self.assertRaisesRegex(ValueError, 'restart|pending|intent'):
+            artifacts.pause(source, authority='User requested pause', reason='Wait for input', phase='discovery')
+
+        self.assertEqual(before, self.snapshot(source))
+
+    def test_recover_records_controller_takeover(self):
+        run = self.prepare7('standard')
+        artifacts.pause(run, authority='User requested pause', reason='Waiting for input', phase='discovery')
+
+        result = artifacts.recover(run, controller=self.controller('Recovery coordinator'),
+                                   authority='User authorized controller takeover',
+                                   current_inputs=self.current(run))
+
+        manifest = self.read(run / 'cierre.json')
+        self.assertEqual(result['status'], 'paused')
+        self.assertEqual(manifest['controller']['identity']['name'], 'Recovery coordinator')
+        self.assertTrue(any('prior controller recorded as' in event['summary'] for event in self.events(run)))
+
+    def test_restart_uses_current_harness_identity(self):
+        source = self.prepare7('standard')
+
+        successor = Path(artifacts.restart(
+            source, **self.restart_request(source),
+            harness={'harness': 'Claude Code Desktop', 'harness_id': 'claude-code-desktop',
+                     'harness_source': {'kind': 'user', 'reference': '--harness-id'}}))
+
+        manifest = self.read(successor / 'cierre.json')
+        self.assertEqual(manifest['harness'], 'Claude Code Desktop')
+        self.assertEqual(manifest['harness_id'], 'claude-code-desktop')
+        self.assertEqual(manifest['harness_source'], {'kind': 'user', 'reference': '--harness-id'})
+
+    def test_complete_and_legacy_source_bytes_remain_unchanged_on_restart(self):
+        current_run, current_session = self.retained_claimed_run()
+        review_workspace.cleanup(argparse.Namespace(manifest=str(current_session / 'manifest.json'),
+                                                     run_dir=str(current_run)))
+        artifacts.close(current_run, cleanup='complete')
+        current_before = self.snapshot(current_run)
+        current_successor = artifacts.restart(
+            current_run, **self.restart_request(current_run, controller_name='Current successor'))
+        self.assertEqual(current_before, self.snapshot(current_run))
+        self.assertEqual(self.read(Path(current_successor) / 'cierre.json')['previous_run'], str(current_run))
+
+        legacy_run = self.prepare_legacy()
+        self.retain_legacy(legacy_run)
+        self.close(legacy_run)
+        legacy_before = self.snapshot(legacy_run)
+        legacy_current = current_inputs(self.read(legacy_run / 'cierre.json')['scope'], source_set_complete=True)
+        legacy_successor = artifacts.restart(
+            legacy_run, profile_input=self.profile_input('deep'), controller=self.controller('Legacy successor'),
+            authority='User requested a new linked review', current_inputs=legacy_current)
+        self.assertEqual(legacy_before, self.snapshot(legacy_run))
+        self.assertEqual(self.read(Path(legacy_successor) / 'cierre.json')['previous_run'], str(legacy_run))
+
+    def test_two_process_restarts_have_one_successor(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+        profile = self.write('restart-profile.json', request['profile_input'])
+        controller = self.write('restart-controller.json', request['controller'])
+        authority = self.write('restart-authority.json', {'authority': request['authority']})
+        current = self.write('restart-current.json', request['current_inputs'])
+        harness_source = self.write('restart-harness-source.json',
+                                    {'kind': 'user', 'reference': '--harness-id'})
+        command = [sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'restart',
+                   '--run-dir', str(source), '--profile-input', str(profile),
+                   '--controller-input', str(controller), '--authority-input', str(authority),
+                   '--current-inputs', str(current), '--harness', 'Claude Code Desktop',
+                   '--harness-id', 'claude-code-desktop', '--harness-source-input', str(harness_source)]
+        processes = [subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                      encoding='utf-8') for _ in range(2)]
+        outputs = [process.communicate(timeout=60) for process in processes]
+
+        self.assertEqual([process.returncode for process in processes], [0, 0], outputs)
+        paths = {json.loads(stdout)['run_dir'] for stdout, _ in outputs}
+        self.assertEqual(len(paths), 1, outputs)
+        self.assertEqual(sum(1 for path in self.output.rglob('cierre.json')
+                             if self.read(path).get('previous_run') == str(source)), 1)
+        successor = self.read(Path(next(iter(paths))) / 'cierre.json')
+        self.assertEqual(successor['harness_id'], 'claude-code-desktop')
+        self.assertEqual(successor['harness_source'], {'kind': 'user', 'reference': '--harness-id'})
+
+    def test_restart_each_reservation_boundary_reuses_the_same_destination(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+        with patch.object(artifacts, '_write_active_restart', side_effect=OSError('intent boundary')):
+            with self.assertRaisesRegex(OSError, 'intent boundary'):
+                artifacts.restart(source, **request)
+        self.assertFalse(any(self.read(path).get('previous_run') == str(source)
+                             for path in self.output.rglob('cierre.json')))
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('reservation boundary')):
+            with self.assertRaisesRegex(OSError, 'reservation boundary'):
+                artifacts.restart(source, **request)
+
+        result = Path(artifacts.restart(source, **request))
+        successors = [path.parent for path in self.output.rglob('cierre.json')
+                      if self.read(path).get('previous_run') == str(source)]
+        self.assertEqual(successors, [result])
+        self.assertEqual(Path(artifacts.restart(source, **request)), result)
+
+    def test_active_descriptor_retry_after_commit_and_retirement(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+        with patch.object(artifacts, '_retire_active_restart', side_effect=OSError('retirement interrupted')):
+            with self.assertRaisesRegex(OSError, 'retirement interrupted'):
+                artifacts.restart(source, **request)
+
+        result = Path(artifacts.restart(source, **request))
+        source_manifest = self.read(source / 'cierre.json')
+        active_dir = source.parent / '.restart-intents' / source_manifest['run_id']
+        self.assertFalse((active_dir / 'active.json').exists())
+        self.assertFalse((active_dir / 'active.owner.json').exists())
+        self.assertEqual(self.read(result / 'cierre.json')['restart_operation']['source_run'], str(source))
+
+    def test_recover_completes_the_exact_pending_restart(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('restart interrupted')):
+            with self.assertRaisesRegex(OSError, 'restart interrupted'):
+                artifacts.restart(source, **request)
+
+        outcome = artifacts.recover(source, controller=request['controller'], authority=request['authority'],
+                                    current_inputs=request['current_inputs'])
+
+        successor = Path(outcome['successor_run_dir'])
+        self.assertEqual(outcome['status'], 'restarted', outcome)
+        self.assertEqual(self.read(successor / 'cierre.json')['previous_run'], str(source))
+        self.assertEqual(self.read(source / 'cierre.json')['operation']['disposition'], 'superseded')
+
+    def test_adopt_context_object_before_successor_creation(self):
+        session = Path(review_workspace.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
+        source = self.prepare7('standard')
+
+        successor = Path(artifacts.restart(source, **self.restart_request(source),
+                                           transfer_paths=[str(session)]))
+
+        claim = review_resource_claims.verify_claim(session, successor)
+        self.assertEqual(claim['archive_path'], str(successor))
+        successor_manifest = self.read(successor / 'cierre.json')
+        self.assertEqual(successor_manifest['resource_claims'][0]['session_dir'], str(session))
+        self.assertEqual(successor_manifest['resource_claims'][0]['status'], 'owned')
+        review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                     run_dir=str(successor)))
+
+    def test_pending_checkpoint_with_changed_head_can_restart(self):
+        source = self.prepare7('standard')
+        manifest = self.read(source / 'cierre.json')
+        selection = manifest['profile_history'][0]
+        context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': [], 'review_inputs': manifest['review_inputs']}
+        context_path = self.write('pending-restart-context.json', context)
+        with patch.object(artifacts, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
+            with self.assertRaisesRegex(OSError, 'checkpoint commit interrupted'):
+                artifacts.checkpoint(source, context_input=context_path, phase='discovery')
+        pending_before = self.read(source / 'cierre.json')
+        self.assertIn('checkpoint_transaction', pending_before)
+        new_scope = copy.deepcopy(manifest['scope'])
+        new_scope['head'] = 'new-reviewed-head'
+
+        successor = Path(artifacts.restart(source, **self.restart_request(source, scope=new_scope)))
+
+        self.assertEqual(self.read(successor / 'cierre.json')['scope'], new_scope)
+        self.assertEqual(self.read(source / 'cierre.json')['checkpoint_transaction'],
+                         pending_before['checkpoint_transaction'])
+        self.assertFalse(self.read(successor / 'cierre.json').get('checkpoint'))
+
+    def test_recover_owned_bytes_with_changed_inputs_cannot_continue(self):
+        source = self.prepare7('standard')
+        manifest = self.read(source / 'cierre.json')
+        selection = manifest['profile_history'][0]
+        context_path = self.write('pending-recovery-context.json', {
+            'profile': selection['profile'], 'selection_source': selection['selection_source'],
+            'profile_reference': selection['reference'], 'profile_history': [selection],
+            'execution_plan': [], 'executors': [], 'review_inputs': manifest['review_inputs']})
+        with patch.object(artifacts, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
+            with self.assertRaisesRegex(OSError, 'checkpoint commit interrupted'):
+                artifacts.checkpoint(source, context_input=context_path, phase='discovery')
+        changed_scope = copy.deepcopy(manifest['scope'])
+        changed_scope['head'] = 'different-head'
+
+        outcome = artifacts.recover(source, controller=self.controller('Recovery coordinator'),
+                                    authority='User authorized exact-byte recovery',
+                                    current_inputs=self.current(source, scope=changed_scope))
+
+        self.assertEqual(outcome['input_appraisal']['applicability'], 'changed')
+        self.assertNotIn('continue', {row['action'] for row in outcome['actions']})
+        self.assertIn('restart', {row['action'] for row in outcome['actions']})
+
+    def test_foreign_reserved_target_is_not_adopted(self):
+        source = self.prepare7('standard')
+        request = self.restart_request(source)
+
+        def occupy(intent_path):
+            intent = self.read(intent_path)
+            target = Path(intent['successor']['run_dir'])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.mkdir()
+            (target / 'foreign.txt').write_text('foreign bytes', encoding='utf-8')
+            raise OSError('simulated stop after destination collision')
+
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=occupy):
+            with self.assertRaisesRegex(OSError, 'destination collision'):
+                artifacts.restart(source, **request)
+        operation_files = list((source.parent / '.restart-intents').rglob('*.json'))
+        intent = next(self.read(path) for path in operation_files if path.name != 'active.json'
+                      and path.name != 'active.owner.json' and not path.name.endswith('.complete.json'))
+        target = Path(intent['successor']['run_dir'])
+        before = (target / 'foreign.txt').read_bytes()
+
+        with self.assertRaisesRegex(ValueError, 'foreign|reserved|occupied'):
+            artifacts.restart(source, **request)
+
+        self.assertEqual((target / 'foreign.txt').read_bytes(), before)
+        self.assertFalse((target / 'cierre.json').exists())
 
     def test_cleanup_records_receipt_before_return(self):
         session = Path(review_workspace.prepare(argparse.Namespace(
