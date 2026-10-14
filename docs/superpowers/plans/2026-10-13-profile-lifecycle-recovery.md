@@ -10,6 +10,8 @@
 
 **Spec:** [2026-10-13-profile-lifecycle-recovery-design.md](../specs/2026-10-13-profile-lifecycle-recovery-design.md), aprobada por el usuario el 2026-10-13.
 
+**Seguimiento del PR:** el [review del PR #19](https://github.com/omarfrancodev/comprehensive-code-review/pull/19#issuecomment-6159108237) sobre `b758c55` fue NO APROBABLE. Las correcciones están propuestas en el [spec](../specs/2026-10-14-review-recovery-corrections-design.md) y [plan correspondiente](2026-10-14-review-recovery-corrections.md), pendientes de aprobación antes de implementar. Los checks de ejecución anteriores no representan aceptación final de las garantías cuestionadas.
+
 ## Global Constraints
 
 - Worktree `.worktrees/review-recovery-lifecycle`; rama `feat/review-recovery-lifecycle`; base main `5507c48715c558c9d366491f19fcce196780b37e`.
