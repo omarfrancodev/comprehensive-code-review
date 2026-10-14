@@ -27,6 +27,7 @@ import review_metrics
 import review_trace
 import review_harness
 import review_profiles
+import review_inputs
 import review_resource_claims
 from review_run_lock import run_locks
 from review_execution import validate_execution_sources
@@ -405,6 +406,13 @@ def _load_run(run_dir):
                                                  manifest['profile_history'], 'assignment_registry')
             except (TypeError, ValueError) as exc:
                 raise ValueError('invalid archive assignment registry: ' + str(exc)) from exc
+        if 'review_inputs' in manifest and manifest['review_inputs'] is not None:
+            try:
+                inputs = review_inputs.normalize_inputs(manifest['review_inputs'], caller=False)
+            except (TypeError, ValueError) as exc:
+                raise ValueError('invalid archive review_inputs: ' + str(exc)) from exc
+            if inputs.get('scope') != manifest.get('scope') or 'profile' in inputs:
+                raise ValueError('archive review_inputs must bind the pinned scope and leave profile to profile_history')
         operation = manifest.get('operation')
         fields = {'disposition', 'reason', 'source', 'phase', 'successor'}
         if (not isinstance(operation, dict) or set(operation) != fields
@@ -740,6 +748,22 @@ def _initial_selection(profile_input):
     return value
 
 
+def _capture_review_inputs(raw, scope, profile, label):
+    """Capture external inputs before work while keeping profile history authoritative."""
+    if raw is None:
+        return None
+    value = review_inputs.normalize_inputs(_input_object(raw, label))
+    if value['scope'] != scope:
+        raise ValueError(label + ' scope differs from the pinned review scope')
+    selected_profile = value.pop('profile', None)
+    if selected_profile is not None and selected_profile != profile:
+        raise ValueError(label + ' profile differs from the captured profile selection')
+    for reference in value['sources']:
+        if not reference.split('#', 1)[0].startswith('evidence/'):
+            raise ValueError(label + ' source references must identify selected evidence/ files')
+    return value
+
+
 def _profile_event(selection):
     return {'kind': 'profile', 'status': 'selected',
             'summary': 'Profile selected: ' + selection['profile'],
@@ -911,6 +935,18 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
         raise
     if not isinstance(context, dict):
         raise ValueError('checkpoint context must be a JSON object')
+    captured_inputs = manifest.get('review_inputs')
+    supplied_inputs = context.get('review_inputs')
+    if captured_inputs is not None:
+        if supplied_inputs is None:
+            raise ValueError('checkpoint context must preserve registered review_inputs')
+        normalized_inputs = _capture_review_inputs(
+            supplied_inputs, manifest['scope'], manifest['profile_history'][-1]['profile'],
+            'checkpoint context review_inputs')
+        if normalized_inputs != captured_inputs:
+            raise ValueError('checkpoint context review_inputs differ from the initial captured identities')
+    elif supplied_inputs is not None:
+        raise ValueError('capture review_inputs during prepare or register before checkpoint work')
     context_bytes = _json_bytes(context)
     if len(context_bytes) > PENDING_CONTEXT_LIMIT:
         raise ValueError('execution context exceeds the 131072-byte checkpoint limit')
@@ -1196,12 +1232,13 @@ def _measurements(inputs, unavailable_reason):
 
 
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
-            *, profile_input=None, controller=None, harness_id=None, harness_source=None):
+            *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = _input_object(scope_file, 'scope')
     _scope(scope)
     selection = _initial_selection(profile_input)
+    captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs')
     controller_value = _controller(controller, selection['actor'])
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
@@ -1228,7 +1265,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'controller': controller_value,
                 'checkpoint': None,
                 'lineage': {'kind': 'restart' if previous else 'new', 'source_run': previous},
-                'resource_claims': [], 'assignment_registry': []}
+                'resource_claims': [], 'assignment_registry': [], 'review_inputs': captured_inputs}
     manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
@@ -1318,6 +1355,7 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     manifests = _temporary_manifests(temporary, manifest)
     executors = _executors(context_input, manifest, temporary)
     assignment_registry = list(manifest.get('assignment_registry', []))
+    review_input_capture = manifest.get('review_inputs')
     claim_manifest = copy.deepcopy(manifest)
     claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
     if manifest['schema_version'] == 7 and context_input is not None:
@@ -1334,6 +1372,19 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
                 and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
                 and row.get('evidence') for row in existing_trace if isinstance(row, dict)):
             raise ValueError('review work predates assignment capture; restart the review before registering execution')
+        supplied_inputs = context.get('review_inputs')
+        if supplied_inputs is not None:
+            captured = _capture_review_inputs(supplied_inputs, manifest['scope'],
+                                              manifest['profile_history'][-1]['profile'],
+                                              'execution context review_inputs')
+            if review_input_capture is None:
+                if any(row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
+                       and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
+                       and row.get('evidence') for row in existing_trace if isinstance(row, dict)):
+                    raise ValueError('review inputs must be captured before assignment work starts; restart the review')
+                review_input_capture = captured
+            elif captured != review_input_capture:
+                raise ValueError('execution context review_inputs cannot replace the original captured identities')
         assignment_registry = review_profiles.merge_assignment_registry(
             assignment_registry, context['execution_plan'], manifest['profile_history'], existing_trace)
         references = {row['reference'] for row in assignment_registry}
@@ -1367,7 +1418,7 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
             rows.append(plan['row'])
     manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
                     executors=executors, resource_claims=rows,
-                    assignment_registry=assignment_registry)
+                    assignment_registry=assignment_registry, review_inputs=review_input_capture)
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
@@ -1686,7 +1737,8 @@ def resume(run_dir, *, controller, authority, current_inputs):
         raise ValueError('legacy runs cannot be resumed in place; create a linked archive-7 restart')
     if manifest['state'] in {'retaining', 'closing', 'complete'}:
         raise ValueError('retention/closure has started or completed; recover its transaction or create a new run')
-    normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+    normalized_inputs = review_recovery.validate_current_inputs(
+        current_inputs, manifest, require_applicable=True)
     operation = manifest['operation']
     if operation['disposition'] not in {'open', 'paused', 'blocked'}:
         raise ValueError('superseded or completed review cannot be resumed')
@@ -1721,7 +1773,8 @@ def recover(run_dir, *, controller, authority, current_inputs):
     import review_recovery
     run_path = safe_path(run_dir)
     run, manifest, _ = _load_run(run_path)
-    review_recovery.validate_current_inputs(current_inputs, manifest)
+    normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+    input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
     authority = review_resource_claims._authority(authority)
     fallback = manifest.get('controller', {}).get('identity',
         {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
@@ -1737,7 +1790,8 @@ def recover(run_dir, *, controller, authority, current_inputs):
 
     with run_locks([run_path]):
         run, manifest, marker = _load_run(run_path)
-        review_recovery.validate_current_inputs(current_inputs, manifest)
+        normalized_inputs = review_recovery.validate_current_inputs(current_inputs, manifest)
+        input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
         if manifest.get('pending_trace') is not None:
             marker = _recover_trace(run, manifest, marker)
             run, manifest, marker = _load_run(run)
@@ -1765,16 +1819,18 @@ def recover(run_dir, *, controller, authority, current_inputs):
                 else:
                     raise ValueError('foreign or modified checkpoint bytes block recovery: ' + name)
             if missing:
-                return {'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+                return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
                         'actions': [{'action': 'retry_checkpoint',
-                                     'reason': 'Resupply the original selected inputs: ' + ', '.join(sorted(missing))}]}
+                                     'reason': 'Resupply the original selected inputs: ' + ', '.join(sorted(missing))}]},
+                                        input_appraisal)
             _checkpoint_commit(run, manifest, marker, checkpoint_transaction, payloads)
             run, manifest, marker = _load_run(run)
 
         if manifest['state'] in {'retaining', 'closing'}:
-            return {'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
                     'actions': [{'action': 'retry_retention' if manifest['state'] == 'retaining' else 'retry_close',
-                                 'reason': 'The original final input or cleanup observation must be supplied; no external work was run.'}]}
+                                 'reason': 'The original final input or cleanup observation must be supplied; no external work was run.'}]},
+                                    input_appraisal)
         if manifest.get('resource_transfer', {}).get('status') == 'pending':
             raise ValueError('resource transfer remains pending; retry recovery from its recorded source run')
         _verify_files(run, manifest)
@@ -1783,23 +1839,39 @@ def recover(run_dir, *, controller, authority, current_inputs):
                 review_resource_claims.verify_claim(row['session_dir'], run)
         disposition = manifest.get('operation', {}).get('disposition', 'complete' if manifest['state'] == 'complete' else 'open')
         if disposition in {'paused', 'blocked'}:
-            return {'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
                     'actions': [{'action': 'resume', 'reason': 'Explicit continuation authority is required before more work.'},
-                                {'action': 'restart', 'reason': 'Create a linked new run when the original scope or sources cannot be continued.'}]}
+                                {'action': 'restart', 'reason': 'Create a linked new run when the original scope or sources cannot be continued.'}]},
+                                    input_appraisal)
         if disposition in {'complete', 'superseded'} or manifest['state'] == 'complete':
-            return {'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
                     'actions': [{'action': 'show', 'reason': 'Preserve and show the existing immutable result.'},
-                                {'action': 'restart', 'reason': 'A repeat must use a new review ID.'}]}
+                                {'action': 'restart', 'reason': 'A repeat must use a new review ID.'}]},
+                                    input_appraisal)
         checkpoint = manifest.get('checkpoint')
         if isinstance(checkpoint, dict) and checkpoint.get('gate_errors'):
-            return {'status': 'provisional', 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': 'provisional', 'run_dir': str(run), 'run_id': manifest['run_id'],
                     'checkpoint_id': checkpoint['id'], 'gate_errors': checkpoint['gate_errors'],
                     'actions': [{'action': 'continue', 'reason': 'The checkpoint remains provisional; its gates still apply.'},
-                                {'action': 'restart', 'reason': 'A new run is available if history or scope cannot be repaired.'}]}
-        return {'status': 'recovered' if checkpoint_transaction is not None or manifest.get('checkpoint') else 'ready',
+                                {'action': 'restart', 'reason': 'A new run is available if history or scope cannot be repaired.'}]},
+                                    input_appraisal)
+        return _recovery_outcome({'status': 'recovered' if checkpoint_transaction is not None or manifest.get('checkpoint') else 'ready',
                 'run_dir': str(run), 'run_id': manifest['run_id'],
                 'checkpoint_id': checkpoint.get('id') if isinstance(checkpoint, dict) else None,
-                'actions': [{'action': 'continue', 'reason': 'Recovery did not dispatch agents, run checks or alter prior worker identity.'}]}
+                'actions': [{'action': 'continue', 'reason': 'Recovery did not dispatch agents, run checks or alter prior worker identity.'}]},
+                                  input_appraisal)
+
+
+def _recovery_outcome(result, appraisal):
+    result['input_appraisal'] = appraisal
+    if appraisal['applicability'] != 'applicable':
+        result['actions'] = [row for row in result.get('actions', [])
+                             if row.get('action') not in {'continue', 'resume', 'retry_checkpoint',
+                                                          'retry_retention', 'retry_close'}]
+        result['actions'].append({'action': 'restart',
+            'reason': 'Recovery may restore exact helper-owned bytes, but current inputs are '
+                      + appraisal['applicability'] + '; do not continue this review.'})
+    return result
 
 
 def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=()):
@@ -2114,6 +2186,8 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
             evidence_inputs = [run / name for name in manifest.get('pending_hashes', {})
                                if name.startswith('pending/evidence/')]
     value = read_json(input_file, max_bytes=CHECKPOINT_METADATA_LIMIT)
+    if not isinstance(value, dict):
+        raise ValueError('final review input must be a JSON object')
     if expected_schema is not None:
         if type(expected_schema) is not int or expected_schema not in range(1, 11):
             raise ValueError('expected schema must be a supported integer 1–10')
@@ -2192,6 +2266,17 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    captured_inputs = manifest.get('review_inputs')
+    if captured_inputs is not None:
+        supplied_inputs = context.get('review_inputs')
+        if supplied_inputs is None:
+            raise ValueError('retained execution context must preserve captured review_inputs')
+        normalized_inputs = _capture_review_inputs(
+            supplied_inputs, manifest['scope'], manifest['profile_history'][-1]['profile'],
+            'retained context review_inputs')
+        if normalized_inputs != captured_inputs:
+            raise ValueError('retained context review_inputs differ from the initial captured identities')
+        requested.update(captured_inputs['sources'])
     if manifest.get('schema_version') == 7:
         registry = manifest.get('assignment_registry')
         if not isinstance(registry, list):
@@ -2234,6 +2319,16 @@ def _execution_gate(run, manifest, value, contents):
         else:
             raise ValueError('unresolved execution source fragment: ' + reference)
         references.add(reference)
+    if captured_inputs is not None:
+        for reference, expected in captured_inputs['sources'].items():
+            name = urlsplit(reference).path
+            if _digest(source(name)) != expected:
+                raise ValueError('selected external review input differs from its captured SHA-256 identity: '
+                                 + reference)
+        description = value.get('description') if isinstance(value.get('description'), dict) else {}
+        if ('description_identity' in captured_inputs
+                and description.get('identity') != captured_inputs['description_identity']):
+            raise ValueError('final review description identity differs from the initial captured input')
     for row in history:
         if resolved.get(row['reference']) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
@@ -2355,6 +2450,7 @@ def main():
     create.add_argument('--temporary-path', action='append')
     create.add_argument('--profile-input', required=True,
                         help='Existing JSON selection captured before the new run is created')
+    create.add_argument('--current-inputs', help='Existing JSON with scope, external source hashes and observed identities')
     create.add_argument('--controller-input',
                         help='Existing JSON {identity, source} for the coordinating context')
     create.add_argument('--harness-id', help='Declared canonical catalog ID; overrides session CCR_HARNESS_ID')
@@ -2465,7 +2561,8 @@ def main():
                                          args.output_root, args.previous_run, args.temporary_path,
                                          profile_input=args.profile_input,
                                          controller=read_json(args.controller_input) if args.controller_input else None,
-                                         harness_id=args.harness_id, harness_source=source)}
+                                         harness_id=args.harness_id, harness_source=source,
+                                         current_inputs=read_json(args.current_inputs) if args.current_inputs else None)}
         elif args.command == 'checkpoint':
             diagnostic = read_json(args.diagnostic_input) if args.diagnostic_input else None
             if isinstance(diagnostic, dict) and set(diagnostic) == {'gate_errors'}:

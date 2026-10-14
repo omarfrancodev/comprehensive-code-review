@@ -5,6 +5,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
+import review_inputs
 
 
 HASH = re.compile(r'[0-9a-f]{64}')
@@ -18,120 +19,33 @@ def _artifacts():
     return review_artifacts
 
 
-def validate_current_inputs(current_inputs, manifest, *, require_same_scope=True, compare_sources=True):
-    """Validate caller-verified scope/source identities against pinned archive bytes."""
-    artifacts = _artifacts()
-    if (not isinstance(current_inputs, dict) or set(current_inputs) != {'scope', 'sources'}
-            or not isinstance(current_inputs.get('sources'), dict)
-            or len(current_inputs['sources']) > 64):
-        raise ValueError('current inputs require exact scope and bounded source hash fields')
-    artifacts._scope(current_inputs['scope'])
-    if require_same_scope and current_inputs['scope'] != manifest.get('scope'):
+def validate_current_inputs(current_inputs, manifest, *, require_same_scope=True, compare_sources=True,
+                            require_applicable=False):
+    """Validate common caller inputs and optionally require unchanged captured identities."""
+    normalized = review_inputs.normalize_inputs(current_inputs)
+    if require_same_scope and normalized['scope'] != manifest.get('scope'):
         raise ValueError('current scope differs from the pinned review scope; restart is required')
-    available = dict(manifest.get('hashes', {}))
-    available.update(manifest.get('pending_hashes', {}))
-    sources = {}
-    for reference, digest in current_inputs['sources'].items():
-        if (not isinstance(reference, str) or not reference.strip() or len(reference) > 500
-                or any(ord(char) < 32 for char in reference)
-                or not isinstance(digest, str) or not HASH.fullmatch(digest)):
-            raise ValueError('current source identities must map bounded references to SHA-256 hashes')
-        name = reference.split('#', 1)[0]
-        if not artifacts._retained_name(name) and not artifacts._pending_file_name(name):
-            raise ValueError('current source reference must identify retained or provisional review evidence')
-        if compare_sources:
-            expected = available.get(name)
-            if expected is None:
-                raise ValueError('current source has no preserved baseline identity: ' + reference)
-            if expected != digest:
-                raise ValueError('current source identity differs from preserved evidence: ' + reference)
-        sources[reference] = digest
-    return {'scope': copy.deepcopy(current_inputs['scope']), 'sources': sources}
+    retained = _candidate_inputs(manifest)
+    if not compare_sources and retained is not None:
+        retained = copy.deepcopy(retained)
+        retained['sources'] = copy.deepcopy(normalized['sources'])
+        retained['source_set_complete'] = normalized.get('source_set_complete')
+    appraisal = review_inputs.compare_inputs(retained, normalized)
+    if require_applicable and appraisal['applicability'] != 'applicable':
+        raise ValueError('current review inputs are ' + appraisal['applicability']
+                         + '; resume requires applicable inputs, use restart when they changed or are unknown')
+    return normalized
 
 
 def _action(name, reason):
     return {'action': name, 'reason': reason}
 
 
-def _validated_sources(value, label):
-    if not isinstance(value, dict) or len(value) > 64:
-        raise ValueError(label + ' must be a bounded source-to-SHA-256 map')
-    result = {}
-    for reference, digest in value.items():
-        if (not isinstance(reference, str) or not reference.strip() or len(reference) > 500
-                or any(ord(char) < 32 for char in reference)
-                or not isinstance(digest, str) or not HASH.fullmatch(digest)):
-            raise ValueError(label + ' contains an invalid source identity')
-        result[reference] = digest
-    return result
-
-
-def _identity_differences(retained, current):
-    differences = []
-    if not isinstance(retained, dict) or not isinstance(current, dict):
-        raise ValueError('retained and current review inputs must be objects')
-    retained_scope = retained.get('scope')
-    current_scope = current.get('scope')
-    if retained_scope is None or current_scope is None:
-        differences.append({'field': 'scope', 'status': 'unknown',
-                            'reason': 'A pinned scope identity is missing.'})
-    else:
-        artifacts = _artifacts()
-        artifacts._scope(retained_scope)
-        artifacts._scope(current_scope)
-        for field in sorted(artifacts.SCOPE_FIELDS):
-            if retained_scope.get(field) != current_scope.get(field):
-                differences.append({'field': 'scope.' + field, 'status': 'changed',
-                                    'reason': 'The pinned review scope differs.'})
-
-    old_sources = _validated_sources(retained.get('sources', {}), 'retained inputs')
-    new_sources = _validated_sources(current.get('sources', {}), 'current inputs')
-    complete = current.get('source_set_complete')
-    if complete is not True:
-        differences.append({'field': 'source_set_complete', 'status': 'unknown',
-                            'reason': 'The coordinator did not confirm a complete current source set.'})
-    else:
-        old_by_path = {name.split('#', 1)[0]: digest for name, digest in old_sources.items()}
-        new_by_path = {name.split('#', 1)[0]: digest for name, digest in new_sources.items()}
-        for name in sorted(set(old_by_path) | set(new_by_path)):
-            if name not in old_by_path or name not in new_by_path:
-                differences.append({'field': 'sources.' + name, 'status': 'changed',
-                                    'reason': 'The complete source set added or removed a source.'})
-            elif old_by_path[name] != new_by_path[name]:
-                differences.append({'field': 'sources.' + name, 'status': 'changed',
-                                    'reason': 'The source content identity differs.'})
-
-    identity_fields = ('description_identity', 'requirements_identity', 'plan_identity',
-                       'configuration_identity', 'profile')
-    for field in identity_fields:
-        if field not in current:
-            continue
-        current_value = current[field]
-        if field not in retained:
-            differences.append({'field': field, 'status': 'unknown',
-                                'reason': 'The archived run does not preserve this identity.'})
-        elif retained[field] != current_value:
-            differences.append({'field': field, 'status': 'changed',
-                                'reason': 'The recorded review input differs.'})
-    status = ('changed' if any(row['status'] == 'changed' for row in differences)
-              else 'unknown' if differences else 'applicable')
-    return {'applicability': status, 'differences': differences}
-
-
 def classify_candidate(manifest, retained_inputs, current_inputs):
     """Compare a pinned candidate to caller-supplied current identities without IO."""
     if not isinstance(manifest, dict):
         raise ValueError('candidate manifest must be an object')
-    if not isinstance(retained_inputs, dict) or not isinstance(current_inputs, dict):
-        raise ValueError('retained and current review inputs must be objects')
-    expected = copy.deepcopy(retained_inputs)
-    if 'scope' not in expected:
-        expected['scope'] = manifest.get('scope')
-    if 'profile' not in expected:
-        history = manifest.get('profile_history')
-        if isinstance(history, list) and history and isinstance(history[-1], dict):
-            expected['profile'] = history[-1].get('profile')
-    return _identity_differences(expected, current_inputs)
+    return review_inputs.compare_inputs(retained_inputs, current_inputs)
 
 
 def _scope_prefix(scope):
@@ -216,17 +130,16 @@ def _read_candidate_record(path, expected):
 
 
 def _candidate_inputs(manifest, record=None):
-    hashes = manifest.get('hashes', {})
-    sources = {name: digest for name, digest in hashes.items() if name.startswith('evidence/')}
-    retained = {'scope': manifest.get('scope'), 'sources': sources}
+    captured = manifest.get('review_inputs')
+    retained = (copy.deepcopy(captured) if isinstance(captured, dict) else
+                {'scope': copy.deepcopy(manifest.get('scope')), 'sources': {},
+                 'source_set_complete': False})
+    retained.setdefault('scope', manifest.get('scope'))
     history = manifest.get('profile_history')
     if isinstance(history, list) and history and isinstance(history[-1], dict):
         retained['profile'] = history[-1].get('profile')
     elif isinstance(record, dict) and isinstance(record.get('profile'), str):
         retained['profile'] = record['profile']
-    description = record.get('description') if isinstance(record, dict) else None
-    if isinstance(description, dict) and 'identity' in description:
-        retained['description_identity'] = description['identity']
     return retained
 
 
@@ -301,9 +214,9 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
     exact_group = artifacts._scope_group(scope)
     scope_digest = artifacts._digest(artifacts._json_bytes(scope))
     if current_inputs is not None:
-        if not isinstance(current_inputs, dict) or current_inputs.get('scope') != scope:
+        current_inputs = review_inputs.normalize_inputs(current_inputs)
+        if current_inputs.get('scope') != scope:
             raise ValueError('current inputs must refer to the exact requested lookup scope')
-        _validated_sources(current_inputs.get('sources', {}), 'current inputs')
     after = _cursor_decode(cursor, repo_group, scope_digest, prefix if anchor else exact_group,
                            exact=not bool(anchor))
     repository_path = root / repo_group
@@ -420,15 +333,19 @@ def inspect_run(run_dir, *, current_inputs=None):
         row = claim_by_path.get(raw, {})
         resources.append({'path': raw, 'present': path.exists(), 'claim_status': row.get('status')})
 
-    freshness = {'status': 'unknown', 'reasons': []}
+    freshness = {'status': 'unknown', 'reasons': [], 'differences': []}
     if current_inputs is not None:
         try:
-            validate_current_inputs(current_inputs, manifest)
-            freshness = {'status': 'verified', 'reasons': []}
+            appraisal = classify_candidate(manifest, _candidate_inputs(manifest), current_inputs)
+            status = {'applicable': 'verified', 'changed': 'changed', 'unknown': 'unknown'}[
+                appraisal['applicability']]
+            freshness = {'status': status,
+                         'reasons': [row['reason'] for row in appraisal['differences']],
+                         'differences': appraisal['differences']}
         except (OSError, ValueError, TypeError, KeyError) as exc:
             reason = str(exc)[:1000]
-            freshness = {'status': 'changed' if 'differs' in reason or 'restart is required' in reason else 'unknown',
-                         'reasons': [reason]}
+            freshness = {'status': 'unknown', 'reasons': [reason],
+                         'differences': [{'field': 'current_inputs', 'status': 'unknown', 'reason': reason}]}
 
     disposition = operation.get('disposition')
     actions = []
@@ -458,8 +375,9 @@ def inspect_run(run_dir, *, current_inputs=None):
 
     activity = ('completed' if integrity_status == 'verified'
                 and (disposition == 'complete' or manifest.get('state') == 'complete') else 'unknown')
-    return {'schema_version': 1, 'run_dir': str(run), 'run_id': manifest.get('run_id'),
-            'review_id': 'CR-' + manifest['run_id'],
+    run_id = manifest.get('run_id')
+    return {'schema_version': 1, 'run_dir': str(run), 'run_id': run_id,
+            'review_id': 'CR-' + run_id if isinstance(run_id, str) else None,
             'integrity': {'status': integrity_status, 'errors': errors},
             'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
             'known_sources': known, 'missing_sources': missing, 'resources': resources,

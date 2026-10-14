@@ -60,10 +60,15 @@ class CheckpointTests(unittest.TestCase):
             value['coverage']['execution']['profile_history'] = [row]
         return value
 
-    def prepare_promotable_checkpoint(self):
+    def prepare_promotable_checkpoint(self, *, external_source=None, captured_hash=None,
+                                      expected_gate_error=None):
         run = self.prepare7()
         final = self.final_record(run)
         context_file = self.write('valid-context.json', context10(final))
+        if external_source is not None:
+            context = self.read(context_file)
+            context['review_inputs']['sources']['evidence/requirements.md'] = captured_hash
+            context_file = self.write('valid-context.json', context)
         artifacts.register(run, [], context_input=context_file)
         for raw in source_events(final):
             if raw['kind'] == 'profile':
@@ -79,9 +84,15 @@ class CheckpointTests(unittest.TestCase):
                 event['executor'] = raw['executor']
             artifacts.record_event(run, self.write('milestone.json', event))
         packets = self.packet_files()
+        if external_source is not None:
+            packets.append(external_source)
         result = artifacts.checkpoint(run, context_input=context_file, evidence_inputs=packets,
                                       input_record=self.write('valid-final.json', final), phase='report')
-        self.assertEqual(result['gate_errors'], [])
+        if expected_gate_error is None:
+            self.assertEqual(result['gate_errors'], [])
+        else:
+            self.assertTrue(any(expected_gate_error in error for error in result['gate_errors']),
+                            result['gate_errors'])
         return run, context_file, packets
 
     def test_packet_checkpoint_without_verdict(self):
@@ -132,6 +143,18 @@ class CheckpointTests(unittest.TestCase):
         self.assertTrue(retained['retained'])
         self.assertTrue((run / 'review.json').is_file())
         self.assertEqual(artifacts.validate(run, require_retained=True)['retained'], True)
+
+    def test_captured_external_source_hash_is_checked_before_retention(self):
+        requirements = self.write('requirements.md', {'revision': 'current'})
+        run, _, _ = self.prepare_promotable_checkpoint(
+            external_source=requirements, captured_hash='0' * 64,
+            expected_gate_error='selected external review input differs')
+
+        manifest = self.read(run / 'cierre.json')
+        self.assertFalse(manifest['retained'])
+        self.assertTrue((run / 'pending' / 'review.json').is_file())
+        self.assertTrue(any('selected external review input differs'
+                            in error for error in manifest['checkpoint']['gate_errors']))
 
     def test_new_checkpoint_without_final_invalidates_previous_provisional_report(self):
         run, context, packets = self.prepare_promotable_checkpoint()

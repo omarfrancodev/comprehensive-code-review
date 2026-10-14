@@ -17,6 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import review_workspace
 import review_resource_claims as claims
+import review_recovery
 
 
 class ResourceClaimTests(unittest.TestCase):
@@ -171,6 +172,21 @@ class ResourceClaimTests(unittest.TestCase):
             self.register(run, session, 'context.json')
         self.assertEqual(before, self.snapshot(session))
         self.assertEqual(self.read(run / 'cierre.json')['resource_claims'], [])
+
+    def test_workspace_claim_diagnostic_becomes_invalid_preserve(self):
+        session = self.workspace_session()
+        run = self.create_run([session])
+        self.register(run, session, 'claimed-context.json')
+
+        with patch.object(review_workspace, 'load',
+                          side_effect=review_workspace.ReviewError('owner marker is malformed')):
+            inspected = review_recovery.inspect_run(run)
+            with self.assertRaises(ValueError) as captured:
+                claims._workspace(session)
+
+        self.assertEqual(inspected['integrity']['status'], 'invalid')
+        self.assertTrue(any(item['action'] == 'preserve' for item in inspected['actions']))
+        self.assertIsInstance(captured.exception.__cause__, review_workspace.ReviewError)
 
 
 if __name__ == '__main__':

@@ -44,19 +44,28 @@ def record10(profile='focused', source='automatic'):
 def context10(record):
     execution = record['coverage']['execution']
     history = copy.deepcopy(execution['profile_history'])
+    inputs = {'scope': copy.deepcopy(record['scope']), 'sources': {}, 'source_set_complete': True,
+              'description_identity': record.get('description', {}).get('identity'),
+              'requirements_identity': None, 'plan_identity': None,
+              'configuration_identity': None}
     return {
         'profile': record['profile'],
         'selection_source': execution['selection_source'],
         'profile_history': history,
         'profile_reference': history[-1]['reference'],
         'execution_plan': copy.deepcopy(execution['plan']),
+        'review_inputs': inputs,
         'executors': [],
     }
 
 
-def current_inputs(scope, sources=None):
+def current_inputs(scope, sources=None, *, source_set_complete=False, **identities):
     """Build a bounded caller-verified scope/source identity fixture."""
-    return {'scope': copy.deepcopy(scope), 'sources': copy.deepcopy(sources or {})}
+    value = {'scope': copy.deepcopy(scope), 'sources': copy.deepcopy(sources or {})}
+    if source_set_complete is not None:
+        value['source_set_complete'] = source_set_complete
+    value.update(copy.deepcopy(identities))
+    return value
 
 
 def source_events(record):

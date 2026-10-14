@@ -137,7 +137,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - [x] **Step 2: Observar RED.** Las regresiones nuevas se añadieron sobre fixtures que antes aceptaban la omisión de asignaciones; la suite focalizada se usó para detectar y ajustar una fixture cuyo downgrade automático tampoco cumplía la regla de evidencia. No se atribuye a ese fallo de fixture el defecto de producto.
 - [x] **Step 3: Implementar.** Tipar campos antes de lookup/set; registrar/merger filas y resolver eventos/briefs contra registro completo. Calcular obligaciones adquiridas por epoch más selección final: contar solo discoveries que satisfacen la independencia requerida y una verificación efectiva posterior a la tanda final, conservando filas de otras epochs sin aplicarles retroactivamente la cardinalidad final. Exigir autoridad para selecciones explícitas posteriores incluso si solo cambia source; preservar política explícita inicial y IDs. No contar eventos generales como revisores nuevos. Un downgrade automático requiere nueva fuente y razón basada en evidencia; urgencia, coste, capacidad o ausencia de hallazgos no son justificación.
 - [x] **Step 4: Observar GREEN.** `test_review_profiles.py` 25/25; `test_review_execution_policy.py` 29/29; `test_review_recovery.py` 25/25; `test_review_artifacts.py` 54, 52 aprobadas y 2 omitidas por permisos de symlink/junction en Windows; py_compile y `git diff --check` aprobados. Compatibilidad legacy permanece cubierta por las suites existentes.
-- [ ] **Step 5: Commit.** `fix(profiles): conservar asignaciones iniciadas y obligaciones de cada selección`.
+- [x] **Step 5: Commit.** `fix(profiles): conservar asignaciones iniciadas y obligaciones de cada selección`.
 
 ### Task 3: Inputs comunes, vigencia y fronteras de diagnóstico
 
@@ -152,7 +152,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Produces: prepare `current_inputs=None` y CLI `--current-inputs`; register puede capturar context.review_inputs antes del trabajo. Archive.review_inputs guarda inputs externos; `_execution_gate` verifica sus hashes seleccionados. Inspect/lookup separan appraisal, hashes y recursos.
 - Produces: `_workspace` convierte ReviewError a ValueError con causa; retain valida estructura antes de pre-gates. inspect usa run_id opcional para schemas 1–2.
 
-- [ ] **Step 1: Añadir regresiones.** `test_same_inputs_shape_for_lookup_inspect_resume`, `test_empty_sources_without_completeness_are_unknown`, `test_explicit_complete_empty_input_set_is_applicable`, `test_known_description_identity_omitted_is_unknown`, `test_unknown_inputs_cannot_resume`, `test_internal_outputs_are_not_external_sources`, `test_changed_description_and_spec_at_same_head`, `test_seventy_retained_outputs_do_not_invalidate_candidate`, `test_unknown_legacy_inputs_remain_unknown`, `test_nonobject_final_retention_is_structured_error`, `test_claim_owner_error_becomes_invalid_preserve`, `test_schema1_and_schema2_inspect_without_run_id`.
+- [x] **Step 1: Añadir regresiones.** `test_same_inputs_shape_for_lookup_inspect_resume`, `test_empty_sources_without_completeness_are_unknown`, `test_explicit_complete_empty_input_set_is_applicable`, `test_known_description_identity_omitted_is_unknown`, `test_unknown_inputs_cannot_resume`, `test_internal_outputs_are_not_external_sources`, `test_changed_description_and_spec_at_same_head`, `test_seventy_retained_outputs_do_not_invalidate_candidate`, `test_unknown_legacy_inputs_remain_unknown`, `test_nonobject_final_retention_is_structured_error`, `test_claim_owner_error_becomes_invalid_preserve`, `test_schema1_and_schema2_inspect_without_run_id`.
 
   ```python
   current = {'scope': manifest['scope'], 'sources': {}}
@@ -165,9 +165,9 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   ```
 
   La prueba usa el mismo fixture completo sin inputs externos; ninguna aprobación se obtiene copiando context/briefs/results al mapa del llamador.
-- [ ] **Step 2: Observar RED.** Ejecutar inputs/recovery/contract. Confirmar conflicto de forma F023, falso verified F024 y outputs F022/F035, sin usar el número de outputs como falta de integridad del reporte.
-- [ ] **Step 3: Implementar.** Unificar normalización/comparación y la captura de fuentes externas antes de trabajo; legacy sin captura queda unknown. Validar cada shape antes de pre-gates y convertir excepciones específicas en las fronteras. Mantener JSON de error compatible, sin catch genérico que oculte interrupciones.
-- [ ] **Step 4: Observar GREEN.** Repetir patrones y artifact contract. Verificar comandos CLI con la forma común, cambio real de fuente, no modificación por inspect y mapa >64 del llamador rechazado antes de IO mutable.
+- [x] **Step 2: Observar RED.** Las regresiones reprodujeron la importación aún ausente del módulo común, la omisión de identidad de descripción marcada como vigente, inputs incompletos rechazados por forma distinta, confusión de outputs internos con fuentes, retención no-object como `AttributeError` y metadata de runs antiguos sin `run_id`.
+- [x] **Step 3: Implementar.** Unificar normalización/comparación y la captura de fuentes externas antes de trabajo; legacy sin captura queda unknown. Validar cada shape antes de pre-gates y convertir excepciones específicas en las fronteras. Mantener JSON de error compatible, sin catch genérico que oculte interrupciones.
+- [x] **Step 4: Observar GREEN.** `test_review_inputs.py` 7/7; recovery 34/34; checkpoints 11/11 más regresión de hash de fuente 1/1; artifacts 54 con 52 aprobadas y 2 omitidas por permisos Windows; resource claims 8/8; contract 34/34. `py_compile` y `git diff --check` se repetirán antes del commit.
 - [ ] **Step 5: Commit.** `fix(review): unificar vigencia de inputs y diagnósticos de archivos históricos`.
 
 ### Task 4: Claims y transferencias repetibles

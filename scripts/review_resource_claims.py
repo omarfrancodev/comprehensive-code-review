@@ -57,7 +57,10 @@ def _workspace(session_dir):
     if not manifest_path.is_file():
         return None
     import review_workspace
-    workspace = review_workspace.load(manifest_path)
+    try:
+        workspace = review_workspace.load(manifest_path)
+    except review_workspace.ReviewError as exc:
+        raise ValueError('claimed review workspace is invalid; preserve it for inspection: ' + str(exc)) from exc
     owner = _read_json(session / '.owner.json')
     token = owner.get('owner_token')
     if (not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token)

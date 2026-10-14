@@ -32,13 +32,128 @@ class ReviewRecoveryTests(unittest.TestCase):
     retain_legacy = archive.ArchiveTests.retain
     close = archive.ArchiveTests.close
 
-    def prepare7(self, profile='standard', *, controller=None):
+    def prepare7(self, profile='standard', *, controller=None, capture_inputs=True):
+        captured = (current_inputs(self.read(self.scope), source_set_complete=True,
+                                   description_identity=record10(profile)['description']['identity'],
+                                   requirements_identity=None,
+                                   plan_identity=None, configuration_identity=None, profile=profile)
+                    if capture_inputs else None)
         return Path(artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
-                                      profile_input=self.profile_input(profile), controller=controller))
+                                      profile_input=self.profile_input(profile), controller=controller,
+                                      current_inputs=captured))
 
     def current(self, run, *, scope=None, sources=None):
         manifest = self.read(run / 'cierre.json')
-        return current_inputs(scope if scope is not None else manifest['scope'], sources)
+        captured = manifest.get('review_inputs') or {}
+        identities = {field: captured[field] for field in ('description_identity', 'requirements_identity',
+                      'plan_identity', 'configuration_identity') if field in captured}
+        history = manifest.get('profile_history', [])
+        if history:
+            identities['profile'] = history[-1]['profile']
+        return current_inputs(scope if scope is not None else manifest['scope'],
+                              sources if sources is not None else captured.get('sources', {}),
+                              source_set_complete=True, **identities)
+
+    def test_same_inputs_shape_for_lookup_inspect_and_resume(self):
+        run = self.prepare7()
+        manifest = self.read(run / 'cierre.json')
+        current = self.current(run)
+        scope = manifest['scope']
+
+        found = recovery.find_candidates(self.repo, scope, archive_root=self.output,
+                                         current_inputs=current)
+        inspected = recovery.inspect_run(run, current_inputs=current)
+        resumed = artifacts.resume(run, controller=manifest['controller'], authority=None,
+                                   current_inputs=current)
+
+        self.assertEqual(found['candidates'][0]['applicability'], 'applicable')
+        self.assertEqual(inspected['freshness']['status'], 'verified')
+        self.assertEqual(resumed['operation']['disposition'], 'open')
+
+    def test_known_description_identity_omitted_is_unknown(self):
+        scope = self.read(self.prepare7() / 'cierre.json')['scope']
+        retained = current_inputs(scope, source_set_complete=True, description_identity='desc-v1')
+        run = self.prepare7(capture_inputs=False)
+        manifest = self.read(run / 'cierre.json')
+        manifest['review_inputs'] = retained
+        marker = self.read(run / artifacts.MARKER)
+        artifacts._save_manifest(run, manifest, marker)
+
+        inspected = recovery.inspect_run(run, current_inputs=current_inputs(scope, source_set_complete=True))
+
+        self.assertEqual(inspected['freshness']['status'], 'unknown')
+        self.assertIn('description_identity', {row['field'] for row in inspected['freshness']['differences']})
+
+    def test_unknown_inputs_cannot_resume(self):
+        run = self.prepare7(capture_inputs=False)
+        manifest = self.read(run / 'cierre.json')
+        incomplete = current_inputs(manifest['scope'])
+        with self.assertRaisesRegex(ValueError, 'unknown|applicable'):
+            artifacts.resume(run, controller=manifest['controller'], authority=None,
+                             current_inputs=incomplete)
+
+    def test_prepare_captures_external_review_inputs_without_replacing_profile_history(self):
+        inputs = current_inputs(self.read(self.scope), {'evidence/requirements.md': 'a' * 64},
+            source_set_complete=True, description_identity='description-v1',
+            requirements_identity='requirements-v1', plan_identity=None,
+            configuration_identity=None, profile='standard')
+        run = Path(artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
+            profile_input=self.profile_input('standard'), current_inputs=inputs))
+
+        manifest = self.read(run / 'cierre.json')
+        self.assertEqual(manifest['review_inputs']['sources'], inputs['sources'])
+        self.assertNotIn('profile', manifest['review_inputs'])
+        self.assertEqual(manifest['profile_history'][0]['profile'], 'standard')
+
+    def test_register_can_capture_external_inputs_before_assignment_work(self):
+        run = self.prepare7('focused', capture_inputs=False)
+        final = record10('focused')
+        manifest = self.read(run / 'cierre.json')
+        final['scope'] = manifest['scope']
+        context = context10(final)
+        context['profile_history'] = manifest['profile_history']
+        context['profile_reference'] = manifest['profile_history'][-1]['reference']
+
+        manifest = artifacts.register(run, [], context_input=self.write('input-context.json', context))
+
+        self.assertEqual(manifest['review_inputs']['scope'], final['scope'])
+        self.assertTrue(manifest['review_inputs']['source_set_complete'])
+
+    def test_internal_outputs_are_not_external_sources(self):
+        manifest = {'scope': copy.deepcopy(self.read(self.prepare7() / 'cierre.json')['scope']),
+                    'hashes': {f'evidence/result-{index}.json': 'a' * 64 for index in range(70)},
+                    'review_inputs': current_inputs(self.read(self.scope), {'requirements.md': 'b' * 64},
+                                                    source_set_complete=True)}
+
+        retained = recovery._candidate_inputs(manifest)
+
+        self.assertEqual(retained['sources'], {'requirements.md': 'b' * 64})
+
+    def test_unknown_legacy_inputs_remain_unknown(self):
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        scope = self.read(run / 'cierre.json')['scope']
+        result = recovery.find_candidates(self.repo, scope, archive_root=self.output,
+            current_inputs=current_inputs(scope, source_set_complete=True))
+        self.assertEqual(result['candidates'][0]['applicability'], 'unknown')
+
+    def test_nonobject_final_retention_is_structured_error(self):
+        run = self.prepare7()
+        with self.assertRaisesRegex(ValueError, 'object|record|review'):
+            artifacts.retain(run, self.write('list-final.json', []), context_input=self.write('ctx.json', {}))
+
+    def test_schema1_and_schema2_inspect_without_run_id(self):
+        run = self.root / 'historical-run'
+        run.mkdir()
+        for schema in (1, 2):
+            manifest = {'schema_version': schema, 'state': 'complete', 'hashes': {},
+                        'pending_hashes': {}, 'temporary_paths': [], 'resource_claims': [],
+                        'operation': {'disposition': 'complete', 'phase': 'complete'}}
+            with self.subTest(schema=schema), patch.object(recovery_artifacts, '_load_run', return_value=(run, manifest, {})), \
+                    patch.object(recovery_artifacts, '_verify_files'):
+                inspected = recovery.inspect_run(run)
+                self.assertIsNone(inspected['review_id'])
 
     def controller(self, name='new controller', provider='codex'):
         return {'identity': {'kind': 'coordinator', 'name': name, 'provider_id': provider},
@@ -99,9 +214,9 @@ class ReviewRecoveryTests(unittest.TestCase):
 
         self.assertEqual(len(result['candidates']), 1)
         candidate = result['candidates'][0]
-        self.assertEqual(candidate['applicability'], 'applicable')
+        self.assertEqual(candidate['applicability'], 'unknown')
         actions = {row['action'] for row in candidate['actions']}
-        self.assertIn('show_report', actions)
+        self.assertIn('show_historical_report', actions)
         self.assertIn('new_review', actions)
         self.assertNotIn('selected_run', result)
 
@@ -137,7 +252,7 @@ class ReviewRecoveryTests(unittest.TestCase):
                          {'scope.base', 'description_identity', 'requirements_identity',
                           'plan_identity', 'configuration_identity', 'profile'})
 
-    def test_verified_candidate_compares_retained_description_identity(self):
+    def test_legacy_description_identity_is_not_reconstructed_as_current_input(self):
         final = archive.record()
         final['description']['identity'] = 'description-v1'
         self.final = self.write('description-final.json', final)
@@ -151,7 +266,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         candidate = recovery.find_candidates(self.repo, scope, archive_root=self.output,
                                              current_inputs=current)['candidates'][0]
 
-        self.assertEqual(candidate['applicability'], 'changed')
+        self.assertEqual(candidate['applicability'], 'unknown')
         self.assertIn('description_identity', {row['field'] for row in candidate['differences']})
 
     def test_multiple_candidates_are_not_selected_by_timestamp(self):
@@ -379,6 +494,9 @@ class ReviewRecoveryTests(unittest.TestCase):
         manifest = self.read(run / 'cierre.json')
         final['review_id'] = 'CR-' + manifest['run_id']
         context = self.write('late-profile-context.json', context10(final))
+        context_value = self.read(context)
+        context_value['review_inputs'] = copy.deepcopy(manifest['review_inputs'])
+        context = self.write('late-profile-context.json', context_value)
         artifacts.checkpoint(run, context_input=context, input_record=self.write('late-profile.json', final),
                              phase='retain')
         history_before = copy.deepcopy(self.read(run / 'cierre.json')['profile_history'])
