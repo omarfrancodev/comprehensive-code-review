@@ -811,6 +811,7 @@ class Archive7Tests(unittest.TestCase):
         final['review_id'] = 'CR-' + manifest['run_id']
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
+                   'execution_plan': copy.deepcopy(final['coverage']['execution']['plan']),
                    'executors': [{'executor': 'X1', 'method': 'authorized-copy', 'workspace': str(workspace),
                        'revision': final['scope']['head'], 'snapshot': None, 'manifest': None,
                        'dependencies': 'none', 'dependency_reason': 'Synthetic isolated fixture',
@@ -832,8 +833,55 @@ class Archive7Tests(unittest.TestCase):
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
                    'executors': []}
+        with self.assertRaisesRegex(ValueError, 'execution_plan'):
+            artifacts.register(run, [], context_input=self.write('missing-plan.json', context))
+        self.assertEqual(self.snapshot(run), before)
+        context['execution_plan'] = []
         manifest = artifacts.register(run, [], context_input=self.write('static-context.json', context))
         self.assertEqual(manifest['executors'], [])
+        self.assertEqual(manifest['assignment_registry'], [])
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'brief captured in the execution plan'):
+            artifacts.record_event(run, self.write('unknown-start.json', {
+                'kind': 'discovery', 'status': 'started', 'summary': 'Unknown assignment start',
+                'evidence': ['evidence/briefs.json#D1']}))
+        self.assertEqual(self.snapshot(run), before)
+
+    def test_register_captures_plan_and_retention_rejects_omitted_started_assignment(self):
+        from recovery_fixtures import record10
+
+        run = self.prepare7('deep')
+        manifest = self.read(run / 'cierre.json')
+        history = manifest['profile_history']
+        final = record10('deep', 'automatic')
+        final['scope'] = manifest['scope']
+        final['description'] = record()['description']
+        final['review_id'] = 'CR-' + manifest['run_id']
+        final['coverage']['execution']['profile_history'] = history
+        plan = copy.deepcopy(final['coverage']['execution']['plan'])
+        context = {'profile': 'deep', 'selection_source': 'automatic',
+                   'profile_reference': history[-1]['reference'], 'profile_history': history,
+                   'execution_plan': plan, 'executors': []}
+        context_file = self.write('context.json', context)
+        registered = artifacts.register(run, [], context_input=context_file)
+        self.assertEqual(registered['assignment_registry'], plan)
+
+        artifacts.record_event(run, self.write('assignment-start.json', {
+            'kind': 'discovery', 'status': 'started', 'summary': 'D1 started',
+            'evidence': [plan[0]['reference']]}))
+
+        execution = final['coverage']['execution']
+        omitted = plan[0]
+        extra = dict(plan[1], id='D3', reference='evidence/briefs.json#D3')
+        execution['plan'] = [plan[1], extra, plan[2]]
+        old_results = {row['assignment_id']: row for row in execution['results']}
+        extra_result = dict(old_results['D1'], assignment_id='D3', reference='evidence/results.json#D3')
+        execution['results'] = [old_results['D2'], extra_result, old_results['V1']]
+        briefs = self.write('briefs.json', {'D1': {}, 'D2': {}, 'D3': {}, 'V1': {}})
+        results = self.write('results.json', {'D2': {}, 'D3': {}, 'V1': {}})
+        with self.assertRaisesRegex(ValueError, 'started/completed assignment.*D1'):
+            artifacts.retain(run, self.write('review.json', final), context_input=context_file,
+                             evidence_inputs=[briefs, results])
 
 
 if __name__ == '__main__':

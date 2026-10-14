@@ -28,10 +28,7 @@ class CheckpointTests(unittest.TestCase):
 
     def start_run(self):
         run = self.prepare7()
-        manifest = self.read(run / 'cierre.json')
-        context = {'profile': 'focused', 'selection_source': 'automatic',
-                   'profile_reference': manifest['profile_history'][0]['reference'],
-                   'profile_history': manifest['profile_history'], 'executors': []}
+        context = context10(self.final_record(run))
         context_file = self.write('context.json', context)
         artifacts.register(run, [], context_input=context_file)
         return run, context_file

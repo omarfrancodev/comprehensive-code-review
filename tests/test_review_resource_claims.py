@@ -43,7 +43,8 @@ class ResourceClaimTests(unittest.TestCase):
         return self.write(name, {'profile': selection['profile'],
                                  'selection_source': selection['selection_source'],
                                  'profile_reference': selection['reference'],
-                                 'profile_history': manifest['profile_history'], 'executors': []})
+                                 'profile_history': manifest['profile_history'],
+                                 'execution_plan': [], 'executors': []})
 
     def register(self, run, session, name):
         return artifacts.register(run, [str(session)], context_input=self.context(run, name))

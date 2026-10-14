@@ -333,13 +333,13 @@ class ReviewRecoveryTests(unittest.TestCase):
         original = artifacts.atomic_write
         interrupted = False
 
-        def fail_after_selected_bytes(path, data):
+        def fail_after_selected_bytes(path, data, **kwargs):
             nonlocal interrupted
             if not interrupted and Path(path).as_posix().endswith('/pending/context.json'):
-                original(path, data)
+                original(path, data, **kwargs)
                 interrupted = True
                 raise OSError('simulated crash after checkpoint context write')
-            original(path, data)
+            original(path, data, **kwargs)
 
         with patch.object(artifacts, 'atomic_write', side_effect=fail_after_selected_bytes), self.assertRaises(OSError):
             artifacts.checkpoint(run, context_input=context, phase='discovery')
@@ -438,7 +438,8 @@ class ReviewRecoveryTests(unittest.TestCase):
         source = self.prepare7()
         selection = self.read(source / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
-                   'profile_reference': selection['reference'], 'profile_history': [selection], 'executors': []}
+                   'profile_reference': selection['reference'], 'profile_history': [selection],
+                   'execution_plan': [], 'executors': []}
         artifacts.register(source, [str(session)], context_input=self.write('source-context.json', context))
         before = self.snapshot(session)
         with self.assertRaisesRegex(ValueError, 'transfer paths'):

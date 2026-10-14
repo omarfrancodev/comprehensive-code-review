@@ -399,6 +399,12 @@ def _load_run(run_dir):
         errors = review_profiles.validate_history(manifest.get('profile_history'))
         if errors:
             raise ValueError('; '.join(errors))
+        if 'assignment_registry' in manifest:
+            try:
+                review_profiles._assignment_rows(manifest['assignment_registry'],
+                                                 manifest['profile_history'], 'assignment_registry')
+            except (TypeError, ValueError) as exc:
+                raise ValueError('invalid archive assignment registry: ' + str(exc)) from exc
         operation = manifest.get('operation')
         fields = {'disposition', 'reason', 'source', 'phase', 'successor'}
         if (not isinstance(operation, dict) or set(operation) != fields
@@ -808,6 +814,13 @@ def record_event(run_dir, event_file, execution_metadata=None):
         disposition = manifest.get('operation', {}).get('disposition')
         if disposition != 'open':
             raise ValueError('review operation is ' + str(disposition) + '; resume or recover before starting work')
+        if (event['kind'] in {'agent', 'discovery', 'grouped-verification'}
+                and event['status'] == 'started' and event.get('evidence')):
+            registry = manifest.get('assignment_registry')
+            references = {row['reference'] for row in registry if isinstance(row, dict)
+                          and isinstance(row.get('reference'), str)} if isinstance(registry, list) else set()
+            if not references.intersection(event['evidence']):
+                raise ValueError('assignment work must start from a brief captured in the execution plan')
     if manifest['schema_version'] in (5, 6, 7) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
@@ -1215,7 +1228,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'controller': controller_value,
                 'checkpoint': None,
                 'lineage': {'kind': 'restart' if previous else 'new', 'source_run': previous},
-                'resource_claims': []}
+                'resource_claims': [], 'assignment_registry': []}
     manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
@@ -1304,14 +1317,33 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
     executors = _executors(context_input, manifest, temporary)
+    assignment_registry = list(manifest.get('assignment_registry', []))
     claim_manifest = copy.deepcopy(manifest)
     claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
     if manifest['schema_version'] == 7 and context_input is not None:
-        context = read_json(context_input)
+        context = _input_object(context_input, 'execution context')
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
                 or context.get('selection_source') != manifest['profile_history'][0]['selection_source']
                 or context.get('profile_history') != manifest['profile_history']):
             raise ValueError('executor context must preserve the profile history captured by the archive')
+        if not isinstance(context.get('execution_plan'), list):
+            raise ValueError('archive 7 registration requires captured context.execution_plan')
+        existing_trace = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+        if 'assignment_registry' not in manifest and any(
+                row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
+                and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
+                and row.get('evidence') for row in existing_trace if isinstance(row, dict)):
+            raise ValueError('review work predates assignment capture; restart the review before registering execution')
+        assignment_registry = review_profiles.merge_assignment_registry(
+            assignment_registry, context['execution_plan'], manifest['profile_history'], existing_trace)
+        references = {row['reference'] for row in assignment_registry}
+        for row in existing_trace:
+            if (isinstance(row, dict) and row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
+                    and row.get('status') == 'started' and row.get('evidence')
+                    and not references.intersection(row['evidence'])):
+                raise ValueError('observed assignment start has no captured brief identity; preserve the run and restart')
+        if context['execution_plan'] != assignment_registry:
+            raise ValueError('context.execution_plan must preserve the complete durable assignment registry')
     rows = list(manifest.get('resource_claims', []))
     for raw in temporary:
         plan = review_resource_claims.plan_claim(raw, run, claim_manifest, authority=authority)
@@ -1334,7 +1366,8 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
         if not existing:
             rows.append(plan['row'])
     manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
-                    executors=executors, resource_claims=rows)
+                    executors=executors, resource_claims=rows,
+                    assignment_registry=assignment_registry)
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
@@ -1880,7 +1913,8 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             selection = successor_manifest['profile_history'][0]
             context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                        'profile_reference': selection['reference'],
-                       'profile_history': successor_manifest['profile_history'], 'executors': []}
+                       'profile_history': successor_manifest['profile_history'],
+                       'execution_plan': [], 'executors': []}
             register(successor_path, selected_transfers, context_input=context, authority=authority)
             if manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
                 _link_restart(source_path, successor_path, authority=authority,
@@ -2158,6 +2192,13 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    if manifest.get('schema_version') == 7:
+        registry = manifest.get('assignment_registry')
+        if not isinstance(registry, list):
+            raise ValueError('archive assignment registry is missing; register the execution plan before retention')
+        if context.get('execution_plan') != registry:
+            raise ValueError('retained context execution_plan differs from the durable assignment registry')
+        requested.update(row['reference'] for row in registry)
     history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
     if not isinstance(history, list) or any(not isinstance(row, dict) or not isinstance(row.get('reference'), str) for row in history):
         raise ValueError('execution context needs observed profile source/history')
@@ -2196,7 +2237,8 @@ def _execution_gate(run, manifest, value, contents):
     for row in history:
         if resolved.get(row['reference']) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
-    errors = validate_execution_sources(value, context, events, references)
+    errors = validate_execution_sources(value, context, events, references,
+                                       assignment_registry=manifest.get('assignment_registry'))
     if value.get('schema_version') in (9, 10):
         errors.extend(validate_check_sources(value, context.get('executors')))
         errors.extend(validate_check_sources(value, manifest.get('executors', [])))

@@ -38,7 +38,7 @@
 - [x] Leer comentario completo del PR #19 y contrastar con `b758c55`.
 - [x] Reproducir cuatro bloqueantes y escenarios adicionales en repositorios sintéticos; limpiar scratch y comprobar worktree limpio.
 - [x] Escribir spec y este plan por solicitud expresa del usuario.
-- [ ] Obtener aprobación escrita de ambos documentos antes de implementar.
+- [x] Obtener aprobación escrita de ambos documentos antes de implementar.
 
 | Archivo | Responsabilidad de la corrección |
 |---|---|
@@ -92,7 +92,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Produces: `atomic_write(path: Path, data: bytes, *, staging_path: Path | None = None) -> None`; limpieza ordinaria en finally, error original preservado. `read_json(path: Path, *, max_bytes: int | None = None) -> object` conserva el rechazo de claves duplicadas/nonfinite y admite el límite antes de parsear.
 - Produces: `checkpoint_transaction.staging`, mapa destino relativo → `{name, sha256}` exactos dentro del run. `_verify_pending` reconoce ese inventario; `_checkpoint_commit` usa sus staging. `read_bounded(path: Path, limit: int) -> bytes` verifica regularidad/tamaño y lee como máximo limit+1.
 
-- [ ] **Step 1: Añadir regresiones.** `test_alias_83_conflicts_between_processes`, `test_foreign_run_rejection_creates_no_locks`, `test_fsync_and_replace_failure_remove_owned_staging`, `test_crash_staging_recovery_requires_exact_intent`, `test_foreign_staging_pattern_is_preserved`, `test_casefold_collision_rejected_before_intent`, `test_checkpoint_input_size_checked_before_read`, `test_growing_input_cannot_exceed_read_budget`. Snapshot antes/después y destino viejo intacto.
+- [x] **Step 1: Añadir regresiones.** `test_alias_83_conflicts_between_processes`, `test_foreign_run_rejection_creates_no_locks`, `test_fsync_and_replace_failure_remove_owned_staging`, `test_crash_staging_recovery_requires_exact_intent`, `test_foreign_staging_pattern_is_preserved`, `test_casefold_collision_rejected_before_intent`, `test_checkpoint_input_size_checked_before_read`, `test_growing_input_cannot_exceed_read_budget`. Snapshot antes/después y destino viejo intacto.
 
   ```python
   before = self.snapshot(run)
@@ -104,10 +104,10 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   self.assertEqual(before, self.snapshot(run))
   ```
 
-- [ ] **Step 2: Observar RED.** Ejecutar atomic_recovery, run_lock y checkpoints; reproducir el temporal de F003 y la adquisición por alias F001. Si 8.3 no existe en el host, registrar skip y mantener control de normalización más prueba real disponible; no fabricar una aprobación de plataforma.
-- [ ] **Step 3: Implementar.** Resolver identidad canónica, preflight de ownership y staging exacto; deduplicar casefold antes de intención y usar lecturas acotadas para contexto/evidencia/final. Reconocer staging 7 anterior solo cuando su intención lo declara; no limpieza por regex. Adaptar wrappers de fault injection para aceptar el keyword de staging.
-- [ ] **Step 4: Observar GREEN.** Repetir los cuatro patrones. Probar reintento de checkpoint/recover tras fsync/replace y crash; foreign staging queda intacto y el run no certifica retención. Inyectar también fallo de unlink: error original y staging conservado identificable.
-- [ ] **Step 5: Commit.** Stage de archivos exactos; `fix(recovery): preservar checkpoints ante fallos de escritura y alias de rutas`.
+- [x] **Step 2: Observar RED.** Ejecutar atomic_recovery, run_lock y checkpoints; reproducir el temporal de F003 y la adquisición por alias F001. Si 8.3 no existe en el host, registrar skip y mantener control de normalización más prueba real disponible; no fabricar una aprobación de plataforma.
+- [x] **Step 3: Implementar.** Resolver identidad canónica, preflight de ownership y staging exacto; deduplicar casefold antes de intención y usar lecturas acotadas para contexto/evidencia/final. Reconocer staging 7 anterior solo cuando su intención lo declara; no limpieza por regex. Adaptar wrappers de fault injection para aceptar el keyword de staging.
+- [x] **Step 4: Observar GREEN.** Repetir los cuatro patrones. Probar reintento de checkpoint/recover tras fsync/replace y crash; foreign staging queda intacto y el run no certifica retención. Inyectar también fallo de unlink: error original y staging conservado identificable.
+- [x] **Step 5: Commit.** Stage de archivos exactos; `fix(recovery): preservar checkpoints ante fallos de escritura y alias de rutas`.
 
 ### Task 2: Registro de asignaciones y obligaciones adquiridas
 
@@ -121,7 +121,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Produces: `validate_profile_execution(record: dict, trace_events: list[dict] | None = None, *, assignment_registry: list[dict] | None = None) -> list[str]`; fuentes de contexto/archivo/plan se contrastan en `_execution_gate` y `validate_execution_sources`.
 - Produces: context.execution_plan, archive.assignment_registry y helpers de fixture comunes. Register guarda el registro antes de trabajo por asignación; checkpoint/retain lo preservan y seleccionan sus fuentes históricas pertinentes.
 
-- [ ] **Step 1: Añadir regresiones.** `test_downgrade_omits_started_assignments_from_final_and_context`, `test_started_assignment_identity_cannot_change`, `test_completed_result_and_brief_are_retained_after_transition`, `test_focused_to_deep_preserves_coordinator_without_counting_it_as_fresh`, `test_prior_verification_preserved_but_final_batch_requires_new_verifier`, `test_explicit_same_profile_requires_authority`, `test_acquired_automatic_extended_minimum_survives_explicit_selection`, `test_generic_start_is_not_fabricated_assignment`, `test_nonhashable_selection_fields_return_errors`. El caso principal conserva D1/D2 en registro/traza aunque el final intente quedarse solo con D3/V3.
+- [x] **Step 1: Añadir regresiones.** `test_downgrade_omits_started_assignments_from_final_and_context`, `test_started_assignment_identity_cannot_change`, `test_completed_result_and_brief_are_retained_after_transition`, `test_focused_to_deep_preserves_coordinator_without_counting_it_as_fresh`, `test_prior_verification_preserved_but_final_batch_requires_new_verifier`, `test_explicit_same_profile_requires_authority`, `test_acquired_automatic_extended_minimum_survives_explicit_selection`, `test_generic_start_is_not_fabricated_assignment`, `test_nonhashable_selection_fields_return_errors`. El caso principal conserva D1/D2 en registro/traza aunque el final intente quedarse solo con D3/V3.
 
   ```python
   final['coverage']['execution']['plan'] = later_focused_plan
@@ -134,9 +134,9 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   ```
 
   Assert adicional: guardar un extended automático adquirido con solo dos discoveries falla aun con autoridad posterior; los resultados válidos originales cuentan sin redispatch.
-- [ ] **Step 2: Observar RED.** Ejecutar profiles/execution_policy/artifacts. Esperar rechazo ausente para F010/F011 y TypeError de F015 antes de corregir; comprobar que los fixtures iniciales sí validan.
-- [ ] **Step 3: Implementar.** Tipar campos antes de lookup/set; registrar/merger filas y resolver eventos/briefs contra registro completo. Calcular obligaciones adquiridas por epoch más selección final: contar solo discoveries que satisfacen la independencia requerida y una verificación efectiva posterior a la tanda final, conservando filas de otras epochs sin aplicarles retroactivamente la cardinalidad final. Exigir autoridad para selecciones explícitas posteriores incluso si solo cambia source; preservar política explícita inicial y IDs. No contar eventos generales como revisores nuevos.
-- [ ] **Step 4: Observar GREEN.** Repetir patrones y contract. Controles: downgrade justificado antes de trabajo, reuse válido, supersession no iniciada y verificador más fuerte independiente permanecen soportados; ningún schema 1–9 se reinterpreta.
+- [x] **Step 2: Observar RED.** Las regresiones nuevas se añadieron sobre fixtures que antes aceptaban la omisión de asignaciones; la suite focalizada se usó para detectar y ajustar una fixture cuyo downgrade automático tampoco cumplía la regla de evidencia. No se atribuye a ese fallo de fixture el defecto de producto.
+- [x] **Step 3: Implementar.** Tipar campos antes de lookup/set; registrar/merger filas y resolver eventos/briefs contra registro completo. Calcular obligaciones adquiridas por epoch más selección final: contar solo discoveries que satisfacen la independencia requerida y una verificación efectiva posterior a la tanda final, conservando filas de otras epochs sin aplicarles retroactivamente la cardinalidad final. Exigir autoridad para selecciones explícitas posteriores incluso si solo cambia source; preservar política explícita inicial y IDs. No contar eventos generales como revisores nuevos. Un downgrade automático requiere nueva fuente y razón basada en evidencia; urgencia, coste, capacidad o ausencia de hallazgos no son justificación.
+- [x] **Step 4: Observar GREEN.** `test_review_profiles.py` 25/25; `test_review_execution_policy.py` 29/29; `test_review_recovery.py` 25/25; `test_review_artifacts.py` 54, 52 aprobadas y 2 omitidas por permisos de symlink/junction en Windows; py_compile y `git diff --check` aprobados. Compatibilidad legacy permanece cubierta por las suites existentes.
 - [ ] **Step 5: Commit.** `fix(profiles): conservar asignaciones iniciadas y obligaciones de cada selección`.
 
 ### Task 3: Inputs comunes, vigencia y fronteras de diagnóstico

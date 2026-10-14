@@ -49,6 +49,7 @@ def context10(record):
         'selection_source': execution['selection_source'],
         'profile_history': history,
         'profile_reference': history[-1]['reference'],
+        'execution_plan': copy.deepcopy(execution['plan']),
         'executors': [],
     }
 
