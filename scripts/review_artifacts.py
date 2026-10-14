@@ -179,6 +179,11 @@ def _read_restart_intent(path, source_run, source_manifest):
 
 def _active_restart_operation(source_run, source_manifest):
     """Read the one source-bound active descriptor; never scan other reviews."""
+    # The durable restart-intent protocol was introduced with archive 7. Older
+    # archives, especially schemas 1–2, have no run_id; their ordinary locked
+    # mutations must remain usable without inventing one to probe for an intent.
+    if not isinstance(source_manifest.get('run_id'), str) or not source_manifest.get('run_id'):
+        return None
     active_path, owner_path = _active_restart_paths(source_run, source_manifest)
     if not active_path.exists() and not owner_path.exists():
         return None

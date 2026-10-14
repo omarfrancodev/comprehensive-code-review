@@ -15,7 +15,7 @@ python /absolute/skill/scripts/review_workspace.py prepare --repo /absolute/proj
 python /absolute/skill/scripts/review_workspace.py prepare --repo /absolute/project --mode working --include-untracked src/new-file.ts --role functional --role data
 python /absolute/skill/scripts/review_workspace.py inspect --manifest /absolute/project/.worktrees/code-review-SESSION/manifest.json
 python /absolute/skill/scripts/review_workspace.py record-artifact --manifest /absolute/project/.worktrees/code-review-SESSION/manifest.json --path /absolute/owned/worktree/tests/temporary-reproduction.py
-python /absolute/skill/scripts/review_workspace.py cleanup --manifest /absolute/project/.worktrees/code-review-SESSION/manifest.json
+python /absolute/skill/scripts/review_workspace.py cleanup --manifest /absolute/project/.worktrees/code-review-SESSION/manifest.json --run-dir /absolute/archive/exact-returned-run
 ```
 
 `prepare` returns one JSON object with absolute manifest/workspace paths and the pinned SHA. Keep that output in the coordinator's durable closure under artifacts.md. The session directory contains an ownership marker, manifest, captured patches and role worktrees. Logs/fixtures may live inside the owned session or worktrees. Retained reports/evidence belong in the common persistent archive outside this session. A user development worktree is not disposable merely because it lives under .worktrees.
@@ -39,8 +39,8 @@ Before cleanup, retain and verify the canonical final record, rendered report, e
 3. Store meaningful evidence; do not export credentials or confidential unrelated files.
 4. Stop owned workers and wait for file handles/processes before removing workspaces.
 5. Preserve findings, version, commands/results and limitations in the final review record.
-6. Record each newly created non-ignored reproduction file with `record-artifact` after its final write; record only files created by the review. Run cleanup from outside the session. The helper verifies ownership, paths, registration, unchanged workspace HEAD and tracked snapshot, and initial/registered untracked file hashes, then removes owned worktrees with Git. Unrecorded or subsequently changed source files cause refusal. Ignored build outputs inside those verified worktrees are intentionally discarded.
-7. Verify returned `all_registered_removed`, absent session directory, and list of remaining Git worktrees. Inspect main checkout for drift, without undoing user edits.
+6. Record each newly created non-ignored reproduction file with `record-artifact` after its final write; record only files created by the review. Run cleanup from outside the session. A claimed session requires its exact owning `--run-dir`; this lets the archive helper write a cleanup intent before deletion and a receipt only after the session and registered worktrees are absent. The helper verifies ownership, paths, registration, unchanged workspace HEAD and tracked snapshot, and initial/registered untracked file hashes, then removes owned worktrees with Git. Unrecorded or subsequently changed source files cause refusal. Ignored build outputs inside those verified worktrees are intentionally discarded.
+7. Verify returned `all_registered_removed`, any `released_claims` receipt, absent session directory, and list of remaining Git worktrees. Inspect main checkout for drift, without undoing user edits. If the session is absent but no receipt exists, report `missing_unknown`; do not invent a successful cleanup observation.
 
 Use a `try/finally` lifecycle in an available orchestration tool. A hard process kill or machine shutdown can interrupt any cleanup mechanism: retain the initial manifest path in the task record and run ownership-checked cleanup when resuming. The script does not install background jobs or persist an automation.
 

@@ -1,6 +1,6 @@
 # Review Recovery Corrections Design
 
-**Estado:** propuesta escrita y autorrevisada; pendiente de aprobación antes de implementar.
+**Estado:** aprobada por el usuario el 2026-10-14 para implementación en la rama y PR #19.
 
 **Objetivo:** corregir las garantías de recuperación, perfiles, recursos y vigencia de la 2.12.0 pendiente, atendiendo el review del PR #19 sin convertir resultados provisionales en revisiones certificadas.
 
@@ -20,7 +20,7 @@ Se consideraron tres enfoques:
 2. **Parchear los 33 síntomas aisladamente.** Menor cambio inicial, pero deja discrepancias entre registro, transferencia, cleanup, reinicio y vigencia; aumenta el riesgo de otra review con los mismos problemas.
 3. **Sustituirlo por un gestor general de workflows.** Implica migración, dependencias y más mantenimiento del que requiere el problema; queda fuera del alcance.
 
-Esta especificación complementa y, donde precisa una regla, reemplaza el diseño anterior para estas correcciones. No autoriza implementar, fusionar, publicar ni modificar otros proyectos. El usuario solicitó crear conjuntamente spec y plan; ambos se presentan para revisión antes de ejecutar.
+Esta especificación complementa y, donde precisa una regla, reemplaza el diseño anterior para estas correcciones. La aprobación autoriza implementar en la rama y PR #19; no autoriza fusionar, publicar ni modificar otros proyectos. El usuario revisó y aprobó conjuntamente spec y plan antes de ejecutar.
 
 ### Restricciones globales
 

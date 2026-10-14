@@ -29,6 +29,10 @@ class AtomicRecoveryTests(unittest.TestCase):
         from test_review_checkpoints import CheckpointTests
         return CheckpointTests.start_run(self)
 
+    def final_record(self, *args, **kwargs):
+        from test_review_checkpoints import CheckpointTests
+        return CheckpointTests.final_record(self, *args, **kwargs)
+
     def packet_files(self, profile='focused'):
         from test_review_checkpoints import CheckpointTests
         return CheckpointTests.packet_files(self, profile)

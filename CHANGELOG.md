@@ -7,6 +7,9 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Registrar el ciclo de vida del perfil desde su selección inicial, transiciones posteriores y asignaciones afectadas; validar la selección inicial y las obligaciones del perfil efectivo antes de retener.
 - Añadir lookup acotado, lectura de vigencia y decisiones explícitas para mostrar, continuar, recuperar o iniciar una revisión vinculada, sin selección automática ni exploración global del archivo.
 - Publicar el contrato de archive schema 7 y final schema 10, preservar lecturas históricas, y alinear las proyecciones full/brief y publicación con el nuevo resultado.
+- Hacer idempotentes las operaciones de reinicio interrumpidas, registrar traspasos de controlador y resolver la identidad de harness vigente para cada run sucesor.
+- Registrar transferencias y recibos de limpieza de recursos; mantener `missing_unknown` cuando no hay evidencia de liberación y limitar de forma explícita las entradas retenidas y su staging.
+- Documentar recuperación exacta y criterios de vigencia, selección/perfiles, trazabilidad, limpieza y entrega; añadir regresiones integradas de secuencias de extremo a extremo.
 
 ## 2.11.0 — 2026-10-12
 

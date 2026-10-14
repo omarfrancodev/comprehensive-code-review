@@ -23,6 +23,27 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_full_contains_lineage_brief_keeps_summary_and_source_link(self):
+        value = record6()
+        source_id = 'CR-' + 'b' * 20
+        source_link = 'https://example.test/reviews/' + source_id + '/informe.md'
+        value['previous_reviews'] = [dict(review_id=source_id, reference=source_link, verified=True)]
+        run = self.retained(value, closed=True)
+
+        full = Path(delivery.deliver(run, 'full', self.repo, self.root / 'full-lineage'))
+        brief = Path(delivery.deliver(run, 'brief', self.repo, self.root / 'brief-lineage'))
+        full_report = (full / 'informe.md').read_text(encoding='utf-8')
+        full_record = artifacts.read_json(full / 'review.json')
+        summary = (brief / 'resumen.md').read_text(encoding='utf-8')
+
+        self.assertIn(source_link, full_report)
+        self.assertEqual(full_record['previous_reviews'][0]['review_id'], source_id)
+        self.assertIn('Resumen de revisión', summary)
+        self.assertIn('Veredicto', summary)
+        self.assertIn('Hallazgos', summary)
+        self.assertIn(source_id, summary)
+        self.assertIn(source_link, summary)
+
     def test_schema10_projection_preserves_profile_lineage_and_fulfillment(self):
         from recovery_fixtures import record10
 

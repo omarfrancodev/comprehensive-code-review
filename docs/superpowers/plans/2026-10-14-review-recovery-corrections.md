@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.10+ estándar, unittest, Git, JSON/Markdown y locks Windows/POSIX; sin dependencias nuevas.
 
-**Spec:** [2026-10-14-review-recovery-corrections-design.md](../specs/2026-10-14-review-recovery-corrections-design.md), propuesta pendiente de aprobación junto con este plan. La creación de estos documentos no autoriza implementación.
+**Spec:** [2026-10-14-review-recovery-corrections-design.md](../specs/2026-10-14-review-recovery-corrections-design.md), aprobado junto con este plan por el usuario el 2026-10-14.
 
 ## Global Constraints
 
@@ -259,19 +259,19 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - [x] **Step 2: Observar RED.** Los tests iniciales reprodujeron duplicación tras fallar el link, adopción con contexto no-objeto, inputs/profile heredado, reintento con claims ya transferidos y recuperación bloqueada por el scope anterior. El gate de transferencia durante un restart pendiente también se probó en rojo: sin la protección, alcanzaba el validador ordinario y fallaba con un error ajeno al restart.
 - [x] **Step 3: Implementar.** Preflight completo, intención/reserva durable y finalización del destino exacto bajo locks ordenados. Adoptar objeto mediante `_input_object`, sin dict-as-path. Preservar provisionales; completar mantenimiento de transacción con inputs movidos solo devuelve changed/restart. Fuente con ownership válido pero evidencia no verificable puede servir únicamente de vínculo de un nuevo run, sin copia/promoción ni reescritura del original. Registrar takeover real y harness vigente.
 - [x] **Step 4: Observar GREEN.** Reintentos tras fallos de reserva/prepare/transfer/link/retirada reutilizan el mismo destino; dos procesos producen un solo sucesor. Inputs modificados no permiten continuar ni transferir con vigencia ficticia; un run completo y los archives legacy conservan sus bytes. La primera suite de recovery dio 55/56 porque un test mezclaba plan sin dispatch con takeover intencional. Se separaron ambos escenarios; las pruebas corregidas pasaron. `test_review_restart.py` 3/3 y `test_review_harness.py` 13/13; `py_compile`, CLI `restart --help` y `git diff --check` pasaron.
-- [ ] **Step 5: Commit.** `fix(restart): reutilizar sucesores tras interrupciones y registrar el controlador actual`.
+- [x] **Step 5: Commit.** `fix(restart): reutilizar sucesores tras interrupciones y registrar el controlador actual`.
 
 ### Task 7: Secuencias completas, documentación y actualización del PR
 
 **Feedback:** F012, F013, F014; aceptación integrada de los 33 IDs anteriores.
 
-**Files:** Create `tests/test_review_recovery_sequences.py`, `docs/validation/2026-10-14-review-recovery-corrections.md`; Modify `references/archive/artifacts.md`, `references/archive/recovery.md`, `references/archive/lifecycle-trace.md`, `references/execution/workspaces.md`, `references/workflow/profiles.md`, `references/contracts/result-contract.md`, `references/reporting/delivery.md`, `docs/usage.md`, `SKILL.md`, `CHANGELOG.md`, este plan; Test `tests/test_reference_layout.py`, `tests/test_review_delivery.py`.
+**Files:** Create `tests/test_review_recovery_sequences.py`, `docs/validation/2026-10-14-review-recovery-corrections.md`; Modify `references/archive/artifacts.md`, `references/archive/recovery.md`, `references/archive/lifecycle-trace.md`, `references/execution/workspaces.md`, `references/workflow/profiles.md`, `references/contracts/result-contract.md`, `references/reporting/delivery.md`, `docs/usage.md`, `SKILL.md`, `CHANGELOG.md`, `scripts/review_artifacts.py`, `tests/test_review_atomic_recovery.py`, `tests/test_review_delivery.py` y este plan; Test `tests/test_reference_layout.py`.
 
 **Interfaces:**
 - Consumes: APIs/contratos/CLI reales de Tasks 1–6 y plantilla `.github/PULL_REQUEST_TEMPLATE.md`.
 - Produces: secuencias integradas, documentación reproducible, nueva evidencia y PR #19 actualizado; no merge/release ni cleanup del worktree en este paso.
 
-- [ ] **Step 1: Añadir regresiones de aceptación.** `test_a_b_register_c_retain_cleanup_close_replay`, `test_interrupted_checkpoint_changed_head_missing_session_new_harness_restart`, `test_documented_archive7_commands_end_to_end`, `test_full_contains_lineage_brief_keeps_summary_and_source_link`. Los tests CLI leen datos producidos por helpers, no construyen recibos para fingir cleanup.
+- [x] **Step 1: Añadir regresiones de aceptación.** `test_a_b_register_c_retain_cleanup_close_replay`, `test_interrupted_checkpoint_changed_head_missing_session_new_harness_restart`, `test_documented_archive7_commands_end_to_end`, `test_full_contains_lineage_brief_keeps_summary_and_source_link`. Los tests CLI leen datos producidos por helpers, no construyen recibos para fingir cleanup. Se corrigió además el fixture de atomic recovery para que delegue su factory final real.
 
   ```python
   # Flujo íntegro con inputs externos capturados y cada transición observada.
@@ -282,10 +282,10 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   self.assertEqual(self.snapshot(legacy_complete), original_source_bytes)
   ```
 
-- [ ] **Step 2: Observar RED y corregir integración.** Ejecutar recovery_sequences antes de ajustar referencias; fallos solo por contrato/CLI/secuencia reales. Completar conexiones omitidas sin debilitar validadores; repetir patrones afectados hasta GREEN.
-- [ ] **Step 3: Actualizar documentación.** Registrar todos los campos/ejemplos de register/select-profile/staging/inputs/transfer/cleanup/restart; explicar límites 32/64 y defaults desconocidos. profiles aclara downgrade justificado. La promesa de historial completo es de full; brief mantiene síntesis. No añadir mechanics al comentario público ni modificar la fecha/resultados de validaciones anteriores. Guardar tabla F→corrección→regresión con los 33 IDs y el matiz de F012.
-- [ ] **Step 4: Verificación final.** Ejecutar suite completa una vez después del último cambio funcional: `python -B -X utf8 .superpowers/sdd/review-recovery-lifecycle/run-unittest.py discover -s tests -v`. Exigir exit 0, registrar conteo/duración/skip reales. AST de Python tocados, enlaces Markdown, 14 ayudas CLI (prepare/register/select-profile/checkpoint/lookup/inspect/pause/block/resume/recover/restart/retain/close/cleanup), ejemplos CLI end-to-end y `git diff --check`. Si aparece un nuevo fallo funcional, repetir focalizados y suite después de corregirlo; no repetir solo por rutina.
-- [ ] **Step 5: Commit, push y gate del PR.** Git safety e identidad; commit `docs(review): documentar recuperaciones corregidas y sus regresiones`, push a la rama existente y actualizar cuerpo del PR #19 conforme a plantilla con resultados/contratos/compatibilidad. Verificar head remoto, adjuntar PR y pedir una revisión independiente del HEAD corregido; dejar explícito que el review anterior fue NO APROBABLE. Esperar validación humana antes de merge/tag/release; preservar worktree para comentarios.
+- [x] **Step 2: Observar RED y corregir integración.** El primer pase integrado expuso ocho errores: cuatro fixtures atómicos no delegaban `final_record`; otros cuatro cierres legacy 1–2 intentaban resolver una carpeta de intents con un `run_id` ausente. El fixture ahora delega el factory real y la detección de restart devuelve “sin operación” para esos archives, sin fabricar un ID. Suites focalizadas y segunda suite completa quedaron GREEN.
+- [x] **Step 3: Actualizar documentación.** Registrar todos los campos/ejemplos de register/select-profile/staging/inputs/transfer/cleanup/restart; explicar límites 32/64 y defaults desconocidos. profiles aclara downgrade justificado. La promesa de historial completo es de full; brief mantiene síntesis. No añadir mechanics al comentario público ni modificar la fecha/resultados de validaciones anteriores. Guardar tabla F→corrección→regresión con los 33 IDs y el matiz de F012.
+- [x] **Step 4: Verificación final.** Suite completa: 467 tests en 1018.988 s, exit 0, dos skips por permisos de symlink/junction. AST de cuatro archivos Python; 14 ayudas CLI; enlaces Markdown relativos de 13 documentos; matriz con 33 IDs únicos; prueba integrada de CLI y `git diff --check` pasaron. Detalle en [registro de validación](../../validation/2026-10-14-review-recovery-corrections.md).
+- [ ] **Step 5: Commit, push y gate del PR.** Git safety e identidad; commit `fix(recovery): omitir intents en archives sin run_id`, push a la rama existente y actualizar cuerpo del PR #19 conforme a plantilla con resultados/contratos/compatibilidad. Verificar head remoto, adjuntar PR y pedir una revisión independiente del HEAD corregido; dejar explícito que el review anterior fue NO APROBABLE. Esperar validación humana antes de merge/tag/release; preservar worktree para comentarios.
 
 ## Autorrevisión y handoff
 

@@ -10,6 +10,8 @@ Select once during shared scope/context discovery, before delegating. Reuse alre
 2. Without an explicit profile, choose extended only when its eligibility below is established; otherwise deep for an observable trigger. Otherwise choose focused only when all bounded eligibility conditions hold. Standard is the fallback, including material questions without a deep mechanism.
 3. Automatic selection may escalate focused to standard/deep/extended, standard to deep/extended or deep to extended when new facts invalidate its basis. Record the fact/transition; reuse context, checks and unaffected discovery, refreshing affected assignments only. Count valid existing independent discovery toward the new plan; escalation is not permission to launch a second complete team. Do not downgrade after discovery starts to evade verification. Follow-ups select for their own current scope.
 
+An automatic downgrade is allowed only when new verified evidence changes the original justification, including evidence that the earlier trigger does not apply to the pinned scope. Record the new source and reason in the selection history before changing assignments. Urgency, cost, token/credit limits, available slots, low finding count or a clean early pass never justify it. Keep started/completed assignments and their original profile bindings; preserve any acquired stronger-profile obligations. A changed base, head, snapshot or other review scope is a new linked run, not a downgrade.
+
 ## Automatic focused eligibility
 
 All conditions must be supported by the initial neutral context; absence of a known problem is not proof:

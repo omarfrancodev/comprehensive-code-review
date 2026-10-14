@@ -83,4 +83,28 @@ python /absolute/skill/scripts/review_artifacts.py restart --help
 
 `restart` creates a fresh run ID linked to the selected source and can use a changed scope within the same repository. It does not copy findings, checks or execution results into the new run as current work. It transfers workspaces only when each exact owned path is explicitly selected and authority is recorded; otherwise preserve those resources for their owner.
 
+### Recover or restart without duplicating a run
+
+Treat recovery and freshness as separate decisions. `recover` may finish only the helper's exact hash-bound checkpoint/cleanup/transfer/restart transaction. It does not establish that the reviewed inputs are still current. If appraisal is `changed` or `unknown`, use the returned actions and start a linked run for the current scope; never mark the old bytes as current by updating only the head or description. A missing session without a cleanup receipt remains `missing_unknown`; preserve its source claim and do not report successful cleanup.
+
+If a restart intent is pending, retry the exact captured request or call `recover` with the same current inputs, authority and controller. The helper reuses its reserved successor. A different pending operation, a foreign occupied destination, or altered request is a conflict; inspect and preserve both runs instead of choosing a new path. While the intent is active, unrelated mutations, transfers and cleanup against that source are refused. Once the successor is complete, continue work only from its returned `run_dir`.
+
+`recover` and `resume` record a durable takeover event when the coordinating controller changes; the authority must come from an explicit user direction. Passing the same controller does not create a takeover event. A completed source is immutable, including its controller, trace and report. The successor records the controller for the new work.
+
+Restart resolves the harness from the current invocation. It never copies the source run's `harness_id` as if that ID had been declared for the new session. Without a current identity declaration or environment value, use `--harness unknown` and let the helper retain an unknown canonical ID. When a current canonical ID and its provenance are observed, provide them explicitly:
+
+```text
+python /absolute/skill/scripts/review_artifacts.py restart \\
+  --run-dir /absolute/archive/exact-source-run \\
+  --profile-input /absolute/owned/session/profile-selection.json \\
+  --controller-input /absolute/owned/session/controller.json \\
+  --authority-input /absolute/owned/session/authority.json \\
+  --current-inputs /absolute/owned/session/current-inputs.json \\
+  --harness "Claude Code Desktop" \\
+  --harness-id claude-code-desktop \\
+  --harness-source-input /absolute/owned/session/harness-source.json
+```
+
+`harness-source.json` is an existing JSON object such as `{ "kind": "user", "reference": "--harness-id" }`; use `kind: platform` only for a source the harness actually exposes. The raw `harness` string stays as observed. An unknown or contradictory ID is retained as a diagnostic, not guessed from the model name. `--transfer-path` may be repeated for the exact active claims being transferred; transfers require the current source owner and all present claims. Never pass a missing path to imply cleanup.
+
 Before closing any run, retain and validate the final result/evidence, then observe cleanup and require `validate --require-complete`. If a gate fails, preserve the exact run and registered resources and report the unfinished phase. Completed archives remain immutable. A post-close publication or delivery is a separate operation and cannot rewrite the original review.
