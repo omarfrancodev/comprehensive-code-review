@@ -9,12 +9,41 @@ from test_review_traceability_contract import check
 from review_check_provenance import validate_check_sources
 from recovery_fixtures import context10, source_events
 from review_execution import validate_execution_sources
+from review_publication import public_limitations
 
 
 profiles = importlib.import_module('review_profiles')
 
 
 class ReviewProfileTests(unittest.TestCase):
+    def test_schema10_user_report_shows_initial_effective_and_transition(self):
+        value = record10('deep')
+        later = selection('standard', 'explicit', id='S002', changed_from='deep',
+                          reference='evidence/context.json#profile_history/1/profile',
+                          phase='verification', event_id='E000002',
+                          reason='User explicitly narrowed the requested profile',
+                          authority='User requested standard after discovery')
+        value['coverage']['execution']['profile_history'].append(later)
+        value['profile'] = 'standard'
+        value['profile_reason'] = 'User explicitly narrowed the requested profile'
+
+        report = contract.render(value, audience='user')
+        comment = contract.render(value, audience='comment')
+
+        self.assertIn('**Perfil inicial:** profundo', report)
+        self.assertIn('**Perfil efectivo:** standard (estándar)', report)
+        self.assertIn('profundo → standard (estándar)', report)
+        self.assertIn('User explicitly narrowed the requested profile', report)
+        self.assertNotIn('Perfil inicial', comment)
+        self.assertNotIn('Ejecución del perfil', comment)
+
+    def test_schema10_uses_embedded_publication_classification(self):
+        value = record10('standard')
+        value['coverage']['limitations'] = [dict(kind='execution', detail='Private worker mechanics',
+                                                material=False, public_summary=None)]
+
+        self.assertEqual(public_limitations(value), [])
+
     def test_selection_aliases_and_first_identity(self):
         raw = selection_input('balanced')
         normalized = profiles.validate_selection(raw)

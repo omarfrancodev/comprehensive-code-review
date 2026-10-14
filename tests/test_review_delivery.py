@@ -23,6 +23,23 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_schema10_projection_preserves_profile_lineage_and_fulfillment(self):
+        from recovery_fixtures import record10
+
+        value = record10('deep', 'automatic')
+        self.assertEqual(artifacts.review_contract.validate(value), [])
+        projection = delivery._Projection(value, {'repository_path': str(self.repo),
+            'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+
+        portable = projection.value(value)
+        summary = delivery._brief(portable)
+
+        self.assertEqual(artifacts.review_contract.validate(portable), [])
+        self.assertEqual(portable['coverage']['execution']['profile_history'][0]['id'], 'S001')
+        self.assertEqual(portable['coverage']['execution']['plan'][0]['selection_id'], 'S001')
+        self.assertTrue(portable['coverage']['execution']['profile_history'][0]['reference'].startswith('retained:'))
+        self.assertIn('**Ejecución del perfil:** cumplida', summary)
+
     def test_forward_slash_unc_snapshot_refuses_both_deliveries(self):
         for identity in ('//private-server/share/snapshot', 'snapshot //private-server/share/snapshot',
                          r'//private-server\share/snapshot'):

@@ -137,6 +137,23 @@ class ReviewRecoveryTests(unittest.TestCase):
                          {'scope.base', 'description_identity', 'requirements_identity',
                           'plan_identity', 'configuration_identity', 'profile'})
 
+    def test_verified_candidate_compares_retained_description_identity(self):
+        final = archive.record()
+        final['description']['identity'] = 'description-v1'
+        self.final = self.write('description-final.json', final)
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        scope = self.read(run / 'cierre.json')['scope']
+        current = {'scope': scope, 'sources': {}, 'source_set_complete': True,
+                   'description_identity': 'description-v2'}
+
+        candidate = recovery.find_candidates(self.repo, scope, archive_root=self.output,
+                                             current_inputs=current)['candidates'][0]
+
+        self.assertEqual(candidate['applicability'], 'changed')
+        self.assertIn('description_identity', {row['field'] for row in candidate['differences']})
+
     def test_multiple_candidates_are_not_selected_by_timestamp(self):
         first = self.prepare_legacy()
         self.retain_legacy(first)

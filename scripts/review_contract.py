@@ -39,6 +39,9 @@ PROFILES = {'economy': 'económico', 'balanced': 'equilibrado',
             'deep': 'profundo', 'extended': 'extendido'}
 CURRENT_PROFILES = {'focused', 'standard', 'deep', 'extended'}
 PROFILE_ALIASES = {'economy': 'focused', 'balanced': 'standard'}
+PROFILE_PHASES = {'prepare': 'preparación', 'discovery': 'descubrimiento',
+                  'verification': 'verificación', 'report': 'informe',
+                  'retain': 'retención', 'cleanup': 'limpieza', 'close': 'cierre'}
 MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de commits',
                'staged': 'cambios preparados', 'unstaged': 'cambios sin preparar',
                'working': 'cambios locales', 'module': 'módulo',
@@ -555,7 +558,7 @@ def canonicalize_ids(record, reserved_ids=None):
     Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
     """
     if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8, 9, 10):
-        raise ValueError('canonical ID allocation requires schema 6, 7 or 8')
+        raise ValueError('canonical ID allocation requires schema 6–10')
     errors = [error for error in validate(record) if 'expected canonical' not in error]
     if errors:
         raise ValueError('; '.join(errors))
@@ -731,8 +734,20 @@ def render(record, audience='user', publication_context=None):
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
         lines.append(f"- **{reference_label}:** {reference_text(scope['reference'])}")
     if audience == 'user':
-        lines.extend([f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.",
-                      f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}."])
+        if record['schema_version'] == 10:
+            history = record['coverage']['execution']['profile_history']
+            initial = history[0]
+            lines.extend([f"- **Perfil inicial:** {PROFILES[initial['profile']]} — {markdown_text(initial['reason'])}.",
+                          f"- **Perfil efectivo:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}."])
+            if len(history) > 1:
+                transitions = '; '.join(
+                    f"{PROFILES[item['changed_from']]} → {PROFILES[item['profile']]} "
+                    f"(durante {PROFILE_PHASES[item['phase']]}) — {markdown_text(item['reason'])}"
+                    for item in history[1:])
+                lines.append('- **Transiciones de perfil:** ' + transitions + '.')
+        else:
+            lines.append(f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.")
+        lines.append(f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}.")
         if record['schema_version'] in (8, 9, 10):
             status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
             lines.append('- **Ejecución del perfil:** ' + status + '.')

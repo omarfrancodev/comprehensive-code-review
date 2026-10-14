@@ -109,7 +109,13 @@ def _sidecar_for(session, workspace, token_digest, run, manifest, *, prior=None,
 
 def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=None):
     """Return an owned sidecar/manifest row plan without writing either one."""
-    workspace_data = _workspace(session_dir)
+    candidate = _safe_path(session_dir)
+    if not candidate.exists():
+        return {'action': 'not_workspace', 'sidecar': None, 'bytes': None, 'row': None,
+                'expected_current_sha256': None}
+    if not candidate.is_dir():
+        raise ValueError('registered review resource is not a directory')
+    workspace_data = _workspace(candidate)
     if workspace_data is None:
         return {'action': 'not_workspace', 'sidecar': None, 'bytes': None, 'row': None,
                 'expected_current_sha256': None}

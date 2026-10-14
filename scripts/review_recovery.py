@@ -188,13 +188,45 @@ def _hash_file_bounded(path, expected):
     return digest.hexdigest() == expected
 
 
-def _candidate_inputs(manifest):
+def _read_candidate_record(path, expected):
+    artifacts = _artifacts()
+    target = artifacts.safe_path(path)
+    if not target.is_file() or target.stat().st_size > LOOKUP_REPORT_BYTES:
+        return None
+    data = target.read_bytes()
+    if len(data) > LOOKUP_REPORT_BYTES or hashlib.sha256(data).hexdigest() != expected:
+        return None
+
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError('duplicate JSON key in retained report')
+            value[key] = item
+        return value
+
+    try:
+        record = json.loads(data.decode('utf-8'), object_pairs_hook=unique)
+        import review_contract
+        if not isinstance(record, dict) or record.get('stage') != 'final' or review_contract.validate(record):
+            return None
+        return record
+    except (UnicodeDecodeError, ValueError, TypeError):
+        return None
+
+
+def _candidate_inputs(manifest, record=None):
     hashes = manifest.get('hashes', {})
     sources = {name: digest for name, digest in hashes.items() if name.startswith('evidence/')}
     retained = {'scope': manifest.get('scope'), 'sources': sources}
     history = manifest.get('profile_history')
     if isinstance(history, list) and history and isinstance(history[-1], dict):
         retained['profile'] = history[-1].get('profile')
+    elif isinstance(record, dict) and isinstance(record.get('profile'), str):
+        retained['profile'] = record['profile']
+    description = record.get('description') if isinstance(record, dict) else None
+    if isinstance(description, dict) and 'identity' in description:
+        retained['description_identity'] = description['identity']
     return retained
 
 
@@ -213,13 +245,18 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
     disposition = (manifest.get('operation') or {}).get('disposition')
     complete = manifest.get('state') == 'complete' and (disposition in (None, 'complete'))
     integrity = 'manifest_verified'
+    record = None
     if complete:
         hashes = manifest.get('hashes', {})
-        valid = all(isinstance(hashes.get(name), str) and HASH.fullmatch(hashes[name])
-                    and _hash_file_bounded(run / name, hashes[name]) for name in ('review.json', 'informe.md'))
+        record_hash = hashes.get('review.json')
+        report_hash = hashes.get('informe.md')
+        record = (_read_candidate_record(run / 'review.json', record_hash)
+                  if isinstance(record_hash, str) and HASH.fullmatch(record_hash) else None)
+        valid = (record is not None and isinstance(report_hash, str) and HASH.fullmatch(report_hash)
+                 and _hash_file_bounded(run / 'informe.md', report_hash))
         integrity = 'report_verified' if valid else 'invalid'
 
-    retained = _candidate_inputs(manifest)
+    retained = _candidate_inputs(manifest, record)
     applicability = ({'applicability': 'unknown', 'differences': [
                         {'field': 'current_inputs', 'status': 'unknown',
                          'reason': 'Current source identities were not supplied.'}]}
