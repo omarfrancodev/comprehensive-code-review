@@ -1,10 +1,16 @@
 """Read-only inspection and bounded classification for durable review runs."""
 import copy
+import base64
+import hashlib
+import json
 import re
 from pathlib import Path
 
 
 HASH = re.compile(r'[0-9a-f]{64}')
+RUN_NAME = re.compile(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}')
+LOOKUP_REPORT_BYTES = 8 * 1024 * 1024
+LOOKUP_CURSOR_BYTES = 2048
 
 
 def _artifacts():
@@ -45,6 +51,281 @@ def validate_current_inputs(current_inputs, manifest, *, require_same_scope=True
 
 def _action(name, reason):
     return {'action': name, 'reason': reason}
+
+
+def _validated_sources(value, label):
+    if not isinstance(value, dict) or len(value) > 64:
+        raise ValueError(label + ' must be a bounded source-to-SHA-256 map')
+    result = {}
+    for reference, digest in value.items():
+        if (not isinstance(reference, str) or not reference.strip() or len(reference) > 500
+                or any(ord(char) < 32 for char in reference)
+                or not isinstance(digest, str) or not HASH.fullmatch(digest)):
+            raise ValueError(label + ' contains an invalid source identity')
+        result[reference] = digest
+    return result
+
+
+def _identity_differences(retained, current):
+    differences = []
+    if not isinstance(retained, dict) or not isinstance(current, dict):
+        raise ValueError('retained and current review inputs must be objects')
+    retained_scope = retained.get('scope')
+    current_scope = current.get('scope')
+    if retained_scope is None or current_scope is None:
+        differences.append({'field': 'scope', 'status': 'unknown',
+                            'reason': 'A pinned scope identity is missing.'})
+    else:
+        artifacts = _artifacts()
+        artifacts._scope(retained_scope)
+        artifacts._scope(current_scope)
+        for field in sorted(artifacts.SCOPE_FIELDS):
+            if retained_scope.get(field) != current_scope.get(field):
+                differences.append({'field': 'scope.' + field, 'status': 'changed',
+                                    'reason': 'The pinned review scope differs.'})
+
+    old_sources = _validated_sources(retained.get('sources', {}), 'retained inputs')
+    new_sources = _validated_sources(current.get('sources', {}), 'current inputs')
+    complete = current.get('source_set_complete')
+    if complete is not True:
+        differences.append({'field': 'source_set_complete', 'status': 'unknown',
+                            'reason': 'The coordinator did not confirm a complete current source set.'})
+    else:
+        old_by_path = {name.split('#', 1)[0]: digest for name, digest in old_sources.items()}
+        new_by_path = {name.split('#', 1)[0]: digest for name, digest in new_sources.items()}
+        for name in sorted(set(old_by_path) | set(new_by_path)):
+            if name not in old_by_path or name not in new_by_path:
+                differences.append({'field': 'sources.' + name, 'status': 'changed',
+                                    'reason': 'The complete source set added or removed a source.'})
+            elif old_by_path[name] != new_by_path[name]:
+                differences.append({'field': 'sources.' + name, 'status': 'changed',
+                                    'reason': 'The source content identity differs.'})
+
+    identity_fields = ('description_identity', 'requirements_identity', 'plan_identity',
+                       'configuration_identity', 'profile')
+    for field in identity_fields:
+        if field not in current:
+            continue
+        current_value = current[field]
+        if field not in retained:
+            differences.append({'field': field, 'status': 'unknown',
+                                'reason': 'The archived run does not preserve this identity.'})
+        elif retained[field] != current_value:
+            differences.append({'field': field, 'status': 'changed',
+                                'reason': 'The recorded review input differs.'})
+    status = ('changed' if any(row['status'] == 'changed' for row in differences)
+              else 'unknown' if differences else 'applicable')
+    return {'applicability': status, 'differences': differences}
+
+
+def classify_candidate(manifest, retained_inputs, current_inputs):
+    """Compare a pinned candidate to caller-supplied current identities without IO."""
+    if not isinstance(manifest, dict):
+        raise ValueError('candidate manifest must be an object')
+    if not isinstance(retained_inputs, dict) or not isinstance(current_inputs, dict):
+        raise ValueError('retained and current review inputs must be objects')
+    expected = copy.deepcopy(retained_inputs)
+    if 'scope' not in expected:
+        expected['scope'] = manifest.get('scope')
+    if 'profile' not in expected:
+        history = manifest.get('profile_history')
+        if isinstance(history, list) and history and isinstance(history[-1], dict):
+            expected['profile'] = history[-1].get('profile')
+    return _identity_differences(expected, current_inputs)
+
+
+def _scope_prefix(scope):
+    artifacts = _artifacts()
+    anchor = next((field for field in ('reference', 'target', 'snapshot') if scope.get(field)), None)
+    hint = scope[anchor] if anchor else scope['head']
+    if anchor == 'reference' and '://' in hint:
+        from urllib.parse import urlsplit
+        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
+    return artifacts._slug(scope['mode']) + '-' + artifacts._slug(hint) + '-', anchor
+
+
+def _cursor_encode(repository_group, scope_digest, group_name, run_name):
+    raw = json.dumps({'v': 1, 'repository_group': repository_group, 'scope_sha256': scope_digest,
+                      'group': group_name, 'run': run_name}, separators=(',', ':'), sort_keys=True).encode('utf-8')
+    return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+
+
+def _cursor_decode(cursor, repository_group, scope_digest, prefix, *, exact=False):
+    if cursor is None:
+        return None
+    if not isinstance(cursor, str) or not cursor or len(cursor) > LOOKUP_CURSOR_BYTES:
+        raise ValueError('lookup cursor is invalid or too large')
+    try:
+        raw = base64.urlsafe_b64decode(cursor + '=' * (-len(cursor) % 4))
+        value = json.loads(raw.decode('utf-8'))
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError('lookup cursor is malformed') from exc
+    fields = {'v', 'repository_group', 'scope_sha256', 'group', 'run'}
+    if not isinstance(value, dict) or set(value) != fields or value['v'] != 1:
+        raise ValueError('lookup cursor has an unsupported shape')
+    if value['repository_group'] != repository_group or value['scope_sha256'] != scope_digest:
+        raise ValueError('lookup cursor belongs to a different repository or scope')
+    if (not isinstance(value['group'], str) or not value['group'].startswith(prefix)
+            or (exact and value['group'] != prefix)
+            or not isinstance(value['run'], str) or not RUN_NAME.fullmatch(value['run'])):
+        raise ValueError('lookup cursor is outside the requested scope group')
+    return value['group'], value['run']
+
+
+def _hash_file_bounded(path, expected):
+    artifacts = _artifacts()
+    target = artifacts.safe_path(path)
+    info = target.stat()
+    if not target.is_file() or info.st_size > LOOKUP_REPORT_BYTES:
+        return False
+    digest = hashlib.sha256()
+    with target.open('rb') as stream:
+        while True:
+            chunk = stream.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest() == expected
+
+
+def _candidate_inputs(manifest):
+    hashes = manifest.get('hashes', {})
+    sources = {name: digest for name, digest in hashes.items() if name.startswith('evidence/')}
+    retained = {'scope': manifest.get('scope'), 'sources': sources}
+    history = manifest.get('profile_history')
+    if isinstance(history, list) and history and isinstance(history[-1], dict):
+        retained['profile'] = history[-1].get('profile')
+    return retained
+
+
+def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_inputs):
+    artifacts = _artifacts()
+    run, manifest, _ = artifacts._load_run(run_dir)
+    if (manifest.get('archive_root') != str(archive_root)
+            or manifest.get('repository_key') != artifacts._digest(repo_identity.encode('utf-8'))[:20]
+            or manifest.get('repository_identity', repo_identity) != repo_identity
+            or artifacts._scope_group(manifest['scope']) != group_name):
+        raise ValueError('candidate ownership, repository, or scope group differs from the lookup')
+    stable_field = next((field for field in ('reference', 'target', 'snapshot') if scope.get(field)), None)
+    if stable_field and manifest['scope'].get(stable_field) != scope.get(stable_field):
+        return None
+
+    disposition = (manifest.get('operation') or {}).get('disposition')
+    complete = manifest.get('state') == 'complete' and (disposition in (None, 'complete'))
+    integrity = 'manifest_verified'
+    if complete:
+        hashes = manifest.get('hashes', {})
+        valid = all(isinstance(hashes.get(name), str) and HASH.fullmatch(hashes[name])
+                    and _hash_file_bounded(run / name, hashes[name]) for name in ('review.json', 'informe.md'))
+        integrity = 'report_verified' if valid else 'invalid'
+
+    retained = _candidate_inputs(manifest)
+    applicability = ({'applicability': 'unknown', 'differences': [
+                        {'field': 'current_inputs', 'status': 'unknown',
+                         'reason': 'Current source identities were not supplied.'}]}
+                     if current_inputs is None
+                     else classify_candidate(manifest, retained, current_inputs))
+    operation = copy.deepcopy(manifest.get('operation') or {
+        'disposition': 'complete' if complete else 'open', 'phase': manifest.get('state')})
+    if integrity == 'invalid':
+        actions = [_action('preserve', 'The retained report is missing, oversized, or does not match its archive hash.')]
+    elif complete:
+        if applicability['applicability'] == 'applicable':
+            actions = [_action('show_report', 'The completed report hash matches; inspect this exact run before use.'),
+                       _action('new_review', 'Create a linked review if a fresh evaluation is requested.')]
+        else:
+            actions = [_action('show_historical_report', 'The report is verified as recorded, but freshness is not established.'),
+                       _action('new_review', 'Create a linked review to evaluate current inputs.')]
+    else:
+        actions = [_action('inspect_recover', 'Inspect this exact run and its inputs before any continuation.'),
+                   _action('restart', 'Create a linked run if continuation is unavailable or inputs changed.')]
+    latest = manifest.get('profile_history')
+    return {'run_dir': str(run), 'run_id': manifest.get('run_id'),
+            'review_id': 'CR-' + manifest['run_id'] if isinstance(manifest.get('run_id'), str) else None,
+            'scope': copy.deepcopy(manifest['scope']), 'state': manifest.get('state'),
+            'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
+            'profile': latest[-1].get('profile') if isinstance(latest, list) and latest else None,
+            'integrity': integrity, 'applicability': applicability['applicability'],
+            'differences': applicability['differences'], 'actions': actions}
+
+
+def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, current_inputs=None):
+    """Find bounded candidates only below this repository's stable scope group."""
+    artifacts = _artifacts()
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+        raise ValueError('lookup limit must be an integer from 1 through 100')
+    artifacts._scope(scope)
+    repo = artifacts.safe_path(repo)
+    repo = artifacts.safe_path(artifacts._git(repo, 'rev-parse', '--show-toplevel'))
+    identity = artifacts.repository_identity(repo)
+    root = artifacts.select_output_root(repo, archive_root)
+    repo_group = artifacts._repository_group(identity)
+    prefix, anchor = _scope_prefix(scope)
+    exact_group = artifacts._scope_group(scope)
+    scope_digest = artifacts._digest(artifacts._json_bytes(scope))
+    if current_inputs is not None:
+        if not isinstance(current_inputs, dict) or current_inputs.get('scope') != scope:
+            raise ValueError('current inputs must refer to the exact requested lookup scope')
+        _validated_sources(current_inputs.get('sources', {}), 'current inputs')
+    after = _cursor_decode(cursor, repo_group, scope_digest, prefix if anchor else exact_group,
+                           exact=not bool(anchor))
+    repository_path = root / repo_group
+    try:
+        repository_path = artifacts.safe_path(repository_path)
+    except (OSError, ValueError):
+        return {'schema_version': 1, 'candidates': [], 'next_cursor': None, 'truncated': False}
+    if not repository_path.is_dir():
+        return {'schema_version': 1, 'candidates': [], 'next_cursor': None, 'truncated': False}
+
+    # Listing names is confined to this repository folder. Only the requested
+    # MR/reference (or exact scope when no stable anchor exists) is opened.
+    groups = sorted(repository_path.iterdir(), key=lambda path: path.name)
+    candidates = []
+    has_more = False
+    last_key = None
+    for group_path in groups:
+        group_name = group_path.name
+        if not (group_name.startswith(prefix) if anchor else group_name == exact_group):
+            continue
+        try:
+            group_path = artifacts.safe_path(group_path)
+        except (OSError, ValueError):
+            continue
+        if not group_path.is_dir():
+            continue
+        for run_path in sorted(group_path.iterdir(), key=lambda path: path.name):
+            run_name = run_path.name
+            if not RUN_NAME.fullmatch(run_name):
+                continue
+            key = (group_name, run_name)
+            if after is not None and key <= after:
+                continue
+            try:
+                run_path = artifacts.safe_path(run_path)
+                if not run_path.is_dir():
+                    continue
+                candidate = _candidate(run_path, group_name, identity, root, scope, current_inputs)
+                if candidate is None:
+                    continue
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                candidate = {'run_dir': str(run_path), 'run_id': None, 'review_id': None,
+                             'scope': None, 'state': 'unknown', 'phase': None,
+                             'operation': {'disposition': 'unknown'}, 'profile': None,
+                             'integrity': 'invalid', 'applicability': 'unknown',
+                             'differences': [],
+                             'actions': [_action('preserve', 'Candidate ownership or integrity could not be verified: '
+                                                 + str(exc)[:300])]}
+            if len(candidates) == limit:
+                has_more = True
+                break
+            candidates.append(candidate)
+            last_key = key
+        if has_more:
+            break
+    next_cursor = (_cursor_encode(repo_group, scope_digest, last_key[0], last_key[1])
+                   if has_more and last_key else None)
+    return {'schema_version': 1, 'candidates': candidates, 'next_cursor': next_cursor,
+            'truncated': has_more}
 
 
 def inspect_run(run_dir, *, current_inputs=None):

@@ -218,7 +218,7 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
 - Produces: `find_candidates(repo: Path, scope: dict, *, archive_root=None, limit=20, cursor=None, current_inputs=None) -> dict` con candidates/next_cursor/truncated; `classify_candidate(manifest: dict, retained_inputs: dict, current_inputs: dict) -> dict` puro con applicable/changed/unknown y diferencias por fuente.
 - CLI lookup --repo --scope-file --current-inputs --limit --cursor. Página máximo 100; cursor se valida dentro del repositorio/grupo solicitado. Candidato explícito usa inspect por ruta/CR seleccionado, no matching por finding ID.
 
-- [ ] **Step 1: Añadir regresiones.** `test_same_scope_complete_offers_show_or_new`, `test_incomplete_offers_resume_or_restart`, `test_base_description_requirements_or_profile_change_is_visible`, `test_multiple_candidates_are_not_selected_by_timestamp`, `test_lookup_cursor_is_scoped_and_truncation_visible`, `test_unknown_freshness_is_not_current`, `test_show_report_has_no_review_or_cleanup_side_effects`. Spy de filesystem/IO verifica que no abre informes ajenos al grupo ni escanea otros repositorios.
+- [x] **Step 1: Añadir regresiones.** `test_same_scope_complete_offers_show_or_new`, `test_incomplete_offers_resume_or_restart`, `test_base_description_requirements_or_profile_change_visible`, `test_multiple_candidates_are_not_selected_by_timestamp`, `test_lookup_cursor_is_scoped_and_truncation_visible`, `test_unknown_freshness_is_not_current`, `test_show_report_has_no_review_or_cleanup_side_effects`, `test_lookup_finds_changed_head_by_stable_merge_request_reference` y `test_lookup_cli_returns_json_page_without_selecting_candidate`. Spy de filesystem/IO verifica que no abre informes ajenos al grupo ni escanea otros repositorios.
 
   ```python
   page = recovery.find_candidates(self.repo, self.scope_value, limit=1, current_inputs=self.current)
@@ -231,10 +231,10 @@ Fixtures `selection(profile='focused', source='automatic', **updates) -> dict`, 
   self.assertEqual(result['applicability'], 'changed')
   ```
 
-- [ ] **Step 2: Observar RED.** Lookup cases en test_review_recovery; falta de API/clasificación concreta. No consultar GitLab real para establecer freshness en tests.
-- [ ] **Step 3: Implementar selección acotada.** Calcular repository_key y scope/MR solicitado; leer cierres de sus grupos pertinentes con paginación visible, luego fuentes mínimas de candidatos. Un input relevante desconocido produce unknown, no igualdad inferida. Un candidato completo íntegro/aplicable ofrece mostrar/nuevo; incompleto ofrece continuar/reiniciar; varios solicitan elección. El helper no elige por sí mismo, pregunta al usuario ni invoca agentes. El coordinador implementa las decisiones de spec §7; una instrucción explícita previa resuelve la alternativa correspondiente.
-- [ ] **Step 4: Observar GREEN.** Lookup/recovery y controles show sin mutaciones. Retain/delivery/public renderer admiten final 10 validado, preservan privacidad y no consumen pending como canónico.
-- [ ] **Step 5: Commit.** `feat(recovery): detectar reviews aplicables y ofrecer continuidad acotada`.
+- [x] **Step 2: Observar RED.** Las ocho regresiones iniciales fallaron porque `find_candidates` y `classify_candidate` aún no existían; las fallas quedaron acotadas a esas APIs. No se consultó GitLab real para establecer freshness.
+- [x] **Step 3: Implementar selección acotada.** `find_candidates` deriva identidad de repositorio y grupo estable de scope/MR, pagina hasta 100 con cursor ligado a repositorio y scope, y verifica solo el cierre propio y los hashes de informes completos con lectura limitada a 8 MiB por archivo. No escanea otros repositorios ni elige un candidato. `classify_candidate` distingue applicable/changed/unknown, incluyendo base/head, fuentes, descripción, requisitos, plan, configuración y perfil cuando el coordinador aporta esas identidades. La integridad distingue manifiesto de reporte verificado y expone acciones mostrar histórico/nuevo o inspeccionar-recuperar/reiniciar. Se agregó CLI `review_artifacts.py lookup`.
+- [x] **Step 4: Observar GREEN.** `test_review_recovery.py`: 24/24; `test_review_artifacts.py`: 51 aprobadas/2 omitidas por permisos Windows de symlink/junction. CLI lookup help, ejemplo CLI JSON, `py_compile` y `git diff --check` pasaron. No se alteró retain/delivery/public renderer; el conjunto completo se ejecutará en Task 7.
+- [x] **Step 5: Commit.** `972f3ed feat(recovery): detectar reviews aplicables y ofrecer continuidad acotada`.
 
 ### Task 7: Routing, contratos, verificación y PR
 

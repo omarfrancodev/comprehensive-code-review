@@ -17,6 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 import review_recovery as recovery
 import review_workspace
 import review_resource_claims
+import review_artifacts as recovery_artifacts
 from recovery_fixtures import context10, current_inputs, legacy_prepare, record10
 
 
@@ -86,6 +87,181 @@ class ReviewRecoveryTests(unittest.TestCase):
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.read(run / 'cierre.json')['operation']['disposition'], 'paused')
+
+    def test_same_scope_complete_offers_show_or_new(self):
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        scope = self.read(run / 'cierre.json')['scope']
+        current = {'scope': scope, 'sources': {}, 'source_set_complete': True}
+
+        result = recovery.find_candidates(self.repo, scope, archive_root=self.output, current_inputs=current)
+
+        self.assertEqual(len(result['candidates']), 1)
+        candidate = result['candidates'][0]
+        self.assertEqual(candidate['applicability'], 'applicable')
+        actions = {row['action'] for row in candidate['actions']}
+        self.assertIn('show_report', actions)
+        self.assertIn('new_review', actions)
+        self.assertNotIn('selected_run', result)
+
+    def test_incomplete_offers_resume_or_restart(self):
+        run = self.prepare7()
+        scope = self.read(run / 'cierre.json')['scope']
+        current = {'scope': scope, 'sources': {}, 'source_set_complete': True}
+        result = recovery.find_candidates(self.repo, scope, archive_root=self.output, current_inputs=current)
+        candidate = next(row for row in result['candidates'] if row['run_dir'] == str(run))
+        self.assertEqual(candidate['operation']['disposition'], 'open')
+        actions = {row['action'] for row in candidate['actions']}
+        self.assertIn('inspect_recover', actions)
+        self.assertIn('restart', actions)
+
+    def test_base_description_requirements_or_profile_change_visible(self):
+        scope = self.read(self.prepare7() / 'cierre.json')['scope']
+        retained = {'scope': copy.deepcopy(scope), 'sources': {'evidence/spec.md': 'a' * 64},
+                    'source_set_complete': True, 'description_identity': 'desc-1',
+                    'requirements_identity': 'req-1', 'plan_identity': 'plan-1',
+                    'configuration_identity': 'config-1', 'profile': 'standard'}
+        current = copy.deepcopy(retained)
+        current['scope']['base'] = 'new-base'
+        current['description_identity'] = 'desc-2'
+        current['requirements_identity'] = 'req-2'
+        current['plan_identity'] = 'plan-2'
+        current['configuration_identity'] = 'config-2'
+        current['profile'] = 'deep'
+
+        result = recovery.classify_candidate({'scope': scope}, retained, current)
+
+        self.assertEqual(result['applicability'], 'changed')
+        self.assertEqual({row['field'] for row in result['differences']},
+                         {'scope.base', 'description_identity', 'requirements_identity',
+                          'plan_identity', 'configuration_identity', 'profile'})
+
+    def test_multiple_candidates_are_not_selected_by_timestamp(self):
+        first = self.prepare_legacy()
+        self.retain_legacy(first)
+        self.close(first)
+        second = self.prepare_legacy()
+        self.retain_legacy(second)
+        self.close(second)
+        scope = self.read(first / 'cierre.json')['scope']
+        result = recovery.find_candidates(self.repo, scope, archive_root=self.output,
+                                          current_inputs={'scope': scope, 'sources': {}, 'source_set_complete': True})
+        self.assertEqual(len(result['candidates']), 2)
+        self.assertNotIn('selected_run', result)
+        self.assertEqual({row['run_dir'] for row in result['candidates']}, {str(first), str(second)})
+
+    def test_lookup_cursor_is_scoped_and_truncation_visible(self):
+        runs = [self.prepare_legacy() for _ in range(3)]
+        for run in runs:
+            self.retain_legacy(run)
+            self.close(run)
+        scope = self.read(runs[0] / 'cierre.json')['scope']
+        current = {'scope': scope, 'sources': {}, 'source_set_complete': True}
+        first_page = recovery.find_candidates(self.repo, scope, archive_root=self.output, limit=1,
+                                              current_inputs=current)
+        self.assertEqual(len(first_page['candidates']), 1)
+        self.assertTrue(first_page['truncated'])
+        self.assertIsNotNone(first_page['next_cursor'])
+        second_page = recovery.find_candidates(self.repo, scope, archive_root=self.output, limit=1,
+                                               cursor=first_page['next_cursor'], current_inputs=current)
+        self.assertEqual(len(second_page['candidates']), 1)
+        self.assertNotEqual(first_page['candidates'][0]['run_id'], second_page['candidates'][0]['run_id'])
+        changed_scope = copy.deepcopy(scope)
+        changed_scope['head'] = 'different-head'
+        with self.assertRaisesRegex(ValueError, 'cursor|scope|group'):
+            recovery.find_candidates(self.repo, changed_scope, archive_root=self.output, limit=1,
+                                     cursor=first_page['next_cursor'],
+                                     current_inputs={'scope': changed_scope, 'sources': {}, 'source_set_complete': True})
+
+    def test_unknown_freshness_is_not_current(self):
+        scope = self.read(self.prepare7() / 'cierre.json')['scope']
+        retained = {'scope': copy.deepcopy(scope), 'sources': {'evidence/spec.md': 'a' * 64},
+                    'source_set_complete': True}
+        current = {'scope': copy.deepcopy(scope), 'sources': {}}
+        result = recovery.classify_candidate({'scope': scope}, retained, current)
+        self.assertEqual(result['applicability'], 'unknown')
+        self.assertTrue(any(row['field'] == 'source_set_complete' for row in result['differences']))
+
+    def test_show_report_has_no_review_or_cleanup_side_effects(self):
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        scope = self.read(run / 'cierre.json')['scope']
+        before = self.snapshot(run)
+        recovery.find_candidates(self.repo, scope, archive_root=self.output,
+                                 current_inputs={'scope': scope, 'sources': {}, 'source_set_complete': True})
+        result = recovery.inspect_run(run)
+        record = recovery_artifacts.read_json(run / 'review.json')
+        self.assertEqual(result['integrity']['status'], 'verified')
+        self.assertEqual(record['stage'], 'final')
+        self.assertEqual(before, self.snapshot(run))
+
+    def test_lookup_never_opens_another_repository_group(self):
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        other = self.root / 'other-repo'
+        other.mkdir()
+        for args in (('init',), ('config', 'user.email', 'other@example.test'),
+                     ('config', 'user.name', 'Other')):
+            result = subprocess.run(['git', *args], cwd=other, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+        (other / 'code.txt').write_text('other', encoding='utf-8')
+        subprocess.run(['git', 'add', 'code.txt'], cwd=other, check=True, capture_output=True)
+        subprocess.run(['git', 'commit', '-m', 'other fixture'], cwd=other, check=True, capture_output=True)
+        other_scope = self.write('other-scope.json', self.read(self.scope))
+        artifacts.prepare(other, other_scope, '2.12.0', 'codex', output_root=self.output,
+                          profile_input=self.profile_input())
+
+        loaded = []
+        original = recovery_artifacts._load_run
+        def tracked(path):
+            loaded.append(str(path))
+            return original(path)
+        with patch.object(recovery_artifacts, '_load_run', side_effect=tracked):
+            result = recovery.find_candidates(self.repo, self.read(run / 'cierre.json')['scope'],
+                archive_root=self.output,
+                current_inputs={'scope': self.read(run / 'cierre.json')['scope'], 'sources': {},
+                                'source_set_complete': True})
+        self.assertEqual([row['run_dir'] for row in result['candidates']], [str(run)])
+        self.assertNotIn(str(other), '\n'.join(loaded))
+
+    def test_lookup_finds_changed_head_by_stable_merge_request_reference(self):
+        scope = self.read(self.scope)
+        scope['reference'] = 'https://gitlab.example/group/project/-/merge_requests/42'
+        scope_file = self.write('mr-scope.json', scope)
+        run = Path(artifacts.prepare(self.repo, scope_file, '2.12.0', 'codex',
+                    output_root=self.output, profile_input=self.profile_input()))
+        current_scope = copy.deepcopy(scope)
+        current_scope['head'] = 'new-reviewed-head'
+        current = {'scope': current_scope, 'sources': {}, 'source_set_complete': True}
+
+        result = recovery.find_candidates(self.repo, current_scope, archive_root=self.output,
+                                          current_inputs=current)
+
+        self.assertEqual([row['run_dir'] for row in result['candidates']], [str(run)])
+        self.assertEqual(result['candidates'][0]['applicability'], 'changed')
+        self.assertIn('scope.head', {row['field'] for row in result['candidates'][0]['differences']})
+
+    def test_lookup_cli_returns_json_page_without_selecting_candidate(self):
+        run = self.prepare_legacy()
+        self.retain_legacy(run)
+        self.close(run)
+        scope = self.read(run / 'cierre.json')['scope']
+        scope_file = self.write('lookup-scope.json', scope)
+        current_file = self.write('lookup-current.json', {
+            'scope': scope, 'sources': {}, 'source_set_complete': True})
+
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'lookup',
+                                 '--repo', str(self.repo), '--scope-file', str(scope_file),
+                                 '--archive-root', str(self.output), '--current-inputs', str(current_file),
+                                 '--limit', '5'], capture_output=True, text=True, encoding='utf-8')
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual(value['candidates'][0]['run_dir'], str(run))
+        self.assertNotIn('selected_run', value)
 
     def test_cross_harness_resume_preserves_prior_worker_identity(self):
         old_controller = self.controller('Codex coordinator', 'codex')

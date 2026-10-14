@@ -2169,6 +2169,13 @@ def main():
     inspect = commands.add_parser('inspect', help='Read-only status/integrity inspection of one explicit review run')
     inspect.add_argument('--run-dir', required=True)
     inspect.add_argument('--current-inputs', help='Existing JSON {scope, sources} verified by the coordinator')
+    lookup = commands.add_parser('lookup', help='Find bounded prior-run candidates for one repository and scope')
+    lookup.add_argument('--repo', required=True)
+    lookup.add_argument('--scope-file', required=True)
+    lookup.add_argument('--archive-root', help='Explicit archive root; defaults to ~/.comprehensive-code-review/reviews')
+    lookup.add_argument('--current-inputs', help='Existing JSON with scope, source hashes and optional input identities')
+    lookup.add_argument('--limit', type=int, default=20)
+    lookup.add_argument('--cursor', help='Opaque continuation cursor returned by a previous lookup page')
     pause_command = commands.add_parser('pause', help='Record an explicit user-directed review pause')
     pause_command.add_argument('--run-dir', required=True)
     pause_command.add_argument('--authority-input', required=True,
@@ -2277,6 +2284,12 @@ def main():
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
             result = review_recovery.inspect_run(args.run_dir, current_inputs=current)
+        elif args.command == 'lookup':
+            import review_recovery
+            current = read_json(args.current_inputs) if args.current_inputs else None
+            result = review_recovery.find_candidates(args.repo, read_json(args.scope_file),
+                archive_root=args.archive_root, limit=args.limit, cursor=args.cursor,
+                current_inputs=current)
         elif args.command == 'pause':
             result = pause(args.run_dir, authority=authority_input, reason=args.reason, phase=args.phase)
         elif args.command == 'block':
