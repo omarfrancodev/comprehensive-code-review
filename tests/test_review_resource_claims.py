@@ -2,6 +2,7 @@
 import argparse
 import copy
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,6 +27,7 @@ class ResourceClaimTests(unittest.TestCase):
     write = archive.ArchiveTests.write
     read = archive.ArchiveTests.read
     snapshot = archive.ArchiveTests.snapshot
+    prepare_legacy = archive.ArchiveTests.prepare
     profile_input = archive.Archive7Tests.profile_input
 
     def workspace_session(self):
@@ -33,9 +35,10 @@ class ResourceClaimTests(unittest.TestCase):
             repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))
         return Path(value['session_dir'])
 
-    def create_run(self, temporary_paths=()):
+    def create_run(self, temporary_paths=(), *, previous_run=None):
         path = artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
-                                 profile_input=self.profile_input(), temporary_paths=list(temporary_paths))
+                                 profile_input=self.profile_input(), temporary_paths=list(temporary_paths),
+                                 previous_run=previous_run)
         return Path(path)
 
     def context(self, run, name):
@@ -66,6 +69,43 @@ class ResourceClaimTests(unittest.TestCase):
 
         self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
 
+    def test_prepare_and_retain_refuse_foreign_claim_before_mutation(self):
+        session = self.workspace_session()
+        owner = self.create_run([session])
+        self.register(owner, session, 'owner-context.json')
+        before_session = self.snapshot(session)
+        before_owner = self.snapshot(owner)
+        before_runs = sorted(path.as_posix() for path in self.output.rglob('cierre.json'))
+        with self.assertRaisesRegex(ValueError, 'already claimed|another review run|transfer-resources'):
+            artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
+                profile_input=self.profile_input(), temporary_paths=[session])
+        self.assertEqual(before_session, self.snapshot(session))
+        self.assertEqual(before_owner, self.snapshot(owner))
+        self.assertEqual(before_runs, sorted(path.as_posix() for path in self.output.rglob('cierre.json')))
+
+        receiver = self.create_run()
+        before_receiver = self.snapshot(receiver)
+        with self.assertRaisesRegex(ValueError, 'already claimed|another review run|transfer-resources'):
+            artifacts.retain(receiver, self.write('foreign-final.json', {}),
+                              temporary_paths=[str(session)])
+        self.assertEqual(before_session, self.snapshot(session))
+        self.assertEqual(before_receiver, self.snapshot(receiver))
+
+    def test_register_preflights_all_resources_before_claiming_any(self):
+        bootstrap = self.workspace_session()
+        foreign = self.workspace_session()
+        owner = self.create_run([foreign])
+        self.register(owner, foreign, 'owner-context.json')
+        receiver = self.create_run()
+        before = (self.snapshot(receiver), self.snapshot(bootstrap), self.snapshot(foreign))
+
+        with self.assertRaisesRegex(ValueError, 'already claimed|another review run|transfer-resources'):
+            artifacts.register(receiver, [str(bootstrap), str(foreign)],
+                               context_input=self.context(receiver, 'receiver-context.json'))
+
+        self.assertEqual(before, (self.snapshot(receiver), self.snapshot(bootstrap), self.snapshot(foreign)))
+        self.assertEqual(self.read(bootstrap / claims.CLAIM_NAME)['status'], 'bootstrap')
+
     def test_transfer_records_both_runs_and_rebinds_claim(self):
         session = self.workspace_session()
         source = self.create_run([session])
@@ -86,6 +126,171 @@ class ResourceClaimTests(unittest.TestCase):
         self.assertEqual(old['operation']['disposition'], 'superseded')
         self.assertEqual(old['operation']['successor'], str(successor))
         self.assertEqual(new['resource_claims'][0]['status'], 'owned')
+        before_replay = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+        replay = artifacts.transfer_resources(source, successor, [str(session)],
+            authority='User requested a restart; previous review will not continue', controller=self.controller())
+        self.assertEqual(replay['transfer_id'], result['transfer_id'])
+        self.assertEqual(before_replay, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_register_after_incoming_transfer_is_idempotent(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        artifacts.transfer_resources(source, successor, [str(session)],
+            authority='User authorized transfer', controller=self.controller())
+        transfer_id = self.read(successor / 'cierre.json')['resource_transfers'][0]['transfer_id']
+
+        manifest = self.register(successor, session, 'successor-replay-context.json')
+
+        self.assertEqual(len(manifest['resource_claims']), 1)
+        self.assertEqual(manifest['resource_claims'][0]['transfer_id'], transfer_id)
+        self.assertEqual(claims.verify_claim(session, successor)['run_id'], manifest['run_id'])
+
+    def test_second_outgoing_transfer_preserves_incoming_history(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        middle = self.create_run()
+        artifacts.register(middle, [], context_input=self.context(middle, 'middle-context.json'))
+        first = artifacts.transfer_resources(source, middle, [str(session)],
+            authority='User authorized first transfer', controller=self.controller())
+        middle_manifest = self.read(middle / 'cierre.json')
+        incoming = middle_manifest.pop('resource_transfers')[0]
+        middle_manifest['resource_transfer'] = incoming
+        artifacts._save_manifest(middle, middle_manifest, self.read(middle / artifacts.MARKER))
+        before_legacy_read = self.snapshot(middle)
+        self.assertEqual(artifacts.normalize_transfer_history(self.read(middle / 'cierre.json')), [incoming])
+        self.assertEqual(before_legacy_read, self.snapshot(middle))
+        self.register(middle, session, 'middle-replay-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+
+        second = artifacts.transfer_resources(middle, successor, [str(session)],
+            authority='User authorized second transfer', controller=self.controller())
+
+        self.assertNotEqual(first['transfer_id'], second['transfer_id'])
+        history = self.read(middle / 'cierre.json')['resource_transfers']
+        self.assertEqual([row['transfer_id'] for row in history],
+                         [first['transfer_id'], second['transfer_id']])
+        self.assertNotIn('resource_transfer', self.read(middle / 'cierre.json'))
+        self.assertEqual(claims.verify_claim(session, successor)['run_id'],
+                         self.read(successor / 'cierre.json')['run_id'])
+
+    def test_partial_transfer_is_refused_without_mutation(self):
+        first_session = self.workspace_session()
+        second_session = self.workspace_session()
+        source = self.create_run([first_session, second_session])
+        self.register(source, first_session, 'first-context.json')
+        self.register(source, second_session, 'second-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        before = (self.snapshot(source), self.snapshot(successor),
+                  self.snapshot(first_session), self.snapshot(second_session))
+
+        with self.assertRaisesRegex(ValueError, 'every active|partial|all active'):
+            artifacts.transfer_resources(source, successor, [str(first_session)],
+                authority='User requested a partial transfer', controller=self.controller())
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor),
+                                  self.snapshot(first_session), self.snapshot(second_session)))
+
+    def test_completed_transfer_changed_request_is_conflict(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        artifacts.transfer_resources(source, successor, [str(session)],
+            authority='User authorized transfer', controller=self.controller())
+        before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+
+        with self.assertRaisesRegex(ValueError, 'request|inputs|transfer'):
+            artifacts.transfer_resources(source, successor, [str(session)],
+                authority='Different authority changes the request', controller=self.controller())
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_transfer_rejects_retaining_and_closing_runs(self):
+        for state in ('retaining', 'closing'):
+            with self.subTest(state=state):
+                session = self.workspace_session()
+                source = self.create_run([session])
+                self.register(source, session, 'source-context.json')
+                successor = self.create_run()
+                artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+                manifest = self.read(source / 'cierre.json')
+                marker = self.read(source / artifacts.MARKER)
+                manifest['state'] = state
+                artifacts._save_manifest(source, manifest, marker)
+                before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+
+                with self.assertRaisesRegex(ValueError, 'retaining|closing|open'):
+                    artifacts.transfer_resources(source, successor, [str(session)],
+                        authority='User authorized transfer', controller=self.controller())
+
+                self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_transfer_rejects_conflicting_previous_run(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        unrelated = self.create_run()
+        successor = self.create_run(previous_run=unrelated)
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+
+        with self.assertRaisesRegex(ValueError, 'previous|lineage|source'):
+            artifacts.transfer_resources(source, successor, [str(session)],
+                authority='User authorized transfer', controller=self.controller())
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_transfer_history_limit_is_checked_before_mutation(self):
+        session = self.workspace_session()
+        source = self.create_run([session])
+        self.register(source, session, 'source-context.json')
+        successor = self.create_run()
+        artifacts.register(successor, [], context_input=self.context(successor, 'successor-context.json'))
+        manifest = self.read(source / 'cierre.json')
+        marker = self.read(source / artifacts.MARKER)
+        history = []
+        for index in range(64):
+            claim_id = 'RC-' + f'{index:032x}'
+            transfer_id = 'RT-' + f'{index:032x}'
+            new_claim = {'claim_id': claim_id}
+            history.append({'schema_version': 1, 'transfer_id': transfer_id, 'status': 'complete',
+                'source_run': str(self.root / f'old-source-{index}'),
+                'successor_run': str(self.root / f'old-successor-{index}'),
+                'source_run_id': f'{index + 1:020x}', 'successor_run_id': f'{index + 65:020x}',
+                'source_owner_id': f'{index + 1:032x}', 'successor_owner_id': f'{index + 65:032x}',
+                'repository_key': manifest['repository_key'], 'authority': 'Historical test transfer',
+                'controller': self.controller(), 'completed_at': datetime.now(timezone.utc).isoformat(),
+                'items': [{'session_dir': str(self.root / f'old-session-{index}'), 'claim_id': claim_id,
+                           'old_claim_sha256': 'a' * 64, 'new_claim': new_claim,
+                           'new_claim_sha256': artifacts._digest(claims._encoded(new_claim))}]})
+        manifest['resource_transfers'] = history
+        artifacts._save_manifest(source, manifest, marker)
+        before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
+
+        with self.assertRaisesRegex(ValueError, '64|history|limit'):
+            artifacts.transfer_resources(source, successor, [str(session)],
+                authority='User authorized transfer', controller=self.controller())
+
+        self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
+
+    def test_legacy6_workspace_register_keeps_historical_fields(self):
+        session = self.workspace_session()
+        legacy = self.prepare_legacy()
+        manifest = artifacts.register(legacy, [str(session)])
+
+        self.assertEqual(manifest['schema_version'], 6)
+        self.assertEqual(manifest['temporary_paths'], [str(session)])
+        self.assertNotIn('resource_claims', manifest)
+        self.assertNotIn('resource_transfers', manifest)
+        self.assertNotIn('assignment_registry', manifest)
+        self.assertNotIn('review_inputs', manifest)
 
     def test_transfer_crash_boundaries_are_recoverable(self):
         original = artifacts.atomic_write

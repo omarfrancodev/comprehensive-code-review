@@ -120,7 +120,8 @@ def legacy_prepare(artifacts, repo, scope, **kwargs):
     manifest['schema_version'] = 6
     manifest['trace'] = descriptor
     manifest['hashes']['trazabilidad.jsonl'] = artifacts._digest(trace_data)
-    for field in ('profile_history', 'operation', 'controller', 'checkpoint', 'lineage', 'resource_claims'):
+    for field in ('profile_history', 'operation', 'controller', 'checkpoint', 'lineage',
+                  'resource_claims', 'resource_transfers', 'assignment_registry', 'review_inputs'):
         manifest.pop(field, None)
     artifacts._save_manifest(run, manifest, marker)
     return run

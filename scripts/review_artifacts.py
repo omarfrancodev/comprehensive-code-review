@@ -622,11 +622,9 @@ def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction
                   allow_resource_transfer=False):
     if manifest.get('pending_trace') is not None:
         raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
-    transfer = manifest.get('resource_transfer')
-    if transfer is not None:
-        _validate_transfer_intent(transfer)
-        if transfer.get('status') != 'complete' and not allow_resource_transfer:
-            raise ValueError('resource transfer is pending; retry its transfer helper before continuing')
+    transfers = normalize_transfer_history(manifest)
+    if any(row['status'] != 'complete' for row in transfers) and not allow_resource_transfer:
+        raise ValueError('resource transfer is pending; retry its transfer helper before continuing')
     _verify_pending(run, manifest, allow_transaction=allow_checkpoint_transaction)
     hashes = manifest.get('hashes')
     if not isinstance(hashes, dict) or any(not _retained_name(name) for name in hashes):
@@ -1265,10 +1263,12 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 'controller': controller_value,
                 'checkpoint': None,
                 'lineage': {'kind': 'restart' if previous else 'new', 'source_run': previous},
-                'resource_claims': [], 'assignment_registry': [], 'review_inputs': captured_inputs}
+                'resource_claims': [], 'resource_transfers': [],
+                'assignment_registry': [], 'review_inputs': captured_inputs}
     manifest.update(harness_identity)
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
+    review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
     scoped = root / _repository_group(identity) / _scope_group(scope)
     safe_path(scoped).mkdir(parents=True, exist_ok=True)
     # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
@@ -1357,7 +1357,8 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     assignment_registry = list(manifest.get('assignment_registry', []))
     review_input_capture = manifest.get('review_inputs')
     claim_manifest = copy.deepcopy(manifest)
-    claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests)
+    claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
+                          _claim_run_dir=str(run))
     if manifest['schema_version'] == 7 and context_input is not None:
         context = _input_object(context_input, 'execution context')
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
@@ -1396,39 +1397,108 @@ def register(run_dir, temporary_paths, *, context_input=None, authority=None):
         if context['execution_plan'] != assignment_registry:
             raise ValueError('context.execution_plan must preserve the complete durable assignment registry')
     rows = list(manifest.get('resource_claims', []))
-    for raw in temporary:
-        plan = review_resource_claims.plan_claim(raw, run, claim_manifest, authority=authority)
-        if plan['action'] == 'not_workspace':
-            continue
-        if plan['action'] == 'transfer':
-            raise ValueError('resource belongs to another review; use transfer-resources with explicit authority')
-        path = safe_path(Path(raw) / review_resource_claims.CLAIM_NAME)
-        if plan['action'] in {'claim', 'adopt'}:
-            try:
-                current_digest = _digest(path.read_bytes())
-            except FileNotFoundError:
-                current_digest = None
-            if current_digest != plan['expected_current_sha256']:
-                raise ValueError('resource claim changed after planning; preserve the session and retry')
-            atomic_write(path, plan['bytes'])
-        existing = [row for row in rows if row.get('session_dir') == str(safe_path(raw))]
-        if existing and (len(existing) != 1 or existing[0] != plan['row']):
-            raise ValueError('review archive already contains a different claim for this session')
-        if not existing:
-            rows.append(plan['row'])
-    manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
-                    executors=executors, resource_claims=rows,
-                    assignment_registry=assignment_registry, review_inputs=review_input_capture)
+    plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest, authority=authority)
+    pending_writes = []
+    if manifest['schema_version'] == 7:
+        for raw, plan in zip(temporary, plans):
+            if plan['action'] == 'not_workspace':
+                continue
+            if plan['action'] == 'transfer':
+                raise ValueError('resource belongs to another review; use transfer-resources with explicit authority')
+            path = safe_path(Path(raw) / review_resource_claims.CLAIM_NAME)
+            if plan['action'] in {'claim', 'adopt'}:
+                try:
+                    current_digest = _digest(path.read_bytes())
+                except FileNotFoundError:
+                    current_digest = None
+                if current_digest != plan['expected_current_sha256']:
+                    raise ValueError('resource claim changed after planning; preserve the session and retry')
+                pending_writes.append((path, plan['bytes']))
+            existing = [row for row in rows if row.get('session_dir') == str(safe_path(raw))]
+            if existing and (len(existing) != 1 or existing[0] != plan['row']):
+                raise ValueError('review archive already contains a different claim for this session')
+            if not existing and plan['row'] is not None:
+                rows.append(plan['row'])
+        for path, data in pending_writes:
+            atomic_write(path, data)
+    manifest.update(temporary_paths=temporary, temporary_manifests=manifests, executors=executors)
+    if manifest['schema_version'] == 7:
+        manifest.update(resource_claims=rows, assignment_registry=assignment_registry,
+                        review_inputs=review_input_capture)
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
+
+
+TRANSFER_HISTORY_LIMIT = 64
+
+
+def normalize_transfer_history(manifest):
+    """Read both the current transfer list and the prior singular archive-7 slot."""
+    history = manifest.get('resource_transfers')
+    legacy = manifest.get('resource_transfer')
+    if history is None:
+        rows = [] if legacy is None else [copy.deepcopy(legacy)]
+    elif isinstance(history, list):
+        rows = copy.deepcopy(history)
+        if legacy is not None:
+            _validate_transfer_intent(legacy)
+            matches = [row for row in rows if isinstance(row, dict)
+                       and row.get('transfer_id') == legacy.get('transfer_id')]
+            if matches and matches[0] != legacy:
+                raise ValueError('legacy and current resource transfer records conflict')
+            if not matches:
+                rows.append(copy.deepcopy(legacy))
+    else:
+        raise ValueError('resource transfer history must be a list')
+    if len(rows) > TRANSFER_HISTORY_LIMIT:
+        raise ValueError('resource transfer history exceeds the 64-entry limit')
+    identifiers = set()
+    pending = 0
+    for row in rows:
+        _validate_transfer_intent(row)
+        identifier = row['transfer_id']
+        if identifier in identifiers:
+            raise ValueError('duplicate transfer_id in resource transfer history')
+        identifiers.add(identifier)
+        pending += row['status'] == 'pending'
+    if pending > 1:
+        raise ValueError('resource transfer history contains more than one pending transfer')
+    return rows
+
+
+def _store_transfer(manifest, intent):
+    rows = normalize_transfer_history(manifest)
+    matches = [index for index, row in enumerate(rows) if row['transfer_id'] == intent['transfer_id']]
+    if len(matches) > 1:
+        raise ValueError('duplicate transfer_id in resource transfer history')
+    if matches:
+        prior = rows[matches[0]]
+        before, after = dict(prior), dict(intent)
+        before.pop('status', None)
+        before.pop('completed_at', None)
+        after.pop('status', None)
+        after.pop('completed_at', None)
+        if before != after or prior['status'] == 'complete' and intent['status'] != 'complete':
+            raise ValueError('resource transfer retry differs from its preserved intent')
+        rows[matches[0]] = copy.deepcopy(intent)
+    else:
+        if len(rows) >= TRANSFER_HISTORY_LIMIT:
+            raise ValueError('resource transfer history reached the 64-entry limit')
+        if any(row['status'] == 'pending' for row in rows):
+            raise ValueError('another resource transfer is already pending for this run')
+        rows.append(copy.deepcopy(intent))
+    manifest.pop('resource_transfer', None)
+    manifest['resource_transfers'] = rows
+    return rows
 
 
 def transfer_resources(source_run, successor_run, paths, *, authority, controller):
     """Transfer explicitly selected claimed workspaces under both run locks."""
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
-    selected_paths = sorted({str(safe_path(path)) for path in paths})
-    if not selected_paths or len(selected_paths) != len(paths):
+    selected_raw_paths = [str(safe_path(path)) for path in paths]
+    if not selected_raw_paths or len({os.path.normcase(path) for path in selected_raw_paths}) != len(paths):
         raise ValueError('resource transfer requires a nonempty unique explicit path list')
+    selected_paths = sorted(selected_raw_paths, key=os.path.normcase)
     authority = review_resource_claims._authority(authority)
     with run_locks([source_path, successor_path]):
         source, source_manifest, source_marker = _load_run(source_path)
@@ -1444,32 +1514,92 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                 or source_manifest.get('repository_path') != next_manifest.get('repository_path')
                 or source_manifest.get('scope') != next_manifest.get('scope')):
             raise ValueError('resource transfer requires archive-7 runs for the same repository and scope')
-        if source_manifest.get('state') == 'complete' or next_manifest.get('state') == 'complete':
-            raise ValueError('completed review history cannot participate in a resource transfer')
+        for label, value in (('source', source_manifest), ('successor', next_manifest)):
+            if value.get('state') not in {'prepared', 'processing'}:
+                raise ValueError(label + ' run must be prepared or processing; retaining/closing runs cannot transfer')
         normalized_controller = _controller(controller, next_manifest['controller']['identity'])
-        source_intent = source_manifest.get('resource_transfer')
-        next_intent = next_manifest.get('resource_transfer')
-        intent = source_intent or next_intent
+        source_history = normalize_transfer_history(source_manifest)
+        next_history = normalize_transfer_history(next_manifest)
+        pair = [row for row in source_history + next_history
+                if row['source_run'] == str(source) and row['successor_run'] == str(successor)]
+        by_id = {}
+        for row in pair:
+            prior = by_id.get(row['transfer_id'])
+            if prior is not None:
+                left, right = dict(prior), dict(row)
+                left.pop('status', None); left.pop('completed_at', None)
+                right.pop('status', None); right.pop('completed_at', None)
+                if left != right:
+                    raise ValueError('source and successor transfer histories conflict')
+            else:
+                by_id[row['transfer_id']] = row
+        if len(by_id) > 1:
+            raise ValueError('multiple transfers exist for the same source and successor runs')
+        intent = next(iter(by_id.values()), None)
+        current_transfer_id = intent['transfer_id'] if intent else None
+        for history in (source_history, next_history):
+            if any(row['status'] == 'pending' and row['transfer_id'] != current_transfer_id for row in history):
+                raise ValueError('another resource transfer is already pending for this run')
 
-        if (isinstance(source_intent, dict) and source_intent.get('status') == 'complete'
-                and isinstance(next_intent, dict) and next_intent.get('status') == 'complete'):
-            if source_intent != next_intent:
-                raise ValueError('completed source and successor transfer records differ')
-            for item in source_intent['items']:
-                review_resource_claims.verify_claim(item['session_dir'], successor)
-            return {'status': 'transferred', 'transfer_id': source_intent['transfer_id'],
-                    'source_run': str(source), 'successor_run': str(successor),
-                    'resources': [item['session_dir'] for item in source_intent['items']]}
-
-        if intent is None:
+        if intent is not None:
+            _validate_transfer_intent(intent)
+            expected = {'source_run': str(source), 'successor_run': str(successor),
+                        'source_run_id': source_manifest['run_id'],
+                        'successor_run_id': next_manifest['run_id'],
+                        'source_owner_id': source_manifest['owner_id'],
+                        'successor_owner_id': next_manifest['owner_id'],
+                        'repository_key': source_manifest['repository_key'],
+                        'authority': authority, 'controller': normalized_controller}
+            if any(intent.get(key) != value for key, value in expected.items()) or \
+                    {item['session_dir'] for item in intent['items']} != set(selected_paths):
+                raise ValueError('completed or pending transfer request differs from its preserved inputs')
+            source_matches = [row for row in source_history if row['transfer_id'] == intent['transfer_id']]
+            next_matches = [row for row in next_history if row['transfer_id'] == intent['transfer_id']]
+            if (source_matches and next_matches and source_matches[0]['status'] == 'complete'
+                    and next_matches[0]['status'] == 'complete'):
+                for item in intent['items']:
+                    review_resource_claims.verify_claim(item['session_dir'], successor)
+                return {'status': 'transferred', 'transfer_id': intent['transfer_id'],
+                        'source_run': str(source), 'successor_run': str(successor),
+                        'resources': [item['session_dir'] for item in intent['items']]}
+            # A partially persisted completion is replayed using its original bytes.
+        else:
+            if source_manifest.get('state') in {'retaining', 'closing', 'complete'} or \
+                    next_manifest.get('state') in {'retaining', 'closing', 'complete'}:
+                raise ValueError('retaining, closing or complete review runs cannot transfer resources')
             if source_manifest.get('operation', {}).get('disposition') not in {'open', 'paused', 'blocked'}:
                 raise ValueError('source review is already superseded or complete')
             if next_manifest.get('operation', {}).get('disposition') != 'open':
                 raise ValueError('successor review must be open before claiming resources')
+            previous = next_manifest.get('previous_run')
+            lineage = next_manifest.get('lineage')
+            if previous not in (None, str(source)):
+                raise ValueError('successor previous_run conflicts with the requested transfer source')
+            if not isinstance(lineage, dict) or lineage.get('source_run') not in (None, str(source)):
+                raise ValueError('successor lineage conflicts with the requested transfer source')
+            if previous == str(source) and (lineage.get('kind') != 'restart' or lineage.get('source_run') != str(source)):
+                raise ValueError('successor previous_run and lineage identify different restart sources')
+
+            source_rows = list(source_manifest.get('resource_claims', []))
+            in_flight_rows = [row for row in source_rows if row.get('status') == 'releasing']
+            if in_flight_rows:
+                raise ValueError('resource cleanup is already in progress; recover it before transfer')
+            active_rows = [row for row in source_rows if row.get('status') == 'owned']
+            active_paths = {os.path.normcase(str(safe_path(row['session_dir']))) for row in active_rows}
+            selected_path_keys = {os.path.normcase(str(safe_path(path))) for path in selected_paths}
+            if selected_path_keys != active_paths:
+                raise ValueError('transfer must include every active resource claim; partial transfer is refused '
+                                 '(selected=' + str(len(selected_paths)) + ', active=' + str(len(active_paths)) + ')')
+            if len(source_history) >= TRANSFER_HISTORY_LIMIT or len(next_history) >= TRANSFER_HISTORY_LIMIT:
+                raise ValueError('resource transfer history reached the 64-entry limit')
             items = []
+            registered_source_paths = {os.path.normcase(str(safe_path(path)))
+                                       for path in source_manifest.get('temporary_paths', [])}
             for raw in selected_paths:
-                if raw not in source_manifest.get('temporary_paths', []):
+                if os.path.normcase(str(safe_path(raw))) not in registered_source_paths:
                     raise ValueError('every transferred session must be registered to the source run')
+                if not safe_path(raw).is_dir():
+                    raise ValueError('every active resource claim must be present before transfer')
                 old_sidecar = review_resource_claims.verify_claim(raw, source)
                 plan = review_resource_claims.plan_claim(
                     raw, successor, next_manifest, source_run=source,
@@ -1490,35 +1620,11 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                       'successor_owner_id': next_manifest['owner_id'],
                       'repository_key': source_manifest['repository_key'], 'authority': authority,
                       'controller': normalized_controller, 'items': items}
-        else:
-            _validate_transfer_intent(intent)
-            comparable = dict(intent)
-            comparable.pop('status', None)
-            comparable.pop('completed_at', None)
-            expected = {'schema_version': 1, 'transfer_id': intent['transfer_id'],
-                        'source_run': str(source), 'successor_run': str(successor),
-                        'source_run_id': source_manifest['run_id'],
-                        'successor_run_id': next_manifest['run_id'],
-                        'source_owner_id': source_manifest['owner_id'],
-                        'successor_owner_id': next_manifest['owner_id'],
-                        'repository_key': source_manifest['repository_key'],
-                        'authority': authority, 'controller': normalized_controller,
-                        'items': intent['items']}
-            if comparable != expected or {item['session_dir'] for item in intent['items']} != set(selected_paths):
-                raise ValueError('retry transfer inputs differ from the preserved two-run intent')
-            for candidate in (source_intent, next_intent):
-                if candidate is not None:
-                    other = dict(candidate)
-                    other.pop('status', None)
-                    other.pop('completed_at', None)
-                    if other != comparable:
-                        raise ValueError('source and successor contain conflicting transfer intents')
 
-        if source_intent is None:
-            source_manifest['resource_transfer'] = copy.deepcopy(intent)
+        if intent['status'] == 'pending':
+            _store_transfer(source_manifest, intent)
             source_marker = _save_manifest(source, source_manifest, source_marker)
-        if next_intent is None:
-            next_manifest['resource_transfer'] = copy.deepcopy(intent)
+            _store_transfer(next_manifest, intent)
             next_marker = _save_manifest(successor, next_manifest, next_marker)
 
         _validate_transfer_intent(intent)
@@ -1538,6 +1644,7 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
 
         transfer_id = intent['transfer_id']
         moved_paths = {item['session_dir'] for item in intent['items']}
+        moved_keys = {os.path.normcase(path) for path in moved_paths}
         source_rows = list(source_manifest.get('resource_claims', []))
         next_rows = list(next_manifest.get('resource_claims', []))
         for item in intent['items']:
@@ -1561,15 +1668,18 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
 
         source_manifest['resource_claims'] = source_rows
         source_manifest['temporary_paths'] = [path for path in source_manifest.get('temporary_paths', [])
-                                              if path not in moved_paths]
+                                              if os.path.normcase(path) not in moved_keys]
         source_manifest['temporary_manifests'] = _temporary_manifests(
             source_manifest['temporary_paths'], source_manifest)
         source_manifest['operation'].update(disposition='superseded', reason=authority,
                                             source='transfer-resources', phase='restart',
                                             successor=str(successor))
         next_manifest['resource_claims'] = next_rows
-        next_manifest['temporary_paths'] = list(dict.fromkeys(
-            list(next_manifest.get('temporary_paths', [])) + sorted(moved_paths)))
+        combined_paths = list(next_manifest.get('temporary_paths', [])) + sorted(moved_paths)
+        unique_paths = {}
+        for path in combined_paths:
+            unique_paths.setdefault(os.path.normcase(path), path)
+        next_manifest['temporary_paths'] = list(unique_paths.values())
         next_manifest['temporary_manifests'] = _temporary_manifests(
             next_manifest['temporary_paths'], next_manifest)
         next_manifest['previous_run'] = next_manifest.get('previous_run') or str(source)
@@ -1579,9 +1689,9 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
 
         for run, manifest, marker, other in ((source, source_manifest, source_marker, successor),
                                              (successor, next_manifest, next_marker, source)):
-            summary = 'Resource transfer ' + transfer_id + ' to ' + manifest['resource_transfer']['successor_run']
-            if manifest['resource_transfer']['source_run'] == str(run):
-                summary = 'Resource transfer ' + transfer_id + ' from ' + str(run)
+            summary = 'Resource transfer ' + transfer_id + ' to ' + str(successor)
+            if run == source:
+                summary = 'Resource transfer ' + transfer_id + ' from ' + str(source)
             trace = [json.loads(line) for line in safe_path(run / review_trace.NAME).read_text(
                 encoding='utf-8').splitlines()]
             if not any(event.get('kind') == 'handoff' and event.get('summary') == summary for event in trace):
@@ -1597,10 +1707,11 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                 next_marker = marker
 
         completed = copy.deepcopy(intent)
-        completed['status'] = 'complete'
-        completed['completed_at'] = datetime.now(timezone.utc).isoformat()
-        source_manifest['resource_transfer'] = copy.deepcopy(completed)
-        next_manifest['resource_transfer'] = copy.deepcopy(completed)
+        if completed['status'] != 'complete':
+            completed['status'] = 'complete'
+            completed['completed_at'] = datetime.now(timezone.utc).isoformat()
+        _store_transfer(source_manifest, completed)
+        _store_transfer(next_manifest, completed)
         _save_manifest(source, source_manifest, source_marker)
         _save_manifest(successor, next_manifest, next_marker)
         return {'status': 'transferred', 'transfer_id': transfer_id,
@@ -1779,9 +1890,9 @@ def recover(run_dir, *, controller, authority, current_inputs):
     fallback = manifest.get('controller', {}).get('identity',
         {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
     _controller(controller, fallback)
-    transfer = manifest.get('resource_transfer')
-    if isinstance(transfer, dict) and transfer.get('status') != 'complete':
-        _validate_transfer_intent(transfer)
+    pending_transfers = [row for row in normalize_transfer_history(manifest) if row['status'] == 'pending']
+    if pending_transfers:
+        transfer = pending_transfers[0]
         if authority != transfer['authority']:
             raise ValueError('resource transfer recovery authority differs from its preserved intent')
         transfer_resources(transfer['source_run'], transfer['successor_run'],
@@ -1831,7 +1942,7 @@ def recover(run_dir, *, controller, authority, current_inputs):
                     'actions': [{'action': 'retry_retention' if manifest['state'] == 'retaining' else 'retry_close',
                                  'reason': 'The original final input or cleanup observation must be supplied; no external work was run.'}]},
                                     input_appraisal)
-        if manifest.get('resource_transfer', {}).get('status') == 'pending':
+        if any(row['status'] == 'pending' for row in normalize_transfer_history(manifest)):
             raise ValueError('resource transfer remains pending; retry recovery from its recorded source run')
         _verify_files(run, manifest)
         for row in manifest.get('resource_claims', []):
@@ -2172,6 +2283,13 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if manifest['state'] == 'complete':
         raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
     _verify_files(run, manifest)
+    temporary = _temporary_paths(temporary_paths, manifest)
+    if manifest['schema_version'] == 7:
+        claim_manifest = copy.deepcopy(manifest)
+        claim_manifest.update(_claim_run_dir=str(run), temporary_paths=temporary)
+        resource_plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest)
+        if any(plan['action'] not in {'not_workspace', 'existing'} for plan in resource_plans):
+            raise ValueError('register and verify every review workspace before retention')
     if input_file is None:
         if manifest['schema_version'] != 7 or not isinstance(manifest.get('checkpoint'), dict):
             raise ValueError('retention requires an explicit final review input or a provisional final checkpoint')
@@ -2209,7 +2327,6 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('final review scope differs from the pinned scope')
     if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
-    temporary = _temporary_paths(temporary_paths, manifest)
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
     if set(declared_residuals) - set(temporary):
         raise ValueError('register declared temporary residuals before retaining cleanup evidence')

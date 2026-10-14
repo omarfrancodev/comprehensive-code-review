@@ -182,7 +182,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Produces: `resource_transfers` y `normalize_transfer_history(manifest: dict) -> list[dict]`; acepta lectura del slot 7 previo, sin escritura automática. Mismo RT/petición exacta es replay; una transferencia nueva usa otro RT.
 - Produces: transfer_resources existente con preflight completo y todas las rutas activas presentes; tipos/valores comunes. `_claim_row`/plan_claim conservan transfer_id ya registrado y verify_claim permanece consistente.
 
-- [ ] **Step 1: Añadir regresiones.** `test_legacy6_workspace_register_keeps_historical_fields`, `test_prepare_and_retain_refuse_foreign_claim_before_mutation`, `test_register_after_incoming_transfer_is_idempotent`, `test_second_outgoing_transfer_after_incoming_transfer`, `test_partial_transfer_refused_without_mutation`, `test_completed_transfer_changed_request_is_conflict`, `test_retaining_and_closing_cannot_transfer`, `test_transfer_rejects_conflicting_previous_run`, `test_transfer_history_limit_before_mutation`.
+- [x] **Step 1: Añadir regresiones.** `test_legacy6_workspace_register_keeps_historical_fields`, `test_prepare_and_retain_refuse_foreign_claim_before_mutation`, `test_register_preflights_all_resources_before_claiming_any`, `test_register_after_incoming_transfer_is_idempotent`, `test_second_outgoing_transfer_preserves_incoming_history`, `test_partial_transfer_is_refused_without_mutation`, `test_completed_transfer_changed_request_is_conflict`, `test_transfer_rejects_retaining_and_closing_runs`, `test_transfer_rejects_conflicting_previous_run`, `test_transfer_history_limit_is_checked_before_mutation`.
 
   ```python
   artifacts.transfer_resources(a, b, [session], authority=authority, controller=controller)
@@ -192,9 +192,9 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
   self.assertEqual(len(self.read(b / 'cierre.json')['resource_transfers']), 2)
   ```
 
-- [ ] **Step 2: Observar RED.** Ejecutar resource_claims/recovery/artifacts. Reproducir F006/F018/F019/F029 y snapshots de rechazo parcial; no confundir el return temprano de otra petición con éxito correcto.
-- [ ] **Step 3: Implementar.** Centralizar preflight, separar historial entrante/saliente, validar replay completo y lineage. Rechazar parcial y estados retenidos antes de intención; transferir en ambos locks con hashes y recovery existentes. No editar sidecars ajenos para hacer coincidir expected_row.
-- [ ] **Step 4: Observar GREEN.** Repetir patrones; probar interrupciones de ambos manifests/sidecar y cadena de ownership. Legacy no adquiere resource_claims ni migración; register del receptor no cambia hashes de un claim existente.
+- [x] **Step 2: Observar RED.** Las regresiones iniciales reprodujeron la pérdida del ID entrante, la transferencia parcial aceptada, el replay con autoridad distinta aceptado, la falta de límite, el lineage ajeno aceptado y el error al registrar workspaces en archives 1–6. Una primera versión de la prueba encadenada también mostró que las rutas deben compararse con normalización de Windows.
+- [x] **Step 3: Implementar.** Centralizar preflight de todas las rutas, separar historial entrante/saliente, validar replay completo y lineage. Rechazar parcial y estados retaining/closing antes de intención; transferir bajo ambos locks con hashes y recuperación existente. El registro conserva el `transfer_id` de entrada y no edita sidecars ajenos.
+- [x] **Step 4: Observar GREEN.** `test_review_resource_claims.py`: 18/18; `test_review_recovery.py`: 34/34; `test_review_artifacts.py`: 54/54 (2 skips de permisos de junction/symlink). Replays, transferencias encadenadas, legacy singular, preparación/registro/cierre y límites pasan; `py_compile` y `git diff --check` pasan.
 - [ ] **Step 5: Commit.** `fix(workspaces): preservar ownership y reintentos de transferencias encadenadas`.
 
 ### Task 5: Recibos de cleanup y cierre idempotente

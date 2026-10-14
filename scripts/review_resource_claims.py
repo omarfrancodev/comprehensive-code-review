@@ -56,12 +56,25 @@ def _workspace(session_dir):
     manifest_path = session / 'manifest.json'
     if not manifest_path.is_file():
         return None
+    if not (session / '.owner.json').is_file():
+        try:
+            raw_manifest = _read_json(manifest_path)
+        except (OSError, ValueError):
+            return None
+        markers = {'session_id', 'session_dir', 'owner_token'}
+        if not isinstance(raw_manifest, dict) or not markers.intersection(raw_manifest):
+            return None
     import review_workspace
     try:
         workspace = review_workspace.load(manifest_path)
     except review_workspace.ReviewError as exc:
         raise ValueError('claimed review workspace is invalid; preserve it for inspection: ' + str(exc)) from exc
-    owner = _read_json(session / '.owner.json')
+    except (OSError, KeyError, TypeError, ValueError) as exc:
+        raise ValueError('claimed review workspace manifest is invalid; preserve it for inspection') from exc
+    try:
+        owner = _read_json(session / '.owner.json')
+    except (OSError, ValueError) as exc:
+        raise ValueError('claimed review workspace owner marker is invalid; preserve it for inspection') from exc
     token = owner.get('owner_token')
     if (not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token)
             or owner.get('session_id') != workspace.get('session_id')
@@ -91,8 +104,65 @@ def _claim_row(sidecar, *, status='owned', claim_sha256=None, **extra):
     result.update(status=status, claim_sha256=claim_sha256 or _digest(_encoded(sidecar)))
     result.update(adopted=sidecar['adopted'], authority=sidecar['authority'],
                   transferred_from=sidecar['transferred_from'])
+    transfer_id = extra.pop('transfer_id', None)
+    if transfer_id is not None:
+        result['transfer_id'] = transfer_id
     result.update(extra)
     return result
+
+
+def _preflight_unbound(session_dir, manifest, *, authority=None):
+    """Check a resource before a new archive exists, without claiming it."""
+    candidate = _safe_path(session_dir)
+    if not candidate.exists() or not candidate.is_dir():
+        return {'action': 'not_workspace', 'session_dir': str(candidate)}
+    workspace_data = _workspace(candidate)
+    if workspace_data is None:
+        return {'action': 'not_workspace', 'session_dir': str(candidate)}
+    session, workspace, token_digest = workspace_data
+    sidecar_path = session / CLAIM_NAME
+    if not sidecar_path.exists():
+        if authority is not None:
+            _authority(authority)
+        return {'action': 'adopt_pending', 'session_dir': str(session)}
+    current = _read_json(sidecar_path)
+    if (isinstance(current, dict) and current.get('schema_version') == CLAIM_SCHEMA
+            and current.get('status') == 'bootstrap'):
+        if (current.get('session_id') != workspace['session_id']
+                or current.get('owner_token_sha256') != token_digest
+                or current.get('repo') != workspace['repo']):
+            raise ValueError('bootstrap resource claim does not match the owned workspace session')
+        return {'action': 'claim_pending', 'session_dir': str(session)}
+    _validate_sidecar(current, session, workspace, token_digest)
+    verify_claim(session, current['archive_path'])
+    if manifest.get('previous_run') == current['archive_path']:
+        return {'action': 'transfer_pending', 'session_dir': str(session)}
+    raise ValueError('review session is already claimed by another review run; use transfer-resources with explicit authority')
+
+
+def plan_resource_registration(paths, manifest, *, authority=None):
+    """Preflight a complete resource set before the caller mutates any sidecar."""
+    if manifest.get('schema_version') != 7:
+        return []
+    selected = [_safe_path(path) for path in paths]
+    if len({os.path.normcase(str(path)) for path in selected}) != len(selected):
+        raise ValueError('resource registration paths must be unique')
+    run_dir = manifest.get('_claim_run_dir')
+    plans = []
+    for path in selected:
+        if run_dir is None:
+            plans.append(_preflight_unbound(path, manifest, authority=authority))
+        else:
+            plans.append(plan_claim(path, run_dir, manifest, authority=authority))
+    if run_dir is not None:
+        active = {os.path.normcase(str(_safe_path(row['session_dir'])))
+                  for row in manifest.get('resource_claims', [])
+                  if isinstance(row, dict) and row.get('status') in {'owned', 'releasing'}
+                  and isinstance(row.get('session_dir'), str)}
+        for path, plan in zip(selected, plans):
+            if plan['action'] == 'not_workspace' and os.path.normcase(str(path)) in active:
+                raise ValueError('active review workspace claim is missing or no longer verifiable')
+    return plans
 
 
 def _sidecar_for(session, workspace, token_digest, run, manifest, *, prior=None,
@@ -160,13 +230,18 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
 
     _validate_sidecar(current, session, workspace, token_digest)
     if current.get('run_id') == actual.get('run_id') and current.get('owner_id') == actual.get('owner_id'):
-        expected_row = _claim_row(current, claim_sha256=current_hash,
-                                  adopted=current.get('adopted', False),
-                                  authority=current.get('authority'),
-                                  transferred_from=current.get('transferred_from'))
         rows = [row for row in actual.get('resource_claims', []) if row.get('claim_id') == current.get('claim_id')]
         if len(rows) > 1:
             raise ValueError('duplicate resource claim rows in review archive')
+        transfer_id = rows[0].get('transfer_id') if rows else None
+        if transfer_id is not None and (not isinstance(transfer_id, str)
+                                        or not re.fullmatch(r'RT-[0-9a-f]{32}', transfer_id)):
+            raise ValueError('archive resource claim has an invalid transfer identity')
+        expected_row = _claim_row(current, claim_sha256=current_hash,
+                                  transfer_id=transfer_id,
+                                  adopted=current.get('adopted', False),
+                                  authority=current.get('authority'),
+                                  transferred_from=current.get('transferred_from'))
         if rows and rows[0] != expected_row:
             raise ValueError('archive resource claim differs from its workspace sidecar')
         return {'action': 'existing' if rows else 'recover', 'sidecar': current,
@@ -229,7 +304,12 @@ def verify_claim(session_dir, run_dir):
         raise ValueError('resource claim is owned by another review run')
     sidecar_hash = _digest(_encoded(sidecar))
     rows = [row for row in manifest.get('resource_claims', []) if row.get('claim_id') == sidecar['claim_id']]
+    transfer_id = rows[0].get('transfer_id') if len(rows) == 1 else None
+    if transfer_id is not None and (not isinstance(transfer_id, str)
+                                    or not re.fullmatch(r'RT-[0-9a-f]{32}', transfer_id)):
+        raise ValueError('archive resource claim has an invalid transfer identity')
     expected_row = _claim_row(sidecar, claim_sha256=sidecar_hash,
+                              transfer_id=transfer_id,
                               adopted=sidecar['adopted'], authority=sidecar['authority'],
                               transferred_from=sidecar['transferred_from'])
     if (len(rows) != 1 or any(rows[0].get(key) != value for key, value in expected_row.items())
