@@ -113,7 +113,15 @@ Before closing any run, retain and validate the final result/evidence, then obse
 
 A claimed session absent without a release receipt is `missing_unknown`. Inspect, recover and resume use the same classifier: they never announce continuation for that state. Start an authorized linked restart without transferring the missing path. If a changed-scope restart leaves present owned sessions in the superseded source, dispose them with `review_workspace.py cleanup --manifest <source-session>/manifest.json --run-dir <source-run>`; cleanup changes only that source claim/receipt, never the successor. Completed archives remain immutable.
 
-A pending restart appears in `pending_transaction` with operation ID, exact intent path and reserved successor. Recover takes the source lock before any prepare/replay. The original authority/controller remain bound to the pending request. If the coordinator explicitly decides to abandon it **before** the successor has a manifest, use its exact `intent_path`:
+A pending restart appears in `pending_transaction` with operation ID, exact intent path and reserved successor. Recover takes the source lock before any prepare/replay. The original authority/controller remain bound to the pending request.
+
+Once that exact successor is prepared, retry/recover recognizes it before running a new resource-registration preflight. A partially moved workspace sidecar is replayed only through the recorded transfer or registration helper; it is not adopted as a new session. The successor is reread and its pending trace recovered under its own mutation lock. Hash-bound pending trace appends are recovered before integrity checks. Invalid identity or modified bytes still stop recovery.
+
+A checkpoint interrupted before a successful restart remains provisional in its superseded source, including any missing planned bytes. `inspect` labels that checkpoint `superseded`; lookup/inspect/recover point to the recorded successor rather than offering `retry_checkpoint` or continuation on the source. Basic read-only `validate` verifies ownership, the transaction inventory and any existing bytes without committing it. This does not certify a final result: retained/complete gates and `--record-checkpoint` still reject that provisional source. Preserved source bytes are not copied into or certified by the successor.
+
+If present claims remain with that source after a scope change, their verified cleanup and cleanup recovery remain available independently of the historical checkpoint. Neither operation commits its provisional inputs or changes the successor.
+
+If the coordinator explicitly decides to abandon a pending restart **before** the successor has a manifest, use its exact `intent_path`:
 
 ```sh
 python /absolute/skill/scripts/review_artifacts.py abandon-restart \

@@ -16,14 +16,14 @@ Fuente: [CR-34b04043a7044a519134](https://github.com/omarfrancodev/comprehensive
 | F042 | Preflight antes del intent; abandono autorizado/idempotente y acotado | `test_invalid_restart_sources_leave_no_durable_intent`, `test_changed_repository_identity_rejected_before_restart_intent`, `test_adoption_cannot_contain_archive_root_before_restart_intent`, `test_foreign_repository_adoption_rejected_before_successor_or_intent`, `test_abandon_unprepared_restart_is_authorized_durable_and_idempotent`, `test_abandon_cannot_orphan_prepared_successor` |
 | F002 | Verificar ownership antes de locks también en restart/transfer/link | `test_foreign_restart_transfer_and_link_create_no_locks` |
 | F008 | Validar objetos coverage/execution antes de .get | `test_nested_malformed_final_has_structured_cli_error` |
-| F014 | Limitar la promesa de historial completo a full | Docs revisadas; regresión existente `test_full_contains_lineage_brief_keeps_summary_and_source_link` |
+| F014 | Corrección parcial: limitar el historial completo a full; el tercer CCR detectó la promesa residual sobre perfil/enlace en brief | La prueba de ese momento comprobó el enlace a una review anterior, no un vínculo al historial de perfil; hoy se llama `test_full_contains_lineage_brief_keeps_summary_and_previous_review_link` |
 | F015 | Comprobar tipo del ID extended antes de set membership | `test_extended_unhashable_assignment_id_returns_errors` |
 | F040 | Continuaciones POSIX únicas en el restart documentado | `test_extracted_recovery_restart_example_executes` |
 | F043 | Inspect/lookup muestran restart pendiente y no continue | `test_pending_restart_is_visible_in_inspect_and_lookup` |
 
 ## Evidencia y límites
 
-La tanda inicial de 16 regresiones terminó OK en 108.987 s. Las dos pruebas adicionales de ejemplos y las de salida real del proceso se verifican en la suite final. La ejecución literal de los bloques se hace con parsing POSIX de tokens/continuaciones y subprocess sin shell; verifica los argumentos reales en Windows, sin afirmar que se haya ejecutado un shell POSIX.
+La tanda inicial de 16 regresiones terminó OK en 108.987 s. Las dos pruebas adicionales de ejemplos y las de salida real del proceso se verifican en la suite final. Los ejemplos extraídos fueron los bloques del ciclo archive-7 en docs/examples/archive7-lifecycle.md y el bloque restart de references/archive/recovery.md; no se ejecutaron todos los bloques Markdown de lookup/inspect/recover/abandon. La ejecución literal de esos bloques seleccionados se hace con parsing POSIX de tokens/continuaciones y subprocess sin shell; verifica los argumentos reales en Windows, sin afirmar que se haya ejecutado un shell POSIX.
 
 Se observaron fallos RED de producto antes de corregirlos. También hubo errores de preparación de nuevas pruebas (TEMP del sandbox sin permisos, uso de stdout en vez de stderr para errores JSON, reason omitido en pause y contexto sintético con description/source incompatibles); se corrigieron los fixtures, sin relajar contratos del producto.
 

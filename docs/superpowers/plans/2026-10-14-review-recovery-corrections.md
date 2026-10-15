@@ -271,7 +271,7 @@ Para cada patrón indicado: `python -B -X utf8 .superpowers/sdd/review-recovery-
 - Consumes: APIs/contratos/CLI reales de Tasks 1–6 y plantilla `.github/PULL_REQUEST_TEMPLATE.md`.
 - Produces: secuencias integradas, documentación reproducible, nueva evidencia y PR #19 actualizado; no merge/release ni cleanup del worktree en este paso.
 
-- [x] **Step 1: Añadir regresiones de aceptación.** `test_a_b_register_c_retain_cleanup_close_replay`, `test_interrupted_checkpoint_changed_head_missing_session_new_harness_restart`, `test_documented_archive7_commands_end_to_end`, `test_full_contains_lineage_brief_keeps_summary_and_source_link`. Los tests CLI leen datos producidos por helpers, no construyen recibos para fingir cleanup. Se corrigió además el fixture de atomic recovery para que delegue su factory final real.
+- [x] **Step 1: Añadir regresiones de aceptación.** `test_a_b_register_c_retain_cleanup_close_replay`, `test_interrupted_checkpoint_changed_head_missing_session_new_harness_restart`, `test_documented_archive7_commands_end_to_end`, `test_full_contains_lineage_brief_keeps_summary_and_previous_review_link` (nombre precisado tras el tercer CCR: verifica una review anterior). Los tests CLI leen datos producidos por helpers, no construyen recibos para fingir cleanup. Se corrigió además el fixture de atomic recovery para que delegue su factory final real.
 
   ```python
   # Flujo íntegro con inputs externos capturados y cada transición observada.

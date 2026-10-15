@@ -23,7 +23,7 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
-    def test_full_contains_lineage_brief_keeps_summary_and_source_link(self):
+    def test_full_contains_lineage_brief_keeps_summary_and_previous_review_link(self):
         value = record6()
         source_id = 'CR-' + 'b' * 20
         source_link = 'https://example.test/reviews/' + source_id + '/informe.md'

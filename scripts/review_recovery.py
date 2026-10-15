@@ -186,6 +186,8 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
     elif pending:
         actions = [_action('recover', 'Recover the exact pending restart under its source lock.'),
                    _action('retry_restart', 'Retry the immutable request and reserved successor.')]
+    elif disposition == 'superseded':
+        actions = _superseded_actions()
     elif complete:
         if applicability['applicability'] == 'applicable':
             actions = [_action('show_report', 'The completed report hash matches; inspect this exact run before use.'),
@@ -285,6 +287,13 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             'truncated': has_more}
 
 
+def _superseded_actions(resources=()):
+    actions = [_action('inspect_successor', 'The source run records a successor; inspect that exact run.')]
+    if any(row['claim_status'] == 'owned' and row['present'] for row in resources):
+        actions.append(_action('cleanup', 'Clean the remaining source-owned sessions using this source --run-dir.'))
+    return actions
+
+
 def inspect_run(run_dir, *, current_inputs=None):
     """Inspect one explicitly selected run without repairing or changing any file."""
     artifacts = _artifacts()
@@ -317,7 +326,8 @@ def inspect_run(run_dir, *, current_inputs=None):
     if manifest.get('pending_trace') is not None:
         pending.append({'kind': 'trace_append', 'status': 'pending'})
     if manifest.get('checkpoint_transaction') is not None:
-        pending.append({'kind': 'checkpoint', 'status': 'pending'})
+        pending.append({'kind': 'checkpoint', 'status':
+                        'superseded' if operation.get('disposition') == 'superseded' else 'pending'})
     try:
         transfers = artifacts.normalize_transfer_history(manifest)
         for transfer in transfers:
@@ -340,7 +350,8 @@ def inspect_run(run_dir, *, current_inputs=None):
             artifacts._verify_files(run, manifest, allow_checkpoint_transaction=True,
                                     allow_resource_transfer=True)
         resources = artifacts._resource_availability(run, manifest,
-            verify_owned=not manifest.get('pending_trace') and not pending)
+            verify_owned=not manifest.get('pending_trace')
+                         and not any(row['status'] == 'pending' for row in pending))
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(str(exc)[:1000])
         resources = []
@@ -366,7 +377,7 @@ def inspect_run(run_dir, *, current_inputs=None):
     if errors:
         integrity_status = 'invalid'
         actions = [_action('preserve', 'Integrity/source verification failed; do not adopt or rewrite this run.')]
-    elif pending:
+    elif any(row['status'] == 'pending' for row in pending):
         integrity_status = 'recoverable'
         actions = [_action('recover', 'A helper-owned transaction is pending; recover its exact recorded inputs first.')]
     else:
@@ -378,9 +389,7 @@ def inspect_run(run_dir, *, current_inputs=None):
             actions = [_action('recover', 'Inspect the recorded blocker and recover only verified helper-owned state.'),
                        _action('restart', 'Start a new linked run if the original sources cannot be verified.')]
         elif disposition == 'superseded':
-            actions = [_action('inspect_successor', 'The source run records a successor; inspect that exact run.')]
-            if any(row['claim_status'] == 'owned' and row['present'] for row in resources):
-                actions.append(_action('cleanup', 'Clean the remaining source-owned sessions using this source --run-dir.'))
+            actions = _superseded_actions(resources)
         elif disposition == 'complete' or manifest.get('state') == 'complete':
             actions = [_action('show', 'The completed report is immutable and may be shown as recorded.'),
                        _action('restart', 'A repeat creates a new linked review ID.')]

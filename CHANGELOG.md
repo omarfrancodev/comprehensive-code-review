@@ -4,6 +4,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.12.0 — unreleased
 
+- Recuperar el restart reservado tras cortes dentro de transferencias/adopciones de workspaces, respetando el lock del sucesor. Conservar checkpoints interrumpidos del origen sustituido como historial provisional, con acciones realizables y limpieza de claims independiente; precisar el contenido real de la entrega breve.
 - Corregir colisiones de evidencias entre checkpoints, reinicios legacy sin ID y recuperación del sucesor reservado ante cortes reales del proceso; validar entradas antes del intent y permitir su abandono explícito antes de preparar el sucesor.
 - Alinear diagnóstico/recuperación/cleanup de claims ausentes o de un origen superseded; rechazar temprano estructuras malformadas y trabajo sobre asignaciones sustituidas. Verificar ejemplos CLI extraídos de Markdown y corregir sus contratos y referencias de hallazgos.
 

@@ -139,7 +139,9 @@ def _preflight_unbound(session_dir, manifest, *, authority=None):
             raise ValueError('bootstrap resource claim does not match the owned workspace session')
         return {'action': 'claim_pending', 'session_dir': str(session)}
     _validate_sidecar(current, session, workspace, token_digest)
-    verify_claim(session, current['archive_path'])
+    restart_source = (manifest.get('restart_operation') or {}).get('source_run')
+    verify_claim(session, current['archive_path'], allow_checkpoint_transaction=
+                 restart_source == current['archive_path'] == manifest.get('previous_run'))
     if (manifest.get('restart_operation') is not None
             and current.get('run_id') == manifest.get('run_id')
             and current.get('owner_id') == manifest.get('owner_id')):
@@ -189,7 +191,8 @@ def _sidecar_for(session, workspace, token_digest, run, manifest, *, prior=None,
             'transferred_from': transferred_from}
 
 
-def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=None):
+def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=None,
+               allow_checkpoint_transaction=False):
     """Return an owned sidecar/manifest row plan without writing either one."""
     candidate = _safe_path(session_dir)
     if not candidate.exists():
@@ -266,7 +269,7 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
     if str(source_path) != current.get('archive_path'):
         raise ValueError('source run does not match the current resource owner')
     _authority(authority)
-    verify_claim(session, source_path)
+    verify_claim(session, source_path, allow_checkpoint_transaction=allow_checkpoint_transaction)
     sidecar = _sidecar_for(session, workspace, token_digest, run, actual, prior=current,
                            adopted=False, authority=authority, transferred_from=str(source_path))
     return {'action': 'transfer', 'sidecar': sidecar, 'bytes': _encoded(sidecar),
@@ -299,14 +302,15 @@ def _validate_sidecar(sidecar, session, workspace, token_digest):
         raise ValueError('adopted resource claim has no authority source')
 
 
-def verify_claim(session_dir, run_dir):
+def verify_claim(session_dir, run_dir, *, allow_checkpoint_transaction=False):
     workspace_data = _workspace(session_dir)
     if workspace_data is None:
         raise ValueError('resource claim requires a valid review workspace session')
     session, workspace, token_digest = workspace_data
     run, manifest, _ = _archive(run_dir)
     import review_artifacts
-    review_artifacts._verify_files(run, manifest)
+    review_artifacts._verify_files(run, manifest, allow_checkpoint_transaction=
+        allow_checkpoint_transaction or manifest.get('operation', {}).get('disposition') == 'superseded')
     if review_artifacts.repository_identity(workspace['repo']) != manifest.get('repository_identity'):
         raise ValueError('claimed workspace belongs to a different repository')
     sidecar = _read_json(session / CLAIM_NAME)

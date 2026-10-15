@@ -21,7 +21,7 @@ Los IDs corresponden al [CCR original](https://github.com/omarfrancodev/comprehe
 | F011 | Selección explícita autorizada no reduce extended adquirido | `test_acquired_automatic_extended_minimum_survives_explicit_selection` |
 | F012 | Downgrade automático solo con justificación pertinente | `test_automatic_upgrade_and_supported_downgrade` |
 | F013 | Contexto y CLI exactos extraídos de ejemplos Markdown | `test_extracted_documented_archive7_commands_execute_end_to_end` |
-| F014 | Full conserva historial; brief solo síntesis y vínculo | `test_full_contains_lineage_brief_keeps_summary_and_source_link` |
+| F014 | Corrección documental parcial en esta tanda; la promesa residual de perfil/historial en brief se corrige tras el tercer CCR | Prueba renombrada a `test_full_contains_lineage_brief_keeps_summary_and_previous_review_link`; verifica vínculo a una review anterior |
 | F015 | Tipos no hashables devuelven errores, incluido extended | `test_extended_unhashable_assignment_id_returns_errors` |
 | F017 | Claims ausentes no anuncian continuación ni liberación | `test_missing_session_diagnostics_match_recover_and_resume` |
 | F018 | Transferencia encadenada conserva historial entrante/saliente | `test_second_outgoing_transfer_preserves_incoming_history` |

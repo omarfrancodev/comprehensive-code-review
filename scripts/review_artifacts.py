@@ -1518,12 +1518,16 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
     root = select_output_root(repo, output_root)
     previous = None
     if previous_run is not None:
-        old, old_manifest, _ = _load_run(previous_run)
+        old, old_manifest, old_marker = _load_run(previous_run)
         active_restart = _active_restart_operation(old, old_manifest)
         if (active_restart is not None
                 and (_restart_reservation is None
                      or active_restart['operation_id'] != _restart_reservation['operation_id'])):
             raise ValueError('a durable restart is pending; only its exact reserved prepare may continue')
+        if _restart_reservation is not None:
+            # Transfer can stop while recording its source milestone. Replay the
+            # hash-bound append before checking the source's remaining files.
+            _recover_trace(old, old_manifest, old_marker)
         _verify_files(old, old_manifest,
                       allow_checkpoint_transaction=_restart_reservation is not None,
                       allow_resource_transfer=_restart_reservation is not None)
@@ -1562,9 +1566,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                             'reservation_id': reserved['reservation_id']})
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
-    review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
     scoped = root / _repository_group(identity) / _scope_group(scope)
-    safe_path(scoped).mkdir(parents=True, exist_ok=True)
     reservation_file = '.review-restart-reservation.json'
     if _restart_reservation is not None:
         reserved = _restart_reservation['successor']
@@ -1586,16 +1588,27 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 raise ValueError('reserved successor path is occupied by foreign or invalid data')
             try:
                 existing, existing_manifest, existing_marker = _load_run(run)
-                if existing_manifest.get('restart_operation') == manifest['restart_operation']:
+            except (ValueError, OSError, TypeError, KeyError):
+                existing_manifest = None
+            if existing_manifest is not None:
+                with run_locks([existing]):
+                    existing, existing_manifest, existing_marker = _load_run(existing)
+                    identity_fields = ('run_id', 'owner_id', 'created_at', 'archive_root',
+                                       'repository_key', 'scope', 'previous_run', 'restart_operation')
+                    if any(existing_manifest.get(key) != manifest.get(key) for key in identity_fields):
+                        raise ValueError('reserved successor identity differs from its restart intent')
+                    _recover_trace(existing, existing_manifest, existing_marker)
+                    _verify_files(existing, existing_manifest, allow_resource_transfer=True)
                     if reservation_path.exists():
+                        if read_json(reservation_path) != reservation:
+                            raise ValueError('reserved successor reservation changed while acquiring its lock')
                         for name in stage_names:
                             safe_path(run / name).unlink(missing_ok=True)
-                    existing_marker = _recover_trace(existing, existing_manifest, existing_marker)
-                    _verify_files(existing, existing_manifest)
-                    (existing / reservation_file).unlink(missing_ok=True)
+                    reservation_path.unlink(missing_ok=True)
+                    # Its sidecar may already name this successor while registration
+                    # or transfer is not committed yet. The exact helper below owns
+                    # that replay; a fresh unbound-resource preflight would reject it.
                     return str(existing)
-            except (ValueError, OSError, TypeError, KeyError):
-                pass
             entries = {item.name for item in run.iterdir()}
             if entries - {reservation_file, MARKER} - stage_names:
                 raise ValueError('partially prepared reserved successor contains unowned data')
@@ -1607,15 +1620,20 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 if (not isinstance(partial, dict) or any(partial.get(key) != value
                         for key, value in expected_marker.items())):
                     raise ValueError('partially prepared successor ownership differs from its reservation')
+            review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
             for name in stage_names:
                 safe_path(run / name).unlink(missing_ok=True)
         else:
+            review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
+            safe_path(scoped).mkdir(parents=True, exist_ok=True)
             run.mkdir()
         # The immutable source intent authorizes this exact allocation, including
         # an empty directory after mkdir. Keep the reservation until cierre exists.
         atomic_write(reservation_path, _json_bytes(reservation), staging_path=run / (
             '.' + reservation_file + '.' + reserved['reservation_id'] + '.tmp'))
     else:
+        review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
+        safe_path(scoped).mkdir(parents=True, exist_ok=True)
         # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
         for _ in range(8):
             created = datetime.now(timezone.utc)
@@ -1986,7 +2004,9 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
             raise ValueError('a durable restart is pending; only its exact restart-owned transfer may continue')
         source_marker = _recover_trace(source, source_manifest, source_marker)
         next_marker = _recover_trace(successor, next_manifest, next_marker)
-        _verify_files(source, source_manifest, allow_resource_transfer=True)
+        restarting_checkpoint = active_restart is not None and _restart_operation_id == active_restart['operation_id']
+        _verify_files(source, source_manifest, allow_resource_transfer=True,
+                      allow_checkpoint_transaction=restarting_checkpoint)
         _verify_files(successor, next_manifest, allow_resource_transfer=True)
         if source == successor:
             raise ValueError('source and successor review runs must differ')
@@ -2081,10 +2101,11 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                     raise ValueError('every transferred session must be registered to the source run')
                 if not safe_path(raw).is_dir():
                     raise ValueError('every active resource claim must be present before transfer')
-                old_sidecar = review_resource_claims.verify_claim(raw, source)
+                old_sidecar = review_resource_claims.verify_claim(raw, source,
+                    allow_checkpoint_transaction=restarting_checkpoint)
                 plan = review_resource_claims.plan_claim(
                     raw, successor, next_manifest, source_run=source,
-                    authority=authority)
+                    authority=authority, allow_checkpoint_transaction=restarting_checkpoint)
                 if plan['action'] != 'transfer' or old_sidecar['claim_id'] != plan['sidecar']['claim_id']:
                     raise ValueError('resource transfer plan does not match the verified source claim')
                 source_rows = [row for row in source_manifest.get('resource_claims', [])
@@ -2314,7 +2335,8 @@ def begin_resource_cleanup(run_dir, session_dir):
     """Persist a cleanup intent and mark the exact workspace claim as releasing."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest)
+    _verify_files(run, manifest, allow_checkpoint_transaction=
+                  manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 7:
         raise ValueError('durable resource cleanup requires archive schema 7')
     if manifest.get('state') in {'retaining', 'complete'}:
@@ -2424,7 +2446,8 @@ def finish_resource_cleanup(run_dir, observation):
     """Record a receipt only after the exact session and its worktrees are absent."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest)
+    _verify_files(run, manifest, allow_checkpoint_transaction=
+                  manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 7:
         raise ValueError('durable resource cleanup requires archive schema 7')
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
@@ -2436,7 +2459,8 @@ def recover_resource_cleanup(run_dir):
     """Finish a pending cleanup record only when its exact resources are already absent."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest)
+    _verify_files(run, manifest, allow_checkpoint_transaction=
+                  manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 7:
         raise ValueError('durable resource cleanup requires archive schema 7')
     intent = manifest.get('resource_cleanup')
@@ -2662,6 +2686,16 @@ def _recover_run_transactions(run_path, normalized_controller, authority, curren
         if manifest.get('pending_trace') is not None:
             marker = _recover_trace(run, manifest, marker)
             run, manifest, marker = _load_run(run)
+        if manifest.get('operation', {}).get('disposition') == 'superseded':
+            # A checkpoint interrupted before restart is historical provisional
+            # state. Do not require its original inputs or commit it on a run
+            # whose review work is already owned by its successor.
+            _verify_files(run, manifest, allow_checkpoint_transaction=True)
+            resources = _resource_availability(run, manifest)
+            return {'status': 'superseded', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
+                    'successor_run_dir': manifest['operation']['successor'],
+                    'input_appraisal': input_appraisal, 'resources': resources,
+                    'actions': review_recovery._superseded_actions(resources)}
         checkpoint_transaction = manifest.get('checkpoint_transaction')
         if checkpoint_transaction is not None:
             if manifest['schema_version'] != 7 or manifest['state'] == 'complete':
@@ -2717,7 +2751,7 @@ def _recover_run_transactions(run_path, normalized_controller, authority, curren
                     'actions': [{'action': 'resume', 'reason': 'Explicit continuation authority is required before more work.'},
                                 {'action': 'restart', 'reason': 'Create a linked new run when the original scope or sources cannot be continued.'}]},
                                     input_appraisal)
-        if disposition in {'complete', 'superseded'} or manifest['state'] == 'complete':
+        if disposition == 'complete' or manifest['state'] == 'complete':
             return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                     'actions': [{'action': 'show', 'reason': 'Preserve and show the existing immutable result.'},
                                 {'action': 'restart', 'reason': 'A repeat must use a new review ID.'}]},
@@ -2955,7 +2989,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             for row in source_claims:
                 session = Path(row['session_dir'])
                 if session.exists():
-                    review_resource_claims.verify_claim(session, source)
+                    review_resource_claims.verify_claim(session, source, allow_checkpoint_transaction=True)
                     active_present.append(row['session_dir'])
                 else:
                     active_missing.append(row['session_dir'])
@@ -3053,9 +3087,13 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
         raise ValueError('complete gate is read-only; cannot record a checkpoint')
     require_retained = require_retained or require_complete
     run, manifest, marker = _load_run(run_dir)
+    superseded = manifest.get('operation', {}).get('disposition') == 'superseded'
+    if superseded and record_checkpoint:
+        raise ValueError('superseded review history is immutable; validate without --record-checkpoint')
     if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and _digest((run / 'cierre.json').read_bytes()) != marker.get('manifest_sha256'):
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
-    _verify_files(run, manifest, required=require_retained)
+    _verify_files(run, manifest, required=require_retained,
+                  allow_checkpoint_transaction=superseded and not require_retained)
     if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
         raise ValueError('retained final review is required before cleanup')
     if require_retained:
