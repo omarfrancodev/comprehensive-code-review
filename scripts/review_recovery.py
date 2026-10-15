@@ -177,8 +177,15 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
                      else classify_candidate(manifest, retained, current_inputs))
     operation = copy.deepcopy(manifest.get('operation') or {
         'disposition': 'complete' if complete else 'open', 'phase': manifest.get('state')})
+    active_restart = artifacts._active_restart_operation(run, manifest)
+    pending = ([{'kind': 'restart', 'status': 'pending', 'operation_id': active_restart['operation_id'],
+                 'successor_run_dir': active_restart['successor_run_dir'],
+                 'intent_path': active_restart['intent_path']}] if active_restart else [])
     if integrity == 'invalid':
         actions = [_action('preserve', 'The retained report is missing, oversized, or does not match its archive hash.')]
+    elif pending:
+        actions = [_action('recover', 'Recover the exact pending restart under its source lock.'),
+                   _action('retry_restart', 'Retry the immutable request and reserved successor.')]
     elif complete:
         if applicability['applicability'] == 'applicable':
             actions = [_action('show_report', 'The completed report hash matches; inspect this exact run before use.'),
@@ -196,7 +203,7 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
             'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
             'profile': latest[-1].get('profile') if isinstance(latest, list) and latest else None,
             'integrity': integrity, 'applicability': applicability['applicability'],
-            'differences': applicability['differences'], 'actions': actions}
+            'differences': applicability['differences'], 'actions': actions, 'pending_transaction': pending}
 
 
 def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, current_inputs=None):
@@ -298,6 +305,15 @@ def inspect_run(run_dir, *, current_inputs=None):
         'phase': None, 'reason': None, 'source': None, 'successor': None})
     pending = []
     errors = []
+    try:
+        active_restart = artifacts._active_restart_operation(run, manifest)
+        if active_restart:
+            pending.append({'kind': 'restart', 'status': 'pending',
+                            'operation_id': active_restart['operation_id'],
+                            'successor_run_dir': active_restart['successor_run_dir'],
+                            'intent_path': active_restart['intent_path']})
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        errors.append(str(exc)[:1000])
     if manifest.get('pending_trace') is not None:
         pending.append({'kind': 'trace_append', 'status': 'pending'})
     if manifest.get('checkpoint_transaction') is not None:
@@ -323,40 +339,14 @@ def inspect_run(run_dir, *, current_inputs=None):
         if not manifest.get('pending_trace'):
             artifacts._verify_files(run, manifest, allow_checkpoint_transaction=True,
                                     allow_resource_transfer=True)
-        if not manifest.get('pending_trace') and not pending:
-            import review_resource_claims
-            for claim in manifest.get('resource_claims', []):
-                if claim.get('status') in {'owned', 'releasing'} and Path(claim['session_dir']).exists():
-                    review_resource_claims.verify_claim(claim['session_dir'], run)
+        resources = artifacts._resource_availability(run, manifest,
+            verify_owned=not manifest.get('pending_trace') and not pending)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(str(exc)[:1000])
+        resources = []
 
     known = sorted(set(manifest.get('hashes', {})) | set(manifest.get('pending_hashes', {})))
     missing = [name for name in known if not (run / name).is_file()]
-    resources = []
-    claim_by_path = {row.get('session_dir'): row for row in manifest.get('resource_claims', [])
-                     if isinstance(row, dict)}
-    for raw in manifest.get('temporary_paths', []):
-        path = Path(raw)
-        row = claim_by_path.get(raw, {})
-        present = path.exists()
-        status = row.get('status')
-        receipt_ids = {receipt.get('claim_id') for receipt in manifest.get('cleanup_receipts', [])
-                       if isinstance(receipt, dict)}
-        if status == 'transferred':
-            availability = 'transferred'
-        elif status == 'released':
-            availability = 'unexpected_present' if present else 'released'
-        elif status in {'owned', 'releasing'}:
-            if present:
-                availability = 'cleanup_pending' if status == 'releasing' else 'available'
-            else:
-                availability = 'released' if row.get('claim_id') in receipt_ids else 'missing_unknown'
-        else:
-            availability = 'available' if present else 'missing_unclaimed'
-        resources.append({'path': raw, 'present': present, 'claim_status': status,
-                          'availability': availability})
-
     freshness = {'status': 'unknown', 'reasons': [], 'differences': []}
     if current_inputs is not None:
         try:
@@ -389,6 +379,8 @@ def inspect_run(run_dir, *, current_inputs=None):
                        _action('restart', 'Start a new linked run if the original sources cannot be verified.')]
         elif disposition == 'superseded':
             actions = [_action('inspect_successor', 'The source run records a successor; inspect that exact run.')]
+            if any(row['claim_status'] == 'owned' and row['present'] for row in resources):
+                actions.append(_action('cleanup', 'Clean the remaining source-owned sessions using this source --run-dir.'))
         elif disposition == 'complete' or manifest.get('state') == 'complete':
             actions = [_action('show', 'The completed report is immutable and may be shown as recorded.'),
                        _action('restart', 'A repeat creates a new linked review ID.')]
@@ -396,6 +388,8 @@ def inspect_run(run_dir, *, current_inputs=None):
             actions = [_action('continue', 'The run is open; verify current inputs and operation phase before work.'),
                        _action('recover', 'Check for helper-owned state that can be completed from preserved bytes.'),
                        _action('restart', 'A fresh linked run is available if the scope changed.')]
+        if any(row['availability'] == 'missing_unknown' for row in resources) and disposition not in {'superseded', 'complete'}:
+            actions = [_action('restart', 'A claimed session is missing_unknown; preserve its claim and restart without transferring it.')]
 
     activity = ('completed' if integrity_status == 'verified'
                 and (disposition == 'complete' or manifest.get('state') == 'complete') else 'unknown')

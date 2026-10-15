@@ -107,6 +107,12 @@ def _request_identity(request):
     return {key: copy.deepcopy(value) for key, value in request.items() if key != 'authority'}
 
 
+def _source_key(source):
+    """Legacy local operation key is not a fabricated review/run identity."""
+    return source['run_id'] or 'legacy-' + _sha({'run_dir': str(Path(source['run_dir']).resolve()),
+                                               'owner_id': source['owner_id']})
+
+
 def build_restart_intent(source, request, successor):
     """Bind one normalized request to an exact source and reserved successor."""
     if not isinstance(source, dict) or not SOURCE_FIELDS.issubset(source):
@@ -119,7 +125,9 @@ def build_restart_intent(source, request, successor):
     source_value['run_dir'] = _path(source_value['run_dir'], 'restart source run directory')
     source_value['repository_path'] = _path(source_value['repository_path'], 'restart source repository')
     source_value['archive_root'] = _path(source_value['archive_root'], 'restart archive root')
-    for field in ('run_id', 'owner_id', 'repository_key'):
+    if source_value['run_id'] is not None:
+        source_value['run_id'] = _bounded_text(source_value['run_id'], 'restart source run_id', 128)
+    for field in ('owner_id', 'repository_key'):
         source_value[field] = _bounded_text(source_value[field], 'restart source ' + field, 128)
     successor_value = {key: copy.deepcopy(successor[key]) for key in SUCCESSOR_FIELDS}
     successor_value['run_dir'] = _path(successor_value['run_dir'], 'reserved successor path')
@@ -127,7 +135,7 @@ def build_restart_intent(source, request, successor):
         successor_value[field] = _bounded_text(successor_value[field], 'successor ' + field, 128)
     request_value = copy.deepcopy(request)
     request_digest = _sha(_request_identity(request_value))
-    operation_id = hashlib.sha256((source_value['run_id'] + '\n' + source_value['owner_id']
+    operation_id = hashlib.sha256((_source_key(source_value) + '\n' + source_value['owner_id']
                                    + '\n' + request_digest).encode('utf-8')).hexdigest()[:32]
     intent = {'schema_version': INTENT_VERSION, 'operation_id': operation_id,
               'request_sha256': request_digest, 'source': source_value,
@@ -162,12 +170,14 @@ def validate_restart_intent(intent):
         expected = _sha(_request_identity(request))
         if intent.get('request_sha256') != expected:
             errors.append('restart intent request digest differs')
-        operation = hashlib.sha256((source['run_id'] + '\n' + source['owner_id'] + '\n' + expected).encode('utf-8')).hexdigest()[:32]
+        operation = hashlib.sha256((_source_key(source) + '\n' + source['owner_id'] + '\n' + expected).encode('utf-8')).hexdigest()[:32]
         if intent.get('operation_id') != operation:
             errors.append('restart intent operation identity differs')
         for field in ('run_dir', 'repository_path', 'archive_root'):
             _path(source[field], 'restart source ' + field)
-        for field in ('run_id', 'owner_id', 'repository_key'):
+        if source['run_id'] is not None:
+            _bounded_text(source['run_id'], 'restart source run_id', 128)
+        for field in ('owner_id', 'repository_key'):
             _bounded_text(source[field], 'restart source ' + field, 128)
         _path(successor['run_dir'], 'reserved successor path')
         for field in ('run_id', 'owner_id', 'reservation_id', 'created_at'):

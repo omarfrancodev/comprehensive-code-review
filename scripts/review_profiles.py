@@ -388,7 +388,7 @@ def validate_profile_execution(record: dict, trace_events: list[dict] | None = N
     acquired_extended_auto = False
     if strongest == 'extended':
         observed_rows = [row for row in registry if isinstance(row, dict)
-                         and row.get('id') in observed_assignment_ids]
+                         and isinstance(row.get('id'), str) and row['id'] in observed_assignment_ids]
         used_selection_ids = {row.get('selection_id') for row in observed_rows
                               if isinstance(row.get('selection_id'), str)}
         acquired_extended_auto = any(row['id'] in used_selection_ids and row['profile'] == 'extended'

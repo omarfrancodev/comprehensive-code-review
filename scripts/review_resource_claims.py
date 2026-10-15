@@ -120,6 +120,11 @@ def _preflight_unbound(session_dir, manifest, *, authority=None):
     if workspace_data is None:
         return {'action': 'not_workspace', 'session_dir': str(candidate)}
     session, workspace, token_digest = workspace_data
+    import review_artifacts
+    identity = review_artifacts.repository_identity(workspace['repo'])
+    if (review_artifacts._digest(identity.encode('utf-8'))[:20] != manifest.get('repository_key')
+            or manifest.get('repository_identity', identity) != identity):
+        raise ValueError('review session belongs to a different repository')
     sidecar_path = session / CLAIM_NAME
     if not sidecar_path.exists():
         if authority is not None:

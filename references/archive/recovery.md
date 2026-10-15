@@ -94,17 +94,34 @@ If a restart intent is pending, retry the exact captured request or call `recove
 Restart resolves the harness from the current invocation. It never copies the source run's `harness_id` as if that ID had been declared for the new session. Without a current identity declaration or environment value, use `--harness unknown` and let the helper retain an unknown canonical ID. When a current canonical ID and its provenance are observed, provide them explicitly:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py restart \\
-  --run-dir /absolute/archive/exact-source-run \\
-  --profile-input /absolute/owned/session/profile-selection.json \\
-  --controller-input /absolute/owned/session/controller.json \\
-  --authority-input /absolute/owned/session/authority.json \\
-  --current-inputs /absolute/owned/session/current-inputs.json \\
-  --harness "Claude Code Desktop" \\
-  --harness-id claude-code-desktop \\
+python /absolute/skill/scripts/review_artifacts.py restart \
+  --run-dir /absolute/archive/exact-source-run \
+  --profile-input /absolute/owned/session/profile-selection.json \
+  --controller-input /absolute/owned/session/controller.json \
+  --authority-input /absolute/owned/session/authority.json \
+  --current-inputs /absolute/owned/session/current-inputs.json \
+  --harness "Claude Code Desktop" \
+  --harness-id claude-code-desktop \
   --harness-source-input /absolute/owned/session/harness-source.json
 ```
 
 `harness-source.json` is an existing JSON object such as `{ "kind": "user", "reference": "--harness-id" }`; use `kind: platform` only for a source the harness actually exposes. The raw `harness` string stays as observed. An unknown or contradictory ID is retained as a diagnostic, not guessed from the model name. `--transfer-path` may be repeated for the exact active claims being transferred; transfers require the current source owner and all present claims. Never pass a missing path to imply cleanup.
 
 Before closing any run, retain and validate the final result/evidence, then observe cleanup and require `validate --require-complete`. If a gate fails, preserve the exact run and registered resources and report the unfinished phase. Completed archives remain immutable. A post-close publication or delivery is a separate operation and cannot rewrite the original review.
+
+### Missing resources, superseded cleanup and explicit abandonment
+
+A claimed session absent without a release receipt is `missing_unknown`. Inspect, recover and resume use the same classifier: they never announce continuation for that state. Start an authorized linked restart without transferring the missing path. If a changed-scope restart leaves present owned sessions in the superseded source, dispose them with `review_workspace.py cleanup --manifest <source-session>/manifest.json --run-dir <source-run>`; cleanup changes only that source claim/receipt, never the successor. Completed archives remain immutable.
+
+A pending restart appears in `pending_transaction` with operation ID, exact intent path and reserved successor. Recover takes the source lock before any prepare/replay. The original authority/controller remain bound to the pending request. If the coordinator explicitly decides to abandon it **before** the successor has a manifest, use its exact `intent_path`:
+
+```sh
+python /absolute/skill/scripts/review_artifacts.py abandon-restart \
+  --run-dir /absolute/archive/exact-source-run \
+  --intent-input /absolute/archive/exact-intent.json \
+  --controller-input /absolute/owned/session/controller.json \
+  --authority-input /absolute/owned/session/authority.json \
+  --reason "Collect corrected inputs before a new review"
+```
+
+This records an idempotent abandonment receipt and preserves the immutable intent and any partial allocation. It deletes no directory. An already prepared successor must be recovered; abandonment cannot orphan its review or claims. A new request after abandonment must have a new selection decision/reason/reference; replaying the abandoned request is rejected. Neither restart nor abandonment rewrites a completed/legacy source or gives it a synthetic run ID.

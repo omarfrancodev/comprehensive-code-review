@@ -49,7 +49,7 @@ The coordinator is the sole durable writer. Run mutations sequentially for that 
 ```text
 python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.12.0 --harness actual-harness --profile-input /absolute/owned/session/evidence/profile-selection.json --temporary-path /absolute/owned/session
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run
-python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR
+python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR --context-input /absolute/owned/session/evidence/context.json
 python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --expected-schema 10 --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run --require-retained
 python /absolute/skill/scripts/review_artifacts.py close --run-dir /absolute/returned/run --cleanup complete
@@ -58,7 +58,7 @@ python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/
 
 prepare accepts optional --output-root and --previous-run. Supply canonical scope. `register` adds resources while state is prepared or processing; `retain --temporary-path` remains compatible but does not replace registration before use. Register only exact review-owned temporary directories after checking ownership; never the user checkout, another task's workspace or the persistent archive. Registration observes paths/manifests but does not create resources, delete them or prove ownership.
 
-`prepare` creates the trace; lifecycle helper mutations record their own events. `record-event --run-dir /absolute/returned/run --event-file /absolute/owned/event.json` records observed agent/profile/discovery/check/grouped-verification/freshness/authorized-publication transitions; publication needs supplied authority. Summaries/reference lists are bounded. Closure stores the trace hash and {schema_version, events, last_sha256}; pending_trace preserves interrupted helper recovery. These are provenance/integrity checks, not finding truth. Consult lifecycle-trace.md and --help for the exact event contract.
+`prepare` creates the trace; lifecycle helper mutations record their own events. `record-event --run-dir /absolute/returned/run --event-file /absolute/owned/event.json` records observed agent/discovery/check/grouped-verification/freshness/authorized-publication transitions; publication needs supplied authority. Archive 7 rejects manual profile events: use `select-profile` below. Summaries/reference lists are bounded. Closure stores the trace hash and {schema_version, events, last_sha256}; pending_trace preserves interrupted helper recovery. These are provenance/integrity checks, not finding truth. Consult lifecycle-trace.md and --help for the exact event contract.
 
 `validate` is read-only: ownership/manifest integrity, repository/scope/run layout and existing selected-file hashes. `--require-retained` additionally requires the retained final record, report, exact scope and required legacy measurements before cleanup. `--require-complete` implies retained validation and additionally requires state complete, complete/not_needed cleanup, no residuals and resources matching the retained record. It never recovers writes or adds checkpoints. `retain`, `register`, `close` and previous-run loading also reject invalid layout automatically. Gates check registered records and selected files, not arbitrary files elsewhere or finding truth. On failure, preserve the exact run/session and report the error; do not claim successful retention, cleanup readiness or closure.
 
@@ -100,7 +100,7 @@ Catalog maintenance: add a stable lowercase hyphenated ID, readable name, family
 
 ## Schema 8–10 execution source gate
 
-Retain supplies --context-input with the already collected neutral context; its bounded JSON is selected once as evidence/context.json. Include context.executors (empty when no writing executors), profile, selection_source (explicit/automatic, matching the final record) and profile_reference pointing to the observed profile value (normally evidence/context.json#profile). If automatic escalation occurred, profile_history contains ordered {profile, reference} entries to captured values; the last matches final profile. Preserve their existing profile milestones. Do not fabricate a transition after review.
+Retain supplies --context-input with the already collected neutral context; its bounded JSON is selected once as evidence/context.json. Include context.executors (empty when no writing executors), profile, selection_source (explicit/automatic, matching the final record) and profile_reference pointing to the observed profile value (normally evidence/context.json#profile). Historical schemas 8/9 use ordered {profile, reference} history entries. Archive 7/final schema 10 instead requires the exact helper-returned profile_history and execution_plan described below. Preserve existing profile milestones; do not fabricate a transition after review.
 
 Coverage.execution links existing selected briefs/results/fallback evidence. Retention resolves only selected source bytes: JSON object-key/JSON-pointer fragments, explicit Markdown anchors/headings, or actual trace event IDs. Profile source values must match the declaration. Existing agent/started dispatch identifies the actual executor context/provider; completed discovery/grouped-verification identifies the observed actor/result. Keep unknown provider IDs null. Failed/blocked/skipped agent or interruption milestones support actual fallback sources. Shared input context does not prove independence.
 
@@ -109,6 +109,32 @@ Sources must exist and agree with context/trace before retention writes or clean
 Schema 9/10 local checks bind execution.executor to both context.executors and cierre.executors. Completed local commands require a registered executor, with matching actual head/base or pinned snapshot. Static inspection, observed CI and reused prior checks do not manufacture an executor. Retention verifies live Git provenance before cleanup; subsequent validation uses retained bindings without probing deleted worktrees. See [result-contract.md](../contracts/result-contract.md#checks).
 
 ## Archive-7 input, assignment and recovery records
+
+Every `register --context-input` and final retention uses this context object:
+
+```json
+{
+  "profile": "standard",
+  "selection_source": "automatic",
+  "profile_reference": "evidence/context.json#profile",
+  "profile_history": [],
+  "execution_plan": [],
+  "executors": [],
+  "review_inputs": {"scope": {}, "sources": {}, "source_set_complete": true}
+}
+```
+
+This illustrates fields, not valid empty identities: copy the **exact** `profile_history` returned in `cierre.json`, including its helper-assigned IDs/events, and the pinned `scope`. `selection_source` preserves the initial selection source, while `profile`/`profile_reference` identify the effective selection; later sources remain in their history rows. `execution_plan` contains the assignment rows below before dispatch; an empty list is valid only before any assignments are planned. Retention requires the full append-preserving registry and all required results. `executors` is mandatory even when empty. `review_inputs` must match the inputs captured at prepare; when not captured there, register may capture them before work starts. Re-register the refreshed context after a profile transition. See the [executable lifecycle examples](../../docs/examples/archive7-lifecycle.md).
+
+Select a later observed decision before affected work:
+
+```sh
+python /absolute/skill/scripts/review_artifacts.py select-profile \
+  --run-dir /absolute/returned/run \
+  --selection-input /absolute/owned/session/evidence/selection-change.json
+```
+
+`selection-change.json` contains exactly `{profile, selection_source, reason, reference, phase, actor, authority, affected_assignments}`. `actor` is `{kind, name, provider_id}`; `provider_id` may be null. `selection_source` is `automatic` or `explicit`; every explicit decision needs nonempty user `authority`, otherwise authority may be null. Initial decisions use `phase: prepare` and no affected IDs. Transitions use `discovery`, `verification`, `report`, `retain`, `cleanup` or `close`, before retention starts. The helper assigns `id`, `changed_from` and `event_id`; callers never supply them. History has at most 32 rows. Automatic downgrade requires a new evidence-backed reason/reference; urgency, cost, capacity or absence of findings do not justify it. `affected_assignments` lists only work that may still be superseded: started/completed assignments cannot be affected or canceled. Only active required brief references can start assignment work through `record-event`.
 
 `cierre.json.review_inputs` captures the externally verified inputs for the run: `{scope, sources, source_set_complete?, description_identity?, requirements_identity?, plan_identity?, configuration_identity?, profile?}`. Scope and source map are required. A source value is its retained reference and lowercase SHA-256; the caller may supply at most 64. Omitted `source_set_complete` means unknown; `true` with an empty map means the coordinator verified that there are no external source files. An omitted identity is unknown. Explicit `null` means the identity was checked and is not applicable. Do not fill either case from an old report or generated output.
 
@@ -121,3 +147,5 @@ Resource transfers are recorded in `resource_transfers`, up to 64 rows per run a
 Cleanup is a separate durable intent. `resource_cleanup` identifies the exact claim/session/worktrees and records pending or completed status; `cleanup_receipts` stores the resulting claim hash and IDs. Only the ownership-checked workspace cleanup can observe deletion and submit the matching receipt. A missing directory without a receipt is `missing_unknown`, not released. A completed close can be replayed only with the same observation/receipts; a different replay is rejected. These histories are bounded to 64 receipts.
 
 Restart has a stable, source-bound intent under `.restart-intents/<source-run-id>/<request-digest>.json` plus an `active.json` ownership descriptor while it is pending. The intent reserves one exact successor path/run/owner ID and binds the profile selection, authority, controller, current inputs, selected transfer paths and current harness. An exact retry or `recover` completes that destination; it does not search by timestamp, allocate a second run ID or dispatch work. While a restart is pending, other source mutations, transfer and cleanup are rejected. Completed/legacy source archives remain byte-for-byte immutable; a new run links the source but does not copy its findings, checks or execution results as current work. See [recovery.md](recovery.md) for the invocation and decision sequence.
+
+For schemas 1/2 without `run_id`, the local intent key is derived from the canonical source path and owner ID; returned run/review IDs stay null and the source is unchanged. The reserved allocation keeps its reservation until its manifest is written; recovery accepts only the exact reservation/owner and its declared helper staging names. No foreign data is removed. Invalid current-input sources outside `evidence/` fail before any intent is persisted. `inspect` and lookup expose a pending restart and its exact intent path. Explicit abandonment before successor preparation records a receipt and preserves partial allocations; a prepared successor must be recovered, not orphaned.

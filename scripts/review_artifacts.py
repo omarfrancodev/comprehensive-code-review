@@ -119,7 +119,9 @@ def _owned_run_locks(run_dirs, *, reservation=None):
 
 def _restart_local_dir(source_run, manifest):
     source = safe_path(source_run)
-    directory = source.parent / '.restart-intents' / manifest['run_id']
+    key = manifest.get('run_id') or 'legacy-' + _digest(
+        _json_bytes({'run_dir': str(source), 'owner_id': manifest['owner_id']}))[:32]
+    directory = source.parent / '.restart-intents' / key
     return safe_path(directory)
 
 
@@ -139,8 +141,35 @@ def _restart_completion_path(intent_path):
     return Path(intent_path).with_suffix('.complete.json')
 
 
+def _restart_abandonment_path(intent_path):
+    return Path(intent_path).with_suffix('.abandoned.json')
+
+
+def _validate_restart_abandonment(intent_path, intent):
+    path = _restart_abandonment_path(intent_path)
+    if not path.exists():
+        return None
+    receipt = read_json(path)
+    fields = {'schema_version', 'operation_id', 'source_run', 'source_owner_id', 'intent_sha256',
+              'successor_run_dir', 'authority', 'controller', 'reason', 'recorded_at', 'receipt_sha256'}
+    if not isinstance(receipt, dict) or set(receipt) != fields:
+        raise ValueError('restart abandonment receipt has an invalid shape')
+    unsigned = {key: value for key, value in receipt.items() if key != 'receipt_sha256'}
+    if (receipt['schema_version'] != 1 or receipt['receipt_sha256'] != _digest(_json_bytes(unsigned))
+            or receipt['operation_id'] != intent['operation_id']
+            or receipt['source_run'] != intent['source']['run_dir']
+            or receipt['source_owner_id'] != intent['source']['owner_id']
+            or receipt['intent_sha256'] != intent['intent_sha256']
+            or receipt['successor_run_dir'] != intent['successor']['run_dir']):
+        raise ValueError('restart abandonment receipt differs from its exact intent')
+    review_resource_claims._authority(receipt['authority'])
+    _controller(receipt['controller'], intent['request']['controller']['identity'])
+    review_restart._bounded_text(receipt['reason'], 'abandonment reason')
+    return receipt
+
+
 def _restart_source_identity(run, manifest):
-    return {key: manifest[key] if key != 'run_dir' else str(run)
+    return {key: manifest.get(key) if key != 'run_dir' else str(run)
             for key in review_restart.SOURCE_FIELDS}
 
 
@@ -179,11 +208,6 @@ def _read_restart_intent(path, source_run, source_manifest):
 
 def _active_restart_operation(source_run, source_manifest):
     """Read the one source-bound active descriptor; never scan other reviews."""
-    # The durable restart-intent protocol was introduced with archive 7. Older
-    # archives, especially schemas 1–2, have no run_id; their ordinary locked
-    # mutations must remain usable without inventing one to probe for an intent.
-    if not isinstance(source_manifest.get('run_id'), str) or not source_manifest.get('run_id'):
-        return None
     active_path, owner_path = _active_restart_paths(source_run, source_manifest)
     if not active_path.exists() and not owner_path.exists():
         return None
@@ -229,6 +253,8 @@ def _active_restart_operation(source_run, source_manifest):
             raise ValueError('restart active intent differs from its immutable request file')
     if descriptor['status'] == 'complete' or _validate_restart_completion(
             _restart_completion_path(intent_path), intent) is not None:
+        return None
+    if _validate_restart_abandonment(intent_path, intent) is not None:
         return None
     return descriptor
 
@@ -300,6 +326,7 @@ def _record_restart_completion(intent_path, intent):
 def _restart_lock(source_path, *, timeout=30.0):
     """Retry only transient cross-process lock conflicts, then re-read the intent."""
     import time
+    _load_run(source_path)  # Read-only ownership gate before lock-directory creation.
     deadline = time.monotonic() + timeout
     lock = None
     while True:
@@ -312,6 +339,7 @@ def _restart_lock(source_path, *, timeout=30.0):
                 raise
             time.sleep(0.05)
     try:
+        _load_run(source_path)
         yield
     finally:
         lock.__exit__(None, None, None)
@@ -557,6 +585,13 @@ def _temporary_manifests(registered, manifest):
     return locations
 
 
+def _archive_write(run, manifest, name, data):
+    reservation_id = manifest.get('restart_operation', {}).get('reservation_id')
+    stage = (run / ('.' + name + '.' + reservation_id + '.tmp')
+             if reservation_id and (run / '.review-restart-reservation.json').exists() else None)
+    atomic_write(run / name, data, **({'staging_path': stage} if stage else {}))
+
+
 def _save_manifest(run, manifest, marker):
     manifest['updated_at'] = datetime.now(timezone.utc).isoformat()
     data = _json_bytes(manifest)
@@ -568,11 +603,11 @@ def _save_manifest(run, manifest, marker):
     except FileNotFoundError:
         old_digest = None
     transition = dict(marker, manifest_sha256=_digest(data), previous_manifest_sha256=old_digest)
-    atomic_write(run / MARKER, _json_bytes(transition))
-    atomic_write(run / 'cierre.json', data)
+    _archive_write(run, manifest, MARKER, _json_bytes(transition))
+    _archive_write(run, manifest, 'cierre.json', data)
     marker = dict(marker, manifest_sha256=_digest(data))
     marker.pop('previous_manifest_sha256', None)
-    atomic_write(run / MARKER, _json_bytes(marker))
+    _archive_write(run, manifest, MARKER, _json_bytes(marker))
     return marker
 
 
@@ -898,7 +933,7 @@ def _recover_trace(run, manifest, marker):
         raise ValueError('pending trace intent integrity mismatch')
     review_trace.verify(planned, pending['trace'], manifest['run_id'])
     if current != planned:
-        atomic_write(path, planned)
+        _archive_write(run, manifest, review_trace.NAME, planned)
     manifest['trace'] = pending['trace']
     manifest['hashes'][review_trace.NAME] = pending['sha256']
     manifest.pop('pending_trace')
@@ -1057,12 +1092,18 @@ def record_event(run_dir, event_file, execution_metadata=None):
         if disposition != 'open':
             raise ValueError('review operation is ' + str(disposition) + '; resume or recover before starting work')
         if (event['kind'] in {'agent', 'discovery', 'grouped-verification'}
-                and event['status'] == 'started' and event.get('evidence')):
+                and event.get('evidence')):
             registry = manifest.get('assignment_registry')
             references = {row['reference'] for row in registry if isinstance(row, dict)
+                          and row.get('required') is True and row.get('superseded_by') is None
                           and isinstance(row.get('reference'), str)} if isinstance(registry, list) else set()
-            if not references.intersection(event['evidence']):
-                raise ValueError('assignment work must start from a brief captured in the execution plan')
+            inactive = {row['reference'] for row in registry if isinstance(row, dict)
+                        and (row.get('required') is not True or row.get('superseded_by') is not None)
+                        and isinstance(row.get('reference'), str)} if isinstance(registry, list) else set()
+            if inactive.intersection(event['evidence']):
+                raise ValueError('assignment work cannot start a superseded or non-required brief')
+            if event['status'] == 'started' and not references.intersection(event['evidence']):
+                raise ValueError('assignment work must start from an active required brief captured in the execution plan')
     if manifest['schema_version'] in (5, 6, 7) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
@@ -1091,9 +1132,9 @@ def _check_evidence_target(run, manifest, name):
         raise ValueError('refusing to clobber foreign evidence: ' + name)
 
 
-def _evidence_contents(run, manifest, inputs, *, create_directory=True):
+def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_context=False):
     contents = {}
-    seen = {'evidence/context.json'.casefold()}
+    seen = {'evidence/context.json'.casefold()} if reserve_context else set()
     for raw in inputs or []:
         source = safe_path(raw)
         if not stat.S_ISREG(source.stat().st_mode):
@@ -1173,6 +1214,7 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
     evidence_total = 0
     evidence_count = 0
     seen = {'context.json'.casefold()}
+    previous_names = {name.casefold(): name for name in manifest.get('pending_hashes', {})}
     for raw in evidence_inputs or []:
         source = safe_path(raw)
         if not stat.S_ISREG(source.stat().st_mode):
@@ -1181,6 +1223,9 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
         if name.casefold() in seen:
             raise ValueError('duplicate selected checkpoint evidence name: ' + name)
         seen.add(name.casefold())
+        destination = 'pending/evidence/' + name
+        if destination.casefold() in previous_names and previous_names[destination.casefold()] != destination:
+            raise ValueError('case-insensitive checkpoint evidence capitalization differs from prior checkpoint: ' + name)
         evidence_count += 1
         if evidence_count > CHECKPOINT_EVIDENCE_COUNT_LIMIT:
             raise ValueError('checkpoint accepts at most 64 selected evidence files')
@@ -1358,6 +1403,8 @@ def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=Non
                               if name in prior_hashes}
         planned = {name: digest for name, digest in prior_hashes.items() if name not in removed_hashes}
         planned.update({name: _digest(payloads[name]) for name in selected_names})
+        if len({name.casefold() for name in planned}) != len(planned):
+            raise ValueError('case-insensitive collisions in planned checkpoint inventory')
         sequence = int(current['id'][1:]) + 1 if isinstance(current, dict) else 1
         inventory = []
         for name, digest in sorted(planned.items()):
@@ -1531,26 +1578,43 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                        'intent_sha256': _restart_reservation['intent_sha256'],
                        'reservation_id': reserved['reservation_id'], 'run_dir': str(run),
                        'owner_id': reserved['owner_id']}
+        reservation_path = run / reservation_file
+        stage_names = {'.' + name + '.' + reserved['reservation_id'] + '.tmp'
+                       for name in (reservation_file, MARKER, 'cierre.json', review_trace.NAME)}
         if run.exists():
+            if reservation_path.exists() and read_json(reservation_path) != reservation:
+                raise ValueError('reserved successor path is occupied by foreign or invalid data')
             try:
                 existing, existing_manifest, existing_marker = _load_run(run)
                 if existing_manifest.get('restart_operation') == manifest['restart_operation']:
+                    if reservation_path.exists():
+                        for name in stage_names:
+                            safe_path(run / name).unlink(missing_ok=True)
                     existing_marker = _recover_trace(existing, existing_manifest, existing_marker)
                     _verify_files(existing, existing_manifest)
                     (existing / reservation_file).unlink(missing_ok=True)
                     return str(existing)
             except (ValueError, OSError, TypeError, KeyError):
                 pass
-            marker_path = run / reservation_file
-            if not marker_path.is_file() or read_json(marker_path) != reservation:
-                raise ValueError('reserved successor path is occupied by foreign or invalid data')
             entries = {item.name for item in run.iterdir()}
-            if entries != {reservation_file}:
+            if entries - {reservation_file, MARKER} - stage_names:
                 raise ValueError('partially prepared reserved successor contains unowned data')
-            marker_path.unlink()
+            if (run / MARKER).exists():
+                partial = read_json(run / MARKER)
+                expected_marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run),
+                    'archive_root': str(root), 'repository_key': repository_key,
+                    'scope_sha256': _digest(_json_bytes(scope))}
+                if (not isinstance(partial, dict) or any(partial.get(key) != value
+                        for key, value in expected_marker.items())):
+                    raise ValueError('partially prepared successor ownership differs from its reservation')
+            for name in stage_names:
+                safe_path(run / name).unlink(missing_ok=True)
         else:
             run.mkdir()
-            atomic_write(run / reservation_file, _json_bytes(reservation))
+        # The immutable source intent authorizes this exact allocation, including
+        # an empty directory after mkdir. Keep the reservation until cierre exists.
+        atomic_write(reservation_path, _json_bytes(reservation), staging_path=run / (
+            '.' + reservation_file + '.' + reserved['reservation_id'] + '.tmp'))
     else:
         # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
         for _ in range(8):
@@ -1614,6 +1678,11 @@ def select_profile(run_dir, selection_input):
         raise ValueError('profile transitions cannot use prepare phase')
     if len(history) >= review_profiles.MAX_HISTORY:
         raise ValueError('profile history reached its selection limit')
+    events = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+    affected = set(candidate['affected_assignments'])
+    for row in manifest.get('assignment_registry', []):
+        if row['id'] in affected and review_profiles._assignment_started(row, events):
+            raise ValueError('started assignment cannot be affected by a profile transition: ' + row['id'])
     candidate.update(id='S' + str(len(history) + 1).zfill(3),
                      changed_from=previous['profile'],
                      event_id='E' + str(manifest['trace']['events'] + 1).zfill(6))
@@ -1906,6 +1975,8 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
         raise ValueError('resource transfer requires a nonempty unique explicit path list')
     selected_paths = sorted(selected_raw_paths, key=os.path.normcase)
     authority = review_resource_claims._authority(authority)
+    _load_run(source_path)
+    _load_run(successor_path)
     with run_locks([source_path, successor_path]):
         source, source_manifest, source_marker = _load_run(source_path)
         successor, next_manifest, next_marker = _load_run(successor_path)
@@ -2248,8 +2319,8 @@ def begin_resource_cleanup(run_dir, session_dir):
         raise ValueError('durable resource cleanup requires archive schema 7')
     if manifest.get('state') in {'retaining', 'complete'}:
         raise ValueError('resource cleanup cannot begin during retention or after closure')
-    if manifest.get('operation', {}).get('disposition') in {'complete', 'superseded'}:
-        raise ValueError('completed or superseded review cannot begin resource cleanup')
+    if manifest.get('operation', {}).get('disposition') == 'complete':
+        raise ValueError('completed review cannot begin resource cleanup')
     session = safe_path(session_dir)
     if not session.exists() or not session.is_dir():
         raise ValueError('cleanup requires the existing claimed session directory')
@@ -2444,6 +2515,30 @@ def block(run_dir, *, source, reason, phase):
     return manifest
 
 
+def _resource_availability(run, manifest, *, verify_owned=True):
+    """One classifier for inspection and mutation gates; absence is not release."""
+    claims = {row['session_dir']: row for row in manifest.get('resource_claims', [])}
+    receipts = {row['claim_id'] for row in manifest.get('cleanup_receipts', [])}
+    resources = []
+    for raw in manifest.get('temporary_paths', []):
+        path = safe_path(raw)
+        row = claims.get(raw, {})
+        present, status = path.exists(), row.get('status')
+        if status in {'owned', 'releasing'} and present and verify_owned:
+            review_resource_claims.verify_claim(path, run)
+        if status == 'transferred':
+            availability = 'transferred'
+        elif status == 'released':
+            availability = 'unexpected_present' if present else 'released'
+        elif status in {'owned', 'releasing'}:
+            availability = ('cleanup_pending' if status == 'releasing' else 'available') if present else (
+                'released' if row.get('claim_id') in receipts else 'missing_unknown')
+        else:
+            availability = 'available' if present else 'missing_unclaimed'
+        resources.append({'path': raw, 'present': present, 'claim_status': status, 'availability': availability})
+    return resources
+
+
 @_locked_run
 def resume(run_dir, *, controller, authority, current_inputs):
     """Reopen an unchanged archive after explicit continuation/takeover authority."""
@@ -2460,6 +2555,9 @@ def resume(run_dir, *, controller, authority, current_inputs):
     operation = manifest['operation']
     if operation['disposition'] not in {'open', 'paused', 'blocked'}:
         raise ValueError('superseded or completed review cannot be resumed')
+    resources = _resource_availability(run, manifest)
+    if any(row['availability'] == 'missing_unknown' for row in resources):
+        raise ValueError('claimed workspace is missing_unknown; use an authorized restart without transferring missing resources')
     normalized_controller = _controller(controller, manifest['controller']['identity'])
     changed_controller = normalized_controller != manifest['controller']
     if operation['disposition'] in {'paused', 'blocked'} and authority is None:
@@ -2468,9 +2566,6 @@ def resume(run_dir, *, controller, authority, current_inputs):
         authority = review_resource_claims._authority(authority)
     if operation['disposition'] == 'open' and not changed_controller:
         return manifest
-    for row in manifest.get('resource_claims', []):
-        if row.get('status') == 'owned':
-            review_resource_claims.verify_claim(row['session_dir'], run)
     normalized_controller, marker = _takeover_controller(
         run, manifest, marker, normalized_controller, authority)
     manifest['operation'].update(disposition='open', reason=None, source='resume', successor=None)
@@ -2496,35 +2591,53 @@ def recover(run_dir, *, controller, authority, current_inputs):
     normalized_controller = _controller(controller, fallback)
     active_restart = _active_restart_operation(run_path, manifest)
     if active_restart is not None:
-        intent = active_restart['intent']
-        if authority is None:
-            raise ValueError('recovering a pending restart requires explicit authority')
-        requested_inputs = review_inputs.normalize_inputs(current_inputs)
-        requested_inputs.pop('profile', None)
-        restart_profile = intent['request']['profile_input']['profile']
-        expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
-        expected_inputs['profile'] = restart_profile
-        requested_inputs['profile'] = restart_profile
-        restart_appraisal = review_inputs.compare_inputs(expected_inputs, requested_inputs)
-        if restart_appraisal['applicability'] != 'applicable':
-            return {'status': 'restart_pending', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
-                    'successor_run_dir': active_restart['successor_run_dir'],
-                    'input_appraisal': restart_appraisal,
-                    'actions': [{'action': 'retry_restart',
-                                 'reason': 'The pending reservation can continue only with the exact current inputs captured by its intent.'}]}
-        intent_path = Path(active_restart['intent_path'])
-        if not intent_path.exists():
-            _write_restart_intent(intent_path, intent, run_path, manifest)
-        successor = _complete_restart_intent(intent_path, run_path, manifest)
-        return {'status': 'restarted', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
-                'successor_run_dir': successor,
-                'actions': [{'action': 'inspect_successor', 'reason': 'The exact reserved restart completed; no review work was dispatched.'}]}
+        with _restart_lock(run_path):
+            run, manifest, _ = _load_run(run_path)
+            active_restart = _active_restart_operation(run_path, manifest)
+            if active_restart is None:
+                return {'status': 'restart_no_longer_pending', 'run_dir': str(run_path),
+                        'run_id': manifest.get('run_id'),
+                        'actions': [{'action': 'inspect', 'reason': 'The pending restart changed while acquiring its source lock.'}]}
+            return _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs)
+    return _recover_run_transactions(run_path, normalized_controller, authority, current_inputs, input_appraisal)
+
+
+def _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs):
+    """Caller holds the source restart lock and reread the active descriptor."""
+    intent = active_restart['intent']
+    if authority is None:
+        raise ValueError('recovering a pending restart requires explicit authority')
+    requested_inputs = review_inputs.normalize_inputs(current_inputs)
+    requested_inputs.pop('profile', None)
+    restart_profile = intent['request']['profile_input']['profile']
+    expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
+    expected_inputs['profile'] = restart_profile
+    requested_inputs['profile'] = restart_profile
+    restart_appraisal = review_inputs.compare_inputs(expected_inputs, requested_inputs)
+    if restart_appraisal['applicability'] != 'applicable':
+        return {'status': 'restart_pending', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
+                'successor_run_dir': active_restart['successor_run_dir'],
+                'input_appraisal': restart_appraisal,
+                'actions': [{'action': 'retry_restart',
+                             'reason': 'The pending reservation can continue only with the exact current inputs captured by its intent.'}]}
+    intent_path = Path(active_restart['intent_path'])
+    if not intent_path.exists():
+        _write_restart_intent(intent_path, intent, run_path, manifest)
+    successor = _complete_restart_intent(intent_path, run_path, manifest)
+    return {'status': 'restarted', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
+            'successor_run_dir': successor,
+            'actions': [{'action': 'inspect_successor', 'reason': 'The exact reserved restart completed; no review work was dispatched.'}]}
+
+
+def _recover_run_transactions(run_path, normalized_controller, authority, current_inputs, input_appraisal):
+    import review_recovery
+    run, manifest, _ = _load_run(run_path)
     cleanup_intent = manifest.get('resource_cleanup')
     if isinstance(cleanup_intent, dict) and cleanup_intent.get('status') == 'pending':
         cleanup_result = recover_resource_cleanup(run_path)
         if cleanup_result.get('status') == 'pending':
             return _recovery_outcome({'status': 'plan', 'run_dir': str(run_path),
-                    'run_id': manifest['run_id'],
+                    'run_id': manifest.get('run_id'),
                     'actions': [{'action': 'retry_cleanup',
                                  'reason': cleanup_result.get('reason', 'The recorded workspace cleanup is incomplete.')}]
                     }, input_appraisal)
@@ -2540,6 +2653,9 @@ def recover(run_dir, *, controller, authority, current_inputs):
 
     with run_locks([run_path]):
         run, manifest, marker = _load_run(run_path)
+        active_restart = _active_restart_operation(run, manifest)
+        if active_restart is not None:
+            return _recover_pending_restart(run, manifest, active_restart, authority, current_inputs)
         normalized_inputs = review_recovery.validate_current_inputs(
             current_inputs, manifest, require_same_scope=False)
         input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
@@ -2570,7 +2686,7 @@ def recover(run_dir, *, controller, authority, current_inputs):
                 else:
                     raise ValueError('foreign or modified checkpoint bytes block recovery: ' + name)
             if missing:
-                return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+                return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                         'actions': [{'action': 'retry_checkpoint',
                                      'reason': 'Resupply the original selected inputs: ' + ', '.join(sorted(missing))}]},
                                         input_appraisal)
@@ -2582,36 +2698,39 @@ def recover(run_dir, *, controller, authority, current_inputs):
                 run, manifest, marker, normalized_controller, authority)
 
         if manifest['state'] in {'retaining', 'closing'}:
-            return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                     'actions': [{'action': 'retry_retention' if manifest['state'] == 'retaining' else 'retry_close',
                                  'reason': 'The original final input or cleanup observation must be supplied; no external work was run.'}]},
                                     input_appraisal)
         if any(row['status'] == 'pending' for row in normalize_transfer_history(manifest)):
             raise ValueError('resource transfer remains pending; retry recovery from its recorded source run')
         _verify_files(run, manifest)
-        for row in manifest.get('resource_claims', []):
-            if row.get('status') == 'owned':
-                review_resource_claims.verify_claim(row['session_dir'], run)
+        resources = _resource_availability(run, manifest)
+        if any(row['availability'] == 'missing_unknown' for row in resources):
+            return _recovery_outcome({'status': 'plan', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
+                'resources': resources, 'actions': [{'action': 'restart',
+                    'reason': 'A claimed session is missing_unknown; preserve its claim and restart without transferring it.'}]},
+                input_appraisal)
         disposition = manifest.get('operation', {}).get('disposition', 'complete' if manifest['state'] == 'complete' else 'open')
         if disposition in {'paused', 'blocked'}:
-            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                     'actions': [{'action': 'resume', 'reason': 'Explicit continuation authority is required before more work.'},
                                 {'action': 'restart', 'reason': 'Create a linked new run when the original scope or sources cannot be continued.'}]},
                                     input_appraisal)
         if disposition in {'complete', 'superseded'} or manifest['state'] == 'complete':
-            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': disposition, 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                     'actions': [{'action': 'show', 'reason': 'Preserve and show the existing immutable result.'},
                                 {'action': 'restart', 'reason': 'A repeat must use a new review ID.'}]},
                                     input_appraisal)
         checkpoint = manifest.get('checkpoint')
         if isinstance(checkpoint, dict) and checkpoint.get('gate_errors'):
-            return _recovery_outcome({'status': 'provisional', 'run_dir': str(run), 'run_id': manifest['run_id'],
+            return _recovery_outcome({'status': 'provisional', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                     'checkpoint_id': checkpoint['id'], 'gate_errors': checkpoint['gate_errors'],
                     'actions': [{'action': 'continue', 'reason': 'The checkpoint remains provisional; its gates still apply.'},
                                 {'action': 'restart', 'reason': 'A new run is available if history or scope cannot be repaired.'}]},
                                     input_appraisal)
         return _recovery_outcome({'status': 'recovered' if checkpoint_transaction is not None or manifest.get('checkpoint') else 'ready',
-                'run_dir': str(run), 'run_id': manifest['run_id'],
+                'run_dir': str(run), 'run_id': manifest.get('run_id'),
                 'checkpoint_id': checkpoint.get('id') if isinstance(checkpoint, dict) else None,
                 'actions': [{'action': 'continue', 'reason': 'Recovery did not dispatch agents, run checks or alter prior worker identity.'}]},
                                   input_appraisal)
@@ -2632,6 +2751,8 @@ def _recovery_outcome(result, appraisal):
 def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=(), preserve_claims=False):
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
     authority = review_resource_claims._authority(authority)
+    _load_run(source_path)
+    _load_run(successor_path)
     with run_locks([source_path, successor_path]):
         source, old, old_marker = _load_run(source_path)
         successor, new, _ = _load_run(successor_path)
@@ -2733,6 +2854,8 @@ def _prepare_from_restart_intent(intent_path):
 
 def _complete_restart_intent(intent_path, source_path, source_manifest):
     intent = _read_restart_intent(intent_path, source_path, source_manifest)
+    if _validate_restart_abandonment(intent_path, intent) is not None:
+        raise ValueError('this restart request was explicitly abandoned; use a new selection decision for a new request')
     active = _active_restart_operation(source_path, source_manifest)
     if active is not None and active['operation_id'] != intent['operation_id']:
         raise ValueError('another restart operation is active for this source')
@@ -2778,6 +2901,16 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             raw_harness = {'harness': 'unknown', 'harness_id': None, 'harness_source': None}
         request = review_restart.normalize_restart_request(profile_input, controller, authority,
             normalized_inputs, list(transfer_paths or []), raw_harness)
+        _scope(request['current_inputs']['scope'])
+        _capture_review_inputs(request['current_inputs'], request['current_inputs']['scope'],
+                               request['profile_input']['profile'], 'restart current review inputs')
+        repository = safe_path(_git(safe_path(manifest['repository_path']), 'rev-parse', '--show-toplevel'))
+        identity = repository_identity(repository)
+        if _digest(identity.encode('utf-8'))[:20] != manifest['repository_key']:
+            raise ValueError('restart source repository identity no longer matches its pinned archive')
+        future = dict(manifest, temporary_paths=[], temporary_manifests=[], repository_identity=identity)
+        selected_temporaries = _temporary_paths(request['transfer_paths'], future)
+        _temporary_manifests(selected_temporaries, future)
         disposition = manifest.get('operation', {}).get('disposition',
             'complete' if manifest.get('state') == 'complete' else 'open')
         if manifest.get('state') in {'retaining', 'closing'}:
@@ -2798,6 +2931,8 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                 _write_restart_intent(intent_path, active_intent, source, manifest)
         elif intent_path.exists():
             existing_intent = _read_restart_intent(intent_path, source, manifest)
+            if _validate_restart_abandonment(intent_path, existing_intent) is not None:
+                raise ValueError('this restart request was explicitly abandoned; use a new selection decision for a new request')
             completion = _validate_restart_completion(_restart_completion_path(intent_path), existing_intent)
             if completion is not None:
                 successor, successor_manifest, _ = _load_run(completion['successor_run_dir'])
@@ -2838,7 +2973,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                 if not source_claims:
                     _restart_adoption_context(request)
                     from_claims = {'schema_version': 7, 'repository_path': manifest['repository_path'],
-                                   'repository_identity': manifest['repository_identity'],
+                                   'repository_identity': identity,
                                    'repository_key': manifest['repository_key'], 'archive_root': manifest['archive_root'],
                                    'temporary_paths': []}
                     plans = review_resource_claims.plan_resource_registration(
@@ -2849,7 +2984,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                 raise ValueError('explicit transfer paths are required to preserve present owned sessions across a same-scope restart')
             candidate_successor = datetime.now(timezone.utc)
             run_id = uuid.uuid4().hex[:20]
-            scoped = Path(manifest['archive_root']) / _repository_group(manifest['repository_identity']) / _scope_group(normalized_inputs['scope'])
+            scoped = Path(manifest['archive_root']) / _repository_group(identity) / _scope_group(normalized_inputs['scope'])
             successor_info = {'run_dir': str(scoped / (candidate_successor.strftime('%Y%m%dT%H%M%S') + '-' + run_id)),
                               'run_id': run_id, 'owner_id': uuid.uuid4().hex,
                               'reservation_id': uuid.uuid4().hex,
@@ -2860,6 +2995,55 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             _write_active_restart(source, manifest, intent_path, intent)
             _write_restart_intent(intent_path, intent, source, manifest)
         return _complete_restart_intent(intent_path, source, manifest)
+
+
+def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
+    """Retire an explicitly selected intent only before a successor was prepared.
+
+    Preserve the immutable intent and any partial allocation. Never delete or
+    orphan a prepared review or transfer claims through this operation.
+    """
+    authority = review_resource_claims._authority(authority)
+    reason = review_restart._bounded_text(reason, 'abandonment reason')
+    with _restart_lock(run_dir):
+        run, manifest, marker = _load_run(run_dir)
+        intent_path = safe_path(intent_path)
+        intent = _read_restart_intent(intent_path, run, manifest)
+        actor = _controller(controller, intent['request']['controller']['identity'])
+        receipt = _validate_restart_abandonment(intent_path, intent)
+        if receipt is not None:
+            if any(receipt[key] != value for key, value in
+                   {'authority': authority, 'controller': actor, 'reason': reason}.items()):
+                raise ValueError('abandonment replay differs from its durable observation')
+        else:
+            active = _active_restart_operation(run, manifest)
+            if active is None or active['operation_id'] != intent['operation_id']:
+                raise ValueError('only the exact active pending restart may be abandoned')
+            if (safe_path(intent['successor']['run_dir']) / 'cierre.json').exists():
+                raise ValueError('a prepared successor must be recovered; abandonment cannot orphan it')
+            _verify_files(run, manifest, allow_checkpoint_transaction=True)
+            receipt = {'schema_version': 1, 'operation_id': intent['operation_id'],
+                'source_run': str(run), 'source_owner_id': manifest['owner_id'],
+                'intent_sha256': intent['intent_sha256'], 'successor_run_dir': intent['successor']['run_dir'],
+                'authority': authority, 'controller': actor, 'reason': reason,
+                'recorded_at': datetime.now(timezone.utc).isoformat()}
+            receipt['receipt_sha256'] = _digest(_json_bytes(receipt))
+            atomic_write(_restart_abandonment_path(intent_path), _json_bytes(receipt))
+        if manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
+            marker = _recover_trace(run, manifest, marker)
+            summary = 'Restart abandoned before successor preparation: ' + intent['operation_id']
+            events = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+            if not any(row.get('summary') == summary for row in events):
+                _append_trace(run, manifest, marker, {'kind': 'interruption', 'status': 'completed',
+                    'summary': summary, 'actor': actor['identity'], 'authority': authority,
+                    'evidence': ['cierre.json'], 'provenance': {'kind': 'helper', 'source': 'review_artifacts:abandon-restart'}})
+        active_path, owner_path = _active_restart_paths(run, manifest)
+        # A replay may only retire this operation, never a newer active restart.
+        if owner_path.exists():
+            descriptor = read_json(owner_path)['active_descriptor']
+            if descriptor.get('operation_id') == intent['operation_id']:
+                _retire_active_restart(intent_path, intent, run, manifest)
+        return receipt
 
 
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
@@ -3069,7 +3253,11 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if manifest['schema_version'] == 7:
         if value.get('schema_version') != 10:
             raise ValueError('archive 7 requires final review schema 10')
-        if value.get('coverage', {}).get('execution', {}).get('profile_history') != manifest.get('profile_history'):
+        coverage = value.get('coverage')
+        execution = coverage.get('execution') if isinstance(coverage, dict) else None
+        if not isinstance(execution, dict):
+            raise ValueError('final coverage and coverage.execution must be JSON objects')
+        if execution.get('profile_history') != manifest.get('profile_history'):
             raise ValueError('final profile history differs from the archive selections')
         if manifest.get('operation', {}).get('disposition') != 'open':
             raise ValueError('review operation is not open; recover or restart before retaining')
@@ -3096,7 +3284,8 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs, create_directory=value.get('schema_version') not in (8, 9, 10)))
+    contents.update(_evidence_contents(run, manifest, evidence_inputs,
+        create_directory=value.get('schema_version') not in (8, 9, 10), reserve_context=context_input is not None))
     if value.get('schema_version') in (8, 9, 10):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
@@ -3417,6 +3606,12 @@ def main():
     restart_command.add_argument('--harness-source-input', help='JSON provenance for an explicit harness ID')
     restart_command.add_argument('--transfer-path', action='append',
                                  help='Explicit owned session path to transfer; repeat for every active claim')
+    abandon = commands.add_parser('abandon-restart', help='Explicitly retire a pending restart before successor preparation')
+    abandon.add_argument('--run-dir', required=True)
+    abandon.add_argument('--intent-input', required=True, help='Exact intent path returned by inspect; no archive scan')
+    abandon.add_argument('--controller-input', required=True)
+    abandon.add_argument('--authority-input', required=True)
+    abandon.add_argument('--reason', required=True)
     select = commands.add_parser('select-profile', help='Atomically capture a profile transition before using it')
     select.add_argument('--run-dir', required=True)
     select.add_argument('--selection-input', required=True)
@@ -3522,6 +3717,9 @@ def main():
                          current_inputs=read_json(args.current_inputs), transfer_paths=args.transfer_path,
                          harness={'harness': args.harness, 'harness_id': args.harness_id,
                                   'harness_source': harness_source})}
+        elif args.command == 'abandon-restart':
+            result = abandon_restart(args.run_dir, intent_path=args.intent_input,
+                controller=read_json(args.controller_input), authority=authority_input, reason=args.reason)
         elif args.command == 'select-profile':
             result = select_profile(args.run_dir, args.selection_input)
         elif args.command == 'validate':

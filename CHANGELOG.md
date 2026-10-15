@@ -4,6 +4,9 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.12.0 — unreleased
 
+- Corregir colisiones de evidencias entre checkpoints, reinicios legacy sin ID y recuperación del sucesor reservado ante cortes reales del proceso; validar entradas antes del intent y permitir su abandono explícito antes de preparar el sucesor.
+- Alinear diagnóstico/recuperación/cleanup de claims ausentes o de un origen superseded; rechazar temprano estructuras malformadas y trabajo sobre asignaciones sustituidas. Verificar ejemplos CLI extraídos de Markdown y corregir sus contratos y referencias de hallazgos.
+
 - Registrar el ciclo de vida del perfil desde su selección inicial, transiciones posteriores y asignaciones afectadas; validar la selección inicial y las obligaciones del perfil efectivo antes de retener.
 - Añadir lookup acotado, lectura de vigencia y decisiones explícitas para mostrar, continuar, recuperar o iniciar una revisión vinculada, sin selección automática ni exploración global del archivo.
 - Publicar el contrato de archive schema 7 y final schema 10, preservar lecturas históricas, y alinear las proyecciones full/brief y publicación con el nuevo resultado.
