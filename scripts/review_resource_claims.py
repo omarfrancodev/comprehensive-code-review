@@ -303,14 +303,29 @@ def _validate_sidecar(sidecar, session, workspace, token_digest):
 
 
 def verify_claim(session_dir, run_dir, *, allow_checkpoint_transaction=False):
+    return _verify_claim(session_dir, run_dir, verify_integrity=True,
+                         allow_checkpoint_transaction=allow_checkpoint_transaction)
+
+
+def inspect_claim_identity(session_dir, run_dir):
+    """Read ownership only for abandoning an empty adoption; never authorize cleanup/work.
+
+    The owning manifest, sidecar and claim row must match. Pending work evidence
+    belongs to that other review and is neither recovered nor certified here.
+    """
+    return _verify_claim(session_dir, run_dir, verify_integrity=False)
+
+
+def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_transaction=False):
     workspace_data = _workspace(session_dir)
     if workspace_data is None:
         raise ValueError('resource claim requires a valid review workspace session')
     session, workspace, token_digest = workspace_data
     run, manifest, _ = _archive(run_dir)
     import review_artifacts
-    review_artifacts._verify_files(run, manifest, allow_checkpoint_transaction=
-        allow_checkpoint_transaction or manifest.get('operation', {}).get('disposition') == 'superseded')
+    if verify_integrity:
+        review_artifacts._verify_files(run, manifest, allow_checkpoint_transaction=
+            allow_checkpoint_transaction or manifest.get('operation', {}).get('disposition') == 'superseded')
     if review_artifacts.repository_identity(workspace['repo']) != manifest.get('repository_identity'):
         raise ValueError('claimed workspace belongs to a different repository')
     sidecar = _read_json(session / CLAIM_NAME)

@@ -177,12 +177,17 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
                      else classify_candidate(manifest, retained, current_inputs))
     operation = copy.deepcopy(manifest.get('operation') or {
         'disposition': 'complete' if complete else 'open', 'phase': manifest.get('state')})
-    active_restart = artifacts._active_restart_operation(run, manifest)
+    active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
+    recovery_source = artifacts._restart_recovery_source(run, manifest)
     pending = ([{'kind': 'restart', 'status': 'pending', 'operation_id': active_restart['operation_id'],
                  'successor_run_dir': active_restart['successor_run_dir'],
                  'intent_path': active_restart['intent_path']}] if active_restart else [])
     if integrity == 'invalid':
         actions = [_action('preserve', 'The retained report is missing, oversized, or does not match its archive hash.')]
+    elif recovery_source is not None:
+        actions = [_recover_source_action(recovery_source)]
+    elif manifest.get('restart_abandonment') is not None:
+        actions = [_abandoned_source_action(manifest)]
     elif pending:
         actions = [_action('recover', 'Recover the exact pending restart under its source lock.'),
                    _action('retry_restart', 'Retry the immutable request and reserved successor.')]
@@ -287,6 +292,15 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             'truncated': has_more}
 
 
+def _recover_source_action(source):
+    return dict(_action('recover_source', 'Recover the exact restart through its owning source run.'), **source)
+
+
+def _abandoned_source_action(manifest):
+    return dict(_action('inspect_source', 'This explicitly abandoned successor is terminal history; inspect its source.'),
+                run_dir=manifest['restart_abandonment']['source_run'])
+
+
 def _superseded_actions(resources=()):
     actions = [_action('inspect_successor', 'The source run records a successor; inspect that exact run.')]
     if any(row['claim_status'] == 'owned' and row['present'] for row in resources):
@@ -314,8 +328,12 @@ def inspect_run(run_dir, *, current_inputs=None):
         'phase': None, 'reason': None, 'source': None, 'successor': None})
     pending = []
     errors = []
+    recovery_source = None
     try:
-        active_restart = artifacts._active_restart_operation(run, manifest)
+        active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
+        recovery_source = artifacts._restart_recovery_source(run, manifest)
+        if recovery_source is not None:
+            pending.append({'kind': 'restart_source', 'status': 'pending', **recovery_source})
         if active_restart:
             pending.append({'kind': 'restart', 'status': 'pending',
                             'operation_id': active_restart['operation_id'],
@@ -377,12 +395,17 @@ def inspect_run(run_dir, *, current_inputs=None):
     if errors:
         integrity_status = 'invalid'
         actions = [_action('preserve', 'Integrity/source verification failed; do not adopt or rewrite this run.')]
+    elif recovery_source is not None:
+        integrity_status = 'recoverable'
+        actions = [_recover_source_action(recovery_source)]
     elif any(row['status'] == 'pending' for row in pending):
         integrity_status = 'recoverable'
         actions = [_action('recover', 'A helper-owned transaction is pending; recover its exact recorded inputs first.')]
     else:
         integrity_status = 'verified'
-        if disposition == 'paused':
+        if manifest.get('restart_abandonment') is not None:
+            actions = [_abandoned_source_action(manifest)]
+        elif disposition == 'paused':
             actions = [_action('resume', 'Continuing a user-paused run requires explicit continuation authority.'),
                        _action('restart', 'A fresh linked run is available if inputs or scope changed.')]
         elif disposition == 'blocked':
