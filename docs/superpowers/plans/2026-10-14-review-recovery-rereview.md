@@ -41,6 +41,8 @@
 - [x] Documentar context/history/plan/select-profile, recovery/abandonment y cleanup; corregir full/brief y continuaciones.
 - [x] Ejecutar bloques extraídos del Markdown desde prepare hasta close/validate, y el restart real documentado; corregir los IDs de la matriz frente al comentario original sin reescribir resultados históricos.
 - [x] Suite completa, ayudas CLI nuevas, AST/enlaces/diff; revisión independiente de los cambios finales y solución de hallazgos si los hay.
-- [ ] Commit/push y actualizar descripción/evidencia del PR #19; verificar SHA remoto y esperar revisión del usuario. No merge/release ni cleanup de este worktree.
+- [x] Commit/push y actualizar descripción/evidencia del PR #19; verificar SHA remoto y esperar revisión del usuario. No merge/release ni cleanup de este worktree.
 
 **Verificación observada:** suite completa 489 tests, 1387.466 s, exit 0 y 2 skips de permisos Windows; focal 22 tests, 171.882 s, OK. AST 6 archivos, enlaces 12 documentos, matrices 33/16 IDs, 18 ayudas CLI y diff-check OK. Detalle en [registro de validación](../../validation/2026-10-14-review-recovery-rereview.md).
+
+**Entrega:** implementación en `8445ed63c852dde405804e86891c9261ce61c4fc`, subida al PR #19 y descripción actualizada con las validaciones finales. La revisión independiente confirmó ese SHA exacto sin hallazgos accionables en su alcance; fue estática, no otra ejecución de la suite. GitHub verificó el PR abierto y mergeable. Pendiente revisión humana; se conserva el worktree y no se hizo merge ni release.
