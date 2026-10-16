@@ -307,6 +307,16 @@ def record_artifact(args):
 
 
 def cleanup(args):
+    import review_resource_claims
+    session = load(args.manifest)['session_dir']
+    try:
+        with review_resource_claims.session_claim_locks([session]):
+            return _cleanup_claim_locked(args)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ReviewError('Resource claim verification or cleanup failed; preserve the session: ' + str(exc)) from exc
+
+
+def _cleanup_claim_locked(args):
     manifest = load(args.manifest)
     session = Path(manifest['session_dir'])
     claim_path = session / '.review-run-owner.json'

@@ -4,6 +4,8 @@ Load this reference only when a request may match an earlier review, when an arc
 
 ## Before preparing another run
 
+Registration, transfer and workspace cleanup coordinate by canonical session identity as well as by run. Session lock files persist in the repository's Git common directory under `ccr-session-locks`; they are outside the disposable session and do not alter checkout status. A conflict fails without waiting: preserve the resources and retry the authorized operation after the holder finishes. Do not delete coordination files to bypass a conflict. Locks release on exception or process exit; lock files remain to keep a single coordination inode. Linked/reparse or multiply linked final lock files are refused before any coordination write.
+
 Pin the repository and the exact requested scope first. When the same MR/PR or stable local target may already have a run, call the bounded lookup before creating a new archive. For unrelated new scopes, skip lookup. Each project is queried separately; never scan the global archive or another repository to infer a match.
 
 ```text

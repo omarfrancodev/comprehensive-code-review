@@ -79,10 +79,10 @@ def validate_selection(raw: dict, previous: dict | None = None) -> dict:
                     or value['reference'] == previous.get('reference')
                     or UNJUSTIFIED_DOWNGRADE.search(value['reason'])):
                 raise ValueError('automatic downgrade needs a new evidence-backed reason and source; urgency, cost, capacity or absence of findings is not a justification')
+        if previous.get('selection_source') == 'explicit' and (
+                value['selection_source'] != 'explicit' or value['authority'] is None):
+            raise ValueError('an explicit profile transition requires a later explicit user source')
         if value['profile'] != old_profile:
-            if previous.get('selection_source') == 'explicit' and (
-                    value['selection_source'] != 'explicit' or value['authority'] is None):
-                raise ValueError('an explicit profile transition requires a later explicit user source')
             if value['selection_source'] == 'explicit' and value['authority'] is None:
                 raise ValueError('an explicit profile transition requires user authority')
     return value

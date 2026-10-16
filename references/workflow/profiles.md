@@ -4,6 +4,8 @@ Profiles describe review strategies: focused for demonstrated bounded scope, sta
 
 Select once during shared scope/context discovery, before delegating. Reuse already collected facts; no separate selection agent, full audit, scoring system or measurement probe. Record selection source (explicit/automatic), effective profile and concrete basis in the existing profile_reason/context. Line count, urgency, model, available slots, technology names and ABCDE letters do not determine depth.
 
+An explicit selection remains authoritative until a later explicit user selection with its own authority. Automatically recapturing the same profile cannot remove that protection or enable a later automatic downgrade. The helper enforces this rule on selection, retained history and final profile obligations.
+
 ## Selection precedence
 
 1. An explicit focused/standard/deep/extended is fixed for the requested scope. Observable mechanisms do not silently override it. Apply its passes and verified project gates; focused still executes a required independent gate. Profile caps constrain skill discovery, not independently mandated project gates: name/count any additional gate sessions separately in the existing reason/context; never relabel optional discovery as a gate. If more optional discovery is necessary, request a profile change or report the material gap. Inadequate proof follows verdict precedence; the profile accepts no exception.

@@ -11,7 +11,7 @@ _guard = threading.RLock()
 _held = {}
 
 
-def _lock_identity(run_dir):
+def _lock_identity(run_dir, *, coordination_root=None):
     run = Path(run_dir)
     if not run.is_absolute():
         raise ValueError('run lock requires an absolute run directory')
@@ -52,13 +52,98 @@ def _lock_identity(run_dir):
     canonical = os.path.normcase(os.path.normpath(canonical))
     run = Path(canonical)
     identity = canonical
-    lock_root = run.parent / '.review-locks'
+    lock_root = run.parent / '.review-locks' if coordination_root is None else Path(coordination_root)
+    if not lock_root.is_absolute() or '..' in lock_root.parts:
+        raise ValueError('review lock directory must be absolute without traversal')
+    for component in (lock_root, *lock_root.parents):
+        try:
+            info = component.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+            raise ValueError('review lock directory traverses a link/reparse point')
     if lock_root.exists() and (lock_root.is_symlink() or not lock_root.is_dir()
                                or getattr(lock_root.lstat(), 'st_file_attributes', 0) & 0x400):
         raise ValueError('review lock directory is not a regular directory')
     lock_root.mkdir(exist_ok=True)
     digest = hashlib.sha256(identity.encode('utf-8')).hexdigest()
     return identity, lock_root / (digest + '.lock')
+
+
+def _regular_lock(info):
+    return (stat.S_ISREG(info.st_mode) and not getattr(info, 'st_file_attributes', 0) & 0x400
+            and info.st_nlink == 1)
+
+
+def _windows_lock_fd(lock_path):
+    """Open the final component itself, without granting rename/delete sharing."""
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    create = kernel.CreateFileW
+    create.argtypes = (wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                       wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE)
+    create.restype = wintypes.HANDLE
+    close = kernel.CloseHandle
+    close.argtypes = (wintypes.HANDLE,)
+    close.restype = wintypes.BOOL
+    info = kernel.GetFileInformationByHandleEx
+    info.argtypes = (wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD)
+    info.restype = wintypes.BOOL
+
+    class AttributeTag(ctypes.Structure):
+        _fields_ = [('attributes', wintypes.DWORD), ('tag', wintypes.DWORD)]
+
+    # GENERIC_READ|WRITE, SHARE_READ|WRITE, OPEN_ALWAYS, OPEN_REPARSE_POINT.
+    handle = create(str(lock_path), 0xC0000000, 0x3, None, 4, 0x00200000, None)
+    if handle == wintypes.HANDLE(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        attributes = AttributeTag()
+        if not info(handle, 9, ctypes.byref(attributes), ctypes.sizeof(attributes)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if attributes.attributes & (0x400 | 0x10):
+            raise ValueError('review lock file must not be linked or a directory')
+        fd = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+    except BaseException:
+        close(handle)
+        raise
+    return fd  # The CRT descriptor now owns the handle.
+
+
+def _open_lock_file(lock_path):
+    """Do not write until both the opened object and final path are verified."""
+    try:
+        before = lock_path.lstat()
+    except FileNotFoundError:
+        before = None
+    if before is not None and not _regular_lock(before):
+        raise ValueError('review lock file must be regular, unlinked and singly owned')
+    fd = None
+    try:
+        if os.name == 'nt':
+            fd = _windows_lock_fd(lock_path)
+        else:
+            if not hasattr(os, 'O_NOFOLLOW'):
+                raise ValueError('this platform cannot open coordination files without following links')
+            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
+                         | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_CLOEXEC', 0), 0o600)
+        opened = os.fstat(fd)
+        current = lock_path.lstat()
+        if (not _regular_lock(opened) or not _regular_lock(current)
+                or not os.path.samestat(opened, current)
+                or before is not None and not os.path.samestat(before, opened)):
+            raise ValueError('review lock file identity changed or is not a regular unlinked file')
+        stream = os.fdopen(fd, 'r+b')
+        fd = None
+        return stream
+    except OSError as exc:
+        raise ValueError('review lock file could not be opened safely: ' + str(lock_path)) from exc
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 def _acquire(identity, lock_path, owner):
@@ -69,7 +154,7 @@ def _acquire(identity, lock_path, owner):
         current['depth'] += 1
         return
 
-    stream = lock_path.open('a+b')
+    stream = _open_lock_file(lock_path)
     try:
         stream.seek(0, os.SEEK_END)
         if stream.tell() == 0:
@@ -116,12 +201,13 @@ def _release(identity, owner):
 
 
 @contextmanager
-def run_locks(run_dirs):
+def run_locks(run_dirs, *, coordination_root=None):
     """Lock unique run directories in a stable order; nested same-thread calls reenter."""
     owner = threading.get_ident()
     identities = {}
     for run_dir in run_dirs:
-        identity, lock_path = _lock_identity(run_dir)
+        identity, lock_path = (_lock_identity(run_dir) if coordination_root is None else
+                               _lock_identity(run_dir, coordination_root=coordination_root))
         identities[identity] = lock_path
     ordered = sorted(identities.items())
     acquired = []

@@ -1796,6 +1796,13 @@ def select_profile(run_dir, selection_input):
 
 @_locked_run
 def register(run_dir, temporary_paths, *, context_input=None, authority=None):
+    _, manifest, _ = _load_run(run_dir)
+    temporary = _temporary_paths(temporary_paths, manifest)
+    with review_resource_claims.session_claim_locks(temporary):
+        return _register_locked(run_dir, temporary, context_input=context_input, authority=authority)
+
+
+def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=None):
     """Register coordinator-verified owned resources before discovery/execution."""
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
@@ -2080,7 +2087,7 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
     authority = review_resource_claims._authority(authority)
     _assert_not_restart_abandoned(_load_run(source_path)[1])
     _assert_not_restart_abandoned(_load_run(successor_path)[1])
-    with run_locks([source_path, successor_path]):
+    with run_locks([source_path, successor_path]), review_resource_claims.session_claim_locks(selected_paths):
         source, source_manifest, source_marker = _load_run(source_path)
         successor, next_manifest, next_marker = _load_run(successor_path)
         _assert_not_restart_abandoned(source_manifest)

@@ -1,5 +1,6 @@
 """Private, run-bound ownership records for disposable review workspaces."""
 import hashlib
+from contextlib import contextmanager, ExitStack
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,39 @@ import stat
 CLAIM_NAME = '.review-run-owner.json'
 CLAIM_SCHEMA = 1
 HASH = re.compile(r'[0-9a-f]{64}')
+
+
+@contextmanager
+def session_claim_locks(paths):
+    """Exclude claim/cleanup commits by verified session, outside its disposable tree."""
+    from review_run_lock import run_locks
+    sessions = {}
+    repositories = {}
+    for raw in paths:
+        path = _safe_path(raw)
+        if not path.is_dir():
+            continue  # Missing/unclaimed and ordinary resource behavior is unchanged.
+        workspace = _workspace(path)
+        if workspace is not None:
+            session, manifest, token = workspace
+            sessions[str(session)] = (manifest['session_id'], token)
+            repositories[str(session)] = manifest['repo']
+    import review_workspace
+    roots, groups = {}, {}
+    for session, repo in repositories.items():
+        if repo not in roots:
+            common = review_workspace.out(Path(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir')
+            roots[repo] = _safe_path(Path(common.decode('utf-8').strip()) / 'ccr-session-locks')
+        root = roots[repo]
+        groups.setdefault(str(root), []).append(session)
+    with ExitStack() as stack:
+        for root in sorted(groups, key=os.path.normcase):
+            stack.enter_context(run_locks(groups[root], coordination_root=root))
+        for path, identity in sessions.items():
+            workspace = _workspace(path)
+            if workspace is None or (workspace[1]['session_id'], workspace[2]) != identity:
+                raise ValueError('review workspace identity changed while acquiring its claim lock')
+        yield
 
 
 def _encoded(value):
