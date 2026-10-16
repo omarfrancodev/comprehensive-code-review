@@ -311,8 +311,13 @@ def _restart_recovery_source(run, manifest):
     operation = manifest.get('restart_operation')
     if not isinstance(operation, dict) or manifest.get('state') == 'complete':
         return None
-    source, source_manifest, _ = _load_run(operation['source_run'])
-    active = _active_restart_operation(source, source_manifest, include_abandoned=True)
+    try:
+        source, source_manifest, _ = _load_run(operation['source_run'])
+        active = _active_restart_operation(source, source_manifest, include_abandoned=True)
+    except (OSError, ValueError, TypeError, KeyError):
+        # Historical availability does not establish this successor's integrity.
+        # Its own pending transfers, trace and hashes remain subject to local gates.
+        return None
     if active is None or active['operation_id'] != operation['operation_id']:
         return None
     if (active['successor_run_dir'] != str(run)
@@ -929,9 +934,12 @@ def _verify_pending(run, manifest, *, allow_transaction=False):
 
 
 def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=False,
-                  allow_resource_transfer=False):
+                  allow_resource_transfer=False, allow_pending_trace=False):
+    trace_plan = None
     if manifest.get('pending_trace') is not None:
-        raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
+        if not allow_pending_trace:
+            raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
+        trace_plan = _trace_recovery_plan(run, manifest)
     transfers = normalize_transfer_history(manifest)
     if any(row['status'] != 'complete' for row in transfers) and not allow_resource_transfer:
         pending = next(row for row in transfers if row['status'] != 'complete')
@@ -947,13 +955,15 @@ def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction
         raise ValueError('invalid retained file manifest')
     planned = manifest.get('planned_hashes', {}) if manifest['state'] == 'retaining' else {}
     required_files = set(FILES) | (set(OPTIONAL_FILES) if manifest['schema_version'] == 1 else set())
-    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and review_trace.NAME not in hashes:
+    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and review_trace.NAME not in hashes and trace_plan is None:
         raise ValueError('mandatory archive trace is missing from closure')
     if required and (not required_files.issubset(hashes) or manifest['state'] == 'retaining'):
         raise ValueError('retained evidence is absent or interrupted')
     if not isinstance(planned, dict) or any(not _retained_name(name) for name in planned):
         raise ValueError('invalid planned evidence paths')
     for name in set(FILES) | set(OPTIONAL_FILES) | (set(TRACE_FILES) if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS else set()) | set(hashes) | set(planned):
+        if name == review_trace.NAME and trace_plan is not None:
+            continue  # Both possible byte states and the planned events were verified, without writing.
         path = safe_path(run / name)
         try:
             data = path.read_bytes()
@@ -963,15 +973,13 @@ def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction
             continue
         if _digest(data) not in {hashes.get(name), planned.get(name)}:
             raise ValueError('refusing to clobber modified archived file: ' + name)
-    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS:
+    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and trace_plan is None:
         review_trace.verify(safe_path(run / review_trace.NAME).read_bytes(), manifest.get('trace'), manifest['run_id'])
 
 
-def _recover_trace(run, manifest, marker):
-    """Finish only an owned, hash-bound pending append; never adopt unknown bytes."""
+def _trace_recovery_plan(run, manifest):
+    """Verify an owned pending append without changing any bytes."""
     pending = manifest.get('pending_trace')
-    if pending is None:
-        return marker
     if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS or not isinstance(pending, dict):
         raise ValueError('invalid pending trace transition')
     path = safe_path(run / review_trace.NAME)
@@ -993,6 +1001,15 @@ def _recover_trace(run, manifest, marker):
     if _digest(planned) != pending['sha256']:
         raise ValueError('pending trace intent integrity mismatch')
     review_trace.verify(planned, pending['trace'], manifest['run_id'])
+    return current, planned
+
+
+def _recover_trace(run, manifest, marker):
+    """Finish only an owned, hash-bound pending append; never adopt unknown bytes."""
+    pending = manifest.get('pending_trace')
+    if pending is None:
+        return marker
+    current, planned = _trace_recovery_plan(run, manifest)
     if current != planned:
         _archive_write(run, manifest, review_trace.NAME, planned)
     manifest['trace'] = pending['trace']
@@ -3134,7 +3151,7 @@ def _find_restart_abandonment(intent_path, intent):
 
 
 def _empty_adoption_successor(intent, source_manifest):
-    """Caller holds both locks. Prove this is a foreign-blocked, unwritten adoption."""
+    """Read-only preflight under both locks: empty successor and an unavailable resource."""
     run, manifest, marker = _load_run(intent['successor']['run_dir'])
     reserved = intent['successor']
     expected = {'run_id': reserved['run_id'], 'owner_id': reserved['owner_id'],
@@ -3146,7 +3163,9 @@ def _empty_adoption_successor(intent, source_manifest):
         raise ValueError('prepared successor identity differs from the exact adoption intent')
     if (not intent['request']['transfer_paths']
             or source_manifest.get('operation', {}).get('disposition') == 'superseded'
-            or any(row.get('status') in {'owned', 'releasing'} for row in source_manifest.get('resource_claims', []))
+            or any(row.get('status') == 'releasing' or
+                   (row.get('status') == 'owned' and safe_path(row['session_dir']).exists())
+                   for row in source_manifest.get('resource_claims', []))
             or manifest['state'] != 'prepared' or manifest['operation']['disposition'] != 'open'
             or manifest['profile_history'] != [_initial_selection(intent['request']['profile_input'])]
             or set(manifest['hashes']) - {review_trace.NAME}
@@ -3163,8 +3182,11 @@ def _empty_adoption_successor(intent, source_manifest):
             'reservation_id': reserved['reservation_id'], 'run_dir': str(run), 'owner_id': reserved['owner_id']}
         if read_json(reservation_path) != expected_reservation:
             raise ValueError('prepared successor reservation differs from its intent')
-    foreign_claim = False
+    unavailable_resource = False
     for raw in intent['request']['transfer_paths']:
+        if not safe_path(raw).exists():
+            unavailable_resource = True
+            continue  # Preserve the source claim as missing_unknown; never synthesize release evidence.
         workspace = review_resource_claims._workspace(raw)
         if workspace is None:
             raise ValueError('adoption session is not a verifiable review workspace')
@@ -3182,15 +3204,16 @@ def _empty_adoption_successor(intent, source_manifest):
         if sidecar['archive_path'] == intent['source']['run_dir']:
             raise ValueError('adoption session belongs to the restart source; recover its claim')
         review_resource_claims.inspect_claim_identity(session, sidecar['archive_path'])
-        foreign_claim = True
-    if not foreign_claim:
-        raise ValueError('a prepared successor must be recovered unless a foreign claim prevents adoption')
+        unavailable_resource = True
+    if not unavailable_resource:
+        raise ValueError('a prepared successor must be recovered unless a resource is absent or foreign-claimed')
     pending = manifest.get('pending_trace')
     if pending is not None and [row.get('kind') for row in pending.get('events', [])] != ['prepare', 'profile']:
         raise ValueError('prepared successor has a non-preparation trace transaction; recover it')
-    marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest)
-    events = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+    _verify_files(run, manifest, allow_pending_trace=True)
+    trace_bytes = (_trace_recovery_plan(run, manifest)[1] if pending is not None
+                   else (run / review_trace.NAME).read_bytes())
+    events = [json.loads(line) for line in trace_bytes.splitlines()]
     if [row['kind'] for row in events] != ['prepare', 'profile']:
         raise ValueError('prepared successor has observations beyond initial preparation; recover it')
     return run, manifest, marker
@@ -3231,7 +3254,7 @@ def _finish_restart_abandonment(intent_path, intent, source_path, receipt):
 
 
 def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
-    """Cancel an unprepared restart or its exact empty, foreign-blocked adoption.
+    """Cancel an unprepared restart or its exact empty, resource-blocked successor.
 
     Never delete an archive, modify a foreign session, or discard review work.
     """
@@ -3244,8 +3267,9 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
             active = _active_restart_operation(run, manifest)
             if active is None or str(intent_path) != active['intent_path']:
                 raise ValueError('only the exact active intent path can be reconstructed for abandonment')
-            _write_restart_intent(intent_path, active['intent'], run, manifest)
-        intent = _read_restart_intent(intent_path, run, manifest)
+            intent = active['intent']
+        else:
+            intent = _read_restart_intent(intent_path, run, manifest)
         actor = _controller(controller, intent['request']['controller']['identity'])
         receipt = _find_restart_abandonment(intent_path, intent)
         if receipt is not None:
@@ -3256,8 +3280,7 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
             active = _active_restart_operation(run, manifest)
             if active is None or active['operation_id'] != intent['operation_id']:
                 raise ValueError('only the exact active pending restart may be abandoned')
-            marker = _recover_trace(run, manifest, marker)
-            _verify_files(run, manifest, allow_checkpoint_transaction=True)
+            _verify_files(run, manifest, allow_checkpoint_transaction=True, allow_pending_trace=True)
             receipt = {'schema_version': 1, 'operation_id': intent['operation_id'],
                 'source_run': str(run), 'source_owner_id': manifest['owner_id'],
                 'intent_sha256': intent['intent_sha256'], 'successor_run_dir': intent['successor']['run_dir'],
@@ -3267,6 +3290,7 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
             if (safe_path(intent['successor']['run_dir']) / 'cierre.json').exists():
                 with run_locks([intent['successor']['run_dir']]):
                     successor, empty, successor_marker = _empty_adoption_successor(intent, manifest)
+                    successor_marker = _recover_trace(successor, empty, successor_marker)
                     empty['restart_abandonment'] = receipt
                     empty['operation'] = {'disposition': 'blocked', 'reason': reason,
                         'source': 'abandon-restart', 'phase': 'prepare', 'successor': None}
@@ -3841,7 +3865,7 @@ def main():
     restart_command.add_argument('--harness-source-input', help='JSON provenance for an explicit harness ID')
     restart_command.add_argument('--transfer-path', action='append',
                                  help='Explicit owned session path to transfer; repeat for every active claim')
-    abandon = commands.add_parser('abandon-restart', help='Cancel an unprepared restart or an exact empty foreign-blocked adoption')
+    abandon = commands.add_parser('abandon-restart', help='Cancel an unprepared restart or an exact empty resource-blocked successor')
     abandon.add_argument('--run-dir', required=True)
     abandon.add_argument('--intent-input', required=True, help='Exact intent path returned by inspect; no archive scan')
     abandon.add_argument('--controller-input', required=True)

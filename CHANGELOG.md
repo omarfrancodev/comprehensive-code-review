@@ -4,6 +4,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.12.0 — unreleased
 
+- Separar la integridad local del sucesor de la disponibilidad de su origen histórico y validar el abandono sin aplicar trazas antes de aceptarlo. Permitir cancelar el sucesor vacío con workspace ausente sin inventar cleanup; documentar y cubrir la limitación vigente de adopción parcial de varias sesiones.
 - Completar el abandono con intent ausente, orientar la recuperación al origen correcto y repetir inputs históricos idénticos sin certificar su vigencia. Permitir cancelar explícitamente un sucesor vacío cuya adopción bloqueó un claim ajeno, conservándolo como historial terminal y recuperando su mismo recibo tras interrupciones.
 - Recuperar el restart reservado tras cortes dentro de transferencias/adopciones de workspaces, respetando el lock del sucesor. Conservar checkpoints interrumpidos del origen sustituido como historial provisional, con acciones realizables y limpieza de claims independiente; precisar el contenido real de la entrega breve.
 - Corregir colisiones de evidencias entre checkpoints, reinicios legacy sin ID y recuperación del sucesor reservado ante cortes reales del proceso; validar entradas antes del intent y permitir su abandono explícito antes de preparar el sucesor.
