@@ -4,6 +4,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## 2.12.0 — unreleased
 
+- Compartir entre origen y sucesor los planes para claims ajenos y recursos ausentes, con viabilidad de recuperación explícita y razones que distinguen los claims presentes del origen. Preservar transferencias con fuente no verificable y orientar los errores del reintento exacto al diagnóstico, sin implementar rollback de los estados excluidos.
 - Orientar inspect/lookup/recover hacia el abandono explícito soportado de un restart con recursos ausentes o hacia una review independiente cuando su fase ya no admite cancelación. Corregir la explicación del cleanup ajeno: elimina su sesión y no la deja disponible para adoptar; mantener explícitas las reservas de rollback de adopción y transferencia.
 - Separar la integridad local del sucesor de la disponibilidad de su origen histórico y validar el abandono sin aplicar trazas antes de aceptarlo. Permitir cancelar el sucesor vacío con workspace ausente sin inventar cleanup; documentar y cubrir la limitación vigente de adopción parcial de varias sesiones.
 - Completar el abandono con intent ausente, orientar la recuperación al origen correcto y repetir inputs históricos idénticos sin certificar su vigencia. Permitir cancelar explícitamente un sucesor vacío cuya adopción bloqueó un claim ajeno, conservándolo como historial terminal y recuperando su mismo recibo tras interrupciones.

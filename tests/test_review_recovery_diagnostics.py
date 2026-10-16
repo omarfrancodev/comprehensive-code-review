@@ -205,7 +205,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
         self.assertEqual(result['actions'][0]['action'], 'retry_checkpoint')
         self.assertEqual(self.snapshot(successor), before)
 
-    def test_partial_two_session_adoption_preserves_both_owners_on_refusal(self):
+    def partial_adoption_conflict(self):
         source, first, request = self.resource_fixture(False)
         second = Path(review_workspace.prepare(argparse.Namespace(repo=str(self.repo), ref='HEAD', mode='commit',
             role=['review'], include_untracked=[]))['session_dir'])
@@ -224,18 +224,24 @@ class RecoveryDiagnosticTests(unittest.TestCase):
         successor = Path(active['successor_run_dir'])
         foreign = self.prepare7('deep')
         artifacts.register(foreign, [str(second)], context_input=self.context(foreign))
+        return source, successor, foreign, first, second, request, active
+
+    def test_partial_two_session_adoption_preserves_both_owners_on_refusal(self):
+        source, successor, foreign, first, second, request, active = self.partial_adoption_conflict()
         paths = (source, successor, foreign, first, second)
         before = tuple(self.snapshot(path) for path in paths)
         operations = (
             lambda: artifacts.restart(source, **request),
-            lambda: artifacts.recover(source, controller=self.controller(), authority=request['authority'],
-                                      current_inputs=request['current_inputs']),
             lambda: artifacts.abandon_restart(source, intent_path=active['intent_path'], controller=self.controller(),
                 authority='User requests cancellation', reason='Foreign claim after partial adoption'))
         for operation in operations:
             with self.assertRaises(ValueError):
                 operation()
             self.assertEqual(tuple(self.snapshot(path) for path in paths), before)
+        plan = artifacts.recover(source, controller=self.controller(), authority=request['authority'],
+                                 current_inputs=request['current_inputs'])
+        self.assertEqual(plan['actions'][0]['action'], 'new_independent_review')
+        self.assertEqual(tuple(self.snapshot(path) for path in paths), before)
         self.assertEqual(self.read(first / claims.CLAIM_NAME)['archive_path'], str(successor))
         self.assertEqual(claims.verify_claim(second, foreign)['run_id'], self.read(foreign / 'cierre.json')['run_id'])
         # Exercise the documented exit, without releasing either existing session.

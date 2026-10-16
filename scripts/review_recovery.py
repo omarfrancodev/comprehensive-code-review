@@ -179,12 +179,15 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
         'disposition': 'complete' if complete else 'open', 'phase': manifest.get('state')})
     active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
     recovery_source = artifacts._restart_recovery_source(run, manifest)
-    restart_exit = artifacts._missing_restart_exit(run, manifest, active_restart) if active_restart else None
+    restart_exit = artifacts._diagnostic_recovery_route(run, manifest,
+        active_restart=active_restart, recovery_source=recovery_source)
     pending = ([{'kind': 'restart', 'status': 'pending', 'operation_id': active_restart['operation_id'],
                  'successor_run_dir': active_restart['successor_run_dir'],
                  'intent_path': active_restart['intent_path']}] if active_restart else [])
     if integrity == 'invalid':
         actions = [_action('preserve', 'The retained report is missing, oversized, or does not match its archive hash.')]
+    elif restart_exit is not None:
+        actions = restart_exit['actions']
     elif recovery_source is not None:
         actions = [_recover_source_action(recovery_source)]
     elif manifest.get('restart_abandonment') is not None:
@@ -212,7 +215,8 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
             'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
             'profile': latest[-1].get('profile') if isinstance(latest, list) and latest else None,
             'integrity': integrity, 'applicability': applicability['applicability'],
-            'differences': applicability['differences'], 'actions': actions, 'pending_transaction': pending}
+            'differences': applicability['differences'], 'actions': actions, 'pending_transaction': pending,
+            **({'recovery': restart_exit['recovery']} if restart_exit is not None and integrity != 'invalid' else {})}
 
 
 def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, current_inputs=None):
@@ -295,7 +299,8 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
 
 
 def _recover_source_action(source):
-    return dict(_action('recover_source', 'Recover the exact restart through its owning source run.'), **source)
+    return dict(_action('recover_source', 'Recover the exact restart through its owning source run.'),
+                run_dir=source['run_dir'], operation_id=source['operation_id'])
 
 
 def _abandoned_source_action(manifest):
@@ -336,13 +341,15 @@ def inspect_run(run_dir, *, current_inputs=None):
         active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
         recovery_source = artifacts._restart_recovery_source(run, manifest)
         if recovery_source is not None:
-            pending.append({'kind': 'restart_source', 'status': 'pending', **recovery_source})
+            pending.append({'kind': 'restart_source', 'status': 'pending',
+                            'run_dir': recovery_source['run_dir'], 'operation_id': recovery_source['operation_id']})
         if active_restart:
             pending.append({'kind': 'restart', 'status': 'pending',
                             'operation_id': active_restart['operation_id'],
                             'successor_run_dir': active_restart['successor_run_dir'],
                             'intent_path': active_restart['intent_path']})
-            restart_exit = artifacts._missing_restart_exit(run, manifest, active_restart)
+        restart_exit = artifacts._diagnostic_recovery_route(run, manifest,
+            active_restart=active_restart, recovery_source=recovery_source)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(str(exc)[:1000])
     if manifest.get('pending_trace') is not None:
@@ -399,6 +406,9 @@ def inspect_run(run_dir, *, current_inputs=None):
     if errors:
         integrity_status = 'invalid'
         actions = [_action('preserve', 'Integrity/source verification failed; do not adopt or rewrite this run.')]
+    elif restart_exit is not None:
+        integrity_status = 'recoverable'
+        actions = restart_exit['actions']
     elif recovery_source is not None:
         integrity_status = 'recoverable'
         actions = [_recover_source_action(recovery_source)]
@@ -437,7 +447,8 @@ def inspect_run(run_dir, *, current_inputs=None):
             'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
             'known_sources': known, 'missing_sources': missing, 'resources': resources,
             'pending_transaction': pending, 'freshness': freshness, 'actions': actions,
-            'activity': activity}
+            'activity': activity,
+            **({'recovery': restart_exit['recovery']} if restart_exit is not None and not errors else {})}
 
 
 def main():

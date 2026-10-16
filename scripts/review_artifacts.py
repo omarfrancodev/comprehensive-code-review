@@ -313,6 +313,8 @@ def _restart_recovery_source(run, manifest):
         return None
     try:
         source, source_manifest, _ = _load_run(operation['source_run'])
+        _verify_files(source, source_manifest, allow_checkpoint_transaction=True,
+                      allow_resource_transfer=True, allow_pending_trace=True)
         active = _active_restart_operation(source, source_manifest, include_abandoned=True)
     except (OSError, ValueError, TypeError, KeyError):
         # Historical availability does not establish this successor's integrity.
@@ -323,7 +325,11 @@ def _restart_recovery_source(run, manifest):
     if (active['successor_run_dir'] != str(run)
             or active['intent_sha256'] != operation['intent_sha256']):
         raise ValueError('successor restart identity differs from its active source operation')
-    return {'run_dir': str(source), 'operation_id': active['operation_id']}
+    result = {'run_dir': str(source), 'operation_id': active['operation_id']}
+    resource_exit = _restart_resource_exit(source, source_manifest, active)
+    if resource_exit is not None:
+        result['resource_exit'] = resource_exit
+    return result
 
 
 def _write_active_restart(source_run, source_manifest, intent_path, intent, *, status='pending'):
@@ -2706,6 +2712,10 @@ def recover(run_dir, *, controller, authority, current_inputs):
                         'actions': [{'action': 'inspect', 'reason': 'The pending restart changed while acquiring its source lock.'}]}
             return _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs)
     recovery_source = _restart_recovery_source(run, manifest)
+    resource_exit = _diagnostic_recovery_route(run, manifest, recovery_source=recovery_source)
+    if resource_exit is not None:
+        return {'status': 'plan', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
+                'input_appraisal': input_appraisal, **resource_exit}
     if recovery_source is not None:
         return {'status': 'restart_pending', 'run_dir': str(run), 'run_id': manifest.get('run_id'),
                 'input_appraisal': input_appraisal,
@@ -2717,16 +2727,89 @@ class _RestartCancellationUnavailable(ValueError):
     """Verified state which the conservative cancellation protocol cannot unwind."""
 
 
-def _missing_restart_exit(run, manifest, active_restart):
+def _independent_review_action(run, reason, operation_id=None):
+    result = {'action': 'new_independent_review', 'run_dir': str(run), 'previous_run': None,
+              'use_fresh_resources': True, 'requires_explicit_authority': True,
+              'reason': reason + ' Preserve the pending transaction; an explicitly authorized prepare without '
+                        'previous-run can use fresh resources independently. It does not cancel the original '
+                        'operation or clean another review session.'}
+    if operation_id is not None:
+        result['operation_id'] = operation_id
+    return result
+
+
+def _unavailable_transfer_source_exit(run, manifest):
+    for transfer in normalize_transfer_history(manifest):
+        if transfer['status'] == 'complete' or transfer['successor_run'] != str(run):
+            continue
+        if (transfer['successor_run_id'] != manifest['run_id']
+                or transfer['successor_owner_id'] != manifest['owner_id']
+                or transfer['repository_key'] != manifest['repository_key']):
+            raise ValueError('incoming transfer successor identity differs from its local archive')
+        operation = manifest.get('restart_operation')
+        reservation_path = run / '.review-restart-reservation.json'
+        if operation is not None and reservation_path.exists():
+            expected = {key: operation[key] for key in ('operation_id', 'intent_sha256', 'reservation_id')}
+            expected.update(run_dir=str(run), owner_id=manifest['owner_id'])
+            if read_json(reservation_path) != expected:
+                raise ValueError('prepared successor reservation differs from its local restart identity')
+        try:
+            source, source_manifest, _ = _load_run(transfer['source_run'])
+            _verify_files(source, source_manifest, allow_checkpoint_transaction=True,
+                          allow_resource_transfer=True, allow_pending_trace=True)
+        except (OSError, ValueError, TypeError, KeyError):
+            _verify_files(run, manifest, allow_checkpoint_transaction=True,
+                          allow_resource_transfer=True, allow_pending_trace=True)
+            return {'recovery': {'status': 'source_unavailable', 'can_complete': False,
+                'transaction_pending': True, 'cancellation_supported': False,
+                'source_run': transfer['source_run'], 'blocked_by': ['source_unavailable']},
+                'actions': [{'action': 'preserve', 'run_dir': str(run), 'source_run': transfer['source_run'],
+                             'reason': 'The exact incoming transfer source cannot be verified; preserve the transaction and resources.'},
+                            _independent_review_action(run, 'The incoming transfer cannot finish without its verified source.')]}
+        if (source_manifest.get('run_id') != transfer['source_run_id']
+                or source_manifest.get('owner_id') != transfer['source_owner_id']
+                or source_manifest.get('repository_key') != transfer['repository_key']):
+            raise ValueError('incoming transfer source identity differs from its recorded intent')
+    return None
+
+
+def _diagnostic_recovery_route(run, manifest, *, active_restart=None, recovery_source=None):
+    if active_restart is not None:
+        return _restart_resource_exit(run, manifest, active_restart)
+    if recovery_source is not None and recovery_source.get('resource_exit') is not None:
+        return recovery_source['resource_exit']
+    return _unavailable_transfer_source_exit(run, manifest)
+
+
+def _restart_resource_exit(run, manifest, active_restart):
     """Read-only guidance; the mutator must recheck eligibility under its locks."""
     intent = active_restart['intent']
-    missing = [raw for raw in intent['request']['transfer_paths'] if not safe_path(raw).exists()]
-    if not missing or _find_restart_abandonment(active_restart['intent_path'], intent) is not None:
+    if _find_restart_abandonment(active_restart['intent_path'], intent) is not None:
         return None  # An already authorized cancellation must finish through ordinary recovery.
+    successor = safe_path(intent['successor']['run_dir'])
+    own_archives = {os.path.normcase(str(run)), os.path.normcase(str(successor))}
+    missing, foreign, own_sidecars = [], [], []
+    for raw in intent['request']['transfer_paths']:
+        session = safe_path(raw)
+        if not session.exists():
+            missing.append(raw)
+            continue
+        sidecar_path = safe_path(session / review_resource_claims.CLAIM_NAME)
+        if not sidecar_path.exists():
+            continue
+        sidecar = read_json(sidecar_path)
+        if isinstance(sidecar, dict) and sidecar.get('status') == 'owned':
+            owner = safe_path(sidecar.get('archive_path', ''))
+            if os.path.normcase(str(owner)) not in own_archives:
+                review_resource_claims.inspect_claim_identity(session, owner)
+                foreign.append(raw)
+            else:
+                own_sidecars.append((session, owner))
+    if not missing and not foreign:
+        return None
     # Never turn local corruption into an alternative-work suggestion.
     _verify_files(run, manifest, allow_checkpoint_transaction=True,
                   allow_resource_transfer=True, allow_pending_trace=True)
-    successor = safe_path(intent['successor']['run_dir'])
     prepared = (successor / 'cierre.json').exists()
     manifests = [manifest]
     if prepared:
@@ -2742,28 +2825,59 @@ def _missing_restart_exit(run, manifest, active_restart):
                    if row['source_run'] == str(run) and row['successor_run'] == str(successor)
                    for item in row['items'])
     missing = [raw for raw in missing if os.path.normcase(str(safe_path(raw))) in claimed]
-    if not missing:
+    if not missing and not foreign:
         return None  # missing_unclaimed does not prevent the existing exact replay.
-    supported = not any(row['status'] != 'complete' for row in transfers)
+    # A transfer may have replaced its sidecar before persisting its claim row.
+    # Only its exact hash-bound bytes may bypass ordinary ownership-row checks.
+    for session, owner in own_sidecars:
+        permitted = {item[key] for row in transfers if row['status'] == 'pending'
+            and row['source_run'] == str(run) and row['successor_run'] == str(successor)
+            for item in row['items'] if os.path.normcase(item['session_dir']) == os.path.normcase(str(session))
+            for key in ('old_claim_sha256', 'new_claim_sha256')}
+        if _digest((session / review_resource_claims.CLAIM_NAME).read_bytes()) in permitted:
+            continue
+        if (prepared and owner == successor
+                and not any(row['source_run'] == str(run) and row['successor_run'] == str(successor)
+                            for row in transfers)
+                and not any(os.path.normcase(row['session_dir']) == os.path.normcase(str(session))
+                            for row in next_manifest.get('resource_claims', []))):
+            # register can stop after claiming an adopted session but before its
+            # row is saved. Reuse its pure preflight, without performing replay.
+            plan = review_resource_claims.plan_claim(session, owner, next_manifest)
+            if plan['action'] != 'recover':
+                raise ValueError('pending adoption does not match its reserved successor')
+        else:
+            review_resource_claims.inspect_claim_identity(session, owner)
+    blocked_by = []
+    if any(row['status'] != 'complete' for row in transfers):
+        blocked_by.append('transfer_in_progress')
+    if any(row.get('status') == 'releasing' or
+           (row.get('status') == 'owned' and safe_path(row['session_dir']).exists())
+           for row in manifest.get('resource_claims', [])):
+        blocked_by.append('source_claims_present')
+    supported = not blocked_by
     if supported and prepared:
         try:
             _empty_adoption_successor(intent, manifest)
         except _RestartCancellationUnavailable:
             supported = False
+            blocked_by.append('successor_claims_or_work')
     if supported:
         action = {'action': 'abandon_restart', 'run_dir': str(run),
             'operation_id': intent['operation_id'], 'intent_path': active_restart['intent_path'],
             'requires_explicit_authority': True,
-            'reason': 'A selected resource is missing; abandon-restart can cancel this exact request with explicit authority. '
+            'reason': 'A selected resource is missing or held by another review; abandon-restart can cancel this exact request with explicit authority. '
                       'This diagnostic does not execute cancellation or release claims.'}
     else:
-        action = {'action': 'new_independent_review', 'run_dir': str(run),
-            'operation_id': intent['operation_id'], 'previous_run': None, 'use_fresh_resources': True,
-            'requires_explicit_authority': True,
-            'reason': 'A durable transfer, own claim or work prevents abandonment. Preserve this pending restart; '
-                      'an explicitly authorized prepare without previous-run can use fresh resources independently. '
-                      'It does not cancel the original restart or clean another review session.'}
-    return {'missing_resources': missing, 'cancellation_supported': supported, 'actions': [action]}
+        reasons = {'transfer_in_progress': 'A durable resource transfer prevents abandonment.',
+                   'source_claims_present': 'Present or releasing source claims prevent abandonment.',
+                   'successor_claims_or_work': 'Claims or work already owned by the successor prevent abandonment.'}
+        action = _independent_review_action(run, ' '.join(reasons[code] for code in blocked_by), intent['operation_id'])
+    return {'missing_resources': missing, 'foreign_resources': foreign, 'cancellation_supported': supported,
+            'recovery': {'status': 'cancellation_available' if supported else 'independent_review_required',
+                'can_complete': False, 'transaction_pending': True, 'cancellation_supported': supported,
+                'source_run': str(run), 'operation_id': intent['operation_id'], 'blocked_by': blocked_by},
+            'actions': [action]}
 
 
 def _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs):
@@ -2791,7 +2905,7 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
                 'replay_inputs_match': False,
                 'actions': [{'action': 'retry_restart',
                              'reason': 'The pending reservation can continue only with the exact current inputs captured by its intent.'}]}
-    resource_exit = _missing_restart_exit(run_path, manifest, active_restart)
+    resource_exit = _restart_resource_exit(run_path, manifest, active_restart)
     if resource_exit is not None:
         return {'status': 'restart_pending', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
                 'successor_run_dir': active_restart['successor_run_dir'],
@@ -3066,7 +3180,11 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
             _retire_completed_descriptor_if_present(intent_path, intent, source_path, source_manifest)
             return str(successor)
         _write_active_restart(source_path, source_manifest, intent_path, intent)
-    successor_path = _prepare_from_restart_intent(intent_path)
+    try:
+        successor_path = _prepare_from_restart_intent(intent_path)
+    except ValueError as exc:
+        raise ValueError(str(exc) + '; inspect/recover source ' + str(source_path)
+                         + ' for the recorded recovery plan') from exc
     successor, successor_manifest, _ = _load_run(successor_path)
     _verify_files(successor, successor_manifest, allow_resource_transfer=True)
     if successor_manifest.get('restart_operation') != _restart_operation_row(intent):
