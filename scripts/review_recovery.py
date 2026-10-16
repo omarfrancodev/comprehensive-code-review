@@ -179,6 +179,7 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
         'disposition': 'complete' if complete else 'open', 'phase': manifest.get('state')})
     active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
     recovery_source = artifacts._restart_recovery_source(run, manifest)
+    restart_exit = artifacts._missing_restart_exit(run, manifest, active_restart) if active_restart else None
     pending = ([{'kind': 'restart', 'status': 'pending', 'operation_id': active_restart['operation_id'],
                  'successor_run_dir': active_restart['successor_run_dir'],
                  'intent_path': active_restart['intent_path']}] if active_restart else [])
@@ -189,8 +190,9 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
     elif manifest.get('restart_abandonment') is not None:
         actions = [_abandoned_source_action(manifest)]
     elif pending:
-        actions = [_action('recover', 'Recover the exact pending restart under its source lock.'),
-                   _action('retry_restart', 'Retry the immutable request and reserved successor.')]
+        actions = (restart_exit['actions'] if restart_exit is not None else
+                   [_action('recover', 'Recover the exact pending restart under its source lock.'),
+                    _action('retry_restart', 'Retry the immutable request and reserved successor.')])
     elif disposition == 'superseded':
         actions = _superseded_actions()
     elif complete:
@@ -329,6 +331,7 @@ def inspect_run(run_dir, *, current_inputs=None):
     pending = []
     errors = []
     recovery_source = None
+    restart_exit = None
     try:
         active_restart = artifacts._active_restart_operation(run, manifest, include_abandoned=True)
         recovery_source = artifacts._restart_recovery_source(run, manifest)
@@ -339,6 +342,7 @@ def inspect_run(run_dir, *, current_inputs=None):
                             'operation_id': active_restart['operation_id'],
                             'successor_run_dir': active_restart['successor_run_dir'],
                             'intent_path': active_restart['intent_path']})
+            restart_exit = artifacts._missing_restart_exit(run, manifest, active_restart)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         errors.append(str(exc)[:1000])
     if manifest.get('pending_trace') is not None:
@@ -400,7 +404,8 @@ def inspect_run(run_dir, *, current_inputs=None):
         actions = [_recover_source_action(recovery_source)]
     elif any(row['status'] == 'pending' for row in pending):
         integrity_status = 'recoverable'
-        actions = [_action('recover', 'A helper-owned transaction is pending; recover its exact recorded inputs first.')]
+        actions = (restart_exit['actions'] if restart_exit is not None else
+                   [_action('recover', 'A helper-owned transaction is pending; recover its exact recorded inputs first.')])
     else:
         integrity_status = 'verified'
         if manifest.get('restart_abandonment') is not None:

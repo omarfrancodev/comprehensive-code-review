@@ -2713,6 +2713,59 @@ def recover(run_dir, *, controller, authority, current_inputs):
     return _recover_run_transactions(run_path, normalized_controller, authority, current_inputs, input_appraisal)
 
 
+class _RestartCancellationUnavailable(ValueError):
+    """Verified state which the conservative cancellation protocol cannot unwind."""
+
+
+def _missing_restart_exit(run, manifest, active_restart):
+    """Read-only guidance; the mutator must recheck eligibility under its locks."""
+    intent = active_restart['intent']
+    missing = [raw for raw in intent['request']['transfer_paths'] if not safe_path(raw).exists()]
+    if not missing or _find_restart_abandonment(active_restart['intent_path'], intent) is not None:
+        return None  # An already authorized cancellation must finish through ordinary recovery.
+    # Never turn local corruption into an alternative-work suggestion.
+    _verify_files(run, manifest, allow_checkpoint_transaction=True,
+                  allow_resource_transfer=True, allow_pending_trace=True)
+    successor = safe_path(intent['successor']['run_dir'])
+    prepared = (successor / 'cierre.json').exists()
+    manifests = [manifest]
+    if prepared:
+        _, next_manifest, _ = _load_run(successor)
+        _verify_restart_successor_identity(successor, next_manifest, intent)
+        _verify_files(successor, next_manifest, allow_checkpoint_transaction=True,
+                      allow_resource_transfer=True, allow_pending_trace=True)
+        manifests.append(next_manifest)
+    transfers = [row for current in manifests for row in normalize_transfer_history(current)]
+    claimed = {os.path.normcase(str(safe_path(row['session_dir']))) for current in manifests
+               for row in current.get('resource_claims', []) if row.get('status') in {'owned', 'releasing'}}
+    claimed.update(os.path.normcase(str(safe_path(item['session_dir']))) for row in transfers
+                   if row['source_run'] == str(run) and row['successor_run'] == str(successor)
+                   for item in row['items'])
+    missing = [raw for raw in missing if os.path.normcase(str(safe_path(raw))) in claimed]
+    if not missing:
+        return None  # missing_unclaimed does not prevent the existing exact replay.
+    supported = not any(row['status'] != 'complete' for row in transfers)
+    if supported and prepared:
+        try:
+            _empty_adoption_successor(intent, manifest)
+        except _RestartCancellationUnavailable:
+            supported = False
+    if supported:
+        action = {'action': 'abandon_restart', 'run_dir': str(run),
+            'operation_id': intent['operation_id'], 'intent_path': active_restart['intent_path'],
+            'requires_explicit_authority': True,
+            'reason': 'A selected resource is missing; abandon-restart can cancel this exact request with explicit authority. '
+                      'This diagnostic does not execute cancellation or release claims.'}
+    else:
+        action = {'action': 'new_independent_review', 'run_dir': str(run),
+            'operation_id': intent['operation_id'], 'previous_run': None, 'use_fresh_resources': True,
+            'requires_explicit_authority': True,
+            'reason': 'A durable transfer, own claim or work prevents abandonment. Preserve this pending restart; '
+                      'an explicitly authorized prepare without previous-run can use fresh resources independently. '
+                      'It does not cancel the original restart or clean another review session.'}
+    return {'missing_resources': missing, 'cancellation_supported': supported, 'actions': [action]}
+
+
 def _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs):
     """Caller holds the source restart lock and reread the active descriptor."""
     intent = active_restart['intent']
@@ -2738,6 +2791,12 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
                 'replay_inputs_match': False,
                 'actions': [{'action': 'retry_restart',
                              'reason': 'The pending reservation can continue only with the exact current inputs captured by its intent.'}]}
+    resource_exit = _missing_restart_exit(run_path, manifest, active_restart)
+    if resource_exit is not None:
+        return {'status': 'restart_pending', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
+                'successor_run_dir': active_restart['successor_run_dir'],
+                'input_appraisal': restart_appraisal, 'replay_inputs_match': True,
+                **resource_exit}
     intent_path = Path(active_restart['intent_path'])
     if not intent_path.exists():
         _write_restart_intent(intent_path, intent, run_path, manifest)
@@ -3150,9 +3209,8 @@ def _find_restart_abandonment(intent_path, intent):
     return receipt
 
 
-def _empty_adoption_successor(intent, source_manifest):
-    """Read-only preflight under both locks: empty successor and an unavailable resource."""
-    run, manifest, marker = _load_run(intent['successor']['run_dir'])
+def _verify_restart_successor_identity(run, manifest, intent):
+    """Check the reserved identity even when work/transfer makes cancellation unavailable."""
     reserved = intent['successor']
     expected = {'run_id': reserved['run_id'], 'owner_id': reserved['owner_id'],
                 'created_at': reserved['created_at'], 'previous_run': intent['source']['run_dir'],
@@ -3161,6 +3219,18 @@ def _empty_adoption_successor(intent, source_manifest):
                 'restart_operation': _restart_operation_row(intent)}
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError('prepared successor identity differs from the exact adoption intent')
+    reservation_path = run / '.review-restart-reservation.json'
+    if reservation_path.exists():
+        expected_reservation = {'operation_id': intent['operation_id'], 'intent_sha256': intent['intent_sha256'],
+            'reservation_id': reserved['reservation_id'], 'run_dir': str(run), 'owner_id': reserved['owner_id']}
+        if read_json(reservation_path) != expected_reservation:
+            raise ValueError('prepared successor reservation differs from its intent')
+
+
+def _empty_adoption_successor(intent, source_manifest):
+    """Read-only preflight under both locks: empty successor and an unavailable resource."""
+    run, manifest, marker = _load_run(intent['successor']['run_dir'])
+    _verify_restart_successor_identity(run, manifest, intent)
     if (not intent['request']['transfer_paths']
             or source_manifest.get('operation', {}).get('disposition') == 'superseded'
             or any(row.get('status') == 'releasing' or
@@ -3172,16 +3242,10 @@ def _empty_adoption_successor(intent, source_manifest):
             or any(manifest.get(key) for key in ('resource_claims', 'resource_transfers', 'resource_transfer',
                 'resource_cleanup', 'cleanup_receipts', 'executors', 'assignment_registry', 'checkpoint',
                 'checkpoint_transaction', 'pending_hashes', 'planned_hashes'))):
-        raise ValueError('a prepared successor with work or claims must be recovered; abandonment cannot orphan it')
+        raise _RestartCancellationUnavailable('a prepared successor with work or claims must be recovered; abandonment cannot orphan it')
     allowed = {MARKER, 'cierre.json', review_trace.NAME, '.review-restart-reservation.json'}
     if {path.name for path in run.iterdir()} - allowed:
-        raise ValueError('prepared successor contains evidence or unknown files; preserve it for recovery')
-    reservation_path = run / '.review-restart-reservation.json'
-    if reservation_path.exists():
-        expected_reservation = {'operation_id': intent['operation_id'], 'intent_sha256': intent['intent_sha256'],
-            'reservation_id': reserved['reservation_id'], 'run_dir': str(run), 'owner_id': reserved['owner_id']}
-        if read_json(reservation_path) != expected_reservation:
-            raise ValueError('prepared successor reservation differs from its intent')
+        raise _RestartCancellationUnavailable('prepared successor contains evidence or unknown files; preserve it for recovery')
     unavailable_resource = False
     for raw in intent['request']['transfer_paths']:
         if not safe_path(raw).exists():
@@ -3200,22 +3264,22 @@ def _empty_adoption_successor(intent, source_manifest):
         review_resource_claims._validate_sidecar(sidecar, session, workspace_manifest, token)
         if (sidecar['archive_path'] == str(run) or sidecar['run_id'] == manifest['run_id']
                 or sidecar['owner_id'] == manifest['owner_id']):
-            raise ValueError('prepared successor already owns an adoption sidecar; recover it')
+            raise _RestartCancellationUnavailable('prepared successor already owns an adoption sidecar; recover it')
         if sidecar['archive_path'] == intent['source']['run_dir']:
-            raise ValueError('adoption session belongs to the restart source; recover its claim')
+            raise _RestartCancellationUnavailable('adoption session belongs to the restart source; recover its claim')
         review_resource_claims.inspect_claim_identity(session, sidecar['archive_path'])
         unavailable_resource = True
     if not unavailable_resource:
-        raise ValueError('a prepared successor must be recovered unless a resource is absent or foreign-claimed')
+        raise _RestartCancellationUnavailable('a prepared successor must be recovered unless a resource is absent or foreign-claimed')
     pending = manifest.get('pending_trace')
     if pending is not None and [row.get('kind') for row in pending.get('events', [])] != ['prepare', 'profile']:
-        raise ValueError('prepared successor has a non-preparation trace transaction; recover it')
+        raise _RestartCancellationUnavailable('prepared successor has a non-preparation trace transaction; recover it')
     _verify_files(run, manifest, allow_pending_trace=True)
     trace_bytes = (_trace_recovery_plan(run, manifest)[1] if pending is not None
                    else (run / review_trace.NAME).read_bytes())
     events = [json.loads(line) for line in trace_bytes.splitlines()]
     if [row['kind'] for row in events] != ['prepare', 'profile']:
-        raise ValueError('prepared successor has observations beyond initial preparation; recover it')
+        raise _RestartCancellationUnavailable('prepared successor has observations beyond initial preparation; recover it')
     return run, manifest, marker
 
 

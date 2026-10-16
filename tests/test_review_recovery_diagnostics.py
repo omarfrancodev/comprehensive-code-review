@@ -167,6 +167,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.abandon_restart(source, **kwargs)
         receipt = self.read(successor / 'cierre.json')['restart_abandonment']
+        self.assertEqual(recovery.inspect_run(source)['actions'][0]['action'], 'recover')
         result = artifacts.recover(source, controller=self.controller(), authority='Finish cancellation',
                                    current_inputs=request['current_inputs'])
         self.assertEqual(result['status'], 'restart_abandoned')
@@ -237,3 +238,12 @@ class RecoveryDiagnosticTests(unittest.TestCase):
             self.assertEqual(tuple(self.snapshot(path) for path in paths), before)
         self.assertEqual(self.read(first / claims.CLAIM_NAME)['archive_path'], str(successor))
         self.assertEqual(claims.verify_claim(second, foreign)['run_id'], self.read(foreign / 'cierre.json')['run_id'])
+        # Exercise the documented exit, without releasing either existing session.
+        independent, fresh_session, _ = self.registered_session()
+        self.assertIsNone(self.read(independent / 'cierre.json').get('previous_run'))
+        self.assertNotIn(fresh_session, (first, second))
+        self.assertEqual(claims.verify_claim(fresh_session, independent)['archive_path'], str(independent))
+        artifacts.validate(independent)
+        self.assertEqual(tuple(self.snapshot(path) for path in paths), before)
+        self.assertEqual(artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))['operation_id'],
+                         active['operation_id'])
