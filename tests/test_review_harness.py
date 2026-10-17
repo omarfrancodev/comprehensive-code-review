@@ -172,10 +172,12 @@ class ArchiveHarnessTests(unittest.TestCase):
     close = fixtures.ArchiveTests.close
 
     def test_identity_persists_through_processing_retention_and_close(self):
+        from recovery_fixtures import legacy_prepare
         raw = ' Claude Code '
         with patch.dict(os.environ, {'CCR_HARNESS_ID': 'claude-code-cli'}):
-            run = Path(fixtures.artifacts.prepare(self.repo, self.scope, '2.10.0', raw, output_root=self.output,
-                        harness_id='claude-code-desktop', harness_source={'kind': 'user', 'reference': 'session declaration'}))
+            run = legacy_prepare(fixtures.artifacts, self.repo, self.scope, skill_version='2.10.0', harness=raw,
+                        output_root=self.output, harness_id='claude-code-desktop',
+                        harness_source={'kind': 'user', 'reference': 'session declaration'})
         initial = self.read(run / 'cierre.json')
         self.assertEqual(initial['schema_version'], 6)
         self.assertEqual(initial['harness'], raw)
@@ -214,10 +216,13 @@ class ArchiveHarnessTests(unittest.TestCase):
             self.assertFalse(set(keys) & set(self.read(run / 'cierre.json')))
 
     def test_cli_explicit_source_and_conflicts_are_archived(self):
+        from recovery_fixtures import selection_input
         source = self.write('source.json', {'kind': 'user', 'reference': 'Desktop session declaration'})
+        profile = self.write('profile.json', selection_input())
         args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
-                '--harness', 'Claude Code', '--output-root', str(self.output), '--harness-id', 'claude-code-desktop',
+                '--harness', 'Claude Code', '--output-root', str(self.output), '--profile-input', str(profile),
+                '--harness-id', 'claude-code-desktop',
                 '--harness-source-file', str(source)]
         result = subprocess.run(args, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -236,9 +241,12 @@ class ArchiveHarnessTests(unittest.TestCase):
         self.assertEqual(before, sorted(str(p) for p in self.output.rglob('*')))
 
     def test_cli_unencodable_source_is_rejected_before_creating_archive_directories(self):
+        from recovery_fixtures import selection_input
+        profile = self.write('profile.json', selection_input())
         args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
-                '--harness', 'Codex', '--harness-id', 'codex-desktop', '--output-root', str(self.output)]
+                '--harness', 'Codex', '--harness-id', 'codex-desktop', '--output-root', str(self.output),
+                '--profile-input', str(profile)]
         for reference in ('\ud800', '\udfff'):
             with self.subTest(reference=ascii(reference)):
                 source = self.write('source.json', {'kind': 'user', 'reference': reference})
@@ -253,10 +261,13 @@ class ArchiveHarnessTests(unittest.TestCase):
         self.assertEqual(value['harness_source']['reference'], 'Sesión declarada — escritorio 🚀')
 
     def test_cli_null_source_is_rejected_before_writing_with_or_without_explicit_id(self):
+        from recovery_fixtures import selection_input
         source = self.write('null-source.json', None)
+        profile = self.write('profile.json', selection_input())
         args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
-                '--harness', 'Codex', '--output-root', str(self.output), '--harness-source-file', str(source)]
+                '--harness', 'Codex', '--output-root', str(self.output), '--harness-source-file', str(source),
+                '--profile-input', str(profile)]
         for extra in ([], ['--harness-id', 'codex-desktop']):
             result = subprocess.run(args + extra, capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)

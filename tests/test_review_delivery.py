@@ -23,6 +23,44 @@ if spec:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_full_contains_lineage_brief_keeps_summary_and_previous_review_link(self):
+        value = record6()
+        source_id = 'CR-' + 'b' * 20
+        source_link = 'https://example.test/reviews/' + source_id + '/informe.md'
+        value['previous_reviews'] = [dict(review_id=source_id, reference=source_link, verified=True)]
+        run = self.retained(value, closed=True)
+
+        full = Path(delivery.deliver(run, 'full', self.repo, self.root / 'full-lineage'))
+        brief = Path(delivery.deliver(run, 'brief', self.repo, self.root / 'brief-lineage'))
+        full_report = (full / 'informe.md').read_text(encoding='utf-8')
+        full_record = artifacts.read_json(full / 'review.json')
+        summary = (brief / 'resumen.md').read_text(encoding='utf-8')
+
+        self.assertIn(source_link, full_report)
+        self.assertEqual(full_record['previous_reviews'][0]['review_id'], source_id)
+        self.assertIn('Resumen de revisión', summary)
+        self.assertIn('Veredicto', summary)
+        self.assertIn('Hallazgos', summary)
+        self.assertIn(source_id, summary)
+        self.assertIn(source_link, summary)
+
+    def test_schema10_projection_preserves_profile_lineage_and_fulfillment(self):
+        from recovery_fixtures import record10
+
+        value = record10('deep', 'automatic')
+        self.assertEqual(artifacts.review_contract.validate(value), [])
+        projection = delivery._Projection(value, {'repository_path': str(self.repo),
+            'archive_root': str(self.archive)}, self.repo, 'a' * 64)
+
+        portable = projection.value(value)
+        summary = delivery._brief(portable)
+
+        self.assertEqual(artifacts.review_contract.validate(portable), [])
+        self.assertEqual(portable['coverage']['execution']['profile_history'][0]['id'], 'S001')
+        self.assertEqual(portable['coverage']['execution']['plan'][0]['selection_id'], 'S001')
+        self.assertTrue(portable['coverage']['execution']['profile_history'][0]['reference'].startswith('retained:'))
+        self.assertIn('**Ejecución del perfil:** cumplida', summary)
+
     def test_forward_slash_unc_snapshot_refuses_both_deliveries(self):
         for identity in ('//private-server/share/snapshot', 'snapshot //private-server/share/snapshot',
                          r'//private-server\share/snapshot'):
@@ -177,10 +215,11 @@ class DeliveryTests(unittest.TestCase):
         return path
 
     def retained(self, value=None, temporary=None, closed=False):
+        from recovery_fixtures import legacy_prepare
         value = copy.deepcopy(value or record6())
         scope = self.write('scope.json', value['scope'])
-        run = Path(artifacts.prepare(self.repo, scope, '2.8.0', 'codex', output_root=self.archive,
-                                    temporary_paths=temporary))
+        run = legacy_prepare(artifacts, self.repo, scope, skill_version='2.8.0', harness='codex',
+                             output_root=self.archive, temporary_paths=temporary)
         if value['schema_version'] in (6, 7):
             value['review_id'] = 'CR-' + artifacts.read_json(run / 'cierre.json')['run_id']
         artifacts.retain(run, self.write('final.json', value))
@@ -265,8 +304,9 @@ class DeliveryTests(unittest.TestCase):
         self.assertFalse((self.root / 'other').exists())
 
     def test_prepared_archive_cannot_be_delivered(self):
-        run = Path(artifacts.prepare(self.repo, self.write('scope.json', record6()['scope']),
-                                    '2.8.0', 'codex', output_root=self.archive))
+        from recovery_fixtures import legacy_prepare
+        run = legacy_prepare(artifacts, self.repo, self.write('scope.json', record6()['scope']),
+                             skill_version='2.8.0', harness='codex', output_root=self.archive)
         before = self.snapshot(run)
         with self.assertRaises(ValueError):
             delivery.deliver(run, 'brief', self.repo)

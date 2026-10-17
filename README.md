@@ -86,6 +86,8 @@ Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<proyecto>
 
 El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada permanece inmutable; otra revisión crea un registro enlazado y una entrega posterior conserva el vínculo con el original. Las mediciones son optativas, solo para una evaluación de coste solicitada. Consulta [archivo y ejecución](docs/usage.md#archivo-interno-y-ejecución).
 
+Si la misma petición ya tiene una revisión previa o interrumpida, CCR consulta candidatos limitados al repositorio y alcance; muestra sus diferencias y ofrece continuar, recuperar, mostrar o iniciar una revisión enlazada. No elige una revisión automáticamente. Consulta [recuperación y continuidad](references/archive/recovery.md).
+
 ## Guías y versiones
 
 Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo, presentación y mantenimiento. El agente consulta solo las necesarias en cada fase; la [guía de uso](docs/usage.md#organización-de-referencias) explica la organización.
@@ -94,7 +96,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 2.11.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.11.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Última release publicada: 2.12.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.12.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 

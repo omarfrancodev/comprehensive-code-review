@@ -6,6 +6,7 @@ Python 3.10+, standard library only. Structural checks never establish finding t
 import argparse
 from review_execution import validate_execution
 from review_check_provenance import validate_check_execution
+from review_profiles import validate_profile_execution
 from review_publication import public_limitations, public_reservations
 import copy
 import html
@@ -38,6 +39,9 @@ PROFILES = {'economy': 'económico', 'balanced': 'equilibrado',
             'deep': 'profundo', 'extended': 'extendido'}
 CURRENT_PROFILES = {'focused', 'standard', 'deep', 'extended'}
 PROFILE_ALIASES = {'economy': 'focused', 'balanced': 'standard'}
+PROFILE_PHASES = {'prepare': 'preparación', 'discovery': 'descubrimiento',
+                  'verification': 'verificación', 'report': 'informe',
+                  'retain': 'retención', 'cleanup': 'limpieza', 'close': 'cierre'}
 MODE_LABELS = {'pr': 'PR', 'mr': 'MR', 'commit': 'commit', 'range': 'rango de commits',
                'staged': 'cambios preparados', 'unstaged': 'cambios sin preparar',
                'working': 'cambios locales', 'module': 'módulo',
@@ -132,14 +136,14 @@ def validate(record):
     base_fields = {'schema_version', 'stage', 'scope', 'findings', 'checks', 'coverage'}
     final_fields = {'profile', 'profile_reason', 'responsible', 'description', 'verdict',
                     'verdict_reason', 'reservations', 'rereview', 'aliases', 'resources'}
-    if schema_version in (3, 4, 5, 6, 7, 8, 9):
+    if schema_version in (3, 4, 5, 6, 7, 8, 9, 10):
         final_fields.add('change_authors')
-    if schema_version in (4, 5, 6, 7, 8, 9):
+    if schema_version in (4, 5, 6, 7, 8, 9, 10):
         final_fields.add('presentation')
-    if schema_version in (6, 7, 8, 9):
+    if schema_version in (6, 7, 8, 9, 10):
         final_fields |= {'review_id', 'previous_reviews', 'grandfathered_ids'}
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
-    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
+    if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
     scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
@@ -155,7 +159,7 @@ def validate(record):
 
     prior_reviews = []
     historical = {'findings': [], 'checks': []}
-    if schema_version in (6, 7, 8, 9) and stage == 'final':
+    if schema_version in (6, 7, 8, 9, 10) and stage == 'final':
         if not review_id(record.get('review_id')):
             error('review_id', 'expected CR- followed by 20 lowercase hexadecimal run identity characters')
         for i, raw in enumerate(array(record.get('previous_reviews'), 'previous_reviews')):
@@ -188,15 +192,15 @@ def validate(record):
     for i, raw in enumerate(array(record.get('checks'), 'checks')):
         path = f'checks[{i}]'
         check_names = {'id', 'command', 'revision', 'status', 'failure_kind', 'evidence', 'reused', 'reuse_reason', 'rerun_reason'}
-        if schema_version in (6, 7, 8, 9):
+        if schema_version in (6, 7, 8, 9, 10):
             check_names.add('reference')
-        if schema_version == 9:
+        if schema_version in (9, 10):
             check_names.add('execution')
         check = fields(raw, check_names, path)
         for key in ('id', 'command', 'revision'):
             text(check.get(key), f'{path}.{key}')
         identifier = check.get('id')
-        if schema_version in (6, 7, 8, 9):
+        if schema_version in (6, 7, 8, 9, 10):
             if not canonical_id(identifier, 'C') and identifier not in historical['checks']:
                 error(path + '.id', 'expected canonical check ID C001 (at least three digits, nonzero)')
             text(check.get('reference'), path + '.reference', nullable=check.get('reused') is not True)
@@ -233,7 +237,7 @@ def validate(record):
         for key in ('id', 'title', 'scenario', 'impact', 'correction'):
             text(item.get(key), f'{path}.{key}')
         identifier = item.get('id')
-        if schema_version in (6, 7, 8, 9) and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
+        if schema_version in (6, 7, 8, 9, 10) and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
             error(path + '.id', 'expected canonical finding ID F001 (at least three digits, nonzero)')
         if isinstance(identifier, str):
             if identifier in finding_ids:
@@ -290,9 +294,9 @@ def validate(record):
     coverage_fields = {'flows', 'limitations'}
     if stage == 'final':
         coverage_fields |= {'adequate', 'verification', 'stale'}
-        if schema_version in (8, 9):
+        if schema_version in (8, 9, 10):
             coverage_fields.add('execution')
-        if schema_version in (2, 3, 4, 5, 6, 7, 8, 9):
+        if schema_version in (2, 3, 4, 5, 6, 7, 8, 9, 10):
             coverage_fields.add('areas')
     coverage = fields(record.get('coverage'), coverage_fields, 'coverage')
     for i, flow in enumerate(array(coverage.get('flows'), 'coverage.flows')):
@@ -300,11 +304,11 @@ def validate(record):
     limitations = []
     for i, raw in enumerate(array(coverage.get('limitations'), 'coverage.limitations')):
         path = f'coverage.limitations[{i}]'
-        names = {'detail', 'material'} | ({'kind', 'public_summary'} if schema_version in (8, 9) else set())
+        names = {'detail', 'material'} | ({'kind', 'public_summary'} if schema_version in (8, 9, 10) else set())
         limitation = fields(raw, names, path)
         text(limitation.get('detail'), f'coverage.limitations[{i}].detail')
         boolean(limitation.get('material'), f'coverage.limitations[{i}].material')
-        if schema_version in (8, 9):
+        if schema_version in (8, 9, 10):
             enum(limitation.get('kind'), {'behavior', 'validation', 'execution'}, path + '.kind')
             text(limitation.get('public_summary'), path + '.public_summary', nullable=True)
             if limitation.get('kind') == 'execution':
@@ -316,13 +320,15 @@ def validate(record):
     if stage != 'final':
         return errors
 
-    if schema_version in (8, 9):
+    if schema_version in (8, 9, 10):
         errors.extend(validate_execution(record))
-    if schema_version == 9:
+    if schema_version in (9, 10):
         errors.extend(validate_check_execution(record))
+    if schema_version == 10:
+        errors.extend(validate_profile_execution(record))
 
     material_area_gap = False
-    if schema_version in (2, 3, 4, 5, 6, 7, 8, 9):
+    if schema_version in (2, 3, 4, 5, 6, 7, 8, 9, 10):
         area_ids = set()
         public_finding_ids = {f['id'] for f in findings if isinstance(f, dict)
                               and isinstance(f.get('id'), str) and f.get('status') != 'rejected'}
@@ -356,7 +362,7 @@ def validate(record):
         if area_ids != set(AREAS):
             error('coverage.areas', 'exactly one row for each area A through E is required')
 
-    profile_choices = (CURRENT_PROFILES if schema_version in (7, 8, 9) else
+    profile_choices = (CURRENT_PROFILES if schema_version in (7, 8, 9, 10) else
                        {'economy', 'balanced', 'deep', 'extended'} if schema_version in (5, 6) else
                        {'economy', 'balanced', 'deep'})
     enum(record.get('profile'), profile_choices, 'profile')
@@ -396,13 +402,13 @@ def validate(record):
         return person
 
     identity(record.get('responsible'), 'responsible')
-    if schema_version in (4, 5, 6, 7, 8, 9):
+    if schema_version in (4, 5, 6, 7, 8, 9, 10):
         presentation = fields(record.get('presentation'), {'kind', 'subject'}, 'presentation')
         enum(presentation.get('kind'), REVIEW_KINDS, 'presentation.kind')
         text(presentation.get('subject'), 'presentation.subject')
         if isinstance(presentation.get('subject'), str) and any(c in presentation['subject'] for c in '\r\n'):
             error('presentation.subject', 'expected a single-line functional subject')
-    if schema_version in (3, 4, 5, 6, 7, 8, 9):
+    if schema_version in (3, 4, 5, 6, 7, 8, 9, 10):
         seen_authors = set()
         for i, author in enumerate(array(record.get('change_authors'), 'change_authors')):
             identity(author, f'change_authors[{i}]', author=True)
@@ -439,15 +445,15 @@ def validate(record):
     for i, raw in enumerate(array(record.get('rereview'), 'rereview')):
         path = f'rereview[{i}]'
         names = {'id', 'status', 'details'}
-        if schema_version in (6, 7, 8, 9):
+        if schema_version in (6, 7, 8, 9, 10):
             names |= {'previous_review_id', 'previous_reference', 'previous_finding_id', 'previous_title', 'previous_url', 'check_ids'}
         item = fields(raw, names, path)
         text(item.get('id'), f'rereview[{i}].id')
         if isinstance(item.get('id'), str):
             previous_ids.add(item['id'])
-        enum(item.get('status'), set(REREVIEW_STATUS) if schema_version in (6, 7, 8, 9) else {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
+        enum(item.get('status'), set(REREVIEW_STATUS) if schema_version in (6, 7, 8, 9, 10) else {'resolved', 'still_valid', 'withdrawn', 'new'}, f'rereview[{i}].status')
         text(item.get('details'), f'rereview[{i}].details')
-        if schema_version in (6, 7, 8, 9):
+        if schema_version in (6, 7, 8, 9, 10):
             identifier = item.get('id')
             if not canonical_id(identifier, 'F') and identifier not in historical['findings']:
                 error(path + '.id', 'expected canonical finding ID or disclosed historical ID')
@@ -484,14 +490,14 @@ def validate(record):
                     seen.add(identifier)
     historical_aliases = set()
     aliases = record.get('aliases')
-    if schema_version in (6, 7, 8, 9) and isinstance(aliases, dict):
+    if schema_version in (6, 7, 8, 9, 10) and isinstance(aliases, dict):
         for alias, survivor in aliases.items():
             if (isinstance(alias, str) and isinstance(survivor, str)
                     and alias in historical['findings'] and survivor in historical_sources
                     and survivor in finding_ids | previous_ids and survivor not in aliases
                     and alias not in finding_ids | previous_ids):
                 historical_aliases.add(alias)
-    if schema_version in (6, 7, 8, 9):
+    if schema_version in (6, 7, 8, 9, 10):
         for identifier in historical['findings']:
             if (not isinstance(identifier, str) or (identifier not in historical_aliases
                     and (identifier not in historical_sources or identifier not in finding_ids | previous_ids))):
@@ -505,7 +511,7 @@ def validate(record):
         for alias, survivor in aliases.items():
             text(alias, 'aliases key')
             text(survivor, f'aliases.{alias}')
-            if schema_version in (6, 7, 8, 9) and not canonical_id(alias, 'F') and alias not in historical_aliases:
+            if schema_version in (6, 7, 8, 9, 10) and not canonical_id(alias, 'F') and alias not in historical_aliases:
                 error(f'aliases.{alias}', 'expected canonical alias ID or explicitly declared historical alias with verified survivor provenance')
             if (not isinstance(survivor, str) or survivor not in finding_ids | previous_ids
                     or survivor in aliases or alias in finding_ids | previous_ids):
@@ -551,8 +557,8 @@ def canonicalize_ids(record, reserved_ids=None):
     Return a fresh record and source maps; caller must retain these maps as evidence.
     Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
     """
-    if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8, 9):
-        raise ValueError('canonical ID allocation requires schema 6, 7 or 8')
+    if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8, 9, 10):
+        raise ValueError('canonical ID allocation requires schema 6–10')
     errors = [error for error in validate(record) if 'expected canonical' not in error]
     if errors:
         raise ValueError('; '.join(errors))
@@ -721,16 +727,28 @@ def render(record, audience='user', publication_context=None):
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] in (3, 4, 5, 6, 7, 8, 9):
+    if record['schema_version'] in (3, 4, 5, 6, 7, 8, 9, 10):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
         lines.append(f"- **{reference_label}:** {reference_text(scope['reference'])}")
     if audience == 'user':
-        lines.extend([f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.",
-                      f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}."])
-        if record['schema_version'] in (8, 9):
+        if record['schema_version'] == 10:
+            history = record['coverage']['execution']['profile_history']
+            initial = history[0]
+            lines.extend([f"- **Perfil inicial:** {PROFILES[initial['profile']]} — {markdown_text(initial['reason'])}.",
+                          f"- **Perfil efectivo:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}."])
+            if len(history) > 1:
+                transitions = '; '.join(
+                    f"{PROFILES[item['changed_from']]} → {PROFILES[item['profile']]} "
+                    f"(durante {PROFILE_PHASES[item['phase']]}) — {markdown_text(item['reason'])}"
+                    for item in history[1:])
+                lines.append('- **Transiciones de perfil:** ' + transitions + '.')
+        else:
+            lines.append(f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.")
+        lines.append(f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}.")
+        if record['schema_version'] in (8, 9, 10):
             status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
             lines.append('- **Ejecución del perfil:** ' + status + '.')
     description = record['description']

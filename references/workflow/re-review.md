@@ -2,6 +2,8 @@
 
 Choose presentation.kind once: review for a new review; rereview when checking previous findings/conditions against current inputs; complement for an explicitly additional bounded area/check of a prior review. Titles are Code Review, Re-review and Complement Code Review respectively, with the functional subject. Both later kinds create a new linked archive; do not overwrite the earlier review or claim its untouched scope was revalidated. Complements preserve applicable IDs and identify the added scope/evidence and remaining limits; they do not automatically inherit or close earlier findings. Re-review ID decisions below apply only to claims actually reassessed.
 
+Before creating another run, query the bounded candidate set and select the exact prior archive as described in [recovery.md](../archive/recovery.md). Use a verified completed report as history only when its freshness is understood; inspect an incomplete run before continuing or restarting it. Never choose a prior report automatically by timestamp or finding ID.
+
 Recover the previous exact base/head/snapshot, report/final record, known review ID, stable IDs/aliases, evidence/check references, coverage and pending conditions. Link the verified prior source in previous_reviews; unknown legacy review IDs stay null. If unavailable/unreliable, disclose that limitation and perform a new bounded review; do not claim continuity or invent source IDs.
 
 Use the exact previous archive path under artifacts.md; create a new run and link it in cierre.json. Retain the earlier final record and any optional measurements unchanged. Read only evidence required for the current comparison, not all historical runs or a cross-run context cache.

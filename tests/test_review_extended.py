@@ -121,8 +121,9 @@ class ExtendedArchiveTests(unittest.TestCase):
         value['change_authors'] = []
         value['resources']['publication'] = 'not_requested'
         final = fixture.write('extended.json', value)
-        run = Path(archive_tests.artifacts.prepare(fixture.repo, fixture.scope, '2.6.0',
-                                                  'codex', output_root=fixture.output))
+        from recovery_fixtures import legacy_prepare
+        run = legacy_prepare(archive_tests.artifacts, fixture.repo, fixture.scope,
+                             skill_version='2.6.0', harness='codex', output_root=fixture.output)
         archive_tests.artifacts.retain(run, final)
         archive_tests.artifacts.validate(run, require_retained=True)
         archive_tests.artifacts.close(run, cleanup='not_needed', residuals=[])

@@ -311,10 +311,11 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         self.artifacts = delivery_tests.artifacts
 
     def prepared(self, profile='deep'):
+        from recovery_fixtures import legacy_prepare
         value = record8(profile)
         fixture = self.fixture
-        run = self.artifacts.prepare(fixture.repo, fixture.write('scope.json', value['scope']),
-                                     '2.11.0', 'codex', output_root=fixture.archive)
+        run = legacy_prepare(self.artifacts, fixture.repo, fixture.write('scope.json', value['scope']),
+                             skill_version='2.11.0', harness='codex', output_root=fixture.archive)
         from pathlib import Path
         run = Path(run)
         value['review_id'] = 'CR-' + self.artifacts.read_json(run / 'cierre.json')['run_id']

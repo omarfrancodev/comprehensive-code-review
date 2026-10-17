@@ -119,9 +119,10 @@ class ProfileNameArchiveTests(unittest.TestCase):
         self.fixture.setUp()
 
     def prepare(self, value):
+        from recovery_fixtures import legacy_prepare
         fixture = self.fixture
-        run = Path(artifacts.prepare(fixture.repo, fixture.write('scope.json', value['scope']),
-                                     '2.8.0', 'codex', output_root=fixture.archive))
+        run = legacy_prepare(artifacts, fixture.repo, fixture.write('scope.json', value['scope']),
+                             skill_version='2.8.0', harness='codex', output_root=fixture.archive)
         value['review_id'] = 'CR-' + artifacts.read_json(run / 'cierre.json')['run_id']
         return run
 

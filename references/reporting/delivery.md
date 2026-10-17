@@ -6,8 +6,8 @@ The agent interprets `--delivery full|brief` and `--output <delivery-root>`. The
 
 ## Contents and location
 
-- Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties and applicable coverage.
-- Brief: resumen.md with identity/version/scope, verdict and reason, confirmed counts, IDs/priorities/locations, concrete triggering scenarios/impacts and correction guidance, meaningful validation summaries and material pending matters. It remains sufficient to understand the requested next work; unresolved claims stay separate from confirmed corrections.
+- Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties, applicable coverage, `previous_reviews` lineage and schema 10 profile/assignment history.
+- Brief: resumen.md with identity/version/scope, verdict and reason, confirmed counts, IDs/priorities/locations, concrete triggering scenarios/impacts and correction guidance, meaningful validation summaries and material pending matters. It shows the prior review ID/source link and keeps the result summary; it does not promise full profile/assignment history. It remains sufficient to understand the requested next work; unresolved claims stay separate from confirmed corrections.
 - Optional contexto.md: only additional collected context that changes the next agent's decisions and is absent from the report. Preserve sources and uncertainties; do not repeat findings or create a new plan.
 - A small .ccr-delivery.json records projection/source identity and file hashes. It is transfer integrity metadata, not an execution log, review authorization or proof of correctness.
 
@@ -56,8 +56,8 @@ Do not commit, publish or authorize fixes merely because delivery was requested.
 
 Use bold ID labels in full/brief delivery for confirmed findings (brief), checks, unresolved findings and previous-review ledger entries. Preserve the underlying IDs, historical source IDs and link targets; escape supplied text separately from generated formatting. Full delivery inherits report-format.md.
 
-## Schema 8/9 provenance
+## Schema 8–10 provenance
 
-Full/brief delivery preserves source schema/review ID and truthful execution status without collecting new sources. The portable JSON may contain sanitized provenance labels; validate its structure, not local filesystem references from another machine. The original archive verifies actual selected sources before cleanup. An explicitly private handoff retains relevant internal limitations; a public handoff uses the same typed/historical classification policy as comments. Delivery never grants permission to publish it.
+Full delivery preserves source schema/review ID, truthful execution status, profile history and assignment selection bindings without collecting new sources. Brief preserves review identity and summarizes execution fulfillment; it does not include the effective profile name, profile history or a link to that history. Prior-review IDs/links identify the recorded previous reviews, when available. Consult the original archive or a full delivery for profile history. The portable JSON may contain sanitized provenance labels; validate its structure, not local filesystem references from another machine. The original archive verifies actual selected sources before cleanup. An explicitly private handoff retains relevant internal limitations; a public handoff uses the same typed/historical classification policy as comments. Delivery never grants permission to publish it.
 
 Both modes use the same typed portable projection: preserve enums, IDs, versions, snapshot identities and relationships; sanitize only prose/commands and reference/location fields according to their meaning. A private structural identity is refused with a field-only diagnostic before any output is created. Unclassified new string fields require an explicit policy; never rewrite IDs or weaken contract validation to make an export pass. The retained source and receipt lineage remain intact on failure.
