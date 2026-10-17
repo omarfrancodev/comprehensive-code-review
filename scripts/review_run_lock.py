@@ -23,11 +23,11 @@ class LockConflictError(CoordinationError):
 def _lock_identity(run_dir, *, coordination_root=None):
     run = Path(run_dir)
     if not run.is_absolute():
-        raise ValueError('run lock requires an absolute run directory')
+        raise CoordinationError('run lock requires an absolute run directory')
     if not run.exists() or not run.is_dir():
-        raise ValueError('run lock requires an existing run directory')
+        raise CoordinationError('run lock requires an existing run directory')
     if run.is_symlink():
-        raise ValueError('run lock refuses a linked run directory')
+        raise CoordinationError('run lock refuses a linked run directory')
     run = Path(os.path.abspath(str(run)))
     for component in (run, *run.parents):
         try:
@@ -35,7 +35,7 @@ def _lock_identity(run_dir, *, coordination_root=None):
         except FileNotFoundError:
             continue
         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
-            raise ValueError('run lock refuses linked path components')
+            raise CoordinationError('run lock refuses linked path components')
     # realpath asks the OS for the final path of an existing directory. On
     # Windows this also expands 8.3 aliases, so long and short spellings share
     # one process lock and one lock file.
@@ -63,18 +63,21 @@ def _lock_identity(run_dir, *, coordination_root=None):
     identity = canonical
     lock_root = run.parent / '.review-locks' if coordination_root is None else Path(coordination_root)
     if not lock_root.is_absolute() or '..' in lock_root.parts:
-        raise ValueError('review lock directory must be absolute without traversal')
+        raise CoordinationError('review lock directory must be absolute without traversal')
     for component in (lock_root, *lock_root.parents):
         try:
             info = component.lstat()
         except FileNotFoundError:
             continue
         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
-            raise ValueError('review lock directory traverses a link/reparse point')
+            raise CoordinationError('review lock directory traverses a link/reparse point')
     if lock_root.exists() and (lock_root.is_symlink() or not lock_root.is_dir()
                                or getattr(lock_root.lstat(), 'st_file_attributes', 0) & 0x400):
-        raise ValueError('review lock directory is not a regular directory')
-    lock_root.mkdir(exist_ok=True)
+        raise CoordinationError('review lock directory is not a regular directory')
+    try:
+        lock_root.mkdir(exist_ok=True)
+    except OSError as exc:
+        raise CoordinationError('review lock directory could not be created: ' + str(lock_root) + ': ' + str(exc)) from exc
     digest = hashlib.sha256(identity.encode('utf-8')).hexdigest()
     return identity, lock_root / (digest + '.lock')
 
@@ -114,7 +117,7 @@ def _windows_lock_fd(lock_path):
         if not info(handle, 9, ctypes.byref(attributes), ctypes.sizeof(attributes)):
             raise ctypes.WinError(ctypes.get_last_error())
         if attributes.attributes & (0x400 | 0x10):
-            raise ValueError('review lock file must not be linked or a directory')
+            raise CoordinationError('review lock file must not be linked or a directory')
         fd = msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
     except BaseException:
         close(handle)
@@ -129,14 +132,14 @@ def _open_lock_file(lock_path):
     except FileNotFoundError:
         before = None
     if before is not None and not _regular_lock(before):
-        raise ValueError('review lock file must be regular, unlinked and singly owned')
+        raise CoordinationError('review lock file must be regular, unlinked and singly owned')
     fd = None
     try:
         if os.name == 'nt':
             fd = _windows_lock_fd(lock_path)
         else:
             if not hasattr(os, 'O_NOFOLLOW'):
-                raise ValueError('this platform cannot open coordination files without following links')
+                raise CoordinationError('this platform cannot open coordination files without following links')
             fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW
                          | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_CLOEXEC', 0), 0o600)
         opened = os.fstat(fd)
@@ -144,7 +147,7 @@ def _open_lock_file(lock_path):
         if (not _regular_lock(opened) or not _regular_lock(current)
                 or not os.path.samestat(opened, current)
                 or before is not None and not os.path.samestat(before, opened)):
-            raise ValueError('review lock file identity changed or is not a regular unlinked file')
+            raise CoordinationError('review lock file identity changed or is not a regular unlinked file')
         stream = os.fdopen(fd, 'r+b')
         fd = None
         return stream

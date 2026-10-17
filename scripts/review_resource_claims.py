@@ -48,7 +48,7 @@ def session_claim_locks(paths):
         for path, identity in sessions.items():
             workspace = _workspace(path)
             if workspace is None or (workspace[1]['session_id'], workspace[2]) != identity:
-                raise ValueError('review workspace identity changed while acquiring its claim lock')
+                raise CoordinationError('review workspace identity changed while acquiring its claim lock')
         yield
 
 

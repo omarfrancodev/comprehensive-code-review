@@ -293,13 +293,15 @@ def load(path):
 
 def record_artifact(args):
     import review_resource_claims
-    from review_run_lock import LockConflictError
+    from review_run_lock import CoordinationError, LockConflictError
     session = load(args.manifest)['session_dir']
     try:
         with review_resource_claims.session_claim_locks([session]):
             return _record_artifact_locked(args)
     except LockConflictError as exc:
         raise ReviewError('Artifact registration lock conflict; preserve the session and retry: ' + str(exc)) from exc
+    except CoordinationError as exc:
+        raise ReviewError('Artifact registration failed; preserve the session: ' + str(exc)) from exc
 
 
 def _record_artifact_locked(args):
@@ -319,17 +321,19 @@ def _record_artifact_locked(args):
 
 def cleanup(args):
     import review_resource_claims
-    from review_run_lock import LockConflictError
+    from review_run_lock import CoordinationError, LockConflictError
     session = load(args.manifest)['session_dir']
     try:
         with review_resource_claims.session_claim_locks([session]):
             return _cleanup_claim_locked(args)
     except LockConflictError as exc:
         raise ReviewError('Workspace cleanup lock conflict; preserve the session and retry: ' + str(exc)) from exc
+    except CoordinationError as exc:
+        raise ReviewError('Workspace cleanup failed; preserve the session: ' + str(exc)) from exc
 
 
 def _cleanup_claim_locked(args):
-    from review_run_lock import LockConflictError
+    from review_run_lock import CoordinationError, LockConflictError
     manifest = load(args.manifest)
     session = Path(manifest['session_dir'])
     claim_path = session / '.review-run-owner.json'
@@ -351,6 +355,8 @@ def _cleanup_claim_locked(args):
             return _cleanup_locked(args, review_artifacts=review_artifacts)
     except LockConflictError as exc:
         raise ReviewError('Review archive cleanup lock conflict; preserve the session and retry: ' + str(exc)) from exc
+    except CoordinationError as exc:
+        raise ReviewError('Review archive cleanup failed; preserve the session: ' + str(exc)) from exc
 
 
 def _cleanup_locked(args, *, review_artifacts=None):
