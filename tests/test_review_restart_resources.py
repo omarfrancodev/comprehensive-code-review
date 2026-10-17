@@ -189,7 +189,8 @@ class RestartResourceReplayTests(unittest.TestCase):
         try:
             self.assertTrue(acquired.wait(5))
             before = self.snapshot(successor)
-            with self.assertRaisesRegex(ValueError, 'mutation lock conflict'):
+            from review_run_lock import LockConflictError
+            with self.assertRaisesRegex(LockConflictError, 'mutation lock conflict'):
                 artifacts.restart(source, **request)
             self.assertEqual(self.snapshot(successor), before)
         finally:

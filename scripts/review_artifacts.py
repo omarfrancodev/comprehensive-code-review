@@ -30,7 +30,7 @@ import review_profiles
 import review_inputs
 import review_restart
 import review_resource_claims
-from review_run_lock import run_locks
+from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
 
@@ -395,8 +395,8 @@ def _restart_lock(source_path, *, timeout=30.0):
         try:
             lock.__enter__()
             break
-        except ValueError as exc:
-            if 'mutation lock conflict' not in str(exc) or time.monotonic() >= deadline:
+        except LockConflictError:
+            if time.monotonic() >= deadline:
                 raise
             time.sleep(0.05)
     try:
@@ -3190,7 +3190,8 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
     try:
         successor_path = _prepare_from_restart_intent(intent_path)
     except ValueError as exc:
-        raise ValueError(str(exc) + '; inspect/recover source ' + str(source_path)
+        error_type = type(exc) if isinstance(exc, CoordinationError) else ValueError
+        raise error_type(str(exc) + '; inspect/recover source ' + str(source_path)
                          + ' for the recorded recovery plan') from exc
     successor, successor_manifest, _ = _load_run(successor_path)
     _verify_files(successor, successor_manifest, allow_resource_transfer=True)
