@@ -71,6 +71,27 @@ class SessionOperationTests(unittest.TestCase):
         self.assertEqual(result['status'], 'recorded')
         self.assertEqual(self.read(session / 'manifest.json')['artifacts'], [result['artifact']])
 
+    def test_record_artifact_reloads_a_record_committed_after_its_initial_read(self):
+        session = self.workspace_session()
+        first = self.fixture(session, 'first.py')
+        second = self.fixture(session, 'second.py')
+        original_load = workspace.load
+        initial_read = True
+
+        def another_writer_commits(path):
+            nonlocal initial_read
+            value = original_load(path)
+            if initial_read:
+                initial_read = False
+                workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(first)))
+            return value
+
+        with patch.object(workspace, 'load', side_effect=another_writer_commits):
+            workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(second)))
+        entries = self.read(session / 'manifest.json')['artifacts']
+        self.assertEqual({entry['path'] for entry in entries}, {str(first), str(second)})
+        self.assertEqual(len(entries), 2)
+
     def test_record_artifact_excludes_cleanup_and_preserves_both_records_after_retry(self):
         session = self.workspace_session()
         first = self.fixture(session, 'first.py')

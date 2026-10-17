@@ -16,7 +16,7 @@ HASH = re.compile(r'[0-9a-f]{64}')
 @contextmanager
 def session_claim_locks(paths):
     """Exclude claim/cleanup commits by verified session, outside its disposable tree."""
-    from review_run_lock import run_locks
+    from review_run_lock import CoordinationError, run_locks
     sessions = {}
     repositories = {}
     for raw in paths:
@@ -32,7 +32,11 @@ def session_claim_locks(paths):
     roots, groups = {}, {}
     for session, repo in repositories.items():
         if repo not in roots:
-            common = Path(review_workspace.out(Path(repo), 'rev-parse', '--git-common-dir').decode('utf-8').strip())
+            try:
+                common_output = review_workspace.out(Path(repo), 'rev-parse', '--git-common-dir')
+            except review_workspace.ReviewError as exc:
+                raise CoordinationError('Cannot resolve session coordination directory: ' + str(exc)) from exc
+            common = Path(common_output.decode('utf-8').strip())
             if not common.is_absolute():
                 common = Path(repo) / common
             roots[repo] = _safe_path(common / 'ccr-session-locks')

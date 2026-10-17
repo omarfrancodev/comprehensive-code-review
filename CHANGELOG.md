@@ -51,6 +51,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Serializar registro, transferencia y cleanup por sesión además del run, sin alterar el estado del checkout; abrir archivos de lock sin seguir enlaces y verificar su identidad antes de escribir.
 - Resolver el directorio Git común mediante la consulta portable --git-common-dir, tanto para respuestas relativas como absolutas, conservando los guards de enlaces de sesión y coordinación.
 - Excluir record-artifact con el mismo lock por sesión y releer el manifiesto antes de guardarlo; impedir registros perdidos o un registro informado mientras cleanup elimina la sesión, con reintento explícito después del conflicto.
+- Distinguir conflictos reales de coordinación de errores de Git, permisos, rutas y decodificación; conservar causas de E/S y devolver errores JSON en la CLI sin reclasificarlos como contención.
 
 ## 2.11.0 — 2026-10-12
 

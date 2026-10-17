@@ -1,5 +1,6 @@
 """Cross-process exclusive mutation locks for review archive runs."""
 from contextlib import contextmanager
+import errno
 import hashlib
 import os
 from pathlib import Path
@@ -9,6 +10,14 @@ import threading
 
 _guard = threading.RLock()
 _held = {}
+
+
+class CoordinationError(ValueError):
+    """A coordination precondition failed; this does not imply lock contention."""
+
+
+class LockConflictError(CoordinationError):
+    """Another cooperative owner currently holds the requested lock."""
 
 
 def _lock_identity(run_dir, *, coordination_root=None):
@@ -140,7 +149,7 @@ def _open_lock_file(lock_path):
         fd = None
         return stream
     except OSError as exc:
-        raise ValueError('review lock file could not be opened safely: ' + str(lock_path)) from exc
+        raise CoordinationError('review lock file could not be opened safely: ' + str(lock_path) + ': ' + str(exc)) from exc
     finally:
         if fd is not None:
             os.close(fd)
@@ -150,7 +159,7 @@ def _acquire(identity, lock_path, owner):
     current = _held.get(identity)
     if current is not None:
         if current['owner'] != owner:
-            raise ValueError('review run mutation lock conflict: ' + identity)
+            raise LockConflictError('review run mutation lock conflict: ' + identity)
         current['depth'] += 1
         return
 
@@ -166,13 +175,17 @@ def _acquire(identity, lock_path, owner):
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
             except OSError as exc:
-                raise ValueError('review run mutation lock conflict: ' + identity) from exc
+                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                raise LockConflictError('review run mutation lock conflict: ' + identity) from exc
         else:
             import fcntl
             try:
                 fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError as exc:
-                raise ValueError('review run mutation lock conflict: ' + identity) from exc
+                if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                    raise
+                raise LockConflictError('review run mutation lock conflict: ' + identity) from exc
         _held[identity] = {'owner': owner, 'depth': 1, 'stream': stream}
     except BaseException:
         stream.close()

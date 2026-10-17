@@ -104,3 +104,23 @@ Correcciones acotadas al mismo diseño, autorizadas por la petición de atender 
 - [x] Actualizar las referencias y clasificar los cambios en Fixed/scopes del changelog.
 - [x] Verificar los 556 IDs de la suite completa y los controles estáticos: dos grupos completos, 172 resultados del grupo interrumpido y sus 13 casos pendientes retomados; 553 aprobados, tres omitidos, sin fallos ni duplicados. Registrar la interrupción y no atribuirle un cierre exitoso al proceso original.
 - [ ] Commit descriptivo, push al PR 19 y actualización/verificación del estado remoto; registrar entrega en el chat.
+
+## Seguimiento del décimo CCR — F065–F067
+
+### Task 7: clasificación y prueba de relectura
+
+**Files:** scripts/review_run_lock.py; scripts/review_resource_claims.py; scripts/review_workspace.py; tests/test_review_coordination_errors.py; tests/test_review_session_operations.py.
+
+- [x] RED: seis casos iniciales, diez fallos de aserción en subcasos de errores; reproducir además el traceback de Git en la CLI. El caso de relectura ya correcto pasa.
+- [x] Tipos de coordinación compatibles con ValueError; capturar solo conflictos reales en los tres wrappers afectados, mantener causas de Git/apertura y propagar E/S no relacionada con contención.
+- [x] Prueba con un commit de otro escritor entre ambas lecturas; comprobar en memoria que reutilizar el snapshot obsoleto pierde la entrada y hace fallar el caso.
+- [x] GREEN focal: 26 pruebas en 114.501 s y una adicional de causa E/S en 0.669 s, todas aprobadas. Son 27 IDs distintos, sin omisiones.
+
+### Task 8: documentación, alcance y entrega
+
+**Files:** references/execution/workspaces.md; CHANGELOG.md; docs/validation/2026-10-16-coordination-error-classification.md; descripción del PR 19.
+
+- [x] F067: reemplazar Reservas vigentes por Fuera de alcance con #20/#21 y comentario del mantenedor; actualizar compatibilidad y referencias y verificar el cuerpo remoto.
+- [x] Documentar causas de error sin debilitar guards de seguridad ni ownership; registrar el cambio bajo Fixed/Workspaces y recursos.
+- [x] Suite completa: 563 IDs únicos, 560 aprobados, tres omitidos por privilegios de symlink, cero fallos/errores y cuatro procesos con exit 0. Unión exacta sin duplicados; ambas matrices pasaron. Controles estáticos y registro final completados.
+- [ ] Commit descriptivo, push, actualizar validación del PR y verificar SHA/árbol limpio; cierre del todo en el chat.
