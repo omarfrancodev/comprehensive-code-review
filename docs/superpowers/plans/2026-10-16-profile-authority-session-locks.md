@@ -81,3 +81,26 @@ Los tres hallazgos tienen reproducción, implementación y verificación. La exc
 Suite completa repetida en grupos disjuntos: 184/184/183 pruebas en 1637.033/768.859/414.940 s, respectivamente. Unión comprobada de 551 IDs únicos: 548 aprobadas, tres omitidas por privilegio de symlink, cero fallos/errores; exit 0 en cada proceso. Pasaron ambas matrices extensas. Controles estáticos de siete Python y seis documentos aprobados. La [validación](../../validation/2026-10-16-profile-authority-session-locks.md) conserva el fallo inicial y su corrección.
 
 La entrega se verifica en el chat después del commit/push y actualización del PR; ese paso no se marca anticipadamente dentro del propio commit. Se mantiene el worktree y no se ejecutan merge ni release.
+
+## Seguimiento del noveno CCR — F061–F064
+
+Correcciones acotadas al mismo diseño, autorizadas por la petición de atender los nuevos comentarios. El seguimiento de entrega usa el fallback del chat.
+
+### Task 5: portabilidad y mutación del manifiesto
+
+**Files:** scripts/review_resource_claims.py; scripts/review_workspace.py; tests/test_review_session_operations.py.
+
+- [x] Reproducir RED: una interfaz Git que rechaza --path-format impide registrar; record_artifact no respeta el lock de otra operación y permite sobrescribir un registro concurrente.
+- [x] Resolver Git common dir relativo/absoluto con la consulta portable, conservando rechazo de enlaces.
+- [x] Bloquear record_artifact por sesión y recargar dentro del lock; verificar conflicto sin mutación, exclusión de cleanup, reintento con dos registros conservados y cleanup final.
+
+### Task 6: regresiones de autoridad y cierre
+
+**Files:** tests/test_review_authority_and_claim_safety.py; references/execution/workspaces.md; references/archive/recovery.md; CHANGELOG.md; docs/validation/2026-10-16-portable-session-artifact-locks.md.
+
+- [x] Aserciones del guard específico, historia explícita transitiva y selección explícita posterior por el comando con evento de traza.
+- [x] Probar que el caso transitivo detecta en memoria dos mutantes: bypass cuando no cambia el perfil y bypass automático con texto de autoridad. No alterar archivos productivos para esas comprobaciones.
+- [x] GREEN focal: 17 pruebas, 77.647 s, sin fallos ni omisiones.
+- [x] Actualizar las referencias y clasificar los cambios en Fixed/scopes del changelog.
+- [x] Verificar los 556 IDs de la suite completa y los controles estáticos: dos grupos completos, 172 resultados del grupo interrumpido y sus 13 casos pendientes retomados; 553 aprobados, tres omitidos, sin fallos ni duplicados. Registrar la interrupción y no atribuirle un cierre exitoso al proceso original.
+- [ ] Commit descriptivo, push al PR 19 y actualización/verificación del estado remoto; registrar entrega en el chat.

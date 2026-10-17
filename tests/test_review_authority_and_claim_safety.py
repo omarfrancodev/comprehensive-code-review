@@ -28,17 +28,34 @@ class ProfileAuthorityTests(unittest.TestCase):
     def test_authority_cannot_be_erased_by_same_automatic_profile(self):
         history = self.bypass_history()
         raw = {key: history[1][key] for key in profiles.INPUT_FIELDS}
-        with self.assertRaisesRegex(ValueError, 'explicit'):
+        with self.assertRaisesRegex(ValueError, 'later explicit user source'):
             profiles.validate_selection(raw, previous=history[0])
 
     def test_authority_continuity_is_checked_in_history_and_final_gate(self):
         history = self.bypass_history()
-        self.assertTrue(any('explicit' in error for error in profiles.validate_history(history)))
+        self.assertTrue(any('later explicit user source' in error for error in profiles.validate_history(history)))
         value = record10('focused', 'explicit')
         value['coverage']['execution']['profile_history'] = history
         value['coverage']['execution']['plan'][0]['selection_id'] = 'S003'
-        self.assertTrue(any('explicit' in error for error in profiles.validate_profile_execution(value)))
-        self.assertTrue(any('explicit' in error for error in artifacts.review_contract.validate(value)))
+        self.assertTrue(any('later explicit user source' in error for error in profiles.validate_profile_execution(value)))
+        self.assertTrue(any('later explicit user source' in error for error in artifacts.review_contract.validate(value)))
+
+    def test_later_explicit_selection_keeps_authority_against_same_profile_recapture(self):
+        first = selection('deep', 'explicit')
+        later = selection('focused', 'explicit', id='S002', changed_from='deep',
+                          phase='verification', event_id='E000002',
+                          authority='User requested focused')
+        self.assertEqual(profiles.validate_history([first, later]), [])
+        for authority in (None, 'An automatic reassessment cannot replace the user decision'):
+            with self.subTest(authority=authority):
+                recapture = selection('focused', 'automatic', id='S003', changed_from='focused',
+                                      phase='verification', event_id='E000003', authority=authority)
+                raw = {key: recapture[key] for key in profiles.INPUT_FIELDS}
+                with self.assertRaisesRegex(ValueError, 'later explicit user source'):
+                    profiles.validate_selection(raw, previous=later)
+                errors = profiles.validate_history([first, later, recapture])
+                self.assertTrue(any('profile_history[2]' in error and
+                                    'later explicit user source' in error for error in errors), errors)
 
     def test_authority_allows_a_later_explicit_user_selection(self):
         first = selection('deep', 'explicit')
@@ -94,10 +111,27 @@ class SessionClaimSafetyTests(unittest.TestCase):
         run = Path(artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
                                     profile_input=selection_input('deep', 'explicit')))
         before = self.snapshot(run)
-        with self.assertRaisesRegex(ValueError, 'explicit'):
+        with self.assertRaisesRegex(ValueError, 'later explicit user source'):
             artifacts.select_profile(run, selection_input('deep', 'automatic', phase='discovery',
                                      reference='evidence/reassess.json#deep'))
         self.assertEqual(self.snapshot(run), before)
+
+    def test_select_profile_accepts_later_explicit_authority_and_records_transition(self):
+        run = Path(artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex', output_root=self.output,
+                                    profile_input=selection_input('deep', 'explicit')))
+        first = self.read(run / 'cierre.json')['profile_history'][0]
+        artifacts.select_profile(run, selection_input('focused', 'explicit', phase='verification',
+                                 authority='User requested focused after reassessing the scope'))
+        history = self.read(run / 'cierre.json')['profile_history']
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0], first)
+        self.assertEqual(history[-1]['profile'], 'focused')
+        self.assertEqual(history[-1]['selection_source'], 'explicit')
+        self.assertEqual(history[-1]['changed_from'], 'deep')
+        events = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_text(encoding='utf-8').splitlines()]
+        transitions = [event for event in events if event['kind'] == 'profile']
+        self.assertEqual(len(transitions), 2)
+        self.assertEqual(transitions[-1]['event_id'], history[-1]['event_id'])
 
     def test_concurrent_registration_commits_only_one_session_owner(self):
         self.concurrent_registration(False)

@@ -1,0 +1,128 @@
+"""Portable Git coordination and exclusive workspace artifact registration."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+import unittest
+from unittest.mock import patch
+
+import test_review_authority_and_claim_safety as safety
+
+workspace = safety.resources.review_workspace
+claims = safety.claims
+artifacts = safety.artifacts
+
+
+class SessionOperationTests(unittest.TestCase):
+    setUp = safety.SessionClaimSafetyTests.setUp
+    git = safety.SessionClaimSafetyTests.git
+    write = safety.SessionClaimSafetyTests.write
+    read = safety.SessionClaimSafetyTests.read
+    snapshot = safety.SessionClaimSafetyTests.snapshot
+    profile_input = safety.SessionClaimSafetyTests.profile_input
+    workspace_session = safety.SessionClaimSafetyTests.workspace_session
+    create_run = safety.SessionClaimSafetyTests.create_run
+    context = safety.SessionClaimSafetyTests.context
+    register = safety.SessionClaimSafetyTests.register
+    controller = safety.SessionClaimSafetyTests.controller
+    held_session = safety.SessionClaimSafetyTests.held_session
+
+    def test_claim_lifecycle_works_without_git_path_format_option(self):
+        real_out = workspace.out
+        for absolute in (False, True):
+            with self.subTest(absolute=absolute):
+                session = self.workspace_session()
+                source, successor = self.create_run(), self.create_run()
+
+                def portable_out(repo, *args):
+                    if any(arg.startswith('--path-format') for arg in args):
+                        raise workspace.ReviewError('Git rev-parse failed: unknown option --path-format')
+                    if args == ('rev-parse', '--git-common-dir'):
+                        return str(self.repo / '.git').encode('utf-8') if absolute else b'.git\n'
+                    return real_out(repo, *args)
+
+                with patch.object(workspace, 'out', side_effect=portable_out):
+                    self.register(source, session, 'portable-context.json')
+                    artifacts.transfer_resources(source, successor, [str(session)],
+                        authority='User requests transfer', controller=self.controller())
+                    self.assertEqual(claims.verify_claim(session, successor)['archive_path'], str(successor))
+                    result = workspace.cleanup(argparse.Namespace(
+                        manifest=str(session / 'manifest.json'), run_dir=str(successor)))
+                self.assertTrue(result['all_registered_removed'])
+                self.assertFalse(session.exists())
+
+    def fixture(self, session, name):
+        worktree = Path(self.read(session / 'manifest.json')['workspaces'][0]['path'])
+        path = worktree / name
+        path.write_text('review-created reproduction\n', encoding='utf-8')
+        return path
+
+    def test_record_artifact_conflicting_with_session_lock_preserves_manifest(self):
+        session = self.workspace_session()
+        path = self.fixture(session, 'reproduction.py')
+        before = self.snapshot(session)
+        with self.held_session(session):
+            with self.assertRaisesRegex(workspace.ReviewError, 'lock conflict'):
+                workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(path)))
+        self.assertEqual(self.snapshot(session), before)
+        result = workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(path)))
+        self.assertEqual(result['status'], 'recorded')
+        self.assertEqual(self.read(session / 'manifest.json')['artifacts'], [result['artifact']])
+
+    def test_record_artifact_excludes_cleanup_and_preserves_both_records_after_retry(self):
+        session = self.workspace_session()
+        first = self.fixture(session, 'first.py')
+        second = self.fixture(session, 'second.py')
+        ready, release = self.root / 'artifact-ready', self.root / 'artifact-release'
+        code = r'''
+from pathlib import Path
+import argparse, json, sys, time
+from unittest.mock import patch
+sys.path.insert(0, sys.argv[1])
+import review_workspace as workspace
+manifest, artifact, ready, release = map(Path, sys.argv[2:6])
+original = workspace.save
+def delayed_save(value):
+    ready.touch()
+    deadline = time.monotonic() + 30
+    while not release.exists():
+        if time.monotonic() > deadline:
+            raise RuntimeError('artifact release timed out')
+        time.sleep(0.02)
+    return original(value)
+with patch.object(workspace, 'save', side_effect=delayed_save):
+    print(json.dumps(workspace.record_artifact(argparse.Namespace(manifest=str(manifest), path=str(artifact)))), flush=True)
+'''
+        child = subprocess.Popen([sys.executable, '-B', '-X', 'utf8', '-c', code,
+            str(safety.resources.SCRIPTS), str(session / 'manifest.json'), str(first), str(ready), str(release)],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
+        try:
+            deadline = time.monotonic() + 30
+            while not ready.exists() and child.poll() is None:
+                self.assertLess(time.monotonic(), deadline, 'artifact writer did not reach commit')
+                time.sleep(0.02)
+            self.assertTrue(ready.exists(), 'artifact writer must reach the real manifest save')
+            before = self.snapshot(session)
+            with self.assertRaisesRegex(workspace.ReviewError, 'lock conflict'):
+                workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(second)))
+            with self.assertRaisesRegex(workspace.ReviewError, 'lock conflict'):
+                workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=None))
+            self.assertEqual(self.snapshot(session), before)
+        finally:
+            release.touch()
+            try:
+                output, error = child.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.communicate(timeout=10)
+                raise
+            self.assertEqual(child.returncode, 0, error + output)
+        self.assertEqual(json.loads(output)['status'], 'recorded')
+        workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(second)))
+        entries = self.read(session / 'manifest.json')['artifacts']
+        self.assertEqual({entry['path'] for entry in entries}, {str(first), str(second)})
+        result = workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=None))
+        self.assertTrue(result['all_registered_removed'])
+        self.assertFalse(session.exists())

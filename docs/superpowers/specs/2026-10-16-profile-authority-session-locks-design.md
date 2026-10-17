@@ -27,3 +27,13 @@ Fuentes de apertura Windows: [CreateFileW](https://learn.microsoft.com/en-us/win
 La prueba del baseline mostró que crear archivos de coordinación en .worktrees/.review-locks altera el estado Git de un checkout que no ignora .worktrees. Se sitúan los locks de sesión en git-common-dir/ccr-session-locks, con identidad por directorio canónico de sesión y raíz verificada. No se modifica .gitignore ni la configuración Git del producto. register bloquea también sesiones predeclaradas, no solo los argumentos nuevos.
 
 Una invocación puede incluir sesiones de varios worktrees o clones de la misma identidad de repositorio. Se agrupan por directorio Git común real y se adquieren todos los grupos en orden estable, liberándolos mediante ExitStack ante rechazo o interrupción. La comprobación existente de repository_identity sigue decidiendo si el registro es válido; una ruta de checkout distinta no lo invalida.
+
+## Seguimiento del noveno CCR: F061–F064
+
+Fuente: [CR-558a05cecb09454b8c5f](https://github.com/omarfrancodev/comprehensive-code-review/pull/19#issuecomment-6227750986), HEAD ae19410. Las reservas F050/F052 y los contratos anteriores permanecen.
+
+- F061: obtener el directorio Git común con `rev-parse --git-common-dir`, sin `--path-format`. Anclar una respuesta relativa al checkout que ejecutó Git; aceptar también respuestas absolutas. Mantener `_safe_path` y los guards de coordinación antes de resolver rutas: ni una respuesta de Git ni un `.git` enlazado autorizan saltarlos. Eliminar la dependencia de esa opción no equivale a certificar un binario antiguo no disponible.
+- F062/F063: fijar la cadena explicit/deep → explicit/focused → automatic/focused, tanto sin autoridad como con una cadena no nula en la selección automática. Comprobar el diagnóstico específico de transición, su rechazo en la historia y la aceptación de una sustitución explícita mediante select_profile, incluyendo el evento de traza que la vincula al historial.
+- F064: incluir record_artifact en la exclusión cooperativa por sesión. Cargar inicialmente solo para identificar la sesión, adquirir el lock existente y volver a cargar el manifiesto antes de decidir y guardar. El conflicto falla sin informar un registro exitoso ni sobrescribir entradas; el operador reintenta después de liberar el lock. Mientras el escritor está en el commit real, otro registro y cleanup deben fallar sin cambiar la sesión; tras el reintento se conservan ambos registros y cleanup puede completarse.
+
+La exclusión coordina los helpers, no las escrituras arbitrarias de fixtures. Se mantiene la obligación de finalizar escrituras y detener workers antes de registrar o limpiar. No hay locks nuevos dentro del checkout, esperas bloqueantes, cambios de schema ni rollback adicional.

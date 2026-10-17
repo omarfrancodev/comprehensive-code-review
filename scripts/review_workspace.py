@@ -292,6 +292,16 @@ def load(path):
 
 
 def record_artifact(args):
+    import review_resource_claims
+    session = load(args.manifest)['session_dir']
+    try:
+        with review_resource_claims.session_claim_locks([session]):
+            return _record_artifact_locked(args)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ReviewError('Artifact registration failed; preserve the session: ' + str(exc)) from exc
+
+
+def _record_artifact_locked(args):
     manifest = load(args.manifest)
     path = no_links(Path(args.path).absolute())
     if not path.is_file() or not any(path.is_relative_to(Path(w["path"])) for w in manifest["workspaces"]):

@@ -32,8 +32,10 @@ def session_claim_locks(paths):
     roots, groups = {}, {}
     for session, repo in repositories.items():
         if repo not in roots:
-            common = review_workspace.out(Path(repo), 'rev-parse', '--path-format=absolute', '--git-common-dir')
-            roots[repo] = _safe_path(Path(common.decode('utf-8').strip()) / 'ccr-session-locks')
+            common = Path(review_workspace.out(Path(repo), 'rev-parse', '--git-common-dir').decode('utf-8').strip())
+            if not common.is_absolute():
+                common = Path(repo) / common
+            roots[repo] = _safe_path(common / 'ccr-session-locks')
         root = roots[repo]
         groups.setdefault(str(root), []).append(session)
     with ExitStack() as stack:
