@@ -2733,6 +2733,26 @@ def recover(run_dir, *, controller, authority, current_inputs):
 class _RestartCancellationUnavailable(ValueError):
     """Verified state which the conservative cancellation protocol cannot unwind."""
 
+    def __init__(self, message, *, phase='successor_work'):
+        super().__init__(message)
+        self.phase = phase
+
+    def diagnostic(self):
+        return {'decision': 'refused', 'phase': self.phase, 'reason': str(self),
+                'transaction_pending': True, 'resource_obligations_preserved': True}
+
+
+def _restart_transfer_denial(intent, manifests):
+    pair = [row for manifest in manifests for row in normalize_transfer_history(manifest)
+            if row['source_run'] == intent['source']['run_dir']
+            and row['successor_run'] == intent['successor']['run_dir']]
+    if not pair:
+        return None
+    phase = 'transfer_durable' if any(row['status'] != 'complete' for row in pair) else 'transfer_committed'
+    return _RestartCancellationUnavailable(
+        'A durable resource transfer prevents cancellation; preserve its ownership obligations even if the successor is absent.',
+        phase=phase)
+
 
 def _independent_review_action(run, reason, operation_id=None):
     result = {'action': 'new_independent_review', 'run_dir': str(run), 'previous_run': None,
@@ -2856,19 +2876,27 @@ def _restart_resource_exit(run, manifest, active_restart):
         else:
             review_resource_claims.inspect_claim_identity(session, owner)
     blocked_by = []
-    if any(row['status'] != 'complete' for row in transfers):
+    denial = _restart_transfer_denial(intent, manifests)
+    if denial is not None or any(row['status'] != 'complete' for row in transfers):
         blocked_by.append('transfer_in_progress')
+        denial = denial or _RestartCancellationUnavailable(
+            'A durable transfer has committed its intent; cancellation cannot infer rollback or release of missing workspaces.',
+            phase='transfer_durable')
     if any(row.get('status') == 'releasing' or
            (row.get('status') == 'owned' and safe_path(row['session_dir']).exists())
            for row in manifest.get('resource_claims', [])):
         blocked_by.append('source_claims_present')
+        if denial is None:
+            denial = _RestartCancellationUnavailable(
+                'Present or releasing source claims require their owning resource protocol.', phase='source_claims_present')
     supported = not blocked_by
     if supported and prepared:
         try:
             _empty_adoption_successor(intent, manifest)
-        except _RestartCancellationUnavailable:
+        except _RestartCancellationUnavailable as exc:
             supported = False
             blocked_by.append('successor_claims_or_work')
+            denial = exc
     if supported:
         action = {'action': 'abandon_restart', 'run_dir': str(run),
             'operation_id': intent['operation_id'], 'intent_path': active_restart['intent_path'],
@@ -2880,11 +2908,18 @@ def _restart_resource_exit(run, manifest, active_restart):
                    'source_claims_present': 'Present or releasing source claims prevent abandonment.',
                    'successor_claims_or_work': 'Claims or work already owned by the successor prevent abandonment.'}
         action = _independent_review_action(run, ' '.join(reasons[code] for code in blocked_by), intent['operation_id'])
+    actions = [action]
+    if denial is not None and manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
+        actions.append({'action': 'record_restart_refusal', 'run_dir': str(run),
+            'operation_id': intent['operation_id'], 'intent_path': active_restart['intent_path'],
+            'requires_explicit_authority': True, 'phase': denial.phase,
+            'reason': 'Record this refusal in the source trace with authority and observed evidence; the restart and all resource obligations remain pending.'})
     return {'missing_resources': missing, 'foreign_resources': foreign, 'cancellation_supported': supported,
             'recovery': {'status': 'cancellation_available' if supported else 'independent_review_required',
                 'can_complete': False, 'transaction_pending': True, 'cancellation_supported': supported,
-                'source_run': str(run), 'operation_id': intent['operation_id'], 'blocked_by': blocked_by},
-            'actions': [action]}
+                'source_run': str(run), 'operation_id': intent['operation_id'], 'blocked_by': blocked_by,
+                **({'cancellation_denial': denial.diagnostic()} if denial is not None else {})},
+            'actions': actions}
 
 
 def _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs):
@@ -3357,15 +3392,28 @@ def _empty_adoption_successor(intent, source_manifest):
     """Read-only preflight under both locks: empty successor and an unavailable resource."""
     run, manifest, marker = _load_run(intent['successor']['run_dir'])
     _verify_restart_successor_identity(run, manifest, intent)
-    if (not intent['request']['transfer_paths']
-            or source_manifest.get('operation', {}).get('disposition') == 'superseded'
-            or any(row.get('status') == 'releasing' or
-                   (row.get('status') == 'owned' and safe_path(row['session_dir']).exists())
-                   for row in source_manifest.get('resource_claims', []))
-            or manifest['state'] != 'prepared' or manifest['operation']['disposition'] != 'open'
+    transfer_denial = _restart_transfer_denial(intent, (source_manifest, manifest))
+    if transfer_denial is not None:
+        raise transfer_denial
+    if any(row.get('status') == 'releasing' or
+           (row.get('status') == 'owned' and safe_path(row['session_dir']).exists())
+           for row in source_manifest.get('resource_claims', [])):
+        raise _RestartCancellationUnavailable('present or releasing source claims prevent abandonment',
+                                            phase='source_claims_present')
+    if manifest.get('resource_claims'):
+        raise _RestartCancellationUnavailable(
+            'successor already owns committed adoption claims; cancellation cannot discard their ownership',
+            phase='adoption_committed')
+    if not intent['request']['transfer_paths']:
+        raise _RestartCancellationUnavailable('prepared successor has no selected resources for abandonment; recover its exact restart',
+                                            phase='resource_selection_empty')
+    if source_manifest.get('operation', {}).get('disposition') == 'superseded':
+        raise _RestartCancellationUnavailable('source is already superseded; its committed successor must be preserved',
+                                            phase='source_superseded')
+    if (manifest['state'] != 'prepared' or manifest['operation']['disposition'] != 'open'
             or manifest['profile_history'] != [_initial_selection(intent['request']['profile_input'])]
             or set(manifest['hashes']) - {review_trace.NAME}
-            or any(manifest.get(key) for key in ('resource_claims', 'resource_transfers', 'resource_transfer',
+            or any(manifest.get(key) for key in ('resource_transfers', 'resource_transfer',
                 'resource_cleanup', 'cleanup_receipts', 'executors', 'assignment_registry', 'checkpoint',
                 'checkpoint_transaction', 'pending_hashes', 'planned_hashes'))):
         raise _RestartCancellationUnavailable('a prepared successor with work or claims must be recovered; abandonment cannot orphan it')
@@ -3390,13 +3438,16 @@ def _empty_adoption_successor(intent, source_manifest):
         review_resource_claims._validate_sidecar(sidecar, session, workspace_manifest, token)
         if (sidecar['archive_path'] == str(run) or sidecar['run_id'] == manifest['run_id']
                 or sidecar['owner_id'] == manifest['owner_id']):
-            raise _RestartCancellationUnavailable('prepared successor already owns an adoption sidecar; recover it')
+            raise _RestartCancellationUnavailable('prepared successor already owns an adoption sidecar; recover it',
+                                                phase='adoption_committed')
         if sidecar['archive_path'] == intent['source']['run_dir']:
-            raise _RestartCancellationUnavailable('adoption session belongs to the restart source; recover its claim')
+            raise _RestartCancellationUnavailable('adoption session belongs to the restart source; recover its claim',
+                                                phase='source_claims_present')
         review_resource_claims.inspect_claim_identity(session, sidecar['archive_path'])
         unavailable_resource = True
     if not unavailable_resource:
-        raise _RestartCancellationUnavailable('a prepared successor must be recovered unless a resource is absent or foreign-claimed')
+        raise _RestartCancellationUnavailable('a prepared successor must be recovered unless a resource is absent or foreign-claimed',
+                                            phase='resources_available')
     pending = manifest.get('pending_trace')
     if pending is not None and [row.get('kind') for row in pending.get('events', [])] != ['prepare', 'profile']:
         raise _RestartCancellationUnavailable('prepared successor has a non-preparation trace transaction; recover it')
@@ -3407,6 +3458,13 @@ def _empty_adoption_successor(intent, source_manifest):
     if [row['kind'] for row in events] != ['prepare', 'profile']:
         raise _RestartCancellationUnavailable('prepared successor has observations beyond initial preparation; recover it')
     return run, manifest, marker
+
+
+def record_restart_refusal(run_dir, *, intent_path, controller, authority, reason):
+    """Record an authorized refusal, without cancelling or changing resource owners."""
+    import review_restart_refusal
+    return review_restart_refusal.record(run_dir, intent_path=intent_path,
+        controller=controller, authority=authority, reason=reason)
 
 
 def _finish_restart_abandonment(intent_path, intent, source_path, receipt):
@@ -3470,6 +3528,12 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
             active = _active_restart_operation(run, manifest)
             if active is None or active['operation_id'] != intent['operation_id']:
                 raise ValueError('only the exact active pending restart may be abandoned')
+            _verify_files(run, manifest, allow_checkpoint_transaction=True,
+                          allow_resource_transfer=True, allow_pending_trace=True)
+            transfer_denial = _restart_transfer_denial(intent, (manifest,))
+            if transfer_denial is not None:
+                raise transfer_denial
+            # Preserve the original guard for an unrelated pending transfer too.
             _verify_files(run, manifest, allow_checkpoint_transaction=True, allow_pending_trace=True)
             receipt = {'schema_version': 1, 'operation_id': intent['operation_id'],
                 'source_run': str(run), 'source_owner_id': manifest['owner_id'],
@@ -4061,6 +4125,12 @@ def main():
     abandon.add_argument('--controller-input', required=True)
     abandon.add_argument('--authority-input', required=True)
     abandon.add_argument('--reason', required=True)
+    refusal = commands.add_parser('record-restart-refusal', help='Record a phase-specific cancellation refusal; leave the exact restart pending')
+    refusal.add_argument('--run-dir', required=True)
+    refusal.add_argument('--intent-input', required=True)
+    refusal.add_argument('--controller-input', required=True)
+    refusal.add_argument('--authority-input', required=True)
+    refusal.add_argument('--reason', required=True)
     select = commands.add_parser('select-profile', help='Atomically capture a profile transition before using it')
     select.add_argument('--run-dir', required=True)
     select.add_argument('--selection-input', required=True)
@@ -4169,6 +4239,9 @@ def main():
         elif args.command == 'abandon-restart':
             result = abandon_restart(args.run_dir, intent_path=args.intent_input,
                 controller=read_json(args.controller_input), authority=authority_input, reason=args.reason)
+        elif args.command == 'record-restart-refusal':
+            result = record_restart_refusal(args.run_dir, intent_path=args.intent_input,
+                controller=read_json(args.controller_input), authority=authority_input, reason=args.reason)
         elif args.command == 'select-profile':
             result = select_profile(args.run_dir, args.selection_input)
         elif args.command == 'validate':
@@ -4184,7 +4257,10 @@ def main():
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError) as exc:
-        print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
+        detail = {'error': str(exc)}
+        if isinstance(exc, _RestartCancellationUnavailable):
+            detail['cancellation_denial'] = exc.diagnostic()
+        print(json.dumps(detail, ensure_ascii=False), file=sys.stderr)
         return 1
 
 
