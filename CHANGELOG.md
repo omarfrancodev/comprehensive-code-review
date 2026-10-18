@@ -8,7 +8,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Ciclo de vida y recuperación
 
-- Distinguir por fase las negativas de cancelación de restart con adopción comprometida o transferencia durable; permitir registrar explícitamente una negativa autorizada e idempotente en la traza del origen, conservando ownership, evidencia y recursos ausentes sin afirmar rollback ni cleanup (#20, #21).
+- Distinguir por fase las negativas de cancelación de restart con adopción comprometida o transferencia durable; compartir la observación verificada del origen y sucesor para que diagnóstico, abandono y recibo coincidan también tras un commit parcial. Permitir registrar explícitamente una negativa autorizada e idempotente en la traza del origen, conservando ownership, evidencia y recursos ausentes sin afirmar rollback ni cleanup (#20, #21; F001 del PR #23).
 
 #### Workspaces y recursos
 

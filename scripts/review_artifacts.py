@@ -8,7 +8,7 @@ deletes registered resources and must not be used to infer disposal authority.
 """
 import argparse
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from datetime import datetime, timezone
 from functools import wraps
 import hashlib
@@ -2754,6 +2754,25 @@ def _restart_transfer_denial(intent, manifests):
         phase=phase)
 
 
+def _restart_resource_manifests(run, manifest, intent):
+    """Read the same verified source/successor pair for every refusal route.
+
+    Mutators hold both run locks while observing a present successor. A missing
+    successor never discards durable transfer proof already held by the source.
+    """
+    _verify_files(run, manifest, allow_checkpoint_transaction=True,
+                  allow_resource_transfer=True, allow_pending_trace=True)
+    manifests = [manifest]
+    successor = safe_path(intent['successor']['run_dir'])
+    if (successor / 'cierre.json').exists():
+        _, next_manifest, _ = _load_run(successor)
+        _verify_restart_successor_identity(successor, next_manifest, intent)
+        _verify_files(successor, next_manifest, allow_checkpoint_transaction=True,
+                      allow_resource_transfer=True, allow_pending_trace=True)
+        manifests.append(next_manifest)
+    return manifests
+
+
 def _independent_review_action(run, reason, operation_id=None):
     result = {'action': 'new_independent_review', 'run_dir': str(run), 'previous_run': None,
               'use_fresh_resources': True, 'requires_explicit_authority': True,
@@ -2835,16 +2854,9 @@ def _restart_resource_exit(run, manifest, active_restart):
     if not missing and not foreign:
         return None
     # Never turn local corruption into an alternative-work suggestion.
-    _verify_files(run, manifest, allow_checkpoint_transaction=True,
-                  allow_resource_transfer=True, allow_pending_trace=True)
-    prepared = (successor / 'cierre.json').exists()
-    manifests = [manifest]
-    if prepared:
-        _, next_manifest, _ = _load_run(successor)
-        _verify_restart_successor_identity(successor, next_manifest, intent)
-        _verify_files(successor, next_manifest, allow_checkpoint_transaction=True,
-                      allow_resource_transfer=True, allow_pending_trace=True)
-        manifests.append(next_manifest)
+    manifests = _restart_resource_manifests(run, manifest, intent)
+    prepared = len(manifests) == 2
+    next_manifest = manifests[1] if prepared else None
     transfers = [row for current in manifests for row in normalize_transfer_history(current)]
     claimed = {os.path.normcase(str(safe_path(row['session_dir']))) for current in manifests
                for row in current.get('resource_claims', []) if row.get('status') in {'owned', 'releasing'}}
@@ -3528,21 +3540,22 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
             active = _active_restart_operation(run, manifest)
             if active is None or active['operation_id'] != intent['operation_id']:
                 raise ValueError('only the exact active pending restart may be abandoned')
-            _verify_files(run, manifest, allow_checkpoint_transaction=True,
-                          allow_resource_transfer=True, allow_pending_trace=True)
-            transfer_denial = _restart_transfer_denial(intent, (manifest,))
-            if transfer_denial is not None:
-                raise transfer_denial
-            # Preserve the original guard for an unrelated pending transfer too.
-            _verify_files(run, manifest, allow_checkpoint_transaction=True, allow_pending_trace=True)
-            receipt = {'schema_version': 1, 'operation_id': intent['operation_id'],
-                'source_run': str(run), 'source_owner_id': manifest['owner_id'],
-                'intent_sha256': intent['intent_sha256'], 'successor_run_dir': intent['successor']['run_dir'],
-                'authority': authority, 'controller': actor, 'reason': reason,
-                'recorded_at': datetime.now(timezone.utc).isoformat()}
-            receipt['receipt_sha256'] = _digest(_json_bytes(receipt))
-            if (safe_path(intent['successor']['run_dir']) / 'cierre.json').exists():
-                with run_locks([intent['successor']['run_dir']]):
+            with ExitStack() as stack:
+                if (safe_path(intent['successor']['run_dir']) / 'cierre.json').exists():
+                    stack.enter_context(run_locks([intent['successor']['run_dir']]))
+                manifests = _restart_resource_manifests(run, manifest, intent)
+                transfer_denial = _restart_transfer_denial(intent, manifests)
+                if transfer_denial is not None:
+                    raise transfer_denial
+                # Preserve the original guard for an unrelated pending transfer too.
+                _verify_files(run, manifest, allow_checkpoint_transaction=True, allow_pending_trace=True)
+                receipt = {'schema_version': 1, 'operation_id': intent['operation_id'],
+                    'source_run': str(run), 'source_owner_id': manifest['owner_id'],
+                    'intent_sha256': intent['intent_sha256'], 'successor_run_dir': intent['successor']['run_dir'],
+                    'authority': authority, 'controller': actor, 'reason': reason,
+                    'recorded_at': datetime.now(timezone.utc).isoformat()}
+                receipt['receipt_sha256'] = _digest(_json_bytes(receipt))
+                if len(manifests) == 2:
                     successor, empty, successor_marker = _empty_adoption_successor(intent, manifest)
                     successor_marker = _recover_trace(successor, empty, successor_marker)
                     empty['restart_abandonment'] = receipt

@@ -81,9 +81,7 @@ def record(run_dir, *, intent_path, controller, authority, reason):
             if (successor / 'cierre.json').exists():
                 stack.enter_context(artifacts.run_locks([successor]))
             stack.enter_context(claims.session_claim_locks(intent['request']['transfer_paths']))
-            manifests = [manifest]
-            if (successor / 'cierre.json').exists():
-                manifests.append(artifacts._load_run(successor)[1])
+            manifests = artifacts._restart_resource_manifests(run, manifest, intent)
             sessions = _sessions(artifacts, intent['request']['transfer_paths'], manifests)
             route = artifacts._restart_resource_exit(run, manifest, active)
             denial = (route or {}).get('recovery', {}).get('cancellation_denial')
