@@ -2,13 +2,19 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## unreleased
+## 2.12.1 — 2026-10-18
+
+### Added
+
+#### Ciclo de vida y recuperación
+
+- Permitir registrar explícitamente una negativa autorizada e idempotente con `record-restart-refusal` en la traza del origen, conservando ownership, evidencia y recursos ausentes sin afirmar rollback ni cleanup (#20, #21).
 
 ### Fixed
 
 #### Ciclo de vida y recuperación
 
-- Distinguir por fase las negativas de cancelación de restart con adopción comprometida o transferencia durable; compartir la observación verificada del origen y sucesor para que diagnóstico, abandono y recibo coincidan también tras un commit parcial. Permitir registrar explícitamente una negativa autorizada e idempotente en la traza del origen, conservando ownership, evidencia y recursos ausentes sin afirmar rollback ni cleanup (#20, #21; F001 del PR #23).
+- Distinguir por fase las negativas de cancelación de restart con adopción comprometida o transferencia durable; compartir la observación verificada del origen y sucesor para que diagnóstico, abandono y recibo coincidan también tras un commit parcial (#20, #21; F001 del PR #23).
 
 #### Workspaces y recursos
 
