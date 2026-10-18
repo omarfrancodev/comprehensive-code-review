@@ -44,10 +44,12 @@ class CoordinationErrorTests(unittest.TestCase):
             with self.subTest(command=command.__name__), patch.object(workspace, 'out', side_effect=git_failure):
                 with self.assertRaises(Exception) as caught:
                     command(args)
-                self.assertIsInstance(caught.exception, ValueError)
+                self.assertIsInstance(caught.exception, workspace.ReviewError)
+                self.assertIsInstance(caught.exception.__cause__, locks.CoordinationError)
                 self.assertIn('session coordination directory', str(caught.exception))
                 self.assertIn('unreadable Git directory', str(caught.exception))
-                self.assertNotIn('preserve the session', str(caught.exception))
+                self.assertIn('preserve the session', str(caught.exception))
+                self.assertNotIn('and retry', str(caught.exception))
         self.assertEqual(self.snapshot(session), before)
 
     def test_lock_open_permissions_keep_the_os_cause_without_contention_advice(self):
@@ -61,7 +63,9 @@ class CoordinationErrorTests(unittest.TestCase):
                 with self.assertRaises(Exception) as caught:
                     command(args)
                 self.assertIn('coordination access denied', str(caught.exception))
-                self.assertNotIn('preserve the session', str(caught.exception))
+                self.assertIn('preserve the session', str(caught.exception))
+                self.assertIsInstance(caught.exception.__cause__.__cause__, PermissionError)
+                self.assertNotIn('and retry', str(caught.exception))
         self.assertEqual(self.snapshot(session), before)
 
     def test_unsafe_final_lock_is_not_reported_as_contention(self):
@@ -77,7 +81,9 @@ class CoordinationErrorTests(unittest.TestCase):
             with self.subTest(command=command.__name__), self.assertRaises(Exception) as caught:
                 command(args)
             self.assertIn('regular, unlinked and singly owned', str(caught.exception))
-            self.assertNotIn('preserve the session', str(caught.exception))
+            self.assertIn('preserve the session', str(caught.exception))
+            self.assertIsInstance(caught.exception.__cause__, locks.CoordinationError)
+            self.assertNotIn('and retry', str(caught.exception))
         self.assertEqual(foreign.read_bytes(), b'')
         self.assertEqual(self.snapshot(session), before)
 
@@ -138,4 +144,5 @@ with patch.object(workspace, 'out', side_effect=failed):
         error = json.loads(result.stderr)['error']
         self.assertIn('session coordination directory', error)
         self.assertIn('unreadable Git directory', error)
-        self.assertNotIn('preserve the session', error)
+        self.assertIn('preserve the session', error)
+        self.assertNotIn('and retry', error)
