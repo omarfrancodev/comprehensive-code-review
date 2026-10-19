@@ -10,7 +10,7 @@
 
 **Spec:** [2026-10-18-readable-archive-history-coverage-design.md](../specs/2026-10-18-readable-archive-history-coverage-design.md).
 
-**Estado:** plan aprobado; implementación nativa secuencial en curso en el worktree. Base `715726377ad95acbb1cbad114d7a55968228ab79`, release 2.12.1. Rama `feat/archive-layout-portability`.
+**Estado:** implementación nativa secuencial validada: 621 casos, 618 aprobados y 3 omisiones de plataforma, sin fallos ni errores; ambas matrices extensas completadas. Base `715726377ad95acbb1cbad114d7a55968228ab79`, release 2.12.1. Rama `feat/archive-layout-portability`. Este documento conserva la secuencia prevista; los comandos y resultados observados se registran en [la validación de implementación](../../validation/2026-10-18-readable-archive-history-coverage.md).
 
 ## Global Constraints
 
@@ -54,7 +54,7 @@ Las pruebas focalizadas siguen la forma `python -B -m unittest discover -s tests
 | scripts/review_layout.py (nuevo) | Descriptor lógico, grupos, nombres y reconocimiento puros |
 | scripts/review_history.py (nuevo) | Diagnóstico histórico, portabilidad mínima y show verificable |
 | scripts/review_artifacts.py | Archive 8, integración del layout en preparación, reservas y gates |
-| scripts/review_restart.py, scripts/review_resource_claims.py, scripts/review_run_lock.py | Mantener coordinación; adaptar únicamente bindings que el cambio de layout afecte |
+| scripts/review_restart.py, scripts/review_resource_claims.py, scripts/review_restart_refusal.py, scripts/review_run_lock.py | Mantener coordinación y rechazo de cancelaciones; adaptar únicamente bindings que el cambio de layout afecte |
 | scripts/review_recovery.py, scripts/review_inputs.py | Lookup, logical_scope_identity, selección latest y catálogo histórico |
 | scripts/review_delivery.py | Entregas nativas con ubicación nueva; rechazo de HP como run |
 | tests/archive_layout_fixtures.py (nuevo) | Factories sintéticas nativas/históricas y snapshots de archivos |
@@ -103,7 +103,7 @@ La factory nueva define `native_scope(mode='mr', **overrides) -> dict`, `selecto
 
 ### Task 2: Integrar archive 8 en toda operación nativa
 
-**Files:** Modify scripts/review_artifacts.py, scripts/review_restart.py, scripts/review_resource_claims.py, scripts/review_recovery.py, scripts/review_delivery.py y, solo si lo exige el binding, scripts/review_run_lock.py. Create tests/test_review_archive8.py; Modify tests/test_review_artifact_layout.py, test_review_recovery_sequences.py y recovery_fixtures.py.
+**Files:** Modify scripts/review_artifacts.py, scripts/review_restart.py, scripts/review_resource_claims.py, scripts/review_restart_refusal.py, scripts/review_recovery.py, scripts/review_delivery.py y, solo si lo exige el binding, scripts/review_run_lock.py. Create tests/test_review_archive8.py; Modify tests/test_review_artifact_layout.py, test_review_recovery_sequences.py y recovery_fixtures.py.
 
 **Interfaces:** consume review_layout. prepare añade keyword `logical_scope_input=None`; restart usa el mismo keyword y reutiliza descriptor previo solo para límites iguales. CLI `--logical-scope-input` lee el documento validado. No cambiar firmas no afectadas. Marker/manifiesto enlazan layout_version/logical_scope; todas las mutaciones exigen archive 8.
 
