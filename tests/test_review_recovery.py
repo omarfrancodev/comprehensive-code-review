@@ -405,6 +405,8 @@ class ReviewRecoveryTests(unittest.TestCase):
 
     def test_lookup_finds_changed_head_by_stable_merge_request_reference(self):
         scope = self.read(self.scope)
+        scope['mode'] = 'mr'
+        scope['target'] = 'develop'
         scope['reference'] = 'https://gitlab.example/group/project/-/merge_requests/42'
         scope_file = self.write('mr-scope.json', scope)
         run = Path(artifacts.prepare(self.repo, scope_file, '2.12.0', 'codex',

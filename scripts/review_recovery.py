@@ -1,15 +1,18 @@
 """Read-only inspection and bounded classification for durable review runs."""
 import copy
 import base64
+from datetime import datetime
 import hashlib
 import json
 import re
 from pathlib import Path
 import review_inputs
+import review_layout
 
 
 HASH = re.compile(r'[0-9a-f]{64}')
-RUN_NAME = re.compile(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}')
+RUN_NAME = re.compile(r'[0-9]{8}T[0-9]{6}Z--[A-Za-z0-9_-]{1,36}--[0-9a-f]{20}')
+OLD_RUN_NAME = re.compile(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}')
 LOOKUP_REPORT_BYTES = 8 * 1024 * 1024
 LOOKUP_CURSOR_BYTES = 2048
 
@@ -25,6 +28,14 @@ def validate_current_inputs(current_inputs, manifest, *, require_same_scope=True
     normalized = review_inputs.normalize_inputs(current_inputs)
     if require_same_scope and normalized['scope'] != manifest.get('scope'):
         raise ValueError('current scope differs from the pinned review scope; restart is required')
+    # Callers that resume the exact pinned scope may omit this newer field. The
+    # archive's normalized selector is authoritative in that case; changed
+    # scopes still need an explicit selector identity and remain unknown.
+    if (normalized['scope'] == manifest.get('scope')
+            and 'logical_scope_identity' not in normalized):
+        logical = manifest.get('logical_scope')
+        if isinstance(logical, dict) and isinstance(logical.get('identity'), str):
+            normalized['logical_scope_identity'] = logical['identity']
     retained = _candidate_inputs(manifest)
     if not compare_sources and retained is not None:
         retained = copy.deepcopy(retained)
@@ -48,18 +59,8 @@ def classify_candidate(manifest, retained_inputs, current_inputs):
     return review_inputs.compare_inputs(retained_inputs, current_inputs)
 
 
-def _scope_prefix(scope):
-    artifacts = _artifacts()
-    anchor = next((field for field in ('reference', 'target', 'snapshot') if scope.get(field)), None)
-    hint = scope[anchor] if anchor else scope['head']
-    if anchor == 'reference' and '://' in hint:
-        from urllib.parse import urlsplit
-        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
-    return artifacts._slug(scope['mode']) + '-' + artifacts._slug(hint) + '-', anchor
-
-
 def _cursor_encode(repository_group, scope_digest, group_name, run_name):
-    raw = json.dumps({'v': 1, 'repository_group': repository_group, 'scope_sha256': scope_digest,
+    raw = json.dumps({'v': 2, 'repository_group': repository_group, 'scope_sha256': scope_digest,
                       'group': group_name, 'run': run_name}, separators=(',', ':'), sort_keys=True).encode('utf-8')
     return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
 
@@ -75,13 +76,16 @@ def _cursor_decode(cursor, repository_group, scope_digest, prefix, *, exact=Fals
     except (ValueError, UnicodeDecodeError) as exc:
         raise ValueError('lookup cursor is malformed') from exc
     fields = {'v', 'repository_group', 'scope_sha256', 'group', 'run'}
-    if not isinstance(value, dict) or set(value) != fields or value['v'] != 1:
+    if not isinstance(value, dict) or set(value) != fields or value['v'] != 2:
         raise ValueError('lookup cursor has an unsupported shape')
     if value['repository_group'] != repository_group or value['scope_sha256'] != scope_digest:
         raise ValueError('lookup cursor belongs to a different repository or scope')
-    if (not isinstance(value['group'], str) or not value['group'].startswith(prefix)
+    allowed_groups = prefix if isinstance(prefix, tuple) else (prefix,)
+    if (not isinstance(value['group'], str) or not any(
+                value['group'] == item or value['group'].startswith(item) for item in allowed_groups)
             or (exact and value['group'] != prefix)
-            or not isinstance(value['run'], str) or not RUN_NAME.fullmatch(value['run'])):
+            or not isinstance(value['run'], str)
+            or not (RUN_NAME.fullmatch(value['run']) or OLD_RUN_NAME.fullmatch(value['run']))):
         raise ValueError('lookup cursor is outside the requested scope group')
     return value['group'], value['run']
 
@@ -143,14 +147,16 @@ def _candidate_inputs(manifest, record=None):
     return retained
 
 
-def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_inputs):
+def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_inputs, logical):
     artifacts = _artifacts()
     run, manifest, _ = artifacts._load_run(run_dir)
     if (manifest.get('archive_root') != str(archive_root)
             or manifest.get('repository_key') != artifacts._digest(repo_identity.encode('utf-8'))[:20]
             or manifest.get('repository_identity', repo_identity) != repo_identity
-            or artifacts._scope_group(manifest['scope']) != group_name):
+            or review_layout.scope_group(manifest['logical_scope']) != group_name):
         raise ValueError('candidate ownership, repository, or scope group differs from the lookup')
+    if manifest.get('logical_scope', {}).get('identity') != logical['identity']:
+        return None
     stable_field = next((field for field in ('reference', 'target', 'snapshot') if scope.get(field)), None)
     if stable_field and manifest['scope'].get(stable_field) != scope.get(stable_field):
         return None
@@ -211,7 +217,9 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
     latest = manifest.get('profile_history')
     return {'run_dir': str(run), 'run_id': manifest.get('run_id'),
             'review_id': 'CR-' + manifest['run_id'] if isinstance(manifest.get('run_id'), str) else None,
-            'scope': copy.deepcopy(manifest['scope']), 'state': manifest.get('state'),
+            'kind': 'native', 'scope': copy.deepcopy(manifest['scope']),
+            'logical_scope': copy.deepcopy(manifest['logical_scope']), 'state': manifest.get('state'),
+            'created_at': manifest.get('created_at'),
             'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
             'profile': latest[-1].get('profile') if isinstance(latest, list) and latest else None,
             'integrity': integrity, 'applicability': applicability['applicability'],
@@ -219,7 +227,8 @@ def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_
             **({'recovery': restart_exit['recovery']} if restart_exit is not None and integrity != 'invalid' else {})}
 
 
-def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, current_inputs=None):
+def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, current_inputs=None,
+                    logical_scope_input=None, include_history=False):
     """Find bounded candidates only below this repository's stable scope group."""
     artifacts = _artifacts()
     if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
@@ -230,32 +239,32 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
     identity = artifacts.repository_identity(repo)
     root = artifacts.select_output_root(repo, archive_root)
     repo_group = artifacts._repository_group(identity)
-    prefix, anchor = _scope_prefix(scope)
-    exact_group = artifacts._scope_group(scope)
-    scope_digest = artifacts._digest(artifacts._json_bytes(scope))
+    logical = review_layout.logical_scope(scope, logical_scope_input)
+    exact_group = review_layout.scope_group(logical)
+    scope_digest = hashlib.sha256(json.dumps({'scope': scope, 'logical_scope': logical},
+        ensure_ascii=False, sort_keys=True, separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
     if current_inputs is not None:
         current_inputs = review_inputs.normalize_inputs(current_inputs)
         if current_inputs.get('scope') != scope:
             raise ValueError('current inputs must refer to the exact requested lookup scope')
-    after = _cursor_decode(cursor, repo_group, scope_digest, prefix if anchor else exact_group,
-                           exact=not bool(anchor))
+        current_inputs.setdefault('logical_scope_identity', logical['identity'])
+    legacy_prefix = _legacy_scope_prefix(scope)
+    after = _cursor_decode(cursor, repo_group, scope_digest,
+                           tuple(item for item in (exact_group, legacy_prefix) if item))
     repository_path = root / repo_group
     try:
         repository_path = artifacts.safe_path(repository_path)
     except (OSError, ValueError):
         return {'schema_version': 1, 'candidates': [], 'next_cursor': None, 'truncated': False}
-    if not repository_path.is_dir():
-        return {'schema_version': 1, 'candidates': [], 'next_cursor': None, 'truncated': False}
 
-    # Listing names is confined to this repository folder. Only the requested
-    # MR/reference (or exact scope when no stable anchor exists) is opened.
-    groups = sorted(repository_path.iterdir(), key=lambda path: path.name)
+    # Listing names is confined to the selected logical group inside this repository.
+    groups = sorted(repository_path.iterdir(), key=lambda path: path.name) if repository_path.is_dir() else []
     candidates = []
     has_more = False
     last_key = None
     for group_path in groups:
         group_name = group_path.name
-        if not (group_name.startswith(prefix) if anchor else group_name == exact_group):
+        if group_name != exact_group and not (legacy_prefix and group_name.startswith(legacy_prefix)):
             continue
         try:
             group_path = artifacts.safe_path(group_path)
@@ -265,8 +274,14 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             continue
         for run_path in sorted(group_path.iterdir(), key=lambda path: path.name):
             run_name = run_path.name
-            if not RUN_NAME.fullmatch(run_name):
-                continue
+            if RUN_NAME.fullmatch(run_name):
+                is_native_name = group_name == exact_group
+            else:
+                # Old run names are reported as incompatible only under this bounded group.
+                old_run = OLD_RUN_NAME.fullmatch(run_name)
+                if not old_run or group_name == exact_group:
+                    continue
+                is_native_name = False
             key = (group_name, run_name)
             if after is not None and key <= after:
                 continue
@@ -274,7 +289,10 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
                 run_path = artifacts.safe_path(run_path)
                 if not run_path.is_dir():
                     continue
-                candidate = _candidate(run_path, group_name, identity, root, scope, current_inputs)
+                if not is_native_name:
+                    candidate = _legacy_candidate(run_path, scope)
+                else:
+                    candidate = _candidate(run_path, group_name, identity, root, scope, current_inputs, logical)
                 if candidate is None:
                     continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -294,8 +312,141 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             break
     next_cursor = (_cursor_encode(repo_group, scope_digest, last_key[0], last_key[1])
                    if has_more and last_key else None)
+    history_truncated = False
+    if include_history and cursor is None:
+        history_root = root / '.historical' / repo_group
+        if history_root.is_dir():
+            try:
+                from review_history import verify_history
+                history_dirs = sorted(history_root.iterdir(), key=lambda path: path.name)
+                for history_dir in history_dirs:
+                    if not history_dir.is_dir():
+                        continue
+                    try:
+                        verified = verify_history(history_dir)
+                        consultation = verified['consultation']
+                        prior_scope = consultation.get('scope')
+                        prior_logical = review_layout.logical_scope(prior_scope)
+                        if prior_logical['identity'] != logical['identity']:
+                            continue
+                        row = {'kind': 'historical_port', 'history_dir': str(history_dir),
+                               'port_id': verified['port_id'], 'scope': prior_scope,
+                               'integrity': 'verified_package', 'applicability': 'unknown',
+                               'actions': [_action('show_history', 'Show as historical consultation; freshness is unknown.')]}
+                        if len(candidates) >= limit:
+                            history_truncated = True
+                            break
+                        candidates.append(row)
+                    except (OSError, ValueError, TypeError, KeyError):
+                        # Invalid packages are not surfaced as usable historical results.
+                        continue
+            except OSError:
+                history_truncated = True
     return {'schema_version': 1, 'candidates': candidates, 'next_cursor': next_cursor,
-            'truncated': has_more}
+            'truncated': has_more or history_truncated}
+
+
+def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, archive_root=None, max_scan=10000):
+    """Select only an explicitly requested, fully scanned, verified native result."""
+    if isinstance(max_scan, bool) or not isinstance(max_scan, int) or not 1 <= max_scan <= 10000:
+        raise ValueError('max_scan must be an integer from 1 through 10000')
+    logical = review_layout.logical_scope(scope, logical_scope_input)
+    found = []
+    cursor = None
+    scanned = 0
+    while True:
+        page_size = min(100, max_scan - scanned)
+        page = find_candidates(repo, scope, archive_root=archive_root, limit=page_size, cursor=cursor,
+                               current_inputs=current_inputs, logical_scope_input=logical_scope_input)
+        rows = page['candidates']
+        scanned += len(rows)
+        for row in rows:
+            if row.get('kind') != 'native':
+                continue
+            if row.get('integrity') == 'invalid' or row.get('scope') is None:
+                return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
+                        'reason': 'A candidate in the exact logical group could not be verified.'}
+            if (row.get('logical_scope', {}).get('identity') == logical['identity']
+                    and row.get('state') == 'complete'
+                    and row.get('operation', {}).get('disposition') in (None, 'complete')
+                    and row.get('integrity') == 'report_verified'):
+                found.append(row)
+        if not page['truncated']:
+            break
+        if scanned >= max_scan:
+            return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
+                    'reason': 'The bounded scan reached its maximum before the scope was exhausted.'}
+        cursor = page['next_cursor']
+    if not found:
+        return {'status': 'no_match', 'selected': None, 'scanned': scanned}
+    parsed = []
+    for row in found:
+        try:
+            value = datetime.fromisoformat(row['created_at'].replace('Z', '+00:00'))
+            if value.tzinfo is None:
+                raise ValueError()
+            parsed.append((value, row))
+        except (AttributeError, TypeError, ValueError):
+            return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
+                    'reason': 'A verified result lacks an unambiguous timestamp.'}
+    newest = max(value for value, _ in parsed)
+    ties = [row for value, row in parsed if value == newest]
+    if len(ties) != 1:
+        return {'status': 'ambiguous', 'selected': None, 'scanned': scanned,
+                'candidates': [{'run_dir': row['run_dir'], 'review_id': row['review_id']} for row in ties]}
+    selected = ties[0]
+    artifacts = _artifacts()
+    _, manifest, _ = artifacts._load_run(selected['run_dir'])
+    verified_inputs = review_inputs.normalize_inputs(current_inputs)
+    verified_inputs.setdefault('logical_scope_identity', logical['identity'])
+    checked = _candidate(Path(selected['run_dir']), review_layout.scope_group(manifest['logical_scope']),
+                         artifacts.repository_identity(repo), artifacts.select_output_root(repo, archive_root),
+                         scope, verified_inputs, logical)
+    if (checked is None or checked.get('integrity') != 'report_verified'
+            or checked.get('created_at') != selected.get('created_at')
+            or checked.get('run_id') != selected.get('run_id')):
+        return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
+                'reason': 'The selected result changed during final verification.'}
+    return {'status': 'selected', 'selected': checked, 'scanned': scanned}
+
+
+def _legacy_scope_prefix(scope):
+    artifacts = _artifacts()
+    anchor = next((field for field in ('reference', 'target', 'snapshot') if scope.get(field)), None)
+    hint = scope[anchor] if anchor else scope.get('head')
+    if not hint:
+        return None
+    if anchor == 'reference' and '://' in hint:
+        from urllib.parse import urlsplit
+        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
+    return artifacts._slug(scope['mode']) + '-' + artifacts._slug(hint) + '-'
+
+
+def _legacy_candidate(run_dir, scope):
+    """Read only the bounded legacy header; never inspect resources or transactions."""
+    artifacts = _artifacts()
+    path = artifacts.safe_path(run_dir)
+    header_path = path / 'cierre.json'
+    if not header_path.is_file() or header_path.stat().st_size > 1024 * 1024:
+        return {'kind': 'historical_source', 'run_dir': str(path), 'status': 'invalid',
+                'actions': [_action('preserve', 'Historical header is missing or oversized.')], 'scope': None}
+    try:
+        manifest = artifacts.read_json(header_path, max_bytes=1024 * 1024)
+    except (ValueError, OSError, TypeError):
+        return {'kind': 'historical_source', 'run_dir': str(path), 'status': 'invalid',
+                'actions': [_action('preserve', 'Historical header cannot be read safely.')], 'scope': None}
+    historical_scope = manifest.get('scope') if isinstance(manifest, dict) else None
+    same_scope = historical_scope == scope
+    if isinstance(historical_scope, dict) and scope.get('mode') in ('mr', 'pr'):
+        same_scope = all(historical_scope.get(field) == scope.get(field)
+                         for field in ('mode', 'repository', 'reference'))
+    if not isinstance(manifest, dict) or not same_scope:
+        return None
+    classification = review_layout.classify_header(manifest)
+    return {'kind': 'historical_source', 'run_dir': str(path), 'status': classification['status'],
+            'run_id': manifest.get('run_id'), 'review_id': None, 'scope': copy.deepcopy(manifest.get('scope')),
+            'actions': [_action(action, 'The old layout is incompatible; preserve it and port a verified report or start a new review.')
+                        for action in classification.get('actions', ['preserve'])]}
 
 
 def _recover_source_action(source):
@@ -328,6 +479,11 @@ def inspect_run(run_dir, *, current_inputs=None):
         run, manifest, marker = artifacts._load_run(run_path)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         base['integrity']['errors'] = [str(exc)[:1000]]
+        if 'unsupported_layout' in str(exc):
+            base['integrity']['status'] = 'unsupported_layout'
+            base['actions'] = [_action('port_history', 'Old archives are read-only here; port a verified report for consultation.'),
+                               _action('new_review', 'Start a new review using the current archive layout.'),
+                               _action('preserve', 'Keep the original archive unchanged.')]
         return base
 
     operation = copy.deepcopy(manifest.get('operation') or {

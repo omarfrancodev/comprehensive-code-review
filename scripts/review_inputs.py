@@ -5,9 +5,10 @@ import re
 
 HASH = re.compile(r'[0-9a-f]{64}')
 INPUT_FIELDS = {'scope', 'sources', 'source_set_complete', 'description_identity',
-                'requirements_identity', 'plan_identity', 'configuration_identity', 'profile'}
+                'requirements_identity', 'plan_identity', 'configuration_identity', 'profile',
+                'logical_scope_identity'}
 IDENTITY_FIELDS = ('description_identity', 'requirements_identity', 'plan_identity',
-                   'configuration_identity', 'profile')
+                   'configuration_identity', 'profile', 'logical_scope_identity')
 CALLER_SOURCE_LIMIT = 64
 RETAINED_SOURCE_LIMIT = 4096
 
@@ -54,6 +55,9 @@ def normalize_inputs(raw: dict, *, caller: bool = True) -> dict:
         if field == 'profile' and value is not None:
             import review_profiles
             value = review_profiles._canonical(value)
+        elif field == 'logical_scope_identity' and value is not None and (
+                not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)):
+            raise ValueError('logical_scope_identity must be lowercase SHA-256 or null')
         elif value is not None and (not isinstance(value, str) or not value.strip()
                                     or len(value) > 1000 or any(ord(char) < 32 for char in value)):
             raise ValueError(field + ' must be bounded nonempty text or null')
@@ -95,6 +99,10 @@ def compare_inputs(retained: dict | None, current: dict) -> dict:
                                     'reason': 'The source content identity differs.'})
 
     for field in IDENTITY_FIELDS:
+        if field == 'logical_scope_identity' and field not in retained and field not in current:
+            # Archives created before layout 2 and ordinary callers that do not
+            # need an explicit selector have no independent logical identity to compare.
+            continue
         if field not in retained or field not in current:
             differences.append({'field': field, 'status': 'unknown',
                                 'reason': 'The identity was not explicitly observed on both sides.'})
