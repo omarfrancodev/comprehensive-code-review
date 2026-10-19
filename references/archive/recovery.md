@@ -1,5 +1,15 @@
 # Lookup, reuse and recovery
 
+## Archive 8 lookup and historical sources
+
+Current runs use logical selector folders and UTC/version run names from [artifacts.md](artifacts.md#current-archive-layout-schema-8-layout-2). `lookup` accepts `--logical-scope-input` for module/feature and partial local selectors. Its version 2 cursor binds repository, exact scope, logical selector and group; discard a version 1 cursor and restart the query. For MR/PR, revisions share one visible logical group and remain distinct candidates by full scope and run ID. `logical_scope_identity` is compared as an input identity; absent historical values remain unknown.
+
+Lookup may list a bounded legacy header under the matching repository and old scope prefix as `historical_source/unsupported_layout`, with actions to preserve, port a verified report for consultation or start a fresh review. It reads only the bounded manifest header; it does not inspect old resource claims, pending transactions or workspaces and never offers resume/restart/recover for that source. Explicit inspection of such a path returns the same diagnostic. The old source stays unchanged. Historical consultation packages are separate from native candidate selection.
+
+The default lookup only lists candidates; it does not select or show one. If any prior run matches the same logical scope, ask whether the user wants a new review or to see the latest result unless the request already explicitly says “rerun” or “show last/latest.” For an explicit latest request, provide `--current-inputs` and add `--select latest`. This exhaustively scans at most 10,000 candidates in the exact logical group, selects only a complete native run with verified report hashes and a unique metadata timestamp, then rechecks that candidate before returning it. A tie, unverifiable candidate or scan limit returns no selection. Changed or unknown inputs remain visible in `applicability`/`differences`; present a changed result as historical evidence, never as current. Do not use name order, mtime, run ID or report dates. Latest selection does not dispatch, show or create a run by itself.
+
+Use `--include-history` only when explicitly listing consultation packages. It exposes verified `historical_port` entries as `show_history` candidates; they are excluded from `--select latest` and cannot be resumed or used as a current review. To inspect/show one, use `scripts/review_history.py inspect|show`; its report includes a separate historical warning and the original report body remains unchanged.
+
 Load this reference only when a request may match an earlier review, when an archive is incomplete, or when a user asks to resume/recover a review. Lookup is read-only and local. It does not fetch remote data, dispatch agents, publish, modify, repair or clean resources.
 
 ## Before preparing another run
@@ -14,6 +24,16 @@ python /absolute/skill/scripts/review_artifacts.py lookup \
   --scope-file /absolute/owned/session/scope.json \
   --current-inputs /absolute/owned/session/current-inputs.json \
   --limit 20
+```
+
+When the user explicitly asks for the latest prior result, use the same exact request inputs with:
+
+```text
+python /absolute/skill/scripts/review_artifacts.py lookup \
+  --repo /absolute/project \
+  --scope-file /absolute/owned/session/scope.json \
+  --current-inputs /absolute/owned/session/current-inputs.json \
+  --select latest
 ```
 
 `--current-inputs` is optional. Supplying it permits comparison; omitting it makes freshness unknown. Its `scope` must exactly equal the lookup scope. `sources` maps at most 64 retained source references to SHA-256. `source_set_complete` must be `true` to treat source equality as established. Optional identities are compared when both the archived run and current inputs preserve them:
@@ -41,7 +61,7 @@ python /absolute/skill/scripts/review_artifacts.py lookup \
 }
 ```
 
-Use only identities actually observed and retained. An omitted/unrecoverable identity stays unknown. The matcher compares all pinned scope fields, available source hashes, archived final description identity and archive-7 profile history. It does not infer hashes for unretained files or use finding IDs as a shortcut. Description/requirements/plan/configuration identities absent from a historical archive cannot be reconstructed from prose; report them as unknown. Current profile is shown when supplied, and is compared when its prior value is available.
+Use only identities actually observed and retained. An omitted/unrecoverable identity stays unknown. The matcher compares all pinned scope fields, available source hashes, archived final description identity and archive-8 profile history. It does not infer hashes for unretained files or use finding IDs as a shortcut. Description/requirements/plan/configuration identities absent from a historical archive cannot be reconstructed from prose; report them as unknown. Current profile is shown when supplied, and is compared when its prior value is available.
 
 The query opens only this repository's archive group and scope folders sharing the stable reference/target/snapshot. A merge request reference allows a changed base/head to appear as a candidate so the difference can be reported. Without a stable anchor, the query uses the exact scope group. Each page has 1–100 rows (default 20). `truncated: true` means more candidates exist; continue with the returned opaque cursor. A cursor is bound to the repository and exact scope; do not edit or reuse it for another request. The result never selects a candidate. Ordering is for pagination only and does not imply the newest run is correct.
 
@@ -81,7 +101,7 @@ python /absolute/skill/scripts/review_artifacts.py recover --help
 python /absolute/skill/scripts/review_artifacts.py restart --help
 ```
 
-`pause` records an explicit user-directed stop; `block` records a failure actually observed by the harness. `resume` is limited to an intact archive-7 run whose exact scope and source hashes still match, and requires authority to continue a paused/blocked run or take over a different controller. It preserves old worker/executor events; it does not call them new independent work. `recover` consumes only an exact recorded helper transaction and never dispatches.
+`pause` records an explicit user-directed stop; `block` records a failure actually observed by the harness. `resume` is limited to an intact archive-8 run whose exact scope and source hashes still match, and requires authority to continue a paused/blocked run or take over a different controller. It preserves old worker/executor events; it does not call them new independent work. `recover` consumes only an exact recorded helper transaction and never dispatches.
 
 `restart` creates a fresh run ID linked to the selected source and can use a changed scope within the same repository. It does not copy findings, checks or execution results into the new run as current work. It transfers workspaces only when each exact owned path is explicitly selected and authority is recorded; otherwise preserve those resources for their owner.
 
@@ -96,6 +116,8 @@ During that transaction, when the owning source can be verified and has no known
 This historical lookup is optional: an absent, unreadable or unverifiable source archive does not invalidate an otherwise intact successor. Inspect/lookup/recover assess the successor's own bytes and pending transactions; they do not claim that the missing source was verified. A contradiction between the successor and an accessible, verified active source operation remains an error.
 
 An incoming transfer still pending on that successor requires its exact source to finish. If that source cannot be verified, inspect/lookup/recover expose a preservation plan with recovery.status `source_unavailable`, can_complete false, and an explicitly authorized independent-review alternative using fresh resources. Local transfer gates continue to reject completion; the successor is never certified verified/ready by ignoring that dependency. Preserve its recorded transaction and resources. Contradictory source identity or corruption of the local run remains an error, not an alternative-work authorization.
+
+Native restart intent v2 readers accept the original request encoding when its producer omitted the derived `logical_scope_identity`. All stored hashes, operation IDs and the reserved successor remain bound to the original bytes. Only the comparison copy derives the missing identity; new intent creation requires the fully canonical request. Exact retry also finds the original request file after its active descriptor is retired. Without an active descriptor, if both v2 encodings are occupied, preserve both reservations and report the ambiguity. This does not enable operations on unsupported historical archive layouts.
 
 For compatibility, integrity.status `recoverable` means a preserved helper-owned transaction is pending, not that recover can finish it now. The optional recovery object states known feasibility: `cancellation_available`, `independent_review_required`, or `source_unavailable`; can_complete false means no automatic completion is claimed. cancellation_supported is separate from completion. blocked_by distinguishes present/releasing source claims (`source_claims_present`), a durable transfer (`transfer_in_progress`), successor claims/work (`successor_claims_or_work`) and an unavailable source. Missing/foreign resource lists describe why the original continuation is blocked; no cancellation blocker is reported when cancellation is available. Omission of this diagnostic detail is not a guarantee of success: the mutator still verifies all gates.
 
@@ -152,7 +174,7 @@ That exit applies only before a transfer intent or an adoption sidecar is durabl
 
 Abandonment eligibility and pending-trace integrity are checked without applying trace events or reconstructing an intent file. Only an accepted cancellation writes them. Rejections preserve the domain files of source, successor and sessions; coordination lock files may be created. A valid pending helper event is replayed once as part of completing the authorized cancellation.
 
-For that exception, abandonment retains the successor as terminal history: archive-7 stores the existing receipt in `restart_abandonment`, and `operation.disposition` is `blocked`. The receipt marker distinguishes terminal history from an ordinarily resumable blocker. All mutators refuse it, basic validation remains read-only, and lookup/inspect/recover direct to `inspect_source`. No claim or workspace belonging to the other review is modified. Ownership identity is checked independently of that review's pending work evidence; this does not certify, recover or permit cleanup of the foreign review.
+For that exception, abandonment retains the successor as terminal history: archive-8 stores the existing receipt in `restart_abandonment`, and `operation.disposition` is `blocked`. The receipt marker distinguishes terminal history from an ordinarily resumable blocker. All mutators refuse it, basic validation remains read-only, and lookup/inspect/recover direct to `inspect_source`. No claim or workspace belonging to the other review is modified. Ownership identity is checked independently of that review's pending work evidence; this does not certify, recover or permit cleanup of the foreign review.
 
 The helper commits the terminal successor before the source receipt. If interrupted, `recover` on the source finishes only that already authorized cancellation, using the original receipt and without re-adopting; unknown/changed freshness cannot revive it. Inspect/recover on a successor with a still-pending source cancellation provide `recover_source` when that source can be verified. After completion they provide `inspect_source`, including when the source has another active restart. A replay of an old cancellation never retires that newer operation.
 

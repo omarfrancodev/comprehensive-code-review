@@ -179,7 +179,7 @@ class ArchiveHarnessTests(unittest.TestCase):
                         output_root=self.output, harness_id='claude-code-desktop',
                         harness_source={'kind': 'user', 'reference': 'session declaration'})
         initial = self.read(run / 'cierre.json')
-        self.assertEqual(initial['schema_version'], 6)
+        self.assertEqual(initial['schema_version'], 8)
         self.assertEqual(initial['harness'], raw)
         self.assertEqual(initial['harness_id'], 'claude-code-desktop')
         with patch.dict(os.environ, {'CCR_HARNESS_ID': 'codex-cli'}):
@@ -211,7 +211,8 @@ class ArchiveHarnessTests(unittest.TestCase):
                 (run / 'trazabilidad.jsonl').unlink()
             fixtures.artifacts._save_manifest(run, manifest, marker)
             before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
-            self.assertEqual(fixtures.artifacts.validate(run)['schema_version'], version)
+            with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                fixtures.artifacts.validate(run)
             self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
             self.assertFalse(set(keys) & set(self.read(run / 'cierre.json')))
 

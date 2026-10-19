@@ -7,6 +7,7 @@ import unittest
 
 import test_review_artifacts as fixtures
 from test_review_traceability_contract import record6, check
+from recovery_fixtures import record10
 
 
 class LocalReviewTransferTests(unittest.TestCase):
@@ -15,9 +16,10 @@ class LocalReviewTransferTests(unittest.TestCase):
     write = fixtures.ArchiveTests.write
     prepare = fixtures.ArchiveTests.prepare
     read = fixtures.ArchiveTests.read
+    retain = fixtures.ArchiveTests.retain
 
     def final_record(self, run):
-        value = record6()
+        value = record10()
         value['scope'] = self.read(self.scope)
         value['scope']['mode'] = 'range'
         value['scope']['reference'] = 'feature/local-change'
@@ -25,15 +27,16 @@ class LocalReviewTransferTests(unittest.TestCase):
         value['review_id'] = 'CR-' + self.read(run / 'cierre.json')['run_id']
         value['checks'] = [check()]
         value['checks'][0].update(command='test relevant behavior', revision=value['scope']['head'],
-                                  evidence='37 passed; 2 skipped because the optional service was unavailable.')
+                                  evidence='37 passed; 2 skipped because the optional service was unavailable.',
+                                  execution={'kind': 'static', 'executor': None})
         return value
 
     def test_local_handoff_context_survives_close_and_cli_validation_is_read_only(self):
         scope = self.read(self.scope)
-        scope.update(mode='range', reference='feature/local-change')
+        scope.update(mode='range', reference='feature/local-change', base='base123')
         self.scope.write_text(json.dumps(scope), encoding='utf-8')
         run = self.prepare()
-        final = self.write('final6.json', self.final_record(run))
+        self.final = self.write('final10.json', self.final_record(run))
         context = self.write('handoff-context.json', {
             'source_record': 'review.json', 'source_report': 'informe.md',
             'requirements': [{'title': 'Spec captured at the reviewed revision',
@@ -41,7 +44,7 @@ class LocalReviewTransferTests(unittest.TestCase):
             'plan': [{'title': 'Implementation plan captured at the reviewed revision',
                       'reference': 'https://example.test/plan', 'identity': 'reviewed revision'}],
             'decisions_pending': ['Confirm the optional-service scenario before deployment']})
-        fixtures.artifacts.retain(run, final, handoff=True, handoff_context_input=context)
+        self.retain(run, handoff=True, handoff_context_input=context, unavailable_reason=None)
         fixtures.artifacts.validate(run, require_retained=True)
         fixtures.artifacts.close(run, cleanup='not_needed', residuals=[])
         handoff = (run / 'handoff.md').read_text(encoding='utf-8')
@@ -61,13 +64,14 @@ class LocalReviewTransferTests(unittest.TestCase):
 
     def test_wrong_report_identity_is_refused_without_replacing_retained_report(self):
         run = self.prepare()
-        value = record6()
+        value = record10()
         value['scope'] = self.read(self.scope)
         value['description'] = {'status': 'not_applicable', 'identity': None, 'details': ''}
         value['review_id'] = 'CR-' + self.read(run / 'cierre.json')['run_id']
-        final = self.write('correct6.json', value)
-        fixtures.artifacts.retain(run, final)
+        self.final = self.write('correct10.json', value)
+        self.retain(run, unavailable_reason=None)
         before = (run / 'review.json').read_bytes()
+        value = self.read(run / 'review.json')
         value['review_id'] = 'CR-' + 'f' * 20
         wrong = self.write('wrong6.json', value)
         with self.assertRaisesRegex(ValueError, 'identity|review_id'):

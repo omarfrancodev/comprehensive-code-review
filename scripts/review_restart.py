@@ -8,14 +8,16 @@ from pathlib import Path
 import review_harness
 import review_inputs
 import review_profiles
+import review_layout
 
 
-INTENT_VERSION = 1
+INTENT_VERSION = 2
 INTENT_FIELDS = {'schema_version', 'operation_id', 'request_sha256', 'intent_sha256', 'source', 'request',
                  'successor', 'status'}
 SOURCE_FIELDS = {'run_dir', 'run_id', 'owner_id', 'repository_key', 'repository_path', 'archive_root'}
 SUCCESSOR_FIELDS = {'run_dir', 'run_id', 'owner_id', 'reservation_id', 'created_at'}
-REQUEST_FIELDS = {'profile_input', 'controller', 'authority', 'current_inputs', 'transfer_paths', 'harness'}
+REQUEST_FIELDS = {'profile_input', 'controller', 'authority', 'current_inputs', 'transfer_paths', 'harness',
+                  'logical_scope_input'}
 
 
 def _json(value):
@@ -80,7 +82,8 @@ def _normalize_harness(value):
     return {'harness': name.strip(), **identity}
 
 
-def normalize_restart_request(profile_input, controller, authority, current_inputs, transfer_paths, harness=None):
+def normalize_restart_request(profile_input, controller, authority, current_inputs, transfer_paths, harness=None,
+                              logical_scope_input=None):
     """Validate caller inputs before any restart reservation or destination creation."""
     selection = review_profiles.validate_selection(_input_object(profile_input, 'profile selection'))
     if selection['phase'] != 'prepare' or selection['affected_assignments']:
@@ -90,6 +93,13 @@ def normalize_restart_request(profile_input, controller, authority, current_inpu
     # Profile selection is a separate immutable decision in this new run; the
     # current-input payload must not inherit the source run's previous profile.
     normalized_inputs.pop('profile', None)
+    logical_scope = review_layout.logical_scope(normalized_inputs['scope'], logical_scope_input)
+    if ('logical_scope_identity' in normalized_inputs
+            and normalized_inputs['logical_scope_identity'] != logical_scope['identity']):
+        raise ValueError('restart current review inputs logical scope differs from the pinned selector')
+    normalized_inputs['logical_scope_identity'] = logical_scope['identity']
+    if logical_scope_input is not None and not isinstance(logical_scope_input, dict):
+        raise ValueError('logical scope input must be an object')
     if not isinstance(transfer_paths, list) or len(transfer_paths) > 64:
         raise ValueError('restart transfer paths must be a bounded array')
     normalized_paths = [_path(path, 'restart transfer path') for path in transfer_paths]
@@ -100,11 +110,18 @@ def normalize_restart_request(profile_input, controller, authority, current_inpu
             'authority': _bounded_text(authority, 'restart authority'),
             'current_inputs': normalized_inputs,
             'transfer_paths': sorted(normalized_paths, key=os.path.normcase),
-            'harness': _normalize_harness(harness)}
+            'harness': _normalize_harness(harness),
+            'logical_scope_input': copy.deepcopy(logical_scope_input)}
 
 
 def _request_identity(request):
     return {key: copy.deepcopy(value) for key, value in request.items() if key != 'authority'}
+
+
+def same_restart_request(stored, requested):
+    """Compare validated requests without changing their persisted identities."""
+    return (_request_identity(normalize_restart_request(**stored))
+            == _request_identity(normalize_restart_request(**requested)))
 
 
 def _source_key(source):
@@ -119,6 +136,8 @@ def build_restart_intent(source, request, successor):
         raise ValueError('restart source identity is incomplete')
     if not isinstance(request, dict) or set(request) != REQUEST_FIELDS:
         raise ValueError('normalized restart request has an invalid shape')
+    if normalize_restart_request(**request) != request:
+        raise ValueError('restart intent request is not normalized')
     if not isinstance(successor, dict) or set(successor) != SUCCESSOR_FIELDS:
         raise ValueError('restart successor reservation has an invalid shape')
     source_value = {key: copy.deepcopy(source[key]) for key in SOURCE_FIELDS}
@@ -183,7 +202,13 @@ def validate_restart_intent(intent):
         for field in ('run_id', 'owner_id', 'reservation_id', 'created_at'):
             _bounded_text(successor[field], 'successor ' + field, 128)
         normalized = normalize_restart_request(request['profile_input'], request['controller'],
-            request['authority'], request['current_inputs'], request['transfer_paths'], request['harness'])
+            request['authority'], request['current_inputs'], request['transfer_paths'], request['harness'],
+            request['logical_scope_input'])
+        # Early native v2 producers omitted this derived field. Validate their
+        # original shape; hashes and operation IDs above bind the stored bytes.
+        # New reservations still use the fully canonical request normalizer.
+        if 'logical_scope_identity' not in request['current_inputs']:
+            normalized['current_inputs'].pop('logical_scope_identity', None)
         if normalized != request:
             errors.append('restart intent request is not normalized')
     except (KeyError, TypeError, ValueError, OSError) as exc:

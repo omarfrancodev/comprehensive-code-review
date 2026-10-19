@@ -101,7 +101,7 @@ class LayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'layout'):
             self.prepare(previous_run=moved)
 
-    def test_validate_accepts_legacy_schemas_without_migration(self):
+    def test_validate_classifies_legacy_schemas_as_unsupported_without_mutation(self):
         for schema in (1, 2):
             with self.subTest(schema=schema):
                 run = self.prepare()
@@ -112,10 +112,9 @@ class LayoutTests(unittest.TestCase):
                 manifest.pop('run_id', None)
                 artifacts._save_manifest(run, manifest, marker)
                 before = (run / 'cierre.json').read_bytes()
-                result = artifacts.validate(run, require_retained=True)
-                self.assertEqual(result['schema_version'], schema)
+                with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                    artifacts.validate(run, require_retained=True)
                 self.assertEqual((run / 'cierre.json').read_bytes(), before)
-                self.close(run)
 
     def test_validation_does_not_require_original_checkout_to_survive(self):
         run = self.prepare()
@@ -135,17 +134,24 @@ class LayoutTests(unittest.TestCase):
 
     def test_register_adds_planned_resources_before_use_without_final_record(self):
         run = self.prepare()
+        manifest = self.read(run / 'cierre.json')
+        context = {'profile': manifest['profile_history'][-1]['profile'],
+                   'selection_source': manifest['profile_history'][0]['selection_source'],
+                   'profile_history': manifest['profile_history'], 'execution_plan': [], 'executors': [],
+                   'review_inputs': manifest['review_inputs']}
+        context_file = self.write('planned-context.json', context)
         session = self.root / 'planned-session'
         self.assertFalse(session.exists())
         result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
-                                 'register', '--run-dir', str(run), '--temporary-path', str(session)],
+                                 'register', '--run-dir', str(run), '--temporary-path', str(session),
+                                 '--context-input', str(context_file)],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['temporary_paths'], [str(session)])
         self.assertFalse(session.exists())
         self.assertFalse((run / 'review.json').exists())
         session.mkdir()
-        artifacts.register(run, [session])
+        artifacts.register(run, [session], context_input=context_file)
         self.retain(run)
         before = (run / 'cierre.json').read_bytes()
         with self.assertRaises(ValueError):
@@ -184,18 +190,11 @@ class LayoutTests(unittest.TestCase):
 
     def test_generated_truncated_repository_labels_remain_valid_for_all_schemas(self):
         self.git('remote', 'add', 'origin', 'https://example.test/team/' + 'a' * 35 + '-service.git')
-        for schema in (1, 2, 3):
-            with self.subTest(schema=schema):
-                run = self.prepare()
-                self.retain(run)
-                _, manifest, marker = artifacts._load_run(run)
-                manifest['schema_version'] = schema
-                if schema != 3:
-                    manifest.pop('repository_identity')
-                    manifest.pop('run_id')
-                artifacts._save_manifest(run, manifest, marker)
-                self.assertEqual(artifacts.validate(run, require_retained=True)['schema_version'], schema)
-                self.close(run)
+        run = self.prepare()
+        self.retain(run)
+        self.assertEqual(artifacts.validate(run, require_retained=True)['schema_version'], 8)
+        self.assertEqual(len(run.parent.parent.name.rsplit('-', 1)[0]), 36)
+        self.close(run)
 
     def test_inline_close_observation_needs_no_file_after_session_removal(self):
         session = self.root / 'owned-session'

@@ -30,6 +30,7 @@ import review_profiles
 import review_inputs
 import review_restart
 import review_resource_claims
+import review_layout
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
@@ -39,8 +40,8 @@ FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
 TRACE_FILES = (review_trace.NAME, 'handoff.md')
 MARKER = '.review-ownership.json'
-ARCHIVE_SCHEMA_VERSION = 7
-TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6, 7})
+ARCHIVE_SCHEMA_VERSION = review_layout.ARCHIVE_SCHEMA_VERSION
+TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6, 7, 8})
 PENDING_CONTEXT_LIMIT = 131072
 CHECKPOINT_EVIDENCE_COUNT_LIMIT = 64
 CHECKPOINT_METADATA_LIMIT = 16 * 1024 * 1024
@@ -132,6 +133,19 @@ def _restart_intent_path(source_run, source_manifest, request):
     source = safe_path(source_run)
     digest = review_restart._sha(review_restart._request_identity(request))
     return _restart_local_dir(source, source_manifest) / (digest + '.json')
+
+
+def _existing_restart_intent_path(source_run, source_manifest, request):
+    """Look up only the two exact v2 encodings, without scanning other intents."""
+    canonical = _restart_intent_path(source_run, source_manifest, request)
+    previous = copy.deepcopy(request)
+    previous['current_inputs'].pop('logical_scope_identity', None)
+    previous_path = _restart_intent_path(source_run, source_manifest, previous)
+    if previous_path != canonical and previous_path.exists():
+        if canonical.exists():
+            raise ValueError('multiple restart intents match this request; preserve both reservations')
+        return previous_path
+    return canonical
 
 
 def _active_restart_paths(source_run, source_manifest):
@@ -572,15 +586,13 @@ def _repository_group(identity):
     return _slug(label) + '-' + _digest(identity.encode('utf-8'))[:20]
 
 
-def _scope_group(scope):
-    hint = scope['reference'] or scope['target'] or scope['snapshot'] or scope['head']
-    if scope['reference'] and '://' in hint:
-        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
-    return _slug(scope['mode']) + '-' + _slug(hint) + '-' + _digest(_json_bytes(scope))[:16]
+def _scope_group(scope, logical_scope_input=None):
+    return review_layout.scope_group(review_layout.logical_scope(scope, logical_scope_input))
 
 
 def _validate_layout(run, manifest):
     """Bind location to durable identities; never need the original checkout."""
+    review_layout.validate_layout(run, manifest)
     root = safe_path(manifest['archive_root'])
     parts = run.relative_to(root).parts
     key = manifest.get('repository_key')
@@ -592,10 +604,8 @@ def _validate_layout(run, manifest):
     # in '-' or '_'. Validate its shape without applying a second normalization.
     if not separator or suffix != key or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}', label):
         raise ValueError('invalid archive layout: repository name must include its stable ID')
-    if scope != _scope_group(manifest['scope']):
+    if scope != _scope_group(manifest['scope'], manifest.get('logical_scope_input')):
         raise ValueError('invalid archive layout: scope directory differs from pinned scope')
-    if not re.fullmatch(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}', name):
-        raise ValueError('invalid archive layout: timestamp and unique run ID are required')
     if manifest['schema_version'] >= 3:
         if repository != _repository_group(manifest.get('repository_identity')):
             raise ValueError('invalid archive layout: repository identity differs from directory')
@@ -608,7 +618,8 @@ def _validate_layout(run, manifest):
                 raise ValueError('timestamp needs timezone')
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError('invalid archive layout: creation timestamp is missing or invalid') from exc
-        expected = created.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + run_id
+        expected = review_layout.run_name(manifest['scope'], manifest['created_at'], run_id,
+                                          manifest.get('logical_scope_input'))
         if name != expected:
             raise ValueError('invalid archive layout: run directory differs from stored identity')
 
@@ -693,11 +704,13 @@ def _load_run(run_dir):
     if not _contains(root, run) or run == root:
         raise ValueError('run escaped its registered archive root')
     _scope(manifest.get('scope'))
-    if manifest.get('schema_version') not in (1, 2, 3, 4, 5, 6, ARCHIVE_SCHEMA_VERSION):
-        raise ValueError('unsupported archive schema')
-    if manifest['schema_version'] in (6, 7):
+    if manifest.get('schema_version') != ARCHIVE_SCHEMA_VERSION or manifest.get('layout_version') != review_layout.LAYOUT_VERSION:
+        raise ValueError('unsupported_layout: this archive predates native archive schema 8/layout 2; preserve it or port a verified report for consultation')
+    if marker.get('logical_scope_sha256') != _digest(_json_bytes(manifest.get('logical_scope'))):
+        raise ValueError('foreign run or modified logical scope binding')
+    if manifest['schema_version'] in (6, 7, 8):
         review_harness.validate_identity(manifest)
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         if not manifest.get('profile_history'):
             raise ValueError('profile selection is required before review work starts')
         errors = review_profiles.validate_history(manifest.get('profile_history'))
@@ -741,7 +754,7 @@ def _load_run(run_dir):
         _validate_cleanup_metadata(manifest)
         _validate_terminal_abandonment(run, manifest)
     states = {'prepared', 'retaining', 'closing', 'complete'}
-    if manifest['schema_version'] in (5, 6, 7):
+    if manifest['schema_version'] in (5, 6, 7, 8):
         states.add('processing')
     if manifest.get('state') not in states:
         raise ValueError('invalid archive state')
@@ -762,7 +775,7 @@ def _pending_file_name(name):
 
 
 def _verify_pending(run, manifest, *, allow_transaction=False):
-    if manifest.get('schema_version') != 7:
+    if manifest.get('schema_version') != 8:
         if any(key in manifest for key in ('pending_hashes', 'checkpoint', 'checkpoint_transaction')):
             raise ValueError('legacy archive cannot contain provisional checkpoint metadata')
         return
@@ -1085,11 +1098,16 @@ def _initial_selection(profile_input):
     return value
 
 
-def _capture_review_inputs(raw, scope, profile, label):
+def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity=None):
     """Capture external inputs before work while keeping profile history authoritative."""
     if raw is None:
         return None
     value = review_inputs.normalize_inputs(_input_object(raw, label))
+    if logical_scope_identity is not None:
+        if ('logical_scope_identity' in value
+                and value['logical_scope_identity'] != logical_scope_identity):
+            raise ValueError(label + ' logical scope differs from the pinned selector')
+        value.setdefault('logical_scope_identity', logical_scope_identity)
     if value['scope'] != scope:
         raise ValueError(label + ' scope differs from the pinned review scope')
     selected_profile = value.pop('profile', None)
@@ -1163,13 +1181,13 @@ def record_event(run_dir, event_file, execution_metadata=None):
         raise ValueError('completed review history is immutable')
     if manifest['state'] == 'retaining':
         raise ValueError('retention is interrupted; finish retention before recording milestones')
-    if manifest['schema_version'] in (5, 6, 7) and event['occurred_at'] is not None and event['provenance']['source'] is None:
+    if manifest['schema_version'] in (5, 6, 7, 8) and event['occurred_at'] is not None and event['provenance']['source'] is None:
         raise ValueError('observed execution time requires an identifiable provenance source')
-    if manifest['schema_version'] in (5, 6, 7):
+    if manifest['schema_version'] in (5, 6, 7, 8):
         review_trace.validate_local_event_targets(event, (run / review_trace.NAME).read_bytes())
-    if manifest['schema_version'] == 7 and event['kind'] == 'profile':
+    if manifest['schema_version'] == 8 and event['kind'] == 'profile':
         raise ValueError('use select-profile to record structured profile transitions')
-    if manifest['schema_version'] == 7 and _starts_processing(event):
+    if manifest['schema_version'] == 8 and _starts_processing(event):
         if not manifest.get('profile_history'):
             raise ValueError('profile selection is required before review work starts')
         disposition = manifest.get('operation', {}).get('disposition')
@@ -1188,7 +1206,7 @@ def record_event(run_dir, event_file, execution_metadata=None):
                 raise ValueError('assignment work cannot start a superseded or non-required brief')
             if event['status'] == 'started' and not references.intersection(event['evidence']):
                 raise ValueError('assignment work must start from an active required brief captured in the execution plan')
-    if manifest['schema_version'] in (5, 6, 7) and manifest['state'] == 'prepared' and _starts_processing(event):
+    if manifest['schema_version'] in (5, 6, 7, 8) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
     return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
@@ -1216,7 +1234,8 @@ def _check_evidence_target(run, manifest, name):
         raise ValueError('refusing to clobber foreign evidence: ' + name)
 
 
-def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_context=False):
+def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_context=False,
+                       context_input=None):
     contents = {}
     seen = {'evidence/context.json'.casefold()} if reserve_context else set()
     for raw in inputs or []:
@@ -1233,6 +1252,13 @@ def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_
     # planned bytes are reusable; missing sources require explicit resubmission.
     for name, expected in manifest.get('planned_hashes', {}).items():
         if name.startswith('evidence/') and name not in contents:
+            if name == 'evidence/context.json' and context_input is not None:
+                context = read_json(context_input, max_bytes=PENDING_CONTEXT_LIMIT)
+                data = _json_bytes(context)
+                if len(data) > 131072 or _digest(data) != expected:
+                    raise ValueError('interrupted selected context differs from its reserved hash')
+                contents[name] = data
+                continue
             try:
                 data = safe_path(run / name).read_bytes()
             except FileNotFoundError as exc:
@@ -1285,7 +1311,8 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
             raise ValueError('checkpoint context must preserve registered review_inputs')
         normalized_inputs = _capture_review_inputs(
             supplied_inputs, manifest['scope'], manifest['profile_history'][-1]['profile'],
-            'checkpoint context review_inputs')
+            'checkpoint context review_inputs',
+            logical_scope_identity=manifest.get('logical_scope', {}).get('identity'))
         if normalized_inputs != captured_inputs:
             raise ValueError('checkpoint context review_inputs differ from the initial captured identities')
     elif supplied_inputs is not None:
@@ -1344,7 +1371,7 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
                     diagnostics.append('final structure: stage must be final')
             else:
                 if final.get('schema_version') != 10:
-                    diagnostics.append('final structure: archive 7 checkpoints require review schema 10')
+                    diagnostics.append('final structure: archive 8 checkpoints require review schema 10')
                 else:
                     if final.get('review_id') != 'CR-' + manifest['run_id']:
                         diagnostics.append('archive identity gate: review ID differs from the run')
@@ -1466,8 +1493,8 @@ def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=Non
                gate_errors=None, max_evidence_bytes=CHECKPOINT_EVIDENCE_LIMIT):
     """Preserve explicitly selected provisional inputs/results without retaining a verdict."""
     run, manifest, marker = _load_run(run_dir)
-    if manifest['schema_version'] != 7:
-        raise ValueError('provisional checkpoints require archive 7')
+    if manifest['schema_version'] != 8:
+        raise ValueError('provisional checkpoints require archive 8')
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, allow_checkpoint_transaction=True)
     if manifest['state'] == 'complete' or manifest.get('operation', {}).get('disposition') in {'complete', 'superseded'}:
@@ -1582,13 +1609,18 @@ def _measurements(inputs, unavailable_reason):
 
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
             *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None,
+            logical_scope_input=None,
             _restart_reservation=None, _harness_identity=None):
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = _input_object(scope_file, 'scope')
     _scope(scope)
+    if _restart_reservation is not None:
+        logical_scope_input = copy.deepcopy(_restart_reservation['request']['logical_scope_input'])
+    logical = review_layout.logical_scope(scope, logical_scope_input)
     selection = _initial_selection(profile_input)
-    captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs')
+    captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs',
+                                             logical_scope_identity=logical['identity'])
     controller_value = _controller(controller, selection['actor'])
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
@@ -1618,7 +1650,9 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if old_manifest['repository_key'] != repository_key:
             raise ValueError('previous run belongs to a different repository')
         previous = str(old)
-    manifest = {'schema_version': ARCHIVE_SCHEMA_VERSION, 'skill_version': skill_version, 'harness': harness,
+    manifest = {'schema_version': ARCHIVE_SCHEMA_VERSION, 'layout_version': review_layout.LAYOUT_VERSION,
+                'logical_scope': logical, 'logical_scope_input': copy.deepcopy(logical_scope_input),
+                'skill_version': skill_version, 'harness': harness,
                 'scope': scope, 'archive_root': str(root), 'repository_path': str(repo),
                 'repository_key': repository_key, 'repository_identity': identity, 'previous_run': previous,
                 'owner_id': uuid.uuid4().hex, 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -1640,6 +1674,10 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         if errors:
             raise ValueError('; '.join(errors))
         reserved = intent['successor']
+        logical_scope_input = copy.deepcopy(intent['request']['logical_scope_input'])
+        logical = review_layout.logical_scope(scope, logical_scope_input)
+        manifest.update(layout_version=review_layout.LAYOUT_VERSION, logical_scope=logical,
+                        logical_scope_input=logical_scope_input)
         manifest.update(run_id=reserved['run_id'], owner_id=reserved['owner_id'],
                         created_at=reserved['created_at'], restart_operation={
                             'operation_id': intent['operation_id'],
@@ -1650,7 +1688,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                             'reservation_id': reserved['reservation_id']})
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
-    scoped = root / _repository_group(identity) / _scope_group(scope)
+    scoped = root / _repository_group(identity) / review_layout.scope_group(logical)
     reservation_file = '.review-restart-reservation.json'
     if _restart_reservation is not None:
         reserved = _restart_reservation['successor']
@@ -1701,7 +1739,8 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 partial = read_json(run / MARKER)
                 expected_marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run),
                     'archive_root': str(root), 'repository_key': repository_key,
-                    'scope_sha256': _digest(_json_bytes(scope))}
+                    'scope_sha256': _digest(_json_bytes(scope)),
+                    'logical_scope_sha256': _digest(_json_bytes(logical))}
                 if (not isinstance(partial, dict) or any(partial.get(key) != value
                         for key, value in expected_marker.items())):
                     raise ValueError('partially prepared successor ownership differs from its reservation')
@@ -1723,7 +1762,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         for _ in range(8):
             created = datetime.now(timezone.utc)
             manifest.update(created_at=created.isoformat(), run_id=uuid.uuid4().hex[:20])
-            run = scoped / (created.strftime('%Y%m%dT%H%M%S') + '-' + manifest['run_id'])
+            run = scoped / review_layout.run_name(scope, manifest['created_at'], manifest['run_id'], logical_scope_input)
             _validate_layout(run, manifest)
             try:
                 run.mkdir()
@@ -1733,7 +1772,8 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         else:
             raise ValueError('cannot allocate a unique owned review run')
     marker = {'owner_id': manifest['owner_id'], 'run_dir': str(run), 'archive_root': str(root),
-              'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope))}
+              'repository_key': repository_key, 'scope_sha256': _digest(_json_bytes(scope)),
+              'logical_scope_sha256': _digest(_json_bytes(logical))}
     try:
         _append_trace_events(run, manifest, marker,
                              [_milestone('prepare', 'Owned archive prepared with pinned scope'),
@@ -1759,8 +1799,8 @@ def select_profile(run_dir, selection_input):
     """Capture a profile transition and its trace event as one idempotent mutation."""
     raw = _input_object(selection_input, 'profile selection')
     run, manifest, marker = _load_run(run_dir)
-    if manifest['schema_version'] != 7:
-        raise ValueError('profile transitions require an archive 7 run')
+    if manifest['schema_version'] != 8:
+        raise ValueError('profile transitions require an archive 8 run')
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
     if manifest['state'] in {'retaining', 'closing', 'complete'}:
@@ -1809,10 +1849,10 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     _verify_files(run, manifest)
     if manifest['state'] not in {'prepared', 'processing'}:
         raise ValueError('register temporary resources before retention')
-    if manifest['schema_version'] == 7 and manifest.get('operation', {}).get('disposition') != 'open':
+    if manifest['schema_version'] == 8 and manifest.get('operation', {}).get('disposition') != 'open':
         raise ValueError('review operation is not open; resume or recover before registering resources')
-    if manifest['schema_version'] == 7 and context_input is None:
-        raise ValueError('archive 7 registration requires captured context, including executors or an explicit empty list')
+    if manifest['schema_version'] == 8 and context_input is None:
+        raise ValueError('archive 8 registration requires captured context, including executors or an explicit empty list')
     temporary = _temporary_paths(temporary_paths, manifest)
     manifests = _temporary_manifests(temporary, manifest)
     executors = _executors(context_input, manifest, temporary)
@@ -1821,14 +1861,14 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     claim_manifest = copy.deepcopy(manifest)
     claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
                           _claim_run_dir=str(run))
-    if manifest['schema_version'] == 7 and context_input is not None:
+    if manifest['schema_version'] == 8 and context_input is not None:
         context = _input_object(context_input, 'execution context')
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
                 or context.get('selection_source') != manifest['profile_history'][0]['selection_source']
                 or context.get('profile_history') != manifest['profile_history']):
             raise ValueError('executor context must preserve the profile history captured by the archive')
         if not isinstance(context.get('execution_plan'), list):
-            raise ValueError('archive 7 registration requires captured context.execution_plan')
+            raise ValueError('archive 8 registration requires captured context.execution_plan')
         existing_trace = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
         if 'assignment_registry' not in manifest and any(
                 row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
@@ -1839,7 +1879,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         if supplied_inputs is not None:
             captured = _capture_review_inputs(supplied_inputs, manifest['scope'],
                                               manifest['profile_history'][-1]['profile'],
-                                              'execution context review_inputs')
+                                              'execution context review_inputs',
+                                              logical_scope_identity=manifest.get('logical_scope', {}).get('identity'))
             if review_input_capture is None:
                 if any(row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
                        and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
@@ -1861,7 +1902,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     rows = list(manifest.get('resource_claims', []))
     plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest, authority=authority)
     pending_writes = []
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         for raw, plan in zip(temporary, plans):
             if plan['action'] == 'not_workspace':
                 continue
@@ -1884,7 +1925,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         for path, data in pending_writes:
             atomic_write(path, data)
     manifest.update(temporary_paths=temporary, temporary_manifests=manifests, executors=executors)
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         manifest.update(resource_claims=rows, assignment_registry=assignment_registry,
                         review_inputs=review_input_capture)
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
@@ -1896,7 +1937,7 @@ CLEANUP_RECEIPT_LIMIT = 64
 
 
 def _validate_cleanup_metadata(manifest):
-    """Validate archive-7 cleanup intent and its bounded receipt inventory."""
+    """Validate native cleanup intent and its bounded receipt inventory."""
     if ('cleanup_receipts' in manifest) != ('resource_cleanup' in manifest):
         raise ValueError('resource cleanup metadata fields must be introduced together')
     receipts = manifest.get('cleanup_receipts', [])
@@ -2105,11 +2146,11 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
         _verify_files(successor, next_manifest, allow_resource_transfer=True)
         if source == successor:
             raise ValueError('source and successor review runs must differ')
-        if (source_manifest.get('schema_version') != 7 or next_manifest.get('schema_version') != 7
+        if (source_manifest.get('schema_version') != 8 or next_manifest.get('schema_version') != 8
                 or source_manifest.get('repository_key') != next_manifest.get('repository_key')
                 or source_manifest.get('repository_path') != next_manifest.get('repository_path')
                 or source_manifest.get('scope') != next_manifest.get('scope')):
-            raise ValueError('resource transfer requires archive-7 runs for the same repository and scope')
+            raise ValueError('resource transfer requires archive-8 runs for the same repository and scope')
         for label, value in (('source', source_manifest), ('successor', next_manifest)):
             if value.get('state') not in {'prepared', 'processing'}:
                 raise ValueError(label + ' run must be prepared or processing; retaining/closing runs cannot transfer')
@@ -2432,8 +2473,8 @@ def begin_resource_cleanup(run_dir, session_dir):
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 7:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+    if manifest.get('schema_version') != 8:
+        raise ValueError('durable resource cleanup requires archive schema 8')
     if manifest.get('state') in {'retaining', 'complete'}:
         raise ValueError('resource cleanup cannot begin during retention or after closure')
     if manifest.get('operation', {}).get('disposition') == 'complete':
@@ -2543,8 +2584,8 @@ def finish_resource_cleanup(run_dir, observation):
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 7:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+    if manifest.get('schema_version') != 8:
+        raise ValueError('durable resource cleanup requires archive schema 8')
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
                                            completion_source='review_workspace.cleanup')
 
@@ -2556,8 +2597,8 @@ def recover_resource_cleanup(run_dir):
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 7:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+    if manifest.get('schema_version') != 8:
+        raise ValueError('durable resource cleanup requires archive schema 8')
     intent = manifest.get('resource_cleanup')
     if intent is None:
         return {'status': 'none', 'run_id': manifest['run_id']}
@@ -2588,8 +2629,8 @@ def pause(run_dir, *, authority, reason, phase):
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
-    if manifest['schema_version'] != 7:
-        raise ValueError('new pause transitions require archive 7; preserve legacy history and start a linked run')
+    if manifest['schema_version'] != 8:
+        raise ValueError('new pause transitions require archive 8; preserve legacy history and start a linked run')
     authority = review_resource_claims._authority(authority)
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000 or any(ord(c) < 32 for c in reason):
         raise ValueError('pause reason must be bounded nonempty text')
@@ -2613,8 +2654,8 @@ def block(run_dir, *, source, reason, phase):
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
-    if manifest['schema_version'] != 7:
-        raise ValueError('new block transitions require archive 7; preserve legacy history and start a linked run')
+    if manifest['schema_version'] != 8:
+        raise ValueError('new block transitions require archive 8; preserve legacy history and start a linked run')
     if not isinstance(source, str) or not source.strip() or len(source) > 500 or any(ord(c) < 32 for c in source):
         raise ValueError('block source must identify an observed failure source')
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000 or any(ord(c) < 32 for c in reason):
@@ -2665,8 +2706,8 @@ def resume(run_dir, *, controller, authority, current_inputs):
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
-    if manifest['schema_version'] != 7:
-        raise ValueError('legacy runs cannot be resumed in place; create a linked archive-7 restart')
+    if manifest['schema_version'] != 8:
+        raise ValueError('unsupported_layout: preserve the legacy archive or port a verified report for consultation')
     if manifest['state'] in {'retaining', 'closing', 'complete'}:
         raise ValueError('retention/closure has started or completed; recover its transaction or create a new run')
     normalized_inputs = review_recovery.validate_current_inputs(
@@ -2921,7 +2962,7 @@ def _restart_resource_exit(run, manifest, active_restart):
                    'successor_claims_or_work': 'Claims or work already owned by the successor prevent abandonment.'}
         action = _independent_review_action(run, ' '.join(reasons[code] for code in blocked_by), intent['operation_id'])
     actions = [action]
-    if denial is not None and manifest.get('schema_version') == 7 and manifest.get('state') != 'complete':
+    if denial is not None and manifest.get('schema_version') == 8 and manifest.get('state') != 'complete':
         actions.append({'action': 'record_restart_refusal', 'run_dir': str(run),
             'operation_id': intent['operation_id'], 'intent_path': active_restart['intent_path'],
             'requires_explicit_authority': True, 'phase': denial.phase,
@@ -2949,6 +2990,12 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
     requested_inputs.pop('profile', None)
     restart_profile = intent['request']['profile_input']['profile']
     expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
+    expected_inputs.setdefault('logical_scope_identity', review_layout.logical_scope(
+        expected_inputs['scope'], intent['request']['logical_scope_input'])['identity'])
+    if (requested_inputs['scope'] == expected_inputs['scope']
+            and 'logical_scope_identity' not in requested_inputs):
+        requested_inputs['logical_scope_identity'] = review_layout.logical_scope(
+            requested_inputs['scope'], intent['request']['logical_scope_input'])['identity']
     expected_inputs['profile'] = restart_profile
     requested_inputs['profile'] = restart_profile
     restart_appraisal = review_inputs.compare_inputs(expected_inputs, requested_inputs)
@@ -3024,7 +3071,7 @@ def _recover_run_transactions(run_path, normalized_controller, authority, curren
                     'actions': review_recovery._superseded_actions(resources)}
         checkpoint_transaction = manifest.get('checkpoint_transaction')
         if checkpoint_transaction is not None:
-            if manifest['schema_version'] != 7 or manifest['state'] == 'complete':
+            if manifest['schema_version'] != 8 or manifest['state'] == 'complete':
                 raise ValueError('checkpoint transaction is invalid for this review state')
             _verify_files(run, manifest, allow_checkpoint_transaction=True,
                           allow_resource_transfer=True)
@@ -3053,7 +3100,7 @@ def _recover_run_transactions(run_path, normalized_controller, authority, curren
             _checkpoint_commit(run, manifest, marker, checkpoint_transaction, payloads)
             run, manifest, marker = _load_run(run)
 
-        if manifest.get('schema_version') == 7:
+        if manifest.get('schema_version') == 8:
             normalized_controller, marker = _takeover_controller(
                 run, manifest, marker, normalized_controller, authority)
 
@@ -3120,7 +3167,7 @@ def _link_restart(source_run, successor_run, *, authority, controller, moved_pat
         _assert_not_restart_abandoned(new)
         _verify_files(source, old, allow_checkpoint_transaction=True, allow_resource_transfer=True)
         _verify_files(successor, new)
-        if old['schema_version'] != 7 or old['state'] == 'complete':
+        if old['schema_version'] != 8 or old['state'] == 'complete':
             return
         if old['operation']['disposition'] == 'superseded':
             if old['operation']['successor'] == str(successor) and new.get('previous_run') == str(source):
@@ -3194,7 +3241,8 @@ def _prepare_from_restart_intent(intent_path):
     successor = prepare(source_manifest['repository_path'], current_scope, skill_version, harness['harness'],
         source_manifest['archive_root'], source_path, selected,
         profile_input=request['profile_input'], controller=request['controller'],
-        current_inputs=request['current_inputs'], _restart_reservation=intent,
+        current_inputs=request['current_inputs'], logical_scope_input=request['logical_scope_input'],
+        _restart_reservation=intent,
         _harness_identity={key: harness[key] for key in ('harness_id', 'harness_catalog_version',
                                                           'harness_source', 'harness_diagnostics')})
     if selected:
@@ -3204,7 +3252,7 @@ def _prepare_from_restart_intent(intent_path):
                                _restart_operation_id=intent['operation_id'])
         elif has_adoption:
             register(successor, selected, context_input=adoption_context, authority=request['authority'])
-    if source_manifest.get('schema_version') == 7 and source_manifest.get('state') != 'complete':
+    if source_manifest.get('schema_version') == 8 and source_manifest.get('state') != 'complete':
         moved = set(selected) if is_transferring else set()
         preserve_claims = any(row.get('status') == 'owned' and row['session_dir'] not in moved
                               for row in source_manifest.get('resource_claims', []))
@@ -3250,29 +3298,33 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
 
 
 def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None,
-            harness=None):
-    """Create or replay one durable, source-bound archive-7 restart operation."""
-    import review_recovery
+            harness=None, logical_scope_input=None):
+    """Create or replay one durable, source-bound archive-8 restart operation."""
     source_path = safe_path(source_run)
     with _restart_lock(source_path):
         source, manifest, marker = _load_run(source_path)
-        is_immutable = manifest.get('state') == 'complete' or manifest.get('schema_version') != 7
+        is_immutable = manifest.get('state') == 'complete' or manifest.get('schema_version') != 8
         if not is_immutable:
             marker = _recover_trace(source, manifest, marker)
         _verify_files(source, manifest, allow_checkpoint_transaction=True,
                       allow_resource_transfer=True)
-        normalized_inputs = review_recovery.validate_current_inputs(
-            current_inputs, manifest, require_same_scope=False, compare_sources=False)
+        # A restart pins its destination selector, even when the snapshot is
+        # unchanged. Do not fill omitted identities from the source selector.
+        normalized_inputs = review_inputs.normalize_inputs(current_inputs)
         if normalized_inputs['scope']['repository'] != manifest['scope']['repository']:
             raise ValueError('restart cannot change the source repository identity')
+        if logical_scope_input is None:
+            logical_scope_input = manifest.get('logical_scope_input')
+        logical = review_layout.logical_scope(normalized_inputs['scope'], logical_scope_input)
         raw_harness = harness
         if raw_harness is None:
             raw_harness = {'harness': 'unknown', 'harness_id': None, 'harness_source': None}
         request = review_restart.normalize_restart_request(profile_input, controller, authority,
-            normalized_inputs, list(transfer_paths or []), raw_harness)
+            normalized_inputs, list(transfer_paths or []), raw_harness, logical_scope_input)
         _scope(request['current_inputs']['scope'])
-        _capture_review_inputs(request['current_inputs'], request['current_inputs']['scope'],
-                               request['profile_input']['profile'], 'restart current review inputs')
+        request['current_inputs'] = _capture_review_inputs(request['current_inputs'], request['current_inputs']['scope'],
+                               request['profile_input']['profile'], 'restart current review inputs',
+                               logical_scope_identity=logical['identity'])
         repository = safe_path(_git(safe_path(manifest['repository_path']), 'rev-parse', '--show-toplevel'))
         identity = repository_identity(repository)
         if _digest(identity.encode('utf-8'))[:20] != manifest['repository_key']:
@@ -3289,17 +3341,18 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
         if disposition not in {'open', 'paused', 'blocked', 'superseded', 'complete'}:
             raise ValueError('source review cannot be restarted from its current operation state')
         active = _active_restart_operation(source, manifest)
-        intent_path = _restart_intent_path(source, manifest, request)
+        intent_path = (Path(active['intent_path']) if active is not None
+                       else _existing_restart_intent_path(source, manifest, request))
         if active is not None:
             active_intent = active['intent']
-            if (active_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request))
-                    or active_intent['request'] != dict(request, authority=active_intent['request']['authority'])):
+            if not review_restart.same_restart_request(active_intent['request'], request):
                 raise ValueError('a different restart request is already active for this source')
-            intent_path = Path(active['intent_path'])
             if not intent_path.exists():
                 _write_restart_intent(intent_path, active_intent, source, manifest)
         elif intent_path.exists():
             existing_intent = _read_restart_intent(intent_path, source, manifest)
+            if not review_restart.same_restart_request(existing_intent['request'], request):
+                raise ValueError('restart intent identity collision; preserve the reserved operation')
             cancellation = _validate_restart_abandonment(intent_path, existing_intent)
             if cancellation is not None:
                 _finish_restart_abandonment(intent_path, existing_intent, source, cancellation)
@@ -3312,8 +3365,6 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                     raise ValueError('completed restart successor differs from its durable receipt')
                 _retire_completed_descriptor_if_present(intent_path, existing_intent, source, manifest)
                 return str(successor)
-            if existing_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request)):
-                raise ValueError('restart intent identity collision; preserve the reserved operation')
             request = existing_intent['request']
             intent = existing_intent
             _write_active_restart(source, manifest, intent_path, intent)
@@ -3343,7 +3394,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                     raise ValueError('restart transfer paths must already be registered to the source run')
                 if not source_claims:
                     _restart_adoption_context(request)
-                    from_claims = {'schema_version': 7, 'repository_path': manifest['repository_path'],
+                    from_claims = {'schema_version': ARCHIVE_SCHEMA_VERSION, 'repository_path': manifest['repository_path'],
                                    'repository_identity': identity,
                                    'repository_key': manifest['repository_key'], 'archive_root': manifest['archive_root'],
                                    'temporary_paths': []}
@@ -3355,8 +3406,9 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                 raise ValueError('explicit transfer paths are required to preserve present owned sessions across a same-scope restart')
             candidate_successor = datetime.now(timezone.utc)
             run_id = uuid.uuid4().hex[:20]
-            scoped = Path(manifest['archive_root']) / _repository_group(identity) / _scope_group(normalized_inputs['scope'])
-            successor_info = {'run_dir': str(scoped / (candidate_successor.strftime('%Y%m%dT%H%M%S') + '-' + run_id)),
+            scoped = Path(manifest['archive_root']) / _repository_group(identity) / review_layout.scope_group(logical)
+            successor_info = {'run_dir': str(scoped / review_layout.run_name(
+                                  normalized_inputs['scope'], candidate_successor.isoformat(), run_id, logical_scope_input)),
                               'run_id': run_id, 'owner_id': uuid.uuid4().hex,
                               'reservation_id': uuid.uuid4().hex,
                               'created_at': candidate_successor.isoformat()}
@@ -3498,7 +3550,7 @@ def _finish_restart_abandonment(intent_path, intent, source_path, receipt):
         atomic_write(_restart_abandonment_path(intent_path), _json_bytes(receipt))
     elif stored != receipt:
         raise ValueError('abandonment receipt changed during replay')
-    if source_manifest.get('schema_version') == 7 and source_manifest.get('state') != 'complete':
+    if source_manifest.get('schema_version') == 8 and source_manifest.get('state') != 'complete':
         marker = _recover_trace(source, source_manifest, marker)
         summary = ('Restart abandoned after blocked adoption: ' if prepared else
                    'Restart abandoned before successor preparation: ') + intent['operation_id']
@@ -3593,8 +3645,8 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             raise ValueError('retained review scope differs from the pinned scope')
         if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 7 and value.get('schema_version') != 10:
-            raise ValueError('archive 7 requires final review schema 10')
+        if manifest['schema_version'] == 8 and value.get('schema_version') != 10:
+            raise ValueError('archive 8 requires final review schema 10')
         if value.get('schema_version') in (8, 9, 10):
             _execution_gate(run, manifest, value, {})
     if require_complete:
@@ -3749,20 +3801,20 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('completed review history is immutable; prepare a new run with --previous-run')
     _verify_files(run, manifest)
     temporary = _temporary_paths(temporary_paths, manifest)
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         claim_manifest = copy.deepcopy(manifest)
         claim_manifest.update(_claim_run_dir=str(run), temporary_paths=temporary)
         resource_plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest)
         if any(plan['action'] not in {'not_workspace', 'existing'} for plan in resource_plans):
             raise ValueError('register and verify every review workspace before retention')
     if input_file is None:
-        if manifest['schema_version'] != 7 or not isinstance(manifest.get('checkpoint'), dict):
+        if manifest['schema_version'] != 8 or not isinstance(manifest.get('checkpoint'), dict):
             raise ValueError('retention requires an explicit final review input or a provisional final checkpoint')
         candidate = run / 'pending' / 'review.json'
         if not candidate.is_file():
             raise ValueError('provisional checkpoint has no structurally valid final review to promote')
         input_file = candidate
-    if manifest['schema_version'] == 7 and isinstance(manifest.get('checkpoint'), dict):
+    if manifest['schema_version'] == 8 and isinstance(manifest.get('checkpoint'), dict):
         if context_input is None and (run / 'pending' / 'context.json').is_file():
             context_input = run / 'pending' / 'context.json'
         if evidence_inputs is None:
@@ -3776,9 +3828,9 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
             raise ValueError('expected schema must be a supported integer 1–10')
         if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
             raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         if value.get('schema_version') != 10:
-            raise ValueError('archive 7 requires final review schema 10')
+            raise ValueError('archive 8 requires final review schema 10')
         coverage = value.get('coverage')
         execution = coverage.get('execution') if isinstance(coverage, dict) else None
         if not isinstance(execution, dict):
@@ -3811,7 +3863,8 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
     contents.update(_evidence_contents(run, manifest, evidence_inputs,
-        create_directory=value.get('schema_version') not in (8, 9, 10), reserve_context=context_input is not None))
+        create_directory=value.get('schema_version') not in (8, 9, 10), reserve_context=context_input is not None,
+        context_input=context_input))
     if value.get('schema_version') in (8, 9, 10):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
@@ -3860,11 +3913,12 @@ def _execution_gate(run, manifest, value, contents):
             raise ValueError('retained execution context must preserve captured review_inputs')
         normalized_inputs = _capture_review_inputs(
             supplied_inputs, manifest['scope'], manifest['profile_history'][-1]['profile'],
-            'retained context review_inputs')
+            'retained context review_inputs',
+            logical_scope_identity=manifest.get('logical_scope', {}).get('identity'))
         if normalized_inputs != captured_inputs:
             raise ValueError('retained context review_inputs differ from the initial captured identities')
         requested.update(captured_inputs['sources'])
-    if manifest.get('schema_version') == 7:
+    if manifest.get('schema_version') == 8:
         registry = manifest.get('assignment_registry')
         if not isinstance(registry, list):
             raise ValueError('archive assignment registry is missing; register the execution plan before retention')
@@ -3972,7 +4026,7 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         errors = review_contract.validate(candidate) if isinstance(candidate, dict) else ['retained review is not an object']
         if errors or candidate.get('stage') != 'final' or candidate.get('scope') != manifest['scope']:
             raise ValueError('; '.join(errors) if errors else 'interrupted close has no valid retained final review')
-        if manifest['schema_version'] == 7:
+        if manifest['schema_version'] == 8:
             _execution_gate(run, manifest, candidate, {})
     else:
         validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
@@ -3998,7 +4052,7 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     present = _present_resources(registered)
     if set(residuals) != set(present):
         raise ValueError('observed cleanup does not disclose every existing registered resource')
-    if manifest['schema_version'] == 7:
+    if manifest['schema_version'] == 8:
         has_durable_cleanup = 'cleanup_receipts' in manifest and 'resource_cleanup' in manifest
         durable_receipts = manifest.get('cleanup_receipts', []) if has_durable_cleanup else []
         supplied_receipts = observed.get('released_claims')
@@ -4013,7 +4067,7 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     if (cleanup in {'complete', 'not_needed'} and residuals) or (cleanup == 'not_needed' and registered):
         raise ValueError('cleanup conflicts with registered resources or residuals')
     durable_close = None
-    if manifest['schema_version'] == 7 and has_durable_cleanup:
+    if manifest['schema_version'] == 8 and has_durable_cleanup:
         durable_close = {'cleanup': cleanup, 'residuals': residuals,
                          'released_claims': copy.deepcopy(durable_receipts)}
         prior_close = manifest.get('close_observation')
@@ -4052,7 +4106,7 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
                     state='complete' if cleanup != 'pending' else 'closing')
     if manifest['state'] == 'complete':
         manifest['closed_at'] = datetime.now(timezone.utc).isoformat()
-        if manifest['schema_version'] == 7:
+        if manifest['schema_version'] == 8:
             manifest['operation']['disposition'] = 'complete'
             manifest['operation']['phase'] = 'close'
     _append_trace(run, manifest, marker, _milestone('close', 'Observed resource closure: ' + cleanup,
@@ -4072,6 +4126,7 @@ def main():
     create.add_argument('--output-root')
     create.add_argument('--previous-run')
     create.add_argument('--temporary-path', action='append')
+    create.add_argument('--logical-scope-input', help='Existing JSON {mode, selector} for module/feature or partial local scopes')
     create.add_argument('--profile-input', required=True,
                         help='Existing JSON selection captured before the new run is created')
     create.add_argument('--current-inputs', help='Existing JSON with scope, external source hashes and observed identities')
@@ -4100,6 +4155,9 @@ def main():
     lookup.add_argument('--current-inputs', help='Existing JSON with scope, source hashes and optional input identities')
     lookup.add_argument('--limit', type=int, default=20)
     lookup.add_argument('--cursor', help='Opaque continuation cursor returned by a previous lookup page')
+    lookup.add_argument('--logical-scope-input', help='Existing JSON selector required for module/feature or partial local lookup')
+    lookup.add_argument('--include-history', action='store_true', help='Include explicitly ported historical consultation packages')
+    lookup.add_argument('--select', choices=('latest',), help='Explicitly select latest verified result; never shown automatically')
     pause_command = commands.add_parser('pause', help='Record an explicit user-directed review pause')
     pause_command.add_argument('--run-dir', required=True)
     pause_command.add_argument('--authority-input', required=True,
@@ -4121,12 +4179,13 @@ def main():
     recover_command.add_argument('--controller-input', required=True)
     recover_command.add_argument('--authority-input', required=True)
     recover_command.add_argument('--current-inputs', required=True)
-    restart_command = commands.add_parser('restart', help='Create a fresh linked archive-7 review run')
+    restart_command = commands.add_parser('restart', help='Create a fresh linked archive-8 review run')
     restart_command.add_argument('--run-dir', required=True, help='Verified source review run')
     restart_command.add_argument('--profile-input', required=True)
     restart_command.add_argument('--controller-input', required=True)
     restart_command.add_argument('--authority-input', required=True)
     restart_command.add_argument('--current-inputs', required=True)
+    restart_command.add_argument('--logical-scope-input', help='Existing JSON {mode, selector} when logical boundaries change')
     restart_command.add_argument('--harness', default='unknown', help='Harness observed for this restart invocation')
     restart_command.add_argument('--harness-id', help='Canonical current harness ID from the CCR catalog')
     restart_command.add_argument('--harness-source-input', help='JSON provenance for an explicit harness ID')
@@ -4203,7 +4262,8 @@ def main():
                                          profile_input=args.profile_input,
                                          controller=read_json(args.controller_input) if args.controller_input else None,
                                          harness_id=args.harness_id, harness_source=source,
-                                         current_inputs=read_json(args.current_inputs) if args.current_inputs else None)}
+                                         current_inputs=read_json(args.current_inputs) if args.current_inputs else None,
+                                         logical_scope_input=read_json(args.logical_scope_input) if args.logical_scope_input else None)}
         elif args.command == 'checkpoint':
             diagnostic = read_json(args.diagnostic_input) if args.diagnostic_input else None
             if isinstance(diagnostic, dict) and set(diagnostic) == {'gate_errors'}:
@@ -4229,9 +4289,18 @@ def main():
         elif args.command == 'lookup':
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
-            result = review_recovery.find_candidates(args.repo, read_json(args.scope_file),
-                archive_root=args.archive_root, limit=args.limit, cursor=args.cursor,
-                current_inputs=current)
+            requested_scope = read_json(args.scope_file)
+            logical_input = read_json(args.logical_scope_input) if args.logical_scope_input else None
+            if args.select == 'latest':
+                if current is None:
+                    raise ValueError('--select latest requires --current-inputs')
+                result = review_recovery.select_latest(args.repo, requested_scope, archive_root=args.archive_root,
+                    current_inputs=current, logical_scope_input=logical_input)
+            else:
+                result = review_recovery.find_candidates(args.repo, requested_scope,
+                    archive_root=args.archive_root, limit=args.limit, cursor=args.cursor,
+                    current_inputs=current, logical_scope_input=logical_input,
+                    include_history=args.include_history)
         elif args.command == 'pause':
             result = pause(args.run_dir, authority=authority_input, reason=args.reason, phase=args.phase)
         elif args.command == 'block':
@@ -4247,6 +4316,7 @@ def main():
             result = {'run_dir': restart(args.run_dir, profile_input=args.profile_input,
                          controller=read_json(args.controller_input), authority=authority_input,
                          current_inputs=read_json(args.current_inputs), transfer_paths=args.transfer_path,
+                           logical_scope_input=read_json(args.logical_scope_input) if args.logical_scope_input else None,
                          harness={'harness': args.harness, 'harness_id': args.harness_id,
                                   'harness_source': harness_source})}
         elif args.command == 'abandon-restart':

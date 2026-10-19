@@ -126,8 +126,8 @@ def _workspace(session_dir):
 def _archive(run_dir):
     import review_artifacts
     run, manifest, marker = review_artifacts._load_run(run_dir)
-    if manifest.get('schema_version') != 7:
-        raise ValueError('resource claims require archive schema 7')
+    if manifest.get('schema_version') != 8:
+        raise ValueError('resource claims require archive schema 8')
     return run, manifest, marker
 
 
@@ -193,7 +193,7 @@ def _preflight_unbound(session_dir, manifest, *, authority=None):
 
 def plan_resource_registration(paths, manifest, *, authority=None):
     """Preflight a complete resource set before the caller mutates any sidecar."""
-    if manifest.get('schema_version') != 7:
+    if manifest.get('schema_version') != 8:
         return []
     selected = [_safe_path(path) for path in paths]
     if len({os.path.normcase(str(path)) for path in selected}) != len(selected):

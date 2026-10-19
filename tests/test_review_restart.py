@@ -8,6 +8,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 import review_restart
+import review_layout
 from recovery_fixtures import selection_input
 
 
@@ -40,6 +41,17 @@ class ReviewRestartTests(unittest.TestCase):
         self.assertEqual(request['harness']['harness_id'], 'claude-code-desktop')
         self.assertEqual(request['harness']['harness_source']['kind'], 'user')
 
+    def test_normalize_restart_request_captures_destination_logical_identity(self):
+        request = self.request()
+        self.assertEqual(request['current_inputs'].get('logical_scope_identity'),
+                         review_layout.logical_scope(request['current_inputs']['scope'])['identity'])
+
+    def test_new_intent_builder_requires_canonical_request(self):
+        request = self.request()
+        request['current_inputs'].pop('logical_scope_identity')
+        with self.assertRaisesRegex(ValueError, 'request is not normalized'):
+            review_restart.build_restart_intent(self.source(), request, self.successor())
+
     def test_intent_digest_is_stable_and_changes_with_scope(self):
         first = review_restart.build_restart_intent(self.source(), self.request(), self.successor())
         replay_source = dict(self.source(), updated_at='later')
@@ -47,6 +59,8 @@ class ReviewRestartTests(unittest.TestCase):
         self.assertEqual(first['request_sha256'], replay['request_sha256'])
         changed = copy.deepcopy(self.request())
         changed['current_inputs']['scope']['head'] = '9' * 40
+        changed['current_inputs']['logical_scope_identity'] = review_layout.logical_scope(
+            changed['current_inputs']['scope'])['identity']
         other = review_restart.build_restart_intent(self.source(), changed, self.successor())
         self.assertNotEqual(first['request_sha256'], other['request_sha256'])
 

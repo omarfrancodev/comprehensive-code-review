@@ -41,13 +41,39 @@ def record10(profile='focused', source='automatic'):
     return value
 
 
+def native_record(scenario):
+    """Build a new schema-10 fixture with a scenario's business data.
+
+    This is synthetic test construction, never a migration of retained bytes.
+    Historical contract/projection tests continue to use their original records.
+    """
+    import review_profiles
+    value = record10(review_profiles._canonical(scenario['profile']))
+    for field, item in scenario.items():
+        if field not in {'schema_version', 'profile', 'coverage'}:
+            value[field] = copy.deepcopy(item)
+    value['coverage'].update({field: copy.deepcopy(item)
+        for field, item in scenario['coverage'].items() if field not in {'execution', 'verification'}})
+    for check in value['checks']:
+        check.setdefault('execution', {'kind': 'reused' if check['reused'] else 'static', 'executor': None})
+    for limitation in value['coverage']['limitations']:
+        limitation.setdefault('kind', 'behavior')
+        limitation.setdefault('public_summary', None)
+    return value
+
+
 def context10(record):
     execution = record['coverage']['execution']
     history = copy.deepcopy(execution['profile_history'])
+    try:
+        import review_layout
+        logical_identity = review_layout.logical_scope(record['scope'])['identity']
+    except (ImportError, TypeError, ValueError):
+        logical_identity = None
     inputs = {'scope': copy.deepcopy(record['scope']), 'sources': {}, 'source_set_complete': True,
               'description_identity': record.get('description', {}).get('identity'),
               'requirements_identity': None, 'plan_identity': None,
-              'configuration_identity': None}
+              'configuration_identity': None, 'logical_scope_identity': logical_identity}
     return {
         'profile': record['profile'],
         'selection_source': execution['selection_source'],
@@ -104,7 +130,18 @@ def source_events(record):
 
 
 def legacy_prepare(artifacts, repo, scope, **kwargs):
-    """Create an archive-6 fixture through the test-only historical adapter."""
+    """Create the native archive format for tests that exercise current operations."""
+    from pathlib import Path
+    version = kwargs.pop('skill_version', '2.13.0')
+    harness = kwargs.pop('harness', 'codex')
+    kwargs.setdefault('profile_input', selection_input())
+    pinned_scope = artifacts.read_json(scope) if isinstance(scope, (str, Path)) else scope
+    kwargs.setdefault('current_inputs', current_inputs(pinned_scope, source_set_complete=True))
+    return Path(artifacts.prepare(repo, scope, version, harness, **kwargs))
+
+
+def historical_prepare(artifacts, repo, scope, **kwargs):
+    """Create an archive-6 fixture for read-only deprecation tests."""
     from pathlib import Path
     from review_trace import FIELDS, append
     version = kwargs.pop('skill_version', '2.11.0')
@@ -123,9 +160,26 @@ def legacy_prepare(artifacts, repo, scope, **kwargs):
     for field in ('profile_history', 'operation', 'controller', 'checkpoint', 'lineage',
                   'resource_claims', 'resource_transfers', 'assignment_registry', 'review_inputs'):
         manifest.pop(field, None)
-    artifacts._save_manifest(run, manifest, marker)
-    return run
+    for field in ('layout_version', 'logical_scope', 'logical_scope_input'):
+        manifest.pop(field, None)
+    marker.pop('logical_scope_sha256', None)
+    pinned_scope = manifest['scope']
+    hint = pinned_scope['reference'] or pinned_scope['target'] or pinned_scope['snapshot'] or pinned_scope['head']
+    if pinned_scope['reference'] and '://' in hint:
+        from urllib.parse import urlsplit
+        hint = urlsplit(hint).path.rstrip('/').rsplit('/', 1)[-1]
+    old_group = artifacts._slug(pinned_scope['mode']) + '-' + artifacts._slug(hint) + '-' + artifacts._digest(
+        artifacts._json_bytes(pinned_scope))[:16]
+    created = manifest['created_at']
+    from datetime import datetime, timezone
+    legacy_name = datetime.fromisoformat(created).astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + manifest['run_id']
+    old_run = Path(manifest['archive_root']) / artifacts._repository_group(manifest['repository_identity']) / old_group / legacy_name
+    old_run.parent.mkdir(parents=True, exist_ok=True)
+    run.rename(old_run)
+    marker['run_dir'] = str(old_run)
+    artifacts._save_manifest(old_run, manifest, marker)
+    return old_run
 
 
 __all__ = ['selection', 'selection_input', 'record10', 'context10', 'current_inputs',
-           'source_events', 'legacy_prepare']
+           'source_events', 'legacy_prepare', 'historical_prepare']

@@ -2,6 +2,22 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## Unreleased
+
+### Added
+
+- Agrupar archivos por alcance lógico y mostrar en cada carpeta de ejecución la fecha UTC, la versión de cabeza y el ID del run.
+- Añadir selección explícita del último resultado verificado y un guard antes de repetir un alcance; permitir consulta histórica mínima y ampliar ABCDE con subaspectos y referencias selectivas.
+
+### Changed
+
+- Clasificar archivos anteriores como incompatibles para operaciones actuales sin migrarlos. Los informes históricos portables contienen solo información necesaria para consulta.
+- Mantener el nombre `comprehensive-code-review`, los informes sin fechas añadidas, final schema 10 y packet version 1.
+
+### Fixed
+
+- Conservar la lectura y el replay de reservas nativas de restart v2 creadas sin identidad lógica derivada, sin cambiar sus bytes, hashes, operación ni sucesor reservado. Mantener canónicas las nuevas reservas y rechazar retries ambiguos.
+
 ## 2.12.1 — 2026-10-18
 
 ### Added

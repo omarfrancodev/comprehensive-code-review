@@ -68,8 +68,8 @@ def record(run_dir, *, intent_path, controller, authority, reason):
     reason = artifacts.review_restart._bounded_text(reason, 'refusal reason')
     with artifacts._restart_lock(run_dir):
         run, manifest, marker = artifacts._load_run(run_dir)
-        if manifest.get('schema_version') != 7 or manifest['state'] in {'complete', 'retaining', 'closing'}:
-            raise ValueError('recording a refusal requires a non-final archive-7 source')
+        if manifest.get('schema_version') != artifacts.ARCHIVE_SCHEMA_VERSION or manifest['state'] in {'complete', 'retaining', 'closing'}:
+            raise ValueError('recording a refusal requires a non-final native archive source')
         active = artifacts._active_restart_operation(run, manifest)
         path = artifacts.safe_path(intent_path)
         if active is None or str(path) != active['intent_path']:

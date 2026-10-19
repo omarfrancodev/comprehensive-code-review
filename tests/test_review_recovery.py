@@ -299,19 +299,17 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_legacy_description_identity_is_not_reconstructed_as_current_input(self):
         final = archive.record()
         final['description']['identity'] = 'description-v1'
-        self.final = self.write('description-final.json', final)
-        run = self.prepare_legacy()
-        self.retain_legacy(run)
-        self.close(run)
-        scope = self.read(run / 'cierre.json')['scope']
+        scope = self.read(self.scope)
         current = {'scope': scope, 'sources': {}, 'source_set_complete': True,
                    'description_identity': 'description-v2'}
 
-        candidate = recovery.find_candidates(self.repo, scope, archive_root=self.output,
-                                             current_inputs=current)['candidates'][0]
-
+        retained = recovery._candidate_inputs({'scope': scope, 'hashes': {}}, final)
+        self.assertNotIn('description_identity', retained)
+        self.assertFalse(retained['source_set_complete'])
+        candidate = recovery.classify_candidate({'scope': scope}, retained, current)
         self.assertEqual(candidate['applicability'], 'unknown')
         self.assertIn('description_identity', {row['field'] for row in candidate['differences']})
+        self.assertEqual(final['description']['identity'], 'description-v1')
 
     def test_multiple_candidates_are_not_selected_by_timestamp(self):
         first = self.prepare_legacy()
@@ -405,6 +403,8 @@ class ReviewRecoveryTests(unittest.TestCase):
 
     def test_lookup_finds_changed_head_by_stable_merge_request_reference(self):
         scope = self.read(self.scope)
+        scope['mode'] = 'mr'
+        scope['target'] = 'develop'
         scope['reference'] = 'https://gitlab.example/group/project/-/merge_requests/42'
         scope_file = self.write('mr-scope.json', scope)
         run = Path(artifacts.prepare(self.repo, scope_file, '2.12.0', 'codex',
@@ -816,6 +816,71 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(self.read(successor / 'cierre.json')['previous_run'], str(source))
         self.assertEqual(self.read(source / 'cierre.json')['operation']['disposition'], 'superseded')
 
+    def test_changed_head_restart_recovers_only_the_reserved_inputs(self):
+        source = self.prepare7('standard')
+        scope = dict(self.read(source / 'cierre.json')['scope'], head='new-reviewed-head')
+        request = self.restart_request(source, scope=scope)
+        self.assertNotIn('logical_scope_identity', request['current_inputs'])
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                artifacts.restart(source, **request)
+        active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
+        original = self.snapshot(source)
+        for field, value in (
+                ('description_identity', 'changed-description'),
+                ('requirements_identity', 'changed-requirements'),
+                ('plan_identity', 'changed-plan'),
+                ('configuration_identity', 'changed-configuration'),
+                ('logical_scope_identity', '0' * 64),
+                ('sources', {'evidence/changed.md': 'a' * 64}),
+                ('scope', dict(scope, head='another-head'))):
+            with self.subTest(field=field):
+                changed = dict(request['current_inputs'], **{field: value})
+                outcome = artifacts.recover(source, controller=request['controller'],
+                    authority=request['authority'], current_inputs=changed)
+                self.assertEqual(outcome['status'], 'restart_pending')
+                self.assertFalse(outcome['replay_inputs_match'])
+                self.assertEqual(self.snapshot(source), original)
+        outcome = artifacts.recover(source, controller=request['controller'],
+            authority=request['authority'], current_inputs=request['current_inputs'])
+        self.assertEqual(outcome['status'], 'restarted', outcome)
+        self.assertTrue(outcome['replay_inputs_match'])
+        successor = Path(outcome['successor_run_dir'])
+        self.assertEqual(str(successor), active['successor_run_dir'])
+        self.assertEqual(self.read(successor / 'cierre.json')['scope'], scope)
+        self.assertEqual(artifacts.restart(source, **request), str(successor))
+        artifacts.validate(successor)
+
+    def test_restart_with_new_boundaries_derives_destination_identity(self):
+        scope = dict(self.read(self.scope), mode='working', snapshot='same-snapshot')
+        self.scope = self.write('working-scope.json', scope)
+        source = self.prepare7('standard')
+        selector = {'mode': 'working', 'selector': {'boundaries': ['src']}}
+        request = self.restart_request(source, logical_scope_input=selector)
+        self.assertNotIn('logical_scope_identity', request['current_inputs'])
+        invalid = copy.deepcopy(request)
+        invalid['current_inputs']['logical_scope_identity'] = self.read(source / 'cierre.json')['logical_scope']['identity']
+        before = self.snapshot(source)
+        with self.assertRaisesRegex(ValueError, 'logical scope differs'):
+            artifacts.restart(source, **invalid)
+        self.assertEqual(self.snapshot(source), before)
+        self.assertFalse((source.parent / '.restart-intents').exists())
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                artifacts.restart(source, **request)
+        outcome = artifacts.recover(source, controller=request['controller'],
+            authority=request['authority'], current_inputs=request['current_inputs'])
+        self.assertEqual(outcome['status'], 'restarted', outcome)
+        successor = Path(outcome['successor_run_dir'])
+        old = self.read(source / 'cierre.json')
+        new = self.read(successor / 'cierre.json')
+        self.assertEqual(new['scope'], old['scope'])
+        self.assertNotEqual(successor.parent, source.parent)
+        self.assertEqual(new['logical_scope']['selector'], selector['selector'])
+        self.assertEqual(new['review_inputs']['logical_scope_identity'], new['logical_scope']['identity'])
+        self.assertEqual(artifacts.restart(source, **request), str(successor))
+        artifacts.validate(successor)
+
     def test_adopt_context_object_before_successor_creation(self):
         session = Path(review_workspace.prepare(argparse.Namespace(
             repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
@@ -1075,17 +1140,15 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(resource['availability'], 'missing_unknown')
         self.assertEqual(resource['claim_status'], 'owned')
 
-    def test_legacy_recovery_creates_linked7_without_migration(self):
-        source = self.prepare_legacy()
-        source_snapshot = self.snapshot(source)
-        successor = Path(artifacts.restart(
-            source, profile_input=self.profile_input('standard'), controller=self.controller(),
-            authority='User requested a linked archive-7 restart', current_inputs=self.current(source)))
-        manifest = self.read(successor / 'cierre.json')
-        self.assertEqual(manifest['schema_version'], 7)
-        self.assertEqual(manifest['previous_run'], str(source))
-        self.assertEqual(manifest['lineage'], {'kind': 'restart', 'source_run': str(source)})
-        self.assertEqual(self.snapshot(source), source_snapshot)
+    def test_legacy_recovery_refuses_linked_restart_without_mutation(self):
+        from recovery_fixtures import historical_prepare
+        source = historical_prepare(artifacts, self.repo, self.scope, output_root=self.output)
+        before = self.snapshot(self.output)
+        with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+            artifacts.restart(source, profile_input=self.profile_input('standard'),
+                controller=self.controller(), authority='User requested a linked restart',
+                current_inputs=self.current(source))
+        self.assertEqual(self.snapshot(self.output), before)
 
     def test_completed_repeat_preserves_original(self):
         source = self.prepare_legacy()

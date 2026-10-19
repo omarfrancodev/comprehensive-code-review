@@ -103,11 +103,9 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         self.artifacts = self.policy.artifacts
 
     def prepared(self):
-        run, value, context, inputs = self.policy.prepared('focused')
-        value['schema_version'] = 9
-        return run, value, context, inputs
+        return self.policy.prepared('focused')
 
-    def test_schema9_archive_binds_checks_before_writing(self):
+    def test_schema10_archive_binds_checks_before_writing(self):
         run, value, context, inputs = self.prepared()
         value['checks'] = [dict(check(), execution=dict(kind='local', executor='X1'))]
         before = self.fixture.snapshot(run)
@@ -118,15 +116,16 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
         self.assertTrue(self.artifacts.validate(run, require_retained=True)['retained'])
 
-    def test_closed_schema9_source_survives_executor_cleanup(self):
+    def test_closed_schema10_source_survives_executor_cleanup(self):
+        from recovery_fixtures import record10
         repo = self.fixture.repo
         (repo / 'code.txt').write_text('baseline', encoding='utf-8')
         self.artifacts._git(repo, 'add', 'code.txt')
         self.artifacts._git(repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'baseline')
         head = self.artifacts._git(repo, 'rev-parse', 'HEAD')
-        source = record8()
+        source = record10()
         source['scope'].update(head=head, base=head)
-        with patch('test_review_execution_policy.record8', return_value=source):
+        with patch('recovery_fixtures.record10', return_value=source):
             run, value, context, inputs = self.prepared()
         workspace = repo / '.worktrees' / 'executor'
         self.artifacts._git(repo, 'worktree', 'add', '--detach', str(workspace), head)
@@ -144,7 +143,7 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         portable = delivery._Projection(value, self.artifacts.read_json(run / 'cierre.json'), repo, 'a' * 64).value(value)
         self.assertEqual(portable['checks'][0]['execution']['executor'], 'X1')
 
-    def test_schema9_delivery_keeps_execution_ids_and_public_report_omits_workspaces(self):
+    def test_schema10_delivery_keeps_execution_ids_and_public_report_omits_workspaces(self):
         run, value, context, inputs = self.prepared()
         value['checks'] = [dict(check(), execution=dict(kind='static', executor=None))]
         self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)

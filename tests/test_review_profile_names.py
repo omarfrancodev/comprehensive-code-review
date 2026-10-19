@@ -126,19 +126,16 @@ class ProfileNameArchiveTests(unittest.TestCase):
         value['review_id'] = 'CR-' + artifacts.read_json(run / 'cierre.json')['run_id']
         return run
 
-    def test_schema7_retention_closure_and_full_delivery_preserve_identity(self):
+    def test_schema7_projection_preserves_identity_without_native_adoption(self):
         value = record7()
         run = self.prepare(value)
-        artifacts.retain(run, self.fixture.write('final.json', value))
-        artifacts.close(run, cleanup='not_needed', residuals=[])
         before = self.fixture.snapshot(run)
-        target = Path(delivery.deliver(run, 'full', self.fixture.repo))
-        projected = artifacts.read_json(target / 'review.json')
-        receipt = artifacts.read_json(target / '.ccr-delivery.json')
+        with self.assertRaisesRegex(ValueError, 'schema 10'):
+            artifacts.retain(run, self.fixture.write('final.json', value))
+        projected = delivery._Projection(value, {'repository_path': str(self.fixture.repo),
+            'archive_root': str(self.fixture.archive)}, self.fixture.repo, 'a' * 64).value(value)
         self.assertEqual((projected['schema_version'], projected['profile']), (7, 'standard'))
         self.assertEqual(projected['review_id'], value['review_id'])
-        self.assertEqual(target.name, value['review_id'])
-        self.assertEqual((receipt['source_id_kind'], receipt['source_id']), ('review_id', value['review_id']))
         self.assertEqual(contract.validate(projected), [])
         self.assertEqual(before, self.fixture.snapshot(run))
 

@@ -16,6 +16,7 @@ class LifecyclePolicyTests(unittest.TestCase):
     write = fixtures.ArchiveTests.write
     prepare = fixtures.ArchiveTests.prepare
     read = fixtures.ArchiveTests.read
+    retain = fixtures.ArchiveTests.retain
 
     def start_example(self):
         document = (ROOT / 'references/archive/lifecycle-trace.md').read_text(encoding='utf-8')
@@ -37,11 +38,13 @@ class LifecyclePolicyTests(unittest.TestCase):
         run = self.prepare()
         artifacts.record_event(run, self.write('start.json', event))
         self.assertEqual(artifacts.validate(run)['state'], 'processing')
-        artifacts.retain(run, self.final)
+        self.retain(run, unavailable_reason=None)
         artifacts.validate(run, require_retained=True)
         artifacts.close(run, cleanup='not_needed')
         self.assertEqual(artifacts.validate(run, require_retained=True)['state'], 'complete')
         self.assertFalse((run / 'measurements.json').exists())
         events = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
-        self.assertIsNone(events[1]['occurred_at'])
-        self.assertEqual([e['kind'] for e in events], ['prepare', 'discovery', 'retain', 'close'])
+        started = next(e for e in events if e['kind'] == 'discovery' and e['status'] == 'started')
+        self.assertIsNone(started['occurred_at'])
+        self.assertEqual([e['kind'] for e in events][:3], ['prepare', 'profile', 'discovery'])
+        self.assertEqual([e['kind'] for e in events][-2:], ['retain', 'close'])
