@@ -8,7 +8,7 @@ python /absolute/skill/scripts/review_artifacts.py prepare \
   --repo /absolute/project \
   --scope-file /absolute/owned/session/evidence/scope.json \
   --profile-input /absolute/owned/session/evidence/profile-selection.json \
-  --skill-version 2.12.1 --harness unknown \
+  --skill-version 2.13.0 --harness unknown \
   --temporary-path /absolute/owned/session --output-root /absolute/archive
 ```
 
