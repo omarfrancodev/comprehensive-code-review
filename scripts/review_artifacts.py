@@ -2977,6 +2977,10 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
     requested_inputs.pop('profile', None)
     restart_profile = intent['request']['profile_input']['profile']
     expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
+    if (requested_inputs['scope'] == expected_inputs['scope']
+            and 'logical_scope_identity' not in requested_inputs):
+        requested_inputs['logical_scope_identity'] = review_layout.logical_scope(
+            requested_inputs['scope'], intent['request']['logical_scope_input'])['identity']
     expected_inputs['profile'] = restart_profile
     requested_inputs['profile'] = restart_profile
     restart_appraisal = review_inputs.compare_inputs(expected_inputs, requested_inputs)
