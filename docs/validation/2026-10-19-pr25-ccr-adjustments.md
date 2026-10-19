@@ -1,5 +1,8 @@
 # Validación de ajustes del CCR del PR 25
 
+Registro de F001–F004 sobre el head `bdec8e4`. La validación posterior de F005
+se documenta en [replay de reservas nativas v2](2026-10-19-pr25-native-v2-replay.md).
+
 Se contrastaron y reprodujeron los cuatro hallazgos del
 [CCR CR-d935b7d63c984b2e884c](https://github.com/omarfrancodev/comprehensive-code-review/pull/25#issuecomment-6269611153),
 emitido sobre `9e5bf727aac5aeb204142c8d9bda19a4dbd6e2a5`.

@@ -18,6 +18,10 @@
 aprobadas, sin fallos ni omisiones. Véase el [registro de ajustes](../../validation/2026-10-19-pr25-ccr-adjustments.md)
 para las regresiones y el alcance de esta validación posterior.
 
+**Re-review nativo v2 (F005):** lectura y replay de reservas anteriores corregidos,
+con 151 pruebas aprobadas y cuatro contrastes con el productor exacto anterior.
+Véase [la validación de reservas v2](../../validation/2026-10-19-pr25-native-v2-replay.md).
+
 - Python 3.10+ y biblioteca estándar; Git solo para operaciones que ya lo requieren.
 - Mantener final review schema 10, trace schema 1 y packet version 1. No reconstruir datos históricos para actualizar sus schemas.
 - Emitir archive schema 8 con layout_version 2; los archivos nativos anteriores se clasifican como unsupported_layout para operación.
