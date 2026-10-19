@@ -1,5 +1,8 @@
 # Validación de archivo legible, consulta histórica y cobertura ABCDE
 
+Registro de la validación anterior al CCR del PR 25. Los ajustes posteriores y
+sus resultados se documentan en [la validación del 19 de octubre](2026-10-19-pr25-ccr-adjustments.md).
+
 ## Alcance y entorno
 
 Validación de la implementación en `feat/archive-layout-portability`, basada en

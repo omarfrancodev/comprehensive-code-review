@@ -14,6 +14,10 @@
 
 ## Global Constraints
 
+**Ajustes posteriores al CCR del PR 25:** F001–F004 corregidos con 174 pruebas
+aprobadas, sin fallos ni omisiones. Véase el [registro de ajustes](../../validation/2026-10-19-pr25-ccr-adjustments.md)
+para las regresiones y el alcance de esta validación posterior.
+
 - Python 3.10+ y biblioteca estándar; Git solo para operaciones que ya lo requieren.
 - Mantener final review schema 10, trace schema 1 y packet version 1. No reconstruir datos históricos para actualizar sus schemas.
 - Emitir archive schema 8 con layout_version 2; los archivos nativos anteriores se clasifican como unsupported_layout para operación.
