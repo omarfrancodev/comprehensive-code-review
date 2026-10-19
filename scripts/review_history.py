@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 
 import review_artifacts as artifacts
 import review_contract
@@ -110,16 +111,15 @@ def _source_snapshot(run):
                'active_restart', 'pending_restart', 'pending_hashes', 'planned_hashes')
     restart_operation = manifest.get('restart_operation')
     restart_pending = isinstance(restart_operation, dict) and restart_operation.get('status') == 'pending'
+    cleanup_intent = manifest.get('resource_cleanup')
+    cleanup_pending = isinstance(cleanup_intent, dict) and cleanup_intent.get('status') == 'pending'
     transfers = manifest.get('resource_transfers', [])
     transfer_pending = (not isinstance(transfers, list) or any(
         not isinstance(row, dict) or row.get('status') != 'complete' for row in transfers))
-    if (any(manifest.get(field) for field in pending) or restart_pending or transfer_pending
+    if (any(manifest.get(field) for field in pending) or restart_pending or transfer_pending or cleanup_pending
             or 'previous_manifest_sha256' in marker):
         raise HistoryError('source has a pending transaction and cannot be ported')
-    if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
-        cleanup = 'pending'
-    else:
-        cleanup = manifest.get('cleanup')
+    cleanup = manifest.get('cleanup')
     if cleanup not in {'complete', 'not_needed', 'pending'}:
         cleanup = None
     return {'run': run, 'manifest_bytes': manifest_bytes, 'marker_bytes': marker_bytes,
@@ -287,6 +287,9 @@ def show_history(history_dir: Path) -> str:
 
 
 def main(argv=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     inspect = commands.add_parser('inspect')
@@ -306,7 +309,7 @@ def main(argv=None):
             print(show_history(args.history_dir), end='')
         return 0
     except (OSError, TypeError, KeyError, ValueError) as exc:
-        print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=__import__('sys').stderr)
+        print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
 
 

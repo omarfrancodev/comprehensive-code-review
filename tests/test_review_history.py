@@ -1,7 +1,9 @@
 """Minimal historical consultation package tests using synthetic archives."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -87,6 +89,37 @@ class HistoryTests(unittest.TestCase):
         result = review_history.port_review(self.run, Path(self.temp.name) / 'history')
         consulta = json.loads((Path(result['history_dir']) / 'consulta.json').read_text(encoding='utf-8'))
         self.assertEqual(consulta['source']['cleanup'], 'pending')
+
+    def test_active_cleanup_transaction_is_not_portable(self):
+        self.manifest.update(state='closing', cleanup='pending',
+                             resource_cleanup={'status': 'pending', 'cleanup_id': 'CL-synthetic'})
+        self.rewrite_manifest()
+        before = self.snapshot()
+        output = Path(self.temp.name) / 'history'
+        inspected = review_history.inspect_source(self.run)
+        self.assertEqual(inspected['status'], 'invalid', inspected)
+        self.assertIn('pending transaction', inspected['reason'])
+        with self.assertRaisesRegex(ValueError, 'pending transaction'):
+            review_history.port_review(self.run, output)
+        self.assertFalse(output.exists())
+        self.assertEqual(self.snapshot(), before)
+        self.manifest['resource_cleanup']['status'] = 'complete'
+        self.rewrite_manifest()
+        result = review_history.port_review(self.run, output)
+        consulta = review_history.verify_history(result['history_dir'])['consultation']
+        self.assertEqual(consulta['source']['cleanup'], 'pending')
+
+    def test_show_cli_writes_utf8_to_redirected_cp1252_streams(self):
+        result = review_history.port_review(self.run, Path(self.temp.name) / 'history')
+        self.assertIn('→', self.report_bytes.decode('utf-8'))
+        env = dict(os.environ, PYTHONIOENCODING='cp1252', PYTHONUTF8='0')
+        process = subprocess.run([sys.executable, '-B', '-X', 'utf8=0',
+            str(SCRIPTS / 'review_history.py'), 'show', '--history-dir', result['history_dir']],
+            capture_output=True, env=env)
+        self.assertEqual(process.returncode, 0, process.stderr.decode('utf-8', errors='replace'))
+        self.assertEqual(process.stdout.decode('utf-8').replace('\r\n', '\n'),
+                         review_history.show_history(result['history_dir']))
+        self.assertEqual(process.stderr, b'')
 
     def test_pending_ownership_retention_or_transfer_is_not_certified(self):
         for field, value in (
