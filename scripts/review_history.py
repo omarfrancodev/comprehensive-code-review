@@ -107,10 +107,14 @@ def _source_snapshot(run):
     if len(run.relative_to(root).parts) != 3 or run.relative_to(root).parts[0] != repo_group:
         raise HistoryError('source repository folder differs from its stable repository identity')
     pending = ('pending_trace', 'checkpoint_transaction', 'resource_transfer', 'resource_cleanup_intent',
-               'active_restart', 'pending_restart')
+               'active_restart', 'pending_restart', 'pending_hashes', 'planned_hashes')
     restart_operation = manifest.get('restart_operation')
     restart_pending = isinstance(restart_operation, dict) and restart_operation.get('status') == 'pending'
-    if any(manifest.get(field) for field in pending) or restart_pending:
+    transfers = manifest.get('resource_transfers', [])
+    transfer_pending = (not isinstance(transfers, list) or any(
+        not isinstance(row, dict) or row.get('status') != 'complete' for row in transfers))
+    if (any(manifest.get(field) for field in pending) or restart_pending or transfer_pending
+            or 'previous_manifest_sha256' in marker):
         raise HistoryError('source has a pending transaction and cannot be ported')
     if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
         cleanup = 'pending'
@@ -245,12 +249,12 @@ def port_review(source_run: Path, output_root: Path | None = None) -> dict:
         return {'status': 'existing', 'history_dir': str(destination), 'port_id': port_id}
     parent = artifacts.safe_path(destination.parent)
     parent.mkdir(parents=True, exist_ok=True)
-    stage = parent / ('.staging-' + port_id)
+    stage = artifacts.safe_path(parent / ('.staging-' + port_id))
     stage.mkdir(exist_ok=True)
     payloads = {'informe.md': source['report_bytes'], 'consulta.json': _json_bytes(consultation),
                 '.ccr-history.json': _json_bytes(metadata)}
     for name, data in payloads.items():
-        path = stage / name
+        path = artifacts.safe_path(stage / name)
         if path.exists():
             if _read(path, CONTENT_LIMIT, 'historical staging file') != data:
                 raise HistoryError('historical staging directory contains changed bytes')

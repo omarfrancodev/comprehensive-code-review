@@ -88,6 +88,43 @@ class HistoryTests(unittest.TestCase):
         consulta = json.loads((Path(result['history_dir']) / 'consulta.json').read_text(encoding='utf-8'))
         self.assertEqual(consulta['source']['cleanup'], 'pending')
 
+    def test_pending_ownership_retention_or_transfer_is_not_certified(self):
+        for field, value in (
+            ('pending_hashes', {'review.json': 'a' * 64}),
+            ('planned_hashes', {'review.json': 'a' * 64}),
+            ('resource_transfers', [{'status': 'pending'}])):
+            with self.subTest(field=field):
+                self.manifest[field] = value
+                self.rewrite_manifest()
+                before = self.snapshot()
+                with self.assertRaisesRegex(ValueError, 'pending'):
+                    review_history.port_review(self.run, Path(self.temp.name) / 'history')
+                self.assertEqual(self.snapshot(), before)
+                self.manifest.pop(field)
+        self.rewrite_manifest()
+        marker_path = self.run / artifacts.MARKER
+        marker = json.loads(marker_path.read_text(encoding='utf-8'))
+        marker['previous_manifest_sha256'] = 'a' * 64
+        marker_path.write_bytes(artifacts._json_bytes(marker))
+        with self.assertRaisesRegex(ValueError, 'pending'):
+            review_history.port_review(self.run, Path(self.temp.name) / 'history')
+
+    def test_reparse_staging_directory_is_refused_before_any_write(self):
+        port_id, destination, _, _ = review_history._history_payload(review_history._source_snapshot(self.run))
+        stage = destination.parent / ('.staging-' + port_id)
+        stage.mkdir(parents=True)
+        original = Path.lstat
+        def reparse(path):
+            info = original(path)
+            if path == stage:
+                return type('Reparse', (), {'st_mode': info.st_mode, 'st_file_attributes': 0x400})()
+            return info
+        with patch.object(Path, 'lstat', reparse):
+            with self.assertRaisesRegex(ValueError, 'reparse|link'):
+                review_history.port_review(self.run)
+        self.assertEqual(list(stage.iterdir()), [])
+        self.assertFalse(destination.exists())
+
     def rewrite_manifest(self):
         data = artifacts._json_bytes(self.manifest)
         (self.run / 'cierre.json').write_bytes(data)
