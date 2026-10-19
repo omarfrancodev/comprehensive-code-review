@@ -110,7 +110,7 @@ class ExtendedContractTests(unittest.TestCase):
 
 
 class ExtendedArchiveTests(unittest.TestCase):
-    def test_retention_validation_and_closure_keep_schema5_extended(self):
+    def test_schema5_extended_remains_valid_but_is_not_adopted_by_native_archive(self):
         fixture = archive_tests.ArchiveTests()
         self.addCleanup(fixture.doCleanups)
         fixture.setUp()
@@ -124,14 +124,13 @@ class ExtendedArchiveTests(unittest.TestCase):
         from recovery_fixtures import legacy_prepare
         run = legacy_prepare(archive_tests.artifacts, fixture.repo, fixture.scope,
                              skill_version='2.6.0', harness='codex', output_root=fixture.output)
-        archive_tests.artifacts.retain(run, final)
-        archive_tests.artifacts.validate(run, require_retained=True)
-        archive_tests.artifacts.close(run, cleanup='not_needed', residuals=[])
-        retained = fixture.read(run/'review.json')
-        closure = fixture.read(run/'cierre.json')
-        self.assertEqual((retained['schema_version'], retained['profile']), (5, 'extended'))
-        self.assertEqual(closure['schema_version'], 6)
-        self.assertEqual(closure['cleanup'], 'not_needed')
+        before = fixture.snapshot(run)
+        self.assertEqual(contract.validate(value), [])
+        self.assertIn('Veredicto', contract.render(value))
+        with self.assertRaisesRegex(ValueError, 'schema 10'):
+            archive_tests.artifacts.retain(run, final)
+        self.assertEqual(fixture.snapshot(run), before)
+        self.assertFalse((run/'review.json').exists())
         self.assertFalse((run/'measurements.json').exists())
 
 

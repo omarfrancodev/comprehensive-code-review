@@ -93,14 +93,16 @@ class RecoveryFollowupTests(unittest.TestCase):
                 self.assertTrue(review_profiles.validate_profile_execution(record))
                 self.assertTrue(artifacts.review_contract.validate(record))
 
-    def test_legacy_context_as_selected_evidence_without_context_flag(self):
+    def test_historical_record_cannot_supply_native_context_as_selected_evidence(self):
         run = legacy_prepare(artifacts, self.repo, self.scope, output_root=self.output)
         context = self.write('context.json', {'source': 'legacy evidence'})
-        artifacts.retain(run, self.write('final.json', archive.record()),
-                         evidence_inputs=[context], unavailable_reason='Not requested')
-        self.assertEqual(self.read(run / 'evidence' / 'context.json'), {'source': 'legacy evidence'})
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'schema 10'):
+            artifacts.retain(run, self.write('final.json', archive.record()),
+                             evidence_inputs=[context], unavailable_reason='Not requested')
+        self.assertEqual(self.snapshot(run), before)
 
-    def test_schema1_and_schema2_restart_and_recover_without_synthetic_id(self):
+    def test_schema1_and_schema2_refuse_restart_and_recovery_without_synthetic_id(self):
         for schema in (1, 2):
             with self.subTest(schema=schema):
                 source = legacy_prepare(artifacts, self.repo, self.scope, output_root=self.output)
@@ -118,13 +120,15 @@ class RecoveryFollowupTests(unittest.TestCase):
                     manifest['hashes']['measurements.json'] = artifacts._digest((source / 'measurements.json').read_bytes())
                 artifacts._save_manifest(source, manifest, self.read(source / artifacts.MARKER))
                 before = self.snapshot(source)
-                result = artifacts.recover(source, controller=self.controller(), authority='User requested recovery',
-                                           current_inputs=self.current(source))
-                self.assertIsNone(result['run_id'])
-                successor = Path(artifacts.restart(source, **self.restart_request(source)))
-                self.assertEqual(self.read(successor / 'cierre.json')['previous_run'], str(source))
+                inspected = recovery.inspect_run(source)
+                self.assertEqual(inspected['integrity']['status'], 'unsupported_layout')
+                for operation in (
+                    lambda: artifacts.recover(source, controller=self.controller(),
+                        authority='User requested recovery', current_inputs=self.current(source)),
+                    lambda: artifacts.restart(source, **self.restart_request(source))):
+                    with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                        operation()
                 self.assertEqual(self.snapshot(source), before)
-                self.assertEqual(artifacts.restart(source, **self.restart_request(source)), str(successor))
 
     def test_reserved_prepare_survives_baseexception_at_ownership_boundaries(self):
         for boundary in ('.review-restart-reservation.json', '.review-ownership.json', 'cierre.json'):

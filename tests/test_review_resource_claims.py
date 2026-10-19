@@ -298,13 +298,18 @@ class ResourceClaimTests(unittest.TestCase):
 
         self.assertEqual(before, (self.snapshot(source), self.snapshot(successor), self.snapshot(session)))
 
-    def test_legacy6_workspace_register_keeps_historical_fields(self):
+    def test_legacy6_workspace_register_is_refused_without_adoption(self):
+        from recovery_fixtures import historical_prepare
         session = self.workspace_session()
-        legacy = self.prepare_legacy()
-        manifest = artifacts.register(legacy, [str(session)])
+        legacy = historical_prepare(artifacts, self.repo, self.scope, output_root=self.output)
+        before = self.snapshot(legacy), self.snapshot(session)
+        with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+            artifacts.register(legacy, [str(session)])
+        self.assertEqual((self.snapshot(legacy), self.snapshot(session)), before)
+        manifest = self.read(legacy / 'cierre.json')
 
         self.assertEqual(manifest['schema_version'], 6)
-        self.assertEqual(manifest['temporary_paths'], [str(session)])
+        self.assertEqual(manifest['temporary_paths'], [])
         self.assertNotIn('resource_claims', manifest)
         self.assertNotIn('resource_transfers', manifest)
         self.assertNotIn('assignment_registry', manifest)

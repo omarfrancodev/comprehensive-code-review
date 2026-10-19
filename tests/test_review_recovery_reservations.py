@@ -112,11 +112,19 @@ class RecoveryReservationTests(unittest.TestCase):
         return source
 
     def test_exact_restart_recovery_with_unknown_identities_preserves_freshness(self):
-        for schema in range(1, 8):
+        for schema in range(1, 9):
             with self.subTest(schema=schema):
-                source = self.legacy(schema) if schema < 7 else self.prepare7(capture_inputs=False)
+                source = self.legacy(schema) if schema < 8 else self.prepare7(capture_inputs=False)
                 request = self.restart_request(source)
                 before = self.snapshot(source)
+                if schema < 8:
+                    with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                        artifacts.restart(source, **request)
+                    with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                        artifacts.recover(source, controller=self.controller(), authority=request['authority'],
+                                           current_inputs=request['current_inputs'])
+                    self.assertEqual(self.snapshot(source), before)
+                    continue
                 with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('before prepare')):
                     with self.assertRaises(KeyboardInterrupt):
                         artifacts.restart(source, **request)
@@ -126,8 +134,6 @@ class RecoveryReservationTests(unittest.TestCase):
                 self.assertEqual(result['input_appraisal']['applicability'], 'unknown')
                 self.assertTrue(result['replay_inputs_match'])
                 artifacts.validate(Path(result['successor_run_dir']))
-                if schema < 7:
-                    self.assertEqual(self.snapshot(source), before)
 
     def test_changed_restart_inputs_do_not_replay_an_unknown_intent(self):
         source = self.prepare7(capture_inputs=False)

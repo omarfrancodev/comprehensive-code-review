@@ -199,7 +199,7 @@ class ArchiveTests(unittest.TestCase):
     def prepare(self, **kwargs):
         from recovery_fixtures import selection_input
         return Path(artifacts.prepare(self.repo, self.scope, skill_version='2.3.0', harness='codex',
-                                      profile_input=selection_input(),
+                                      profile_input=kwargs.pop('profile_input', selection_input()),
                                       current_inputs={'scope': self.read(self.scope), 'sources': {},
                                                       'source_set_complete': True},
                                       output_root=kwargs.pop('output_root', self.output), **kwargs))
@@ -233,6 +233,9 @@ class ArchiveTests(unittest.TestCase):
                    for row in context_record['coverage']['execution']['results']}
         context = context10(context_record)
         context['review_inputs'] = manifest['review_inputs']
+        custom_context = kwargs.pop('context_input', None)
+        if custom_context is not None:
+            context.update(self.read(Path(custom_context)))
         evidence_inputs = list(kwargs.pop('evidence_inputs', []))
         evidence_inputs.extend([self.write('briefs.json', briefs), self.write('results.json', results)])
         if (kwargs.get('expected_schema') in (None, 10)
@@ -812,7 +815,7 @@ class Archive7Tests(unittest.TestCase):
                         with self.assertRaises(OSError):
                             artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex',
                                               output_root=self.output, profile_input=profile)
-                        self.assertFalse(any(re.fullmatch(r'[0-9]{8}T[0-9]{6}-[0-9a-f]{20}', path.name)
+                        self.assertFalse(any(re.fullmatch(r'[0-9]{8}T[0-9]{6}Z--[A-Za-z0-9_-]{1,36}--[0-9a-f]{20}', path.name)
                                              for path in self.output.rglob('*') if path.is_dir()))
                         continue
                     result = artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex',

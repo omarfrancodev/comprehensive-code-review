@@ -299,19 +299,15 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_legacy_description_identity_is_not_reconstructed_as_current_input(self):
         final = archive.record()
         final['description']['identity'] = 'description-v1'
-        self.final = self.write('description-final.json', final)
-        run = self.prepare_legacy()
-        self.retain_legacy(run)
-        self.close(run)
-        scope = self.read(run / 'cierre.json')['scope']
+        scope = self.read(self.scope)
         current = {'scope': scope, 'sources': {}, 'source_set_complete': True,
                    'description_identity': 'description-v2'}
 
-        candidate = recovery.find_candidates(self.repo, scope, archive_root=self.output,
-                                             current_inputs=current)['candidates'][0]
-
+        retained = recovery._candidate_inputs({'scope': scope, 'hashes': {}}, final)
+        self.assertIsNone(retained)
+        candidate = recovery.classify_candidate({'scope': scope}, retained, current)
         self.assertEqual(candidate['applicability'], 'unknown')
-        self.assertIn('description_identity', {row['field'] for row in candidate['differences']})
+        self.assertEqual(final['description']['identity'], 'description-v1')
 
     def test_multiple_candidates_are_not_selected_by_timestamp(self):
         first = self.prepare_legacy()
@@ -1077,17 +1073,15 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(resource['availability'], 'missing_unknown')
         self.assertEqual(resource['claim_status'], 'owned')
 
-    def test_legacy_recovery_creates_linked7_without_migration(self):
-        source = self.prepare_legacy()
-        source_snapshot = self.snapshot(source)
-        successor = Path(artifacts.restart(
-            source, profile_input=self.profile_input('standard'), controller=self.controller(),
-            authority='User requested a linked archive-7 restart', current_inputs=self.current(source)))
-        manifest = self.read(successor / 'cierre.json')
-        self.assertEqual(manifest['schema_version'], 7)
-        self.assertEqual(manifest['previous_run'], str(source))
-        self.assertEqual(manifest['lineage'], {'kind': 'restart', 'source_run': str(source)})
-        self.assertEqual(self.snapshot(source), source_snapshot)
+    def test_legacy_recovery_refuses_linked_restart_without_mutation(self):
+        from recovery_fixtures import historical_prepare
+        source = historical_prepare(artifacts, self.repo, self.scope, output_root=self.output)
+        before = self.snapshot(self.output)
+        with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+            artifacts.restart(source, profile_input=self.profile_input('standard'),
+                controller=self.controller(), authority='User requested a linked restart',
+                current_inputs=self.current(source))
+        self.assertEqual(self.snapshot(self.output), before)
 
     def test_completed_repeat_preserves_original(self):
         source = self.prepare_legacy()

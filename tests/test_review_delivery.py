@@ -174,7 +174,7 @@ class DeliveryTests(unittest.TestCase):
         for mode in ('full', 'brief'):
             target = Path(delivery.deliver(run, mode, self.repo, self.root / mode))
             self.assertIn('C001', (target / ('informe.md' if mode == 'full' else 'resumen.md')).read_text(encoding='utf-8'))
-            self.assertEqual(artifacts.read_json(target / '.ccr-delivery.json')['source_schema_version'], 6)
+            self.assertEqual(artifacts.read_json(target / '.ccr-delivery.json')['source_schema_version'], 10)
             if mode == 'full':
                 projected = artifacts.read_json(target / 'review.json')
                 self.assertEqual(projected['rereview'][0]['previous_reference'], projected['previous_reviews'][0]['reference'])
@@ -215,17 +215,20 @@ class DeliveryTests(unittest.TestCase):
         return path
 
     def retained(self, value=None, temporary=None, closed=False):
-        from recovery_fixtures import legacy_prepare
-        value = copy.deepcopy(value or record6())
+        from recovery_fixtures import legacy_prepare, native_record, selection_input
+        from test_review_artifacts import ArchiveTests
+        value = native_record(value or record6())
         scope = self.write('scope.json', value['scope'])
         run = legacy_prepare(artifacts, self.repo, scope, skill_version='2.8.0', harness='codex',
-                             output_root=self.archive, temporary_paths=temporary)
-        if value['schema_version'] in (6, 7):
-            value['review_id'] = 'CR-' + artifacts.read_json(run / 'cierre.json')['run_id']
-        artifacts.retain(run, self.write('final.json', value))
+                             output_root=self.archive, temporary_paths=temporary,
+                             profile_input=selection_input(value['profile']))
+        self.final = self.write('final.json', value)
+        ArchiveTests.retain(self, run, unavailable_reason=None)
         if closed:
             artifacts.close(run, self.write('cleanup.json', {'cleanup': 'not_needed', 'residuals': []}))
         return run
+
+    read = staticmethod(artifacts.read_json)
 
     def snapshot(self, directory):
         return {str(p.relative_to(directory)): p.read_bytes() for p in directory.rglob('*') if p.is_file()}
@@ -465,7 +468,7 @@ class DeliveryTests(unittest.TestCase):
                 delivery.deliver(run, 'brief', self.repo, self.root / 'oversized', context=too_big)
         self.assertFalse((self.root / 'oversized').exists())
 
-    def test_versioned_records_preserve_schema_and_known_identity(self):
+    def test_versioned_record_projections_preserve_schema_and_known_identity(self):
         for schema in range(1, 8):
             value = record6() if schema in (6, 7) else legacy_record()
             value['schema_version'] = schema
@@ -477,12 +480,13 @@ class DeliveryTests(unittest.TestCase):
                 value['change_authors'] = []
             if schema >= 4:
                 value['presentation'] = {'kind': 'review', 'subject': 'Contrato'}
-            run = self.retained(value)
-            before = self.snapshot(run)
-            target = Path(delivery.deliver(run, 'full', self.repo))
-            self.assertEqual(artifacts.read_json(target / 'review.json')['schema_version'], schema)
-            self.assertEqual(target.name, artifacts.read_json(run / 'review.json').get('review_id', artifacts.read_json(run / 'cierre.json')['run_id']))
-            self.assertEqual(before, self.snapshot(run))
+            before = copy.deepcopy(value)
+            projected = delivery._Projection(value, {'repository_path': str(self.repo),
+                'archive_root': str(self.archive)}, self.repo, 'a' * 64).value(value)
+            self.assertEqual(projected['schema_version'], schema)
+            self.assertEqual(projected.get('review_id'), value.get('review_id'))
+            self.assertEqual(artifacts.review_contract.validate(projected), [])
+            self.assertEqual(value, before)
 
     def test_private_rereview_provenance_remains_consistent_and_valid(self):
         value = record6()

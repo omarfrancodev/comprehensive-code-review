@@ -18,8 +18,19 @@ class TraceTests(unittest.TestCase):
     write = fixtures.ArchiveTests.write
     prepare = fixtures.ArchiveTests.prepare
     read = fixtures.ArchiveTests.read
-    retain = fixtures.ArchiveTests.retain
     close = fixtures.ArchiveTests.close
+
+    def retain(self, run, **kwargs):
+        kwargs.setdefault('unavailable_reason', None)
+        return fixtures.ArchiveTests.retain(self, run, **kwargs)
+
+    def register_empty(self, run):
+        manifest = self.read(run / 'cierre.json')
+        history = manifest['profile_history']
+        return artifacts.register(run, [], context_input=self.write('empty-context.json', {
+            'profile': history[-1]['profile'], 'selection_source': history[0]['selection_source'],
+            'profile_reference': history[-1]['reference'], 'profile_history': history,
+            'execution_plan': [], 'executors': [], 'review_inputs': manifest['review_inputs']}))
 
     def events(self, run):
         return [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_text(encoding='utf-8').splitlines()]
@@ -33,15 +44,17 @@ class TraceTests(unittest.TestCase):
 
     def test_new_archive_records_owned_lifecycle_and_complete_is_immutable(self):
         run = self.prepare()
-        artifacts.register(run, [])
+        self.register_empty(run)
         self.retain(run)
         artifacts.validate(run, require_retained=True, record_checkpoint=True)
         self.close(run)
         events = self.events(run)
-        self.assertEqual([event['kind'] for event in events], ['prepare', 'register', 'retain', 'validation', 'close'])
-        self.assertEqual([event['sequence'] for event in events], list(range(1, 6)))
+        kinds = [event['kind'] for event in events]
+        milestones = ['prepare', 'profile', 'register', 'retain', 'validation', 'close']
+        self.assertEqual(sorted(milestones, key=kinds.index), milestones)
+        self.assertEqual([event['sequence'] for event in events], list(range(1, len(events) + 1)))
         self.assertTrue(all(datetime.fromisoformat(event['recorded_at']).utcoffset().total_seconds() == 0 for event in events))
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 6)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 8)
         before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
         artifacts.validate(run, require_retained=True)
         self.close(run)
@@ -78,16 +91,16 @@ class TraceTests(unittest.TestCase):
 
     def test_processing_starts_on_observed_work_only(self):
         run = self.prepare()
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 6)
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 8)
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
-        for kind, status in [('profile', 'selected'), ('agent', 'pending')]:
+        for kind, status in [('agent', 'pending')]:
             artifacts.record_event(run, self.write('planned.json', dict(kind=kind, status=status, summary='Planning only')))
             self.assertEqual(artifacts.validate(run)['state'], 'prepared')
         artifacts.validate(run, record_checkpoint=True)
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
         artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Discovery began')))
         self.assertEqual(artifacts.validate(run)['state'], 'processing')
-        artifacts.register(run, [])
+        self.register_empty(run)
         self.retain(run)
         artifacts.validate(run, require_retained=True, record_checkpoint=True)
         self.assertEqual(artifacts.validate(run)['state'], 'closing')
@@ -105,24 +118,14 @@ class TraceTests(unittest.TestCase):
         self.assertFalse(artifacts._starts_processing({'kind': 'validation', 'status': 'passed'}))
 
     def test_legacy_states_and_complete_bytes_are_preserved(self):
-        for version in (1, 2, 3, 4):
+        for version in range(1, 8):
             run = self.legacy_run(version)
             before = {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()}
-            self.assertEqual(artifacts.validate(run)['schema_version'], version)
+            for operation in (lambda: artifacts.validate(run),
+                              lambda: artifacts.record_event(run, self.write('legacy.json', self.event()))):
+                with self.subTest(version=version), self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                    operation()
             self.assertEqual(before, {p.name: p.read_bytes() for p in run.iterdir() if p.is_file()})
-            if version == 4:
-                artifacts.record_event(run, self.write('legacy.json', self.event()))
-                self.assertEqual(artifacts.validate(run)['state'], 'prepared')
-                manifest = self.read(run / 'cierre.json')
-                marker = self.read(run / artifacts.MARKER)
-                manifest['state'] = 'processing'
-                artifacts._save_manifest(run, manifest, marker)
-                with self.assertRaisesRegex(ValueError, 'state'):
-                    artifacts.validate(run)
-            else:
-                with self.assertRaisesRegex(ValueError, 'legacy'):
-                    artifacts.record_event(run, self.write('legacy.json', self.event()))
-        # The existing completed-run test checks byte-for-byte idempotency.
 
     def test_processing_recovery_preserves_pending_event(self):
         for failed_file in ('trazabilidad.jsonl', artifacts.MARKER):
@@ -141,9 +144,9 @@ class TraceTests(unittest.TestCase):
             pending = self.read(run / 'cierre.json')['pending_trace']['events'][0]
             with self.assertRaisesRegex(ValueError, 'pending'):
                 artifacts.validate(run)
-            artifacts.register(run, [])
+            self.register_empty(run)
             self.assertEqual(artifacts.validate(run)['state'], 'processing')
-            self.assertEqual(self.events(run)[1], pending)
+            self.assertEqual(self.events(run)[2], pending)
 
     def test_manifest_replace_interruption_leaves_preparation_recoverable(self):
         run = self.prepare()
@@ -156,9 +159,9 @@ class TraceTests(unittest.TestCase):
             artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
-        artifacts.register(run, [])
+        self.register_empty(run)
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
-        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'register'])
+        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'profile', 'register'])
 
     def test_tool_execution_time_is_preserved_separately_from_recording_time(self):
         run = self.prepare()
@@ -192,10 +195,10 @@ class TraceTests(unittest.TestCase):
 
     def test_helper_milestones_capture_observed_utc_time(self):
         run = self.prepare()
-        artifacts.register(run, [])
+        self.register_empty(run)
         artifacts.validate(run, record_checkpoint=True)
         artifacts.record_event(run, self.write('unknown-clock.json', self.event()))
-        artifacts.retain(run, self.final)
+        self.retain(run)
         self.close(run)
         for event in self.events(run):
             if event['actor']['kind'] == 'helper':
@@ -252,9 +255,14 @@ class TraceTests(unittest.TestCase):
     def test_historical_time_validation_is_unchanged(self):
         event = dict(self.event(), occurred_at='2026-10-01T12:00:00+00:00')
         legacy = self.legacy_run(4)
-        artifacts.record_event(legacy, self.write('old-time.json', event))
+        manifest = self.read(legacy / 'cierre.json')
+        data, descriptor, observed = artifacts.review_trace.append(
+            (legacy / 'trazabilidad.jsonl').read_bytes(), manifest, event)
+        artifacts.review_trace.verify(data, descriptor, manifest['run_id'])
+        self.assertEqual(observed['occurred_at'], event['occurred_at'])
         before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
-        artifacts.validate(legacy)
+        with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+            artifacts.record_event(legacy, self.write('old-time.json', event))
         self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
         run = self.prepare()
         with self.assertRaisesRegex(ValueError, 'source'):
@@ -263,7 +271,7 @@ class TraceTests(unittest.TestCase):
 
     def test_new_local_event_targets_and_legacy_references(self):
         run = self.prepare()
-        for target in ('E000000', 'E000002', 'E999999'):
+        for target in ('E000000', 'E000003', 'E999999'):
             event = dict(self.event(), relations=[{'relation': 'follows', 'target': target}])
             before = (run / 'cierre.json').read_bytes()
             with self.assertRaisesRegex(ValueError, 'target'):
@@ -277,10 +285,14 @@ class TraceTests(unittest.TestCase):
             artifacts.record_event(run, self.write('observed.json', event))
             self.assertEqual(self.events(run)[-1]['relations'], event['relations'])
         legacy = self.legacy_run(4)
-        artifacts.record_event(legacy, self.write('legacy-relation.json', dict(self.event(), relations=[{
-            'relation': 'follows', 'target': 'E999999'}])))
+        manifest = self.read(legacy / 'cierre.json')
+        data, descriptor, _ = artifacts.review_trace.append(
+            (legacy / 'trazabilidad.jsonl').read_bytes(), manifest,
+            dict(self.event(), relations=[{'relation': 'follows', 'target': 'E999999'}]))
+        artifacts.review_trace.verify(data, descriptor, manifest['run_id'])
         before = {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()}
-        artifacts.validate(legacy)
+        with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+            artifacts.validate(legacy)
         self.assertEqual(before, {p.name: p.read_bytes() for p in legacy.iterdir() if p.is_file()})
 
     def test_actor_executor_and_recorder_remain_distinct(self):
@@ -315,9 +327,9 @@ class TraceTests(unittest.TestCase):
             artifacts.record_event(run, event_file)
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
-        artifacts.register(run, [])
-        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'check', 'register'])
-        self.assertEqual(self.events(run)[1]['evidence'], ['C01'])
+        self.register_empty(run)
+        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'profile', 'check', 'register'])
+        self.assertEqual(self.events(run)[2]['evidence'], ['C01'])
 
     def test_retention_cannot_pass_gate_if_milestone_planning_is_interrupted(self):
         run = self.prepare()
@@ -327,7 +339,10 @@ class TraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'interrupted|pending'):
             artifacts.validate(run, require_retained=True)
         self.retain(run)
-        self.assertEqual([e['kind'] for e in self.events(run)], ['prepare', 'retain'])
+        kinds = [e['kind'] for e in self.events(run)]
+        self.assertEqual(kinds[:2], ['prepare', 'profile'])
+        self.assertEqual(kinds[-1], 'retain')
+        self.assertEqual(kinds.count('retain'), 1)
 
     def test_selected_evidence_inventory_does_not_overflow_compact_retention_event(self):
         run = self.prepare()
@@ -336,9 +351,10 @@ class TraceTests(unittest.TestCase):
             source = self.root / ('selected-' + str(index) + '.txt')
             source.write_text('Preserved evidence ' + str(index), encoding='utf-8')
             sources.append(source)
-        artifacts.retain(run, self.final, evidence_inputs=sources)
+        self.retain(run, evidence_inputs=sources)
         artifacts.validate(run, require_retained=True)
-        self.assertEqual(len(list((run / 'evidence').iterdir())), 30)
+        self.assertEqual({p.name for p in (run / 'evidence').iterdir()},
+                         {p.name for p in sources} | {'context.json', 'briefs.json', 'results.json'})
         self.assertLessEqual(len(self.events(run)[-1]['evidence']), 4)
         self.assertIn('cierre.json#hashes', self.events(run)[-1]['evidence'])
 
@@ -372,7 +388,7 @@ class TraceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
         artifacts.record_event(run, event_file)
-        self.assertEqual([event['kind'] for event in self.events(run)], ['prepare', 'check'])
+        self.assertEqual([event['kind'] for event in self.events(run)], ['prepare', 'profile', 'check'])
 
     def test_events_reject_unbounded_probes_metrics_and_fabricated_recorder_fields(self):
         run = self.prepare()
@@ -391,7 +407,7 @@ class TraceTests(unittest.TestCase):
         self.retain(run)
         self.assertFalse((run / 'handoff.md').exists())
         self.assertTrue(callable(getattr(artifacts.review_contract, 'render_handoff', None)))
-        artifacts.retain(run, self.final, handoff=True)
+        self.retain(run, handoff=True)
         self.assertIn('handoff.md', self.read(run / 'cierre.json')['hashes'])
         self.assertIn('handoff', [event['kind'] for event in self.events(run)])
         self.close(run)
@@ -399,7 +415,7 @@ class TraceTests(unittest.TestCase):
                          artifacts.review_contract.render_handoff(self.read(run / 'review.json'),
                          {'source_record': 'review.json', 'source_report': 'informe.md'}))
 
-    def test_legacy_archives_validate_and_close_without_trace_or_migration(self):
+    def test_legacy_archives_without_trace_refuse_operation_without_migration(self):
         for schema in (1, 2, 3):
             with self.subTest(schema=schema):
                 run = self.prepare()
@@ -411,9 +427,11 @@ class TraceTests(unittest.TestCase):
                 (run / 'trazabilidad.jsonl').unlink()
                 artifacts._save_manifest(run, manifest, marker)
                 before = (run / 'cierre.json').read_bytes()
-                self.assertEqual(artifacts.validate(run, require_retained=True)['schema_version'], schema)
+                with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                    artifacts.validate(run, require_retained=True)
+                with self.assertRaisesRegex(ValueError, 'unsupported_layout'):
+                    self.close(run)
                 self.assertEqual((run / 'cierre.json').read_bytes(), before)
-                self.close(run)
                 self.assertFalse((run / 'trazabilidad.jsonl').exists())
                 self.assertNotIn('trace', self.read(run / 'cierre.json'))
 
@@ -422,7 +440,7 @@ class TraceTests(unittest.TestCase):
         self.retain(run)
         _, manifest, marker = artifacts._load_run(run)
         events = self.events(run)
-        events[-1]['sequence'] = 8
+        events[-1]['sequence'] = len(events) + 1
         data = b''.join(json.dumps(event).encode('utf-8') + b'\n' for event in events)
         (run / 'trazabilidad.jsonl').write_bytes(data)
         manifest['hashes']['trazabilidad.jsonl'] = artifacts._digest(data)
@@ -439,7 +457,7 @@ class TraceTests(unittest.TestCase):
         path = session / 'handoff-context.json'
         path.write_text(json.dumps(context), encoding='utf-8')
         run = self.prepare(temporary_paths=[session])
-        artifacts.retain(run, self.final, handoff=True, handoff_context_input=path)
+        self.retain(run, handoff=True, handoff_context_input=path)
         path.unlink()
         session.rmdir()
         artifacts.close(run, cleanup='complete')
@@ -462,12 +480,12 @@ class TraceTests(unittest.TestCase):
 
     def test_handoff_local_provenance_requires_selected_durable_evidence(self):
         run = self.prepare()
-        context = self.write('context.json', {'requirements': ['evidence/spec.md']})
+        context = self.write('handoff-context.json', {'requirements': ['evidence/spec.md']})
         with self.assertRaisesRegex(ValueError, 'retained evidence'):
-            artifacts.retain(run, self.final, handoff=True, handoff_context_input=context)
+            self.retain(run, handoff=True, handoff_context_input=context)
         spec = self.root / 'spec.md'
         spec.write_text('Agreed behavior', encoding='utf-8')
-        artifacts.retain(run, self.final, handoff=True, handoff_context_input=context, evidence_inputs=[spec])
+        self.retain(run, handoff=True, handoff_context_input=context, evidence_inputs=[spec])
         spec.unlink()
         self.close(run)
         self.assertIn('evidence/spec.md', (run / 'handoff.md').read_text(encoding='utf-8'))

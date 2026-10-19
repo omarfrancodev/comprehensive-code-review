@@ -41,6 +41,27 @@ def record10(profile='focused', source='automatic'):
     return value
 
 
+def native_record(scenario):
+    """Build a new schema-10 fixture with a scenario's business data.
+
+    This is synthetic test construction, never a migration of retained bytes.
+    Historical contract/projection tests continue to use their original records.
+    """
+    import review_profiles
+    value = record10(review_profiles._canonical(scenario['profile']))
+    for field, item in scenario.items():
+        if field not in {'schema_version', 'profile', 'coverage'}:
+            value[field] = copy.deepcopy(item)
+    value['coverage'].update({field: copy.deepcopy(item)
+        for field, item in scenario['coverage'].items() if field not in {'execution', 'verification'}})
+    for check in value['checks']:
+        check.setdefault('execution', {'kind': 'reused' if check['reused'] else 'static', 'executor': None})
+    for limitation in value['coverage']['limitations']:
+        limitation.setdefault('kind', 'behavior')
+        limitation.setdefault('public_summary', None)
+    return value
+
+
 def context10(record):
     execution = record['coverage']['execution']
     history = copy.deepcopy(execution['profile_history'])

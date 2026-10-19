@@ -311,16 +311,24 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         self.artifacts = delivery_tests.artifacts
 
     def prepared(self, profile='deep'):
-        from recovery_fixtures import legacy_prepare
-        value = record8(profile)
+        from recovery_fixtures import context10, legacy_prepare, record10, selection_input, source_events
+        value = record10(profile)
         fixture = self.fixture
         run = legacy_prepare(self.artifacts, fixture.repo, fixture.write('scope.json', value['scope']),
-                             skill_version='2.11.0', harness='codex', output_root=fixture.archive)
+                             skill_version='2.12.1', harness='codex', output_root=fixture.archive,
+                             profile_input=selection_input(profile),
+                             current_inputs=context10(value)['review_inputs'])
         from pathlib import Path
         run = Path(run)
-        value['review_id'] = 'CR-' + self.artifacts.read_json(run / 'cierre.json')['run_id']
-        context, events, _ = source_fixture(value)
+        manifest = self.artifacts.read_json(run / 'cierre.json')
+        value['review_id'] = 'CR-' + manifest['run_id']
+        value['coverage']['execution']['profile_history'] = manifest['profile_history']
+        context = context10(value)
+        self.artifacts.register(run, [], context_input=fixture.write('context.json', context))
+        events = source_events(value)
         for event in events:
+            if event['kind'] == 'profile':
+                continue
             identity = event.get('actor', dict(name='coordinator', provider_id=None))
             observed = dict(kind=event['kind'], status=event['status'], summary='Observed synthetic review step',
                             actor=dict(identity, kind='agent'), executor=event.get('executor'),
@@ -395,7 +403,7 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         target = Path(delivery_tests.delivery.deliver(run, 'full', self.fixture.repo))
         projected = self.artifacts.read_json(target / 'review.json')
         receipt = self.artifacts.read_json(target / '.ccr-delivery.json')
-        self.assertEqual(projected['schema_version'], 8)
+        self.assertEqual(projected['schema_version'], 10)
         self.assertEqual(projected['review_id'], value['review_id'])
         self.assertEqual(receipt['source_id_kind'], 'review_id')
         self.assertEqual(projected['coverage']['execution']['status'], 'fulfilled')
