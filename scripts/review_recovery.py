@@ -254,13 +254,15 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
     repository_path = root / repo_group
     try:
         repository_path = artifacts.safe_path(repository_path)
+        groups = sorted(repository_path.iterdir(), key=lambda path: path.name) if repository_path.is_dir() else []
     except (OSError, ValueError):
-        return {'schema_version': 1, 'candidates': [], 'next_cursor': None, 'truncated': False}
+        return {'schema_version': 1, 'candidates': [], 'next_cursor': None,
+                'truncated': False, 'search_complete': False}
 
     # Listing names is confined to the selected logical group inside this repository.
-    groups = sorted(repository_path.iterdir(), key=lambda path: path.name) if repository_path.is_dir() else []
     candidates = []
     has_more = False
+    search_complete = True
     last_key = None
     for group_path in groups:
         group_name = group_path.name
@@ -268,11 +270,16 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             continue
         try:
             group_path = artifacts.safe_path(group_path)
+            if not group_path.is_dir():
+                if group_name == exact_group:
+                    search_complete = False
+                continue
+            runs = sorted(group_path.iterdir(), key=lambda path: path.name)
         except (OSError, ValueError):
+            if group_name == exact_group:
+                search_complete = False
             continue
-        if not group_path.is_dir():
-            continue
-        for run_path in sorted(group_path.iterdir(), key=lambda path: path.name):
+        for run_path in runs:
             run_name = run_path.name
             if RUN_NAME.fullmatch(run_name):
                 is_native_name = group_name == exact_group
@@ -296,7 +303,8 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
                 if candidate is None:
                     continue
             except (OSError, ValueError, TypeError, KeyError) as exc:
-                candidate = {'run_dir': str(run_path), 'run_id': None, 'review_id': None,
+                candidate = {'kind': 'native' if is_native_name else 'historical_source',
+                             'run_dir': str(run_path), 'run_id': None, 'review_id': None,
                              'scope': None, 'state': 'unknown', 'phase': None,
                              'operation': {'disposition': 'unknown'}, 'profile': None,
                              'integrity': 'invalid', 'applicability': 'unknown',
@@ -343,7 +351,7 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             except OSError:
                 history_truncated = True
     return {'schema_version': 1, 'candidates': candidates, 'next_cursor': next_cursor,
-            'truncated': has_more or history_truncated}
+            'truncated': has_more or history_truncated, 'search_complete': search_complete}
 
 
 def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, archive_root=None, max_scan=10000):
@@ -360,6 +368,9 @@ def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, arch
                                current_inputs=current_inputs, logical_scope_input=logical_scope_input)
         rows = page['candidates']
         scanned += len(rows)
+        if not page.get('search_complete', True):
+            return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
+                    'reason': 'The native logical scope could not be read completely.'}
         for row in rows:
             if row.get('kind') != 'native':
                 continue
@@ -373,7 +384,7 @@ def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, arch
                 found.append(row)
         if not page['truncated']:
             break
-        if scanned >= max_scan:
+        if scanned >= max_scan or not page['next_cursor']:
             return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,
                     'reason': 'The bounded scan reached its maximum before the scope was exhausted.'}
         cursor = page['next_cursor']
@@ -396,13 +407,19 @@ def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, arch
                 'candidates': [{'run_dir': row['run_dir'], 'review_id': row['review_id']} for row in ties]}
     selected = ties[0]
     artifacts = _artifacts()
-    _, manifest, _ = artifacts._load_run(selected['run_dir'])
     verified_inputs = review_inputs.normalize_inputs(current_inputs)
     verified_inputs.setdefault('logical_scope_identity', logical['identity'])
-    checked = _candidate(Path(selected['run_dir']), review_layout.scope_group(manifest['logical_scope']),
-                         artifacts.repository_identity(repo), artifacts.select_output_root(repo, archive_root),
-                         scope, verified_inputs, logical)
+    try:
+        _, manifest, _ = artifacts._load_run(selected['run_dir'])
+        checked = _candidate(Path(selected['run_dir']), review_layout.scope_group(manifest['logical_scope']),
+                             artifacts.repository_identity(repo), artifacts.select_output_root(repo, archive_root),
+                             scope, verified_inputs, logical)
+    except (OSError, ValueError, TypeError, KeyError):
+        checked = None
     if (checked is None or checked.get('integrity') != 'report_verified'
+            or checked.get('state') != 'complete'
+            or checked.get('operation', {}).get('disposition') not in (None, 'complete')
+            or checked.get('logical_scope', {}).get('identity') != logical['identity']
             or checked.get('created_at') != selected.get('created_at')
             or checked.get('run_id') != selected.get('run_id')):
         return {'status': 'incomplete_search', 'selected': None, 'scanned': scanned,

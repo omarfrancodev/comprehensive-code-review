@@ -89,12 +89,60 @@ class LatestSelectionTests(unittest.TestCase):
         self.assertEqual(result['selected']['run_dir'], 'a-second')
 
     def test_scan_limit_does_not_return_partial_selection(self):
-        row = {'kind': 'native', 'integrity': 'invalid', 'scope': {}, 'logical_scope': {'identity': 'same'}}
+        row = {'kind': 'native', 'integrity': 'report_verified', 'scope': {},
+               'logical_scope': {'identity': 'same'}, 'state': 'complete',
+               'operation': {'disposition': 'complete'}}
         with patch.object(review_recovery, 'find_candidates', return_value={
                 'candidates': [row], 'truncated': True, 'next_cursor': 'next'}):
             with patch.object(review_recovery.review_layout, 'logical_scope', return_value={'identity': 'same'}):
                 result = review_recovery.select_latest('repo', {'mode': 'mr'},
                     current_inputs={'scope': {'mode': 'mr'}}, max_scan=1)
+        self.assertEqual(result['status'], 'incomplete_search')
+        self.assertIsNone(result['selected'])
+
+    def test_unreadable_native_candidate_blocks_selection_of_an_older_result(self):
+        scope = self.read(self.scope)
+        run = Path(archive8.artifacts.prepare(self.repo, self.scope, '2.12.1', 'codex',
+            output_root=self.output, profile_input=selection_input()))
+        self.retain(run)
+        self.close(run)
+        broken = Path(archive8.artifacts.prepare(self.repo, self.scope, '2.12.1', 'codex',
+            output_root=self.output, profile_input=selection_input()))
+        (broken / 'cierre.json').write_bytes(b'{broken')
+        before = archive8.archive_tests.ArchiveTests.snapshot(self, self.output)
+        result = review_recovery.select_latest(self.repo, scope, archive_root=self.output,
+            current_inputs={'scope': scope, 'sources': {}, 'source_set_complete': True})
+        self.assertEqual(result['status'], 'incomplete_search')
+        self.assertIsNone(result['selected'])
+        self.assertEqual(archive8.archive_tests.ArchiveTests.snapshot(self, self.output), before)
+
+    def test_unreadable_logical_group_is_an_incomplete_search(self):
+        scope = self.read(self.scope)
+        run = Path(archive8.artifacts.prepare(self.repo, self.scope, '2.12.1', 'codex',
+            output_root=self.output, profile_input=selection_input()))
+        original = Path.iterdir
+        def unreadable(path):
+            if path == run.parent:
+                raise PermissionError('synthetic unreadable logical scope')
+            return original(path)
+        with patch.object(Path, 'iterdir', unreadable):
+            result = review_recovery.select_latest(self.repo, scope, archive_root=self.output,
+                current_inputs={'scope': scope, 'sources': {}, 'source_set_complete': True})
+        self.assertEqual(result['status'], 'incomplete_search')
+        self.assertIsNone(result['selected'])
+
+    def test_selected_result_is_revalidated_and_disappearance_is_incomplete(self):
+        scope = self.read(self.scope)
+        run = Path(archive8.artifacts.prepare(self.repo, self.scope, '2.12.1', 'codex',
+            output_root=self.output, profile_input=selection_input()))
+        self.retain(run)
+        self.close(run)
+        inputs = {'scope': scope, 'sources': {}, 'source_set_complete': True}
+        page = review_recovery.find_candidates(self.repo, scope, archive_root=self.output,
+                                                current_inputs=inputs)
+        with patch.object(review_recovery, 'find_candidates', return_value=page), \
+             patch.object(review_recovery._artifacts(), '_load_run', side_effect=ValueError('selected source disappeared')):
+            result = review_recovery.select_latest(self.repo, scope, archive_root=self.output, current_inputs=inputs)
         self.assertEqual(result['status'], 'incomplete_search')
         self.assertIsNone(result['selected'])
 
