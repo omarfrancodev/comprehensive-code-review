@@ -383,9 +383,9 @@ a.restart(source, **request)
                     self.assertEqual(self.snapshot(source), before)
         review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(source)))
 
-    def test_extracted_documented_archive7_commands_execute_end_to_end(self):
+    def test_extracted_documented_archive8_commands_execute_end_to_end(self):
         skill = Path(artifacts.__file__).resolve().parents[1]
-        document = (skill / 'docs/examples/archive7-lifecycle.md').read_text(encoding='utf-8')
+        document = (skill / 'docs/examples/archive8-lifecycle.md').read_text(encoding='utf-8')
         blocks = dict(re.findall(r'```sh\n# ccr-example: ([\w-]+)\n(.*?)\n```', document, re.S))
         session = self.root / 'owned-session'
         evidence = session / 'evidence'
@@ -423,6 +423,7 @@ a.restart(source, **request)
         def refresh_context():
             final['coverage']['execution']['profile_history'] = self.read(source / 'cierre.json')['profile_history']
             context = context10(final)
+            context['review_inputs'] = self.read(source / 'cierre.json')['review_inputs']
             write('context.json', context)
         refresh_context()
         execute('register')

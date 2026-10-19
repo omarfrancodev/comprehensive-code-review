@@ -74,7 +74,7 @@ El destino predeterminado es `<checkout-persistente>/docs/ccr/reviews/<alcance>/
 
 ## Archivo interno
 
-Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<proyecto>-<id-repositorio>/<alcance>/<fecha>-<id-ejecucion>/`, separado de las entregas y los temporales.
+Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<repository-group>/<logical-scope-group>/<UTC-created>--<version-hint>--<run-id>/`, separado de las entregas y los temporales. Por ejemplo, las versiones de un MR comparten `mr-1010/`; cada ejecución muestra la fecha UTC, la cabeza revisada y su ID único en la carpeta. Los informes no reciben fechas adicionales.
 
 | Artefacto | Propósito |
 |---|---|
@@ -86,7 +86,7 @@ Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<proyecto>
 
 El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada permanece inmutable; otra revisión crea un registro enlazado y una entrega posterior conserva el vínculo con el original. Las mediciones son optativas, solo para una evaluación de coste solicitada. Consulta [archivo y ejecución](docs/usage.md#archivo-interno-y-ejecución).
 
-Si la misma petición ya tiene una revisión previa o interrumpida, CCR consulta candidatos limitados al repositorio y alcance; muestra sus diferencias y ofrece continuar, recuperar, mostrar o iniciar una revisión enlazada. No elige una revisión automáticamente. Consulta [recuperación y continuidad](references/archive/recovery.md).
+Antes de repetir un alcance ya revisado, CCR pregunta si debe iniciar otra revisión o mostrar la última verificada, salvo que la petición ya lo indique. La selección explícita compara vigencia y puede devolver empate o búsqueda incompleta; nunca decide por el orden de carpetas. Los resultados históricos incompatibles se preservan y pueden portarse como consulta mínima. Consulta [recuperación y continuidad](references/archive/recovery.md).
 
 ## Guías y versiones
 
