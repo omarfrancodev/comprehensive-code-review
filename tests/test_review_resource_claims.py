@@ -401,7 +401,7 @@ class ResourceClaimTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'receipt|release'):
             claims.validate_release_observation(manifest, [], [altered])
 
-    def test_archive7_with_pre_receipt_released_claim_remains_readable(self):
+    def test_archive8_with_pre_receipt_released_claim_remains_readable(self):
         session = self.workspace_session()
         run = self.create_run([session])
         self.register(run, session, 'legacy-release-context.json')

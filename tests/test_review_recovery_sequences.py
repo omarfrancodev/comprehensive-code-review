@@ -1,4 +1,4 @@
-"""End-to-end archive-7 recovery sequences using owned synthetic repositories."""
+"""End-to-end archive-8 recovery sequences using owned synthetic repositories."""
 import argparse
 import copy
 import json
@@ -197,7 +197,7 @@ class ReviewRecoverySequenceTests(_RecoveryFixture, unittest.TestCase):
         inspected = recovery.inspect_run(source, current_inputs=current)
         self.assertEqual(inspected['resources'][0]['availability'], 'missing_unknown')
 
-    def test_documented_archive7_commands_end_to_end(self):
+    def test_archive8_commands_end_to_end(self):
         helper = SCRIPTS / 'review_artifacts.py'
         scope = self.read(self.scope)
         record = record10('standard', 'automatic')
@@ -212,7 +212,7 @@ class ReviewRecoverySequenceTests(_RecoveryFixture, unittest.TestCase):
         harness_source = self.write('cli-harness-source.json',
                                     {'kind': 'user', 'reference': '--harness-source-file'})
         prepared = self.cli(helper, 'prepare', '--repo', self.repo, '--scope-file', self.scope,
-                            '--skill-version', '2.12.0', '--harness', 'Codex', '--harness-id', 'codex-cli',
+                            '--skill-version', '2.12.1', '--harness', 'Codex', '--harness-id', 'codex-cli',
                             '--harness-source-file', harness_source, '--output-root', self.output,
                             '--profile-input', selection_file, '--controller-input', controller_file,
                             '--current-inputs', inputs_file)
@@ -246,7 +246,7 @@ class ReviewRecoverySequenceTests(_RecoveryFixture, unittest.TestCase):
         successor = Path(restarted['run_dir'])
         gate = self.cli(helper, 'validate', '--run-dir', successor)
         successor_manifest = self.read(successor / 'cierre.json')
-        self.assertEqual(gate['schema_version'], 7)
+        self.assertEqual(gate['schema_version'], 8)
         self.assertEqual(successor_manifest['harness_id'], 'claude-code-desktop')
         self.assertEqual(successor_manifest['controller'], replacement)
         docs = (Path(__file__).resolve().parents[1] / 'references' / 'archive' / 'recovery.md').read_text(encoding='utf-8')

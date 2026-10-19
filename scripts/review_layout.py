@@ -61,7 +61,9 @@ def _boundaries(value):
 def _selector(mode, scope, selector_input):
     supplied = selector_input
     if supplied is not None:
-        if not isinstance(supplied, dict) or set(supplied) != {'mode', 'selector'} or supplied['mode'] != mode:
+        if (not isinstance(supplied, dict) or not {'mode', 'selector'}.issubset(supplied)
+                or set(supplied) - {'mode', 'selector', 'resolved_base', 'resolved_head'}
+                or supplied['mode'] != mode):
             raise ValueError('logical scope input must contain matching mode and selector')
         selector = supplied['selector']
         if not isinstance(selector, dict):
@@ -91,7 +93,8 @@ def _selector(mode, scope, selector_input):
                 raise ValueError('range commit selector must match pinned commits')
             return {'kind': 'commits', 'base': _text(selector['base'], 'range base'), 'head': _text(selector['head'], 'range head')}
         if selector.get('kind') == 'refs' and set(selector) == {'kind', 'base_ref', 'head_ref'}:
-            resolved = supplied.get('resolved', {}) if supplied else {}
+            resolved = ({'base': supplied.get('resolved_base'), 'head': supplied.get('resolved_head')}
+                        if supplied else {})
             if resolved != {'base': scope.get('base'), 'head': scope.get('head')}:
                 raise ValueError('symbolic range refs require resolved base/head matching scope')
             return {'kind': 'refs', 'base_ref': _text(selector['base_ref'], 'base ref'), 'head_ref': _text(selector['head_ref'], 'head ref')}
@@ -126,6 +129,8 @@ def logical_scope(scope: dict, selector_input: dict | None = None) -> dict:
     identity = hashlib.sha256(_canonical({'mode': mode, 'selector': selector})).hexdigest()
     if mode in ('mr', 'pr'):
         hint = _reference_hint(selector['reference'])
+        if mode == 'pr' and hint.startswith('mr-'):
+            hint = 'pr-' + hint[3:]
     elif mode == 'commit':
         hint = 'head-' + _slug(selector['head'], 12)
     elif mode == 'range':
@@ -158,7 +163,9 @@ def scope_group(logical: dict) -> str:
     mode, hint, identity = logical['mode'], logical['hint'], logical['identity']
     if not isinstance(identity, str) or not re.fullmatch(r'[0-9a-f]{64}', identity):
         raise ValueError('invalid logical scope identity')
-    if mode in ('mr', 'pr') and re.fullmatch(r'mr-[0-9]{1,20}', hint):
+    if mode == 'mr' and re.fullmatch(r'mr-[0-9]{1,20}', hint):
+        return hint
+    if mode == 'pr' and re.fullmatch(r'pr-[0-9]{1,20}', hint):
         return hint
     if mode == 'commit':
         return 'commit-' + _slug(logical['selector']['head'], 12) + '-' + identity[:16]
@@ -186,7 +193,7 @@ def run_name(scope: dict, created_at: str, run_id: str, selector_input: dict | N
         hint = ('snap-' + _slug(scope.get('snapshot'), 12) if scope.get('snapshot') else logical['mode'] + '-' + _slug(logical['hint'], 20))
     elif logical['mode'] in ('mr', 'pr'):
         hint = 'head-' + _slug(scope.get('head') or 'unknown', 12)
-    value = datetime.now(timezone.utc) if False else created.astimezone(timezone.utc)
+    value = created.astimezone(timezone.utc)
     name = value.strftime('%Y%m%dT%H%M%SZ') + '--' + _slug(hint, 36) + '--' + run_id
     if len(name) > 128:
         raise ValueError('run directory name exceeds 128 characters')

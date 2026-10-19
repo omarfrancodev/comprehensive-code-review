@@ -305,7 +305,8 @@ class DeliveryTests(unittest.TestCase):
 
     def test_prepared_archive_cannot_be_delivered(self):
         from recovery_fixtures import legacy_prepare
-        run = legacy_prepare(artifacts, self.repo, self.write('scope.json', record6()['scope']),
+        from recovery_fixtures import historical_prepare
+        run = historical_prepare(artifacts, self.repo, self.write('scope.json', record6()['scope']),
                              skill_version='2.8.0', harness='codex', output_root=self.archive)
         before = self.snapshot(run)
         with self.assertRaises(ValueError):

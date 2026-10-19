@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 spec = importlib.util.spec_from_file_location('review_artifacts', SCRIPTS / 'review_artifacts.py') if (SCRIPTS / 'review_artifacts.py').exists() else None
 artifacts = importlib.util.module_from_spec(spec) if spec else None
 if spec:
@@ -181,7 +182,8 @@ class ArchiveTests(unittest.TestCase):
         self.git('add', 'code.txt')
         self.git('commit', '-m', 'fixture')
         self.scope = self.write('scope.json', record()['scope'])
-        self.final = self.write('final.json', record())
+        from recovery_fixtures import record10
+        self.final = self.write('final.json', record10())
         self.output = self.root / 'archive'
 
     def git(self, *args):
@@ -195,15 +197,64 @@ class ArchiveTests(unittest.TestCase):
         return path
 
     def prepare(self, **kwargs):
-        from recovery_fixtures import legacy_prepare
-        return legacy_prepare(artifacts, self.repo, self.scope, skill_version='2.3.0', harness='codex',
-                              output_root=kwargs.pop('output_root', self.output), **kwargs)
+        from recovery_fixtures import selection_input
+        return Path(artifacts.prepare(self.repo, self.scope, skill_version='2.3.0', harness='codex',
+                                      profile_input=selection_input(),
+                                      current_inputs={'scope': self.read(self.scope), 'sources': {},
+                                                      'source_set_complete': True},
+                                      output_root=kwargs.pop('output_root', self.output), **kwargs))
 
     def read(self, path):
         return json.loads(path.read_text(encoding='utf-8'))
 
     def retain(self, run, **kwargs):
-        return artifacts.retain(run, self.final, unavailable_reason='Provider exposes no counters', **kwargs)
+        from recovery_fixtures import context10, record10
+        source_final = self.read(self.final) if Path(self.final).is_file() else record10()
+        manifest = self.read(Path(run) / 'cierre.json')
+        final = copy.deepcopy(source_final) if source_final.get('schema_version') == 10 else source_final
+        context_record = copy.deepcopy(final) if final.get('schema_version') == 10 else record10()
+        if context_record.get('schema_version') == 10:
+            targets = (final, context_record) if final.get('schema_version') == 10 else (context_record,)
+            for target in targets:
+                target['scope'] = manifest['scope']
+                target['review_id'] = 'CR-' + manifest['run_id']
+                target['description'] = {'status': 'unverified' if manifest['scope']['mode'] in ('mr', 'pr')
+                                         else 'not_applicable', 'identity': None,
+                                         'details': 'Descripción no capturada' if manifest['scope']['mode'] in ('mr', 'pr')
+                                         else 'Revisión local'}
+                target['profile'] = manifest['profile_history'][-1]['profile']
+                target['coverage']['execution']['selection_source'] = manifest['profile_history'][0]['selection_source']
+                target['coverage']['execution']['profile_history'] = manifest['profile_history']
+                for row in target['coverage']['execution']['plan']:
+                    row['selection_id'] = manifest['profile_history'][-1]['id']
+        briefs = {row['id']: {'assignment_id': row['id'], 'scope': context_record['scope']}
+                  for row in context_record['coverage']['execution']['plan']}
+        results = {row['assignment_id']: {'assignment_id': row['assignment_id'], 'status': 'completed'}
+                   for row in context_record['coverage']['execution']['results']}
+        context = context10(context_record)
+        context['review_inputs'] = manifest['review_inputs']
+        evidence_inputs = list(kwargs.pop('evidence_inputs', []))
+        evidence_inputs.extend([self.write('briefs.json', briefs), self.write('results.json', results)])
+        if (kwargs.get('expected_schema') in (None, 10)
+                and manifest.get('state') in ('prepared', 'processing')):
+            artifacts.register(run, [], context_input=self.write('context-register.json', context))
+            for index, (assignment, result) in enumerate(zip(context_record['coverage']['execution']['plan'],
+                                                               context_record['coverage']['execution']['results']), 1):
+                identity = {'name': result['reviewer_context'], 'provider_id': result['provider_id']}
+                role = assignment['role']
+                artifacts.record_event(run, self.write(f'event-start-{index}.json', {
+                    'kind': 'agent', 'status': 'started', 'summary': 'Synthetic assigned reviewer started',
+                    'executor': identity, 'evidence': [assignment['reference']]}))
+                artifacts.record_event(run, self.write(f'event-result-{index}.json', {
+                    'kind': 'discovery' if role == 'discovery' else 'grouped-verification',
+                    'status': 'completed', 'summary': 'Synthetic assignment completed',
+                    'actor': {'kind': 'agent', **identity}, 'evidence': [result['reference']]}))
+        if 'unavailable_reason' not in kwargs and not kwargs.get('measurement_inputs'):
+            kwargs['unavailable_reason'] = 'Provider exposes no counters'
+        return artifacts.retain(run, self.write('final-current.json', final),
+                                context_input=self.write('context.json', context),
+                                evidence_inputs=evidence_inputs,
+                                **kwargs)
 
     def close(self, run, cleanup='not_needed', residuals=None):
         return artifacts.close(run, self.write('cleanup.json', {'cleanup': cleanup, 'residuals': residuals or []}))
@@ -260,9 +311,10 @@ class ArchiveTests(unittest.TestCase):
     def test_retention_keeps_registered_cleanup_pending_before_observed_close(self):
         temporary = self.root / 'temporary-workspace'
         temporary.mkdir()
+        from recovery_fixtures import record10
         for claimed in ('complete', 'not_needed'):
             with self.subTest(claimed=claimed):
-                value = record()
+                value = record10()
                 value['resources']['cleanup'] = claimed
                 self.final = self.write('final.json', value)
                 run = self.prepare(temporary_paths=[temporary])
@@ -300,11 +352,15 @@ class ArchiveTests(unittest.TestCase):
     def test_retain_persists_validated_report_hashes_and_close(self):
         run = self.prepare()
         self.retain(run)
-        self.assertEqual(self.read(run / 'review.json'), record())
+        retained = self.read(run / 'review.json')
+        self.assertEqual(retained['schema_version'], 10)
+        self.assertEqual(retained['scope'], self.read(run / 'cierre.json')['scope'])
         self.assertIn('APROBABLE', (run / 'informe.md').read_text(encoding='utf-8'))
         manifest = self.read(run / 'cierre.json')
         self.assertEqual(manifest['state'], 'closing')
-        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md', 'measurements.json', 'trazabilidad.jsonl'})
+        self.assertEqual(set(manifest['hashes']), {'review.json', 'informe.md', 'measurements.json',
+                         'trazabilidad.jsonl', 'evidence/context.json', 'evidence/briefs.json',
+                         'evidence/results.json'})
         self.close(run)
         self.assertEqual(self.read(run / 'cierre.json')['state'], 'complete')
         self.assertTrue((run / 'review.json').is_file())
@@ -334,7 +390,7 @@ class ArchiveTests(unittest.TestCase):
                    'unavailable_reason': 'Native usage unavailable'}
         inputs = [self.write('one.json', measured), self.write('two.json', unknown)]
         run = self.prepare()
-        artifacts.retain(run, self.final, measurement_inputs=inputs)
+        self.retain(run, measurement_inputs=inputs)
         usage = self.read(run / 'measurements.json')
         self.assertEqual(usage['status'], 'partial')
         self.assertEqual(usage['runs'], [measured, unknown])
@@ -345,12 +401,12 @@ class ArchiveTests(unittest.TestCase):
         run = self.prepare()
         unknown = self.write('unknown.json', {'usage': None})
         with self.assertRaises(ValueError):
-            artifacts.retain(run, self.final, measurement_inputs=[unknown])
+            self.retain(run, measurement_inputs=[unknown])
         usage = {key: 0 for key in ('input_tokens', 'output_tokens', 'cached_input_tokens', 'reasoning_tokens', 'credits', 'cost')}
         usage['currency'] = 'USD'
         counters = {key: 0 for key in ('sessions', 'tool_calls', 'repeated_reads', 'tool_output_chars')}
         path = self.write('zero.json', dict(counters, execution_id='zero', usage=usage))
-        artifacts.retain(run, self.final, measurement_inputs=[path])
+        self.retain(run, measurement_inputs=[path])
         self.assertEqual(self.read(run / 'measurements.json')['status'], 'reported')
 
     def test_duplicate_paths_and_execution_ids_are_rejected(self):
@@ -375,7 +431,7 @@ class ArchiveTests(unittest.TestCase):
         self.retain(run)
         residual = self.root / 'temporary-checkout'
         residual.mkdir()
-        artifacts.retain(run, self.final, unavailable_reason='Native counters unavailable', temporary_paths=[residual])
+        self.retain(run, unavailable_reason='Native counters unavailable', temporary_paths=[residual])
         self.close(run, 'pending', [str(residual)])
         manifest = self.read(run / 'cierre.json')
         self.assertEqual(manifest['state'], 'closing')
@@ -445,7 +501,7 @@ class ArchiveTests(unittest.TestCase):
             self.close(run, 'complete')
         self.assertEqual(self.read(run / 'cierre.json')['cleanup'], 'pending')
 
-    def test_schema_two_records_are_retained_through_canonical_contract(self):
+    def test_schema_two_records_are_not_adopted_by_new_archive(self):
         value = record()
         value['schema_version'] = 2
         value['coverage']['areas'] = [{'area': area, 'status': 'not_applicable',
@@ -453,8 +509,9 @@ class ArchiveTests(unittest.TestCase):
                                       'finding_ids': []} for area in 'ABCDE']
         self.final = self.write('final.json', value)
         run = self.prepare()
-        self.retain(run)
-        self.assertEqual(self.read(run / 'review.json'), value)
+        with self.assertRaises(ValueError):
+            self.retain(run)
+        self.assertFalse((run / 'review.json').exists())
 
     def test_windows_junction_root_is_refused(self):
         if os.name != 'nt':
@@ -678,11 +735,14 @@ class ArchiveTests(unittest.TestCase):
                         '--profile-input', profile)
         self.assertEqual(result.returncode, 0, result.stderr)
         run = Path(json.loads(result.stdout)['run_dir'])
-        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 7)
-        result = invoke('retain', '--run-dir', run, '--input', self.final,
+        self.assertEqual(self.read(run / 'cierre.json')['schema_version'], 8)
+        legacy = record()
+        legacy['schema_version'] = 9
+        legacy_input = self.write('legacy-final.json', legacy)
+        result = invoke('retain', '--run-dir', run, '--input', legacy_input,
                         '--unavailable-reason', 'Native counters unavailable')
         self.assertEqual(result.returncode, 1)
-        self.assertIn('schema 10', json.loads(result.stderr)['error'])
+        self.assertIn('archive 8 requires final review schema 10', json.loads(result.stderr)['error'])
         result = invoke('retain', '--run-dir', self.root, '--input', self.final)
         self.assertEqual(result.returncode, 1)
         self.assertIn('error', json.loads(result.stderr))
@@ -862,6 +922,7 @@ class Archive7Tests(unittest.TestCase):
         context = {'profile': 'deep', 'selection_source': 'automatic',
                    'profile_reference': history[-1]['reference'], 'profile_history': history,
                    'execution_plan': plan, 'executors': []}
+        context['review_inputs'] = manifest['review_inputs']
         context_file = self.write('context.json', context)
         registered = artifacts.register(run, [], context_input=context_file)
         self.assertEqual(registered['assignment_registry'], plan)
