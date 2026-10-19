@@ -816,6 +816,71 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(self.read(successor / 'cierre.json')['previous_run'], str(source))
         self.assertEqual(self.read(source / 'cierre.json')['operation']['disposition'], 'superseded')
 
+    def test_changed_head_restart_recovers_only_the_reserved_inputs(self):
+        source = self.prepare7('standard')
+        scope = dict(self.read(source / 'cierre.json')['scope'], head='new-reviewed-head')
+        request = self.restart_request(source, scope=scope)
+        self.assertNotIn('logical_scope_identity', request['current_inputs'])
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                artifacts.restart(source, **request)
+        active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
+        original = self.snapshot(source)
+        for field, value in (
+                ('description_identity', 'changed-description'),
+                ('requirements_identity', 'changed-requirements'),
+                ('plan_identity', 'changed-plan'),
+                ('configuration_identity', 'changed-configuration'),
+                ('logical_scope_identity', '0' * 64),
+                ('sources', {'evidence/changed.md': 'a' * 64}),
+                ('scope', dict(scope, head='another-head'))):
+            with self.subTest(field=field):
+                changed = dict(request['current_inputs'], **{field: value})
+                outcome = artifacts.recover(source, controller=request['controller'],
+                    authority=request['authority'], current_inputs=changed)
+                self.assertEqual(outcome['status'], 'restart_pending')
+                self.assertFalse(outcome['replay_inputs_match'])
+                self.assertEqual(self.snapshot(source), original)
+        outcome = artifacts.recover(source, controller=request['controller'],
+            authority=request['authority'], current_inputs=request['current_inputs'])
+        self.assertEqual(outcome['status'], 'restarted', outcome)
+        self.assertTrue(outcome['replay_inputs_match'])
+        successor = Path(outcome['successor_run_dir'])
+        self.assertEqual(str(successor), active['successor_run_dir'])
+        self.assertEqual(self.read(successor / 'cierre.json')['scope'], scope)
+        self.assertEqual(artifacts.restart(source, **request), str(successor))
+        artifacts.validate(successor)
+
+    def test_restart_with_new_boundaries_derives_destination_identity(self):
+        scope = dict(self.read(self.scope), mode='working', snapshot='same-snapshot')
+        self.scope = self.write('working-scope.json', scope)
+        source = self.prepare7('standard')
+        selector = {'mode': 'working', 'selector': {'boundaries': ['src']}}
+        request = self.restart_request(source, logical_scope_input=selector)
+        self.assertNotIn('logical_scope_identity', request['current_inputs'])
+        invalid = copy.deepcopy(request)
+        invalid['current_inputs']['logical_scope_identity'] = self.read(source / 'cierre.json')['logical_scope']['identity']
+        before = self.snapshot(source)
+        with self.assertRaisesRegex(ValueError, 'logical scope differs'):
+            artifacts.restart(source, **invalid)
+        self.assertEqual(self.snapshot(source), before)
+        self.assertFalse((source.parent / '.restart-intents').exists())
+        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+            with self.assertRaisesRegex(OSError, 'interrupted'):
+                artifacts.restart(source, **request)
+        outcome = artifacts.recover(source, controller=request['controller'],
+            authority=request['authority'], current_inputs=request['current_inputs'])
+        self.assertEqual(outcome['status'], 'restarted', outcome)
+        successor = Path(outcome['successor_run_dir'])
+        old = self.read(source / 'cierre.json')
+        new = self.read(successor / 'cierre.json')
+        self.assertEqual(new['scope'], old['scope'])
+        self.assertNotEqual(successor.parent, source.parent)
+        self.assertEqual(new['logical_scope']['selector'], selector['selector'])
+        self.assertEqual(new['review_inputs']['logical_scope_identity'], new['logical_scope']['identity'])
+        self.assertEqual(artifacts.restart(source, **request), str(successor))
+        artifacts.validate(successor)
+
     def test_adopt_context_object_before_successor_creation(self):
         session = Path(review_workspace.prepare(argparse.Namespace(
             repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])

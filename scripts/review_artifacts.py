@@ -2977,6 +2977,8 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
     requested_inputs.pop('profile', None)
     restart_profile = intent['request']['profile_input']['profile']
     expected_inputs = copy.deepcopy(intent['request']['current_inputs'])
+    expected_inputs.setdefault('logical_scope_identity', review_layout.logical_scope(
+        expected_inputs['scope'], intent['request']['logical_scope_input'])['identity'])
     if (requested_inputs['scope'] == expected_inputs['scope']
             and 'logical_scope_identity' not in requested_inputs):
         requested_inputs['logical_scope_identity'] = review_layout.logical_scope(
@@ -3285,7 +3287,6 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
 def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None,
             harness=None, logical_scope_input=None):
     """Create or replay one durable, source-bound archive-8 restart operation."""
-    import review_recovery
     source_path = safe_path(source_run)
     with _restart_lock(source_path):
         source, manifest, marker = _load_run(source_path)
@@ -3294,8 +3295,9 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             marker = _recover_trace(source, manifest, marker)
         _verify_files(source, manifest, allow_checkpoint_transaction=True,
                       allow_resource_transfer=True)
-        normalized_inputs = review_recovery.validate_current_inputs(
-            current_inputs, manifest, require_same_scope=False, compare_sources=False)
+        # A restart pins its destination selector, even when the snapshot is
+        # unchanged. Do not fill omitted identities from the source selector.
+        normalized_inputs = review_inputs.normalize_inputs(current_inputs)
         if normalized_inputs['scope']['repository'] != manifest['scope']['repository']:
             raise ValueError('restart cannot change the source repository identity')
         if logical_scope_input is None:
@@ -3307,7 +3309,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
         request = review_restart.normalize_restart_request(profile_input, controller, authority,
             normalized_inputs, list(transfer_paths or []), raw_harness, logical_scope_input)
         _scope(request['current_inputs']['scope'])
-        _capture_review_inputs(request['current_inputs'], request['current_inputs']['scope'],
+        request['current_inputs'] = _capture_review_inputs(request['current_inputs'], request['current_inputs']['scope'],
                                request['profile_input']['profile'], 'restart current review inputs',
                                logical_scope_identity=logical['identity'])
         repository = safe_path(_git(safe_path(manifest['repository_path']), 'rev-parse', '--show-toplevel'))

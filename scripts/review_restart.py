@@ -94,6 +94,10 @@ def normalize_restart_request(profile_input, controller, authority, current_inpu
     # current-input payload must not inherit the source run's previous profile.
     normalized_inputs.pop('profile', None)
     logical_scope = review_layout.logical_scope(normalized_inputs['scope'], logical_scope_input)
+    if ('logical_scope_identity' in normalized_inputs
+            and normalized_inputs['logical_scope_identity'] != logical_scope['identity']):
+        raise ValueError('restart current review inputs logical scope differs from the pinned selector')
+    normalized_inputs['logical_scope_identity'] = logical_scope['identity']
     if logical_scope_input is not None and not isinstance(logical_scope_input, dict):
         raise ValueError('logical scope input must be an object')
     if not isinstance(transfer_paths, list) or len(transfer_paths) > 64:
