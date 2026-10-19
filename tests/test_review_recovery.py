@@ -304,9 +304,11 @@ class ReviewRecoveryTests(unittest.TestCase):
                    'description_identity': 'description-v2'}
 
         retained = recovery._candidate_inputs({'scope': scope, 'hashes': {}}, final)
-        self.assertIsNone(retained)
+        self.assertNotIn('description_identity', retained)
+        self.assertFalse(retained['source_set_complete'])
         candidate = recovery.classify_candidate({'scope': scope}, retained, current)
         self.assertEqual(candidate['applicability'], 'unknown')
+        self.assertIn('description_identity', {row['field'] for row in candidate['differences']})
         self.assertEqual(final['description']['identity'], 'description-v1')
 
     def test_multiple_candidates_are_not_selected_by_timestamp(self):
