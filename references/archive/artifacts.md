@@ -1,5 +1,13 @@
 # Persistent review archive
 
+## Current archive layout (schema 8, layout 2)
+
+Native runs use `<root>/<repository-group>/<logical-scope-group>/<UTC-created>--<version-hint>--<20-hex-run-id>/`. The repository group keeps its stable repository identity. The scope group describes the stable logical selector, while the run name exposes the exact input revision and unique run identity. For example, two reviews of MR 1010 are grouped under `mr-1010/`; each run is then visible as `20261018T150000Z--head-90e54abb1234--<run-id>`. Dates in paths are UTC and are not added to report content.
+
+`logical_scope` is `{mode, selector, hint, identity}`. Its SHA-256 identity hashes canonical `{mode, selector}`; hints are presentation only. MR/PR selectors use the pinned reference, commit selectors use exact head and base, ranges use symbolic refs or exact commits, modules/features use an explicit reference and relative POSIX boundaries, and local selections use their mode and selected boundaries (`[]` means the whole requested local scope). A module/feature or partial local selection must provide `--logical-scope-input`; selectors cannot be inferred from a title or abbreviated revision. Limits are 64 boundaries, 500 characters per selector string, 64 KiB per selector document, 80 characters per group and 128 characters per run component. Unsafe, ambiguous or colliding hints never replace full identity.
+
+Archive 8 adds `layout_version: 2`, `logical_scope` and its ownership-marker binding; final review schema 10, trace schema 1, packet version 1 and the existing locks, claims, transaction recovery and restart reservation semantics remain in force. Preparation, reserved restart, validation, lookup and delivery must use this same layout contract. An archive predating schema 8/layout 2 is `unsupported_layout` for operational helpers. Preserve it unchanged; do not resume, restart, recover, rename or migrate it through this helper. A verified report may be ported separately into the three-file historical consultation package in [history.md](history.md), which is never a native run.
+
 The coordinator keeps three locations distinct: the user checkout, run-owned execution scratch/workspaces, and the persistent archive. A user development worktree remains user-owned. Native scratch is not the durable destination. Honor no-create requests and existing write permissions; an inaccessible root produces an explicit persistence limitation and an in-conversation record, not a silent switch to project docs or provider scratch.
 
 ## Root and run identity
