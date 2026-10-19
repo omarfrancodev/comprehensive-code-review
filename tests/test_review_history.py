@@ -191,6 +191,38 @@ class HistoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'inventory'):
             review_history.verify_history(result['history_dir'])
 
+    def test_show_rejects_report_changed_after_package_verification(self):
+        result = review_history.port_review(self.run, Path(self.temp.name) / 'history')
+        directory = Path(result['history_dir'])
+        original = review_history.verify_history
+        def changed_after_verification(path):
+            value = original(path)
+            (directory / 'informe.md').write_bytes(b'concurrently changed report')
+            return value
+        with patch.object(review_history, 'verify_history', changed_after_verification):
+            with self.assertRaisesRegex(ValueError, 'changed|modified'):
+                review_history.show_history(directory)
+
+    def test_history_reads_keep_a_byte_budget_on_the_open_stream(self):
+        path = self.run / 'informe.md'
+        budget = len(self.report_bytes) + 100
+        original = Path.open
+        test = self
+        class BudgetedStream:
+            def __enter__(stream):
+                stream.file = original(path, 'rb')
+                return stream
+            def __exit__(stream, *args):
+                stream.file.close()
+            def fileno(stream):
+                return stream.file.fileno()
+            def read(stream, size=-1):
+                test.assertGreater(size, 0, 'historical reads must not allocate an unbounded file')
+                test.assertLessEqual(size, budget + 1)
+                return stream.file.read(size)
+        with patch.object(Path, 'open', return_value=BudgetedStream()):
+            self.assertEqual(review_history._read(path, budget, 'historical report'), self.report_bytes)
+
 
 if __name__ == '__main__':
     unittest.main()

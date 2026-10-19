@@ -50,8 +50,8 @@ def _read(path, limit, label):
         info = target.stat()
         if not target.is_file() or info.st_size > limit:
             raise HistoryError(f'{label} is missing, not a regular file, or exceeds its size limit')
-        data = target.read_bytes()
-    except OSError as exc:
+        data = artifacts.read_bounded(target, limit)
+    except (OSError, ValueError) as exc:
         raise HistoryError(f'{label} cannot be read safely: {exc}') from exc
     if len(data) > limit:
         raise HistoryError(f'{label} exceeds its size limit')
@@ -278,7 +278,10 @@ def port_review(source_run: Path, output_root: Path | None = None) -> dict:
 
 def show_history(history_dir: Path) -> str:
     value = verify_history(history_dir)
-    report = _read(Path(value['history_dir']) / 'informe.md', CONTENT_LIMIT, 'historical report').decode('utf-8')
+    report_bytes = _read(Path(value['history_dir']) / 'informe.md', CONTENT_LIMIT, 'historical report')
+    if _hash(report_bytes) != value['report_sha256']:
+        raise HistoryError('historical report changed after package verification')
+    report = report_bytes.decode('utf-8')
     return ('AVISO: consulta histórica; no revalidada. La evidencia y los enlaces originales pueden no estar disponibles.\n\n'
             + report)
 
