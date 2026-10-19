@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 import test_review_artifacts as archive_tests
-from recovery_fixtures import selection_input, historical_prepare
+from recovery_fixtures import context10, record10, selection_input, historical_prepare
 import review_recovery
 import review_inputs
 
@@ -45,6 +45,28 @@ class Archive8Tests(unittest.TestCase):
         first = self.prepare_scope(scope, {'mode': 'module', 'selector': {'reference': 'feature/refactor', 'boundaries': ['src/a']}})
         second = self.prepare_scope(scope, {'mode': 'module', 'selector': {'reference': 'feature/refactor', 'boundaries': ['src/b']}})
         self.assertNotEqual(first.parent, second.parent)
+
+    def test_uncaptured_inputs_can_be_captured_before_work_without_inventing_sources(self):
+        run = self.prepare_scope(self.read(self.scope))
+        manifest = self.read(run / 'cierre.json')
+        self.assertIsNone(manifest['review_inputs'])
+        final = record10()
+        final['scope'] = manifest['scope']
+        final['coverage']['execution']['profile_history'] = manifest['profile_history']
+        context = context10(final)
+        context['profile_reference'] = manifest['profile_history'][-1]['reference']
+        registered = artifacts.register(run, [], context_input=self.write('captured.json', context))
+        self.assertEqual(registered['review_inputs'], context['review_inputs'])
+        self.assertEqual(registered['review_inputs']['logical_scope_identity'],
+                         manifest['logical_scope']['identity'])
+
+    def test_supplied_logical_identity_cannot_be_silently_replaced(self):
+        with self.assertRaisesRegex(ValueError, 'logical scope'):
+            artifacts.prepare(self.repo, self.scope, '2.12.1', 'codex', output_root=self.output,
+                profile_input=selection_input(), current_inputs={
+                    'scope': self.read(self.scope), 'sources': {},
+                    'logical_scope_identity': '0' * 64})
+        self.assertFalse(self.output.exists())
 
     def test_old_layout_is_rejected_without_changing_any_source_bytes(self):
         run = historical_prepare(artifacts, self.repo, self.scope, output_root=self.output)

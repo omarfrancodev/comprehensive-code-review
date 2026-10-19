@@ -1091,6 +1091,9 @@ def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity
         return None
     value = review_inputs.normalize_inputs(_input_object(raw, label))
     if logical_scope_identity is not None:
+        if ('logical_scope_identity' in value
+                and value['logical_scope_identity'] != logical_scope_identity):
+            raise ValueError(label + ' logical scope differs from the pinned selector')
         value.setdefault('logical_scope_identity', logical_scope_identity)
     if value['scope'] != scope:
         raise ValueError(label + ' scope differs from the pinned review scope')
@@ -1605,9 +1608,6 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
     selection = _initial_selection(profile_input)
     captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs',
                                              logical_scope_identity=logical['identity'])
-    if captured_inputs is None:
-        captured_inputs = {'scope': copy.deepcopy(scope), 'sources': {}, 'source_set_complete': False}
-    captured_inputs['logical_scope_identity'] = logical['identity']
     controller_value = _controller(controller, selection['actor'])
     if not isinstance(skill_version, str) or not skill_version.strip() or not isinstance(harness, str) or not harness.strip():
         raise ValueError('skill version and harness are required')
@@ -4331,6 +4331,3 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
-
-
-\n

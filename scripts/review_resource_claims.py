@@ -459,6 +459,3 @@ def validate_claims_for_close(run_dir, manifest):
             raise ValueError('released/transferred resource path exists again; preserve and inspect it')
         elif row.get('status') not in {'released', 'transferred'}:
             raise ValueError('unknown resource claim status blocks review closure')
-
-
-\n
