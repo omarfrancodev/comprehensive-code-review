@@ -29,6 +29,16 @@ def area_record():
 
 
 class ReviewAreaValidationTests(unittest.TestCase):
+    def test_named_subaspects_route_to_optional_dimension_references_without_schema_fields(self):
+        root = Path(__file__).resolve().parents[1]
+        catalog = (root / 'references/workflow/review-areas.md').read_text(encoding='utf-8')
+        for name in ('design-testability.md', 'contracts-data.md', 'security-operation.md'):
+            self.assertTrue((root / 'references/dimensions' / name).is_file())
+            self.assertIn(name, catalog)
+        record = area_record()
+        self.assertEqual(contract.validate(record), [])
+        self.assertNotIn('aspects', record['coverage']['areas'][0])
+
     def test_current_final_requires_one_row_per_area_and_accepts_no_score(self):
         record = area_record()
         self.assertEqual(contract.validate(record), [])
