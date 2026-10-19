@@ -127,7 +127,7 @@ def _archive(run_dir):
     import review_artifacts
     run, manifest, marker = review_artifacts._load_run(run_dir)
     if manifest.get('schema_version') != 8:
-        raise ValueError('resource claims require archive schema 7')
+        raise ValueError('resource claims require archive schema 8')
     return run, manifest, marker
 
 

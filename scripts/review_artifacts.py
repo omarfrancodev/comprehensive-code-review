@@ -1924,7 +1924,7 @@ CLEANUP_RECEIPT_LIMIT = 64
 
 
 def _validate_cleanup_metadata(manifest):
-    """Validate archive-7 cleanup intent and its bounded receipt inventory."""
+    """Validate native cleanup intent and its bounded receipt inventory."""
     if ('cleanup_receipts' in manifest) != ('resource_cleanup' in manifest):
         raise ValueError('resource cleanup metadata fields must be introduced together')
     receipts = manifest.get('cleanup_receipts', [])
@@ -2137,7 +2137,7 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                 or source_manifest.get('repository_key') != next_manifest.get('repository_key')
                 or source_manifest.get('repository_path') != next_manifest.get('repository_path')
                 or source_manifest.get('scope') != next_manifest.get('scope')):
-            raise ValueError('resource transfer requires archive-7 runs for the same repository and scope')
+            raise ValueError('resource transfer requires archive-8 runs for the same repository and scope')
         for label, value in (('source', source_manifest), ('successor', next_manifest)):
             if value.get('state') not in {'prepared', 'processing'}:
                 raise ValueError(label + ' run must be prepared or processing; retaining/closing runs cannot transfer')
@@ -2461,7 +2461,7 @@ def begin_resource_cleanup(run_dir, session_dir):
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+        raise ValueError('durable resource cleanup requires archive schema 8')
     if manifest.get('state') in {'retaining', 'complete'}:
         raise ValueError('resource cleanup cannot begin during retention or after closure')
     if manifest.get('operation', {}).get('disposition') == 'complete':
@@ -2572,7 +2572,7 @@ def finish_resource_cleanup(run_dir, observation):
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+        raise ValueError('durable resource cleanup requires archive schema 8')
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
                                            completion_source='review_workspace.cleanup')
 
@@ -2585,7 +2585,7 @@ def recover_resource_cleanup(run_dir):
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
     if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 7')
+        raise ValueError('durable resource cleanup requires archive schema 8')
     intent = manifest.get('resource_cleanup')
     if intent is None:
         return {'status': 'none', 'run_id': manifest['run_id']}
@@ -2694,7 +2694,7 @@ def resume(run_dir, *, controller, authority, current_inputs):
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
     if manifest['schema_version'] != 8:
-        raise ValueError('legacy runs cannot be resumed in place; create a linked archive-7 restart')
+        raise ValueError('unsupported_layout: preserve the legacy archive or port a verified report for consultation')
     if manifest['state'] in {'retaining', 'closing', 'complete'}:
         raise ValueError('retention/closure has started or completed; recover its transaction or create a new run')
     normalized_inputs = review_recovery.validate_current_inputs(
@@ -3284,7 +3284,7 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
 
 def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None,
             harness=None, logical_scope_input=None):
-    """Create or replay one durable, source-bound archive-7 restart operation."""
+    """Create or replay one durable, source-bound archive-8 restart operation."""
     import review_recovery
     source_path = safe_path(source_run)
     with _restart_lock(source_path):
@@ -3380,7 +3380,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                     raise ValueError('restart transfer paths must already be registered to the source run')
                 if not source_claims:
                     _restart_adoption_context(request)
-                    from_claims = {'schema_version': 7, 'repository_path': manifest['repository_path'],
+                    from_claims = {'schema_version': ARCHIVE_SCHEMA_VERSION, 'repository_path': manifest['repository_path'],
                                    'repository_identity': identity,
                                    'repository_key': manifest['repository_key'], 'archive_root': manifest['archive_root'],
                                    'temporary_paths': []}
