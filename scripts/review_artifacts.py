@@ -135,6 +135,19 @@ def _restart_intent_path(source_run, source_manifest, request):
     return _restart_local_dir(source, source_manifest) / (digest + '.json')
 
 
+def _existing_restart_intent_path(source_run, source_manifest, request):
+    """Look up only the two exact v2 encodings, without scanning other intents."""
+    canonical = _restart_intent_path(source_run, source_manifest, request)
+    previous = copy.deepcopy(request)
+    previous['current_inputs'].pop('logical_scope_identity', None)
+    previous_path = _restart_intent_path(source_run, source_manifest, previous)
+    if previous_path != canonical and previous_path.exists():
+        if canonical.exists():
+            raise ValueError('multiple restart intents match this request; preserve both reservations')
+        return previous_path
+    return canonical
+
+
 def _active_restart_paths(source_run, source_manifest):
     directory = _restart_local_dir(source_run, source_manifest)
     return directory / 'active.json', directory / 'active.owner.json'
@@ -3328,17 +3341,18 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
         if disposition not in {'open', 'paused', 'blocked', 'superseded', 'complete'}:
             raise ValueError('source review cannot be restarted from its current operation state')
         active = _active_restart_operation(source, manifest)
-        intent_path = _restart_intent_path(source, manifest, request)
+        intent_path = (Path(active['intent_path']) if active is not None
+                       else _existing_restart_intent_path(source, manifest, request))
         if active is not None:
             active_intent = active['intent']
-            if (active_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request))
-                    or active_intent['request'] != dict(request, authority=active_intent['request']['authority'])):
+            if not review_restart.same_restart_request(active_intent['request'], request):
                 raise ValueError('a different restart request is already active for this source')
-            intent_path = Path(active['intent_path'])
             if not intent_path.exists():
                 _write_restart_intent(intent_path, active_intent, source, manifest)
         elif intent_path.exists():
             existing_intent = _read_restart_intent(intent_path, source, manifest)
+            if not review_restart.same_restart_request(existing_intent['request'], request):
+                raise ValueError('restart intent identity collision; preserve the reserved operation')
             cancellation = _validate_restart_abandonment(intent_path, existing_intent)
             if cancellation is not None:
                 _finish_restart_abandonment(intent_path, existing_intent, source, cancellation)
@@ -3351,8 +3365,6 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                     raise ValueError('completed restart successor differs from its durable receipt')
                 _retire_completed_descriptor_if_present(intent_path, existing_intent, source, manifest)
                 return str(successor)
-            if existing_intent['request_sha256'] != review_restart._sha(review_restart._request_identity(request)):
-                raise ValueError('restart intent identity collision; preserve the reserved operation')
             request = existing_intent['request']
             intent = existing_intent
             _write_active_restart(source, manifest, intent_path, intent)

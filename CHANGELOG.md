@@ -14,6 +14,10 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Clasificar archivos anteriores como incompatibles para operaciones actuales sin migrarlos. Los informes históricos portables contienen solo información necesaria para consulta.
 - Mantener el nombre `comprehensive-code-review`, los informes sin fechas añadidas, final schema 10 y packet version 1.
 
+### Fixed
+
+- Conservar la lectura y el replay de reservas nativas de restart v2 creadas sin identidad lógica derivada, sin cambiar sus bytes, hashes, operación ni sucesor reservado. Mantener canónicas las nuevas reservas y rechazar retries ambiguos.
+
 ## 2.12.1 — 2026-10-18
 
 ### Added

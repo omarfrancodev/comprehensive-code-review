@@ -46,6 +46,12 @@ class ReviewRestartTests(unittest.TestCase):
         self.assertEqual(request['current_inputs'].get('logical_scope_identity'),
                          review_layout.logical_scope(request['current_inputs']['scope'])['identity'])
 
+    def test_new_intent_builder_requires_canonical_request(self):
+        request = self.request()
+        request['current_inputs'].pop('logical_scope_identity')
+        with self.assertRaisesRegex(ValueError, 'request is not normalized'):
+            review_restart.build_restart_intent(self.source(), request, self.successor())
+
     def test_intent_digest_is_stable_and_changes_with_scope(self):
         first = review_restart.build_restart_intent(self.source(), self.request(), self.successor())
         replay_source = dict(self.source(), updated_at='later')

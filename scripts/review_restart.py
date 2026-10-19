@@ -118,6 +118,12 @@ def _request_identity(request):
     return {key: copy.deepcopy(value) for key, value in request.items() if key != 'authority'}
 
 
+def same_restart_request(stored, requested):
+    """Compare validated requests without changing their persisted identities."""
+    return (_request_identity(normalize_restart_request(**stored))
+            == _request_identity(normalize_restart_request(**requested)))
+
+
 def _source_key(source):
     """Legacy local operation key is not a fabricated review/run identity."""
     return source['run_id'] or 'legacy-' + _sha({'run_dir': str(Path(source['run_dir']).resolve()),
@@ -130,6 +136,8 @@ def build_restart_intent(source, request, successor):
         raise ValueError('restart source identity is incomplete')
     if not isinstance(request, dict) or set(request) != REQUEST_FIELDS:
         raise ValueError('normalized restart request has an invalid shape')
+    if normalize_restart_request(**request) != request:
+        raise ValueError('restart intent request is not normalized')
     if not isinstance(successor, dict) or set(successor) != SUCCESSOR_FIELDS:
         raise ValueError('restart successor reservation has an invalid shape')
     source_value = {key: copy.deepcopy(source[key]) for key in SOURCE_FIELDS}
@@ -196,6 +204,11 @@ def validate_restart_intent(intent):
         normalized = normalize_restart_request(request['profile_input'], request['controller'],
             request['authority'], request['current_inputs'], request['transfer_paths'], request['harness'],
             request['logical_scope_input'])
+        # Early native v2 producers omitted this derived field. Validate their
+        # original shape; hashes and operation IDs above bind the stored bytes.
+        # New reservations still use the fully canonical request normalizer.
+        if 'logical_scope_identity' not in request['current_inputs']:
+            normalized['current_inputs'].pop('logical_scope_identity', None)
         if normalized != request:
             errors.append('restart intent request is not normalized')
     except (KeyError, TypeError, ValueError, OSError) as exc:
