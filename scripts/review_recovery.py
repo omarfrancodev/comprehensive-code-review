@@ -546,7 +546,8 @@ def inspect_run(run_dir, *, current_inputs=None):
     freshness = {'status': 'unknown', 'reasons': [], 'differences': []}
     if current_inputs is not None:
         try:
-            appraisal = classify_candidate(manifest, _candidate_inputs(manifest), current_inputs)
+            normalized = validate_current_inputs(current_inputs, manifest, require_same_scope=False)
+            appraisal = classify_candidate(manifest, _candidate_inputs(manifest), normalized)
             status = {'applicable': 'verified', 'changed': 'changed', 'unknown': 'unknown'}[
                 appraisal['applicability']]
             freshness = {'status': status,
