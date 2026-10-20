@@ -3967,6 +3967,13 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    index_reference = context.get('reference_index')
+    if index_reference is not None:
+        if index_reference != 'evidence/reference-index.json':
+            raise ValueError('guided reference_index must use evidence/reference-index.json')
+        requested.add(index_reference)
+        requested.update(row['reference'] for row in value.get('checks', [])
+                         if isinstance(row, dict) and isinstance(row.get('reference'), str))
     captured_inputs = manifest.get('review_inputs')
     if captured_inputs is not None:
         supplied_inputs = context.get('review_inputs')
@@ -3992,11 +3999,34 @@ def _execution_gate(run, manifest, value, contents):
     requested.update(row['reference'] for row in history)
     references = set()
     resolved = {}
+    selected_sources = {name: raw for name, raw in contents.items()
+                        if isinstance(name, str) and name.startswith('evidence/')
+                        and isinstance(raw, bytes)}
+    reference_index = None
+    aliases = {}
+    index_bytes = None
+    if index_reference is not None:
+        try:
+            index_bytes = source(index_reference)
+            reference_index = json.loads(index_bytes.decode('utf-8'))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError('selected reference index is unreadable: ' + str(exc)) from exc
+        if not isinstance(reference_index, dict):
+            raise ValueError('selected reference index must be a JSON object')
+        aliases = reference_index.get('aliases', {})
+        if not isinstance(aliases, dict):
+            raise ValueError('selected reference index aliases must be an object')
+        selected_sources[index_reference] = index_bytes
     for reference in requested:
-        path, _ = review_references.parse_reference(reference, field='execution source')
+        try:
+            canonical = review_references.canonical_reference(reference, aliases)
+        except ValueError as exc:
+            raise ValueError('execution source alias is invalid: ' + str(exc)) from exc
+        path, _ = review_references.parse_reference(canonical, field='execution source')
         raw = source(path)
+        selected_sources[path] = raw
         resolved[reference] = review_references.resolve_reference(
-            reference, {path: raw}, field='execution source')
+            canonical, {path: raw}, field='execution source')
         references.add(reference)
     if captured_inputs is not None:
         for reference, expected in captured_inputs['sources'].items():
@@ -4013,6 +4043,27 @@ def _execution_gate(run, manifest, value, contents):
             raise ValueError('profile source fragment differs from declared transition')
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
+    if index_reference is not None:
+        packets = []
+        for group_name in ('plan', 'results'):
+            for row in execution.get(group_name, []):
+                if not isinstance(row, dict) or not isinstance(row.get('reference'), str):
+                    continue
+                try:
+                    canonical = review_references.canonical_reference(
+                        row['reference'], aliases)
+                    path, _ = review_references.parse_reference(canonical, field='selected execution packet')
+                    raw = selected_sources.get(path)
+                    if raw is not None and path.endswith('.json'):
+                        packet_value = json.loads(raw.decode('utf-8'))
+                        if isinstance(packet_value, dict) and any(
+                                key in packet_value for key in ('check_ids', 'findings', 'decisions')):
+                            packets.append(packet_value)
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+                    # The reference and its source already receive a bounded diagnostic below.
+                    continue
+        errors.extend(review_contract.validate_reference_semantics(
+            value, context, reference_index, selected_sources, packets))
     if value.get('schema_version') in (9, 10):
         errors.extend(validate_check_sources(value, context.get('executors')))
         errors.extend(validate_check_sources(value, manifest.get('executors', [])))

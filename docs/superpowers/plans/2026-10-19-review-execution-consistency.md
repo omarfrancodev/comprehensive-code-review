@@ -104,7 +104,7 @@ Cada task realiza RED, cambio mínimo, GREEN y commit de sus archivos. El ledger
 - Produces: `validate_selection_reference(selection: dict, sources: dict[str, bytes] | None) -> list[ReferenceIssue]`: valida sintaxis sin fuentes; con fuentes, exige valor de perfil exacto.
 - Los caller convierten ValueError en issues acotados; no se relajan los límites de lectura existentes.
 
-- [ ] **Step 1: escribir los tests de gramática y perfil (RF1)**
+- [x] **Step 1: escribir los tests de gramática y perfil (RF1)**
 
 En `tests/test_review_references.py`, importar `review_references as refs`, unittest y `selection_input` de `recovery_fixtures`. Añadir estos métodos a `ReferenceTests(unittest.TestCase)`:
 
@@ -129,39 +129,39 @@ def test_json_fragment_escapes_and_indices(self):
         data, field='reference'), 'focused')
 ```
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_references.py -v`
 
 Expected: fallo por módulo/interfaz nueva ausente o por la aceptación/resolución incorrecta descrita; no aceptar un error de fixture como reproducción.
 
-- [ ] **Step 3: implementar parser y resolver puros en `review_references.py`**
+- [x] **Step 3: implementar parser y resolver puros en `review_references.py`**
 
 Implementar las tres firmas de Produces según spec §5.1. Conservar semántica de fragmentos vigente, sin IO ni interpretación física de claves de alias.
 
-- [ ] **Step 4: integrar la gramática en captura y retención**
+- [x] **Step 4: integrar la gramática en captura y retención**
 
 Usar el módulo desde las tres funciones de Files. Conservar logical_scope_identity y el rechazo operativo de archives anteriores a 8/2; no modificar `_load_run` para admitir historia.
 
-- [ ] **Step 5: ejecutar test_review_references.py**
+- [x] **Step 5: ejecutar test_review_references.py**
 
 Run: `python -m unittest discover -s tests -p test_review_references.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 6: ejecutar test_review_inputs.py**
+- [x] **Step 6: ejecutar test_review_inputs.py**
 
 Run: `python -m unittest discover -s tests -p test_review_inputs.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 7: ejecutar test_review_layout_v2.py**
+- [x] **Step 7: ejecutar test_review_layout_v2.py**
 
 Run: `python -m unittest discover -s tests -p test_review_layout_v2.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 8: commit**
+- [x] **Step 8: commit**
 
 ```powershell
 git add -- scripts/review_references.py scripts/review_artifacts.py tests/test_review_references.py
@@ -190,7 +190,7 @@ git commit -m "feat(referencias): unificar validación de fuentes retenidas"
 - CLI público de preflight: el definido en spec §5.2; `prepare` usa la función pura antes de crear un run y no exige un `--run-dir` inexistente.
 - La capa IO de prepare sigue usando `review_layout.logical_scope(scope, logical_scope_input)` y pasa al validador el descriptor canónico y las entradas ya leídas; el preflight de run existente recibe el manifest nativo completo. No derivar selectores en un segundo módulo ni normalizar intents persistidos como parte del preflight.
 
-- [ ] **Step 1: escribir los tests de entrada inválida y asignación omitida (RF2)**
+- [x] **Step 1: escribir los tests de entrada inválida y asignación omitida (RF2)**
 
 Importar `review_preflight as preflight`, `review_trace` y selection_input en `PreflightTests(unittest.TestCase)`:
 
@@ -215,21 +215,21 @@ def test_prepare_checks_syntax_without_future_results(self):
 
 logical_scope null aquí significa validación pura de sintaxis; el adaptador prepare siempre valida su selector antes de asignar el run.
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_preflight.py -v`
 
 Expected: interfaz nueva ausente o evento sin identidad aceptado; el fixture usa un evento válido de review_trace para aislar el bypass.
 
-- [ ] **Step 3: implementar los dos validadores puros**
+- [x] **Step 3: implementar los dos validadores puros**
 
 Implementar las firmas de Produces por fase: plan vacío preparado/registrado permitido, preflight de discovery requiere al menos una asignación requerida activa, trabajo sin asignación activa rechazado, identidad lógica contrastada cuando hay descriptor. Acumular issues independientes ordenados y acotados a 100; no acumular lecturas después de fallo de acceso/integridad.
 
-- [ ] **Step 4: integrar preflight, barrera y CLI**
+- [x] **Step 4: integrar preflight, barrera y CLI**
 
 Conectar prepare/register/retain y record-event con los validadores anteriores. CLI: exit 0 ready, exit 1 contrato, exit 2 acceso/parseo/integridad/unsupported_layout. Conservar revalidación bajo lock de mutadores y ausencia de locks nuevos en el comando read-only.
 
-- [ ] **Step 5: añadir aserciones de integración con repositorios temporales**
+- [x] **Step 5: añadir aserciones de integración con repositorios temporales**
 
 Seguir el fixture de preparación de `tests/test_review_artifacts.py`, con context10/record10; `historical_prepare` crea la fuente histórica. run es el Path devuelto por prepare y context_file contiene su context10 actualizado con historial/identidades observados. Ejecutar el CLI sin shell:
 
@@ -260,29 +260,29 @@ before/after son mapas de rutas relativas a bytes de todos los archivos del root
 
 Los fixtures existentes que preparan un perfil inicial usan `evidence/context.json#profile`; los eventos de completado de asignaciones retienen también el brief activo junto al resultado. Mantener las pruebas de checks sin asignación como checks (`kind=check`), porque checks usan su propio contrato de ejecutor.
 
-- [ ] **Step 6: documentar el comando preflight**
+- [x] **Step 6: documentar el comando preflight**
 
 Actualizar `references/archive/artifacts.md` con fases, códigos de salida y la distinción entre preflight parcial y retain completo. No exigir resultados inexistentes durante prepare.
 
-- [ ] **Step 7: ejecutar test_review_preflight.py**
+- [x] **Step 7: ejecutar test_review_preflight.py**
 
 Run: `python -m unittest discover -s tests -p test_review_preflight.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 8: ejecutar test_review_trace.py**
+- [x] **Step 8: ejecutar test_review_trace.py**
 
 Run: `python -m unittest discover -s tests -p test_review_trace.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 9: ejecutar test_review_archive8.py**
+- [x] **Step 9: ejecutar test_review_archive8.py**
 
 Run: `python -m unittest discover -s tests -p test_review_archive8.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 10: commit**
+- [x] **Step 10: commit**
 
 ```powershell
 git add -- scripts/review_preflight.py scripts/review_artifacts.py tests/test_review_preflight.py tests/test_review_trace.py references/archive/artifacts.md
@@ -307,7 +307,7 @@ git commit -m "feat(preparacion): validar contratos antes de iniciar trabajo"
 - Produces: `validate_material_inputs(record: dict, context: dict, index: dict, sources: dict[str, bytes]) -> list[ReferenceIssue]`: descripción/inputs del spec §9.1.
 - Produces: `canonical_reference(reference: str, aliases: dict[str, dict[str, str]]) -> str`: devuelve el campo `reference` del alias de un salto después de validar su digest; no resuelve rutas físicas ni busca archivos.
 
-- [ ] **Step 1: escribir tests de C004, alias y fuente material (RF3)**
+- [x] **Step 1: escribir tests de C004, alias y fuente material (RF3)**
 
 Importar `review_references as refs`, hashlib y record10/context10. En `ReferenceIndexTests(unittest.TestCase)`:
 
@@ -342,21 +342,21 @@ def test_aligned_description_requires_selected_content(self):
     self.assertIn('missing_input', {i['code'] for i in issues})
 ```
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_reference_index.py -v`
 
 Expected: interfaz ausente o C004/fuente ausente no diagnosticados. No introducir un record inválido para provocar otro error.
 
-- [ ] **Step 3: implementar índice y resolución canónica en `review_references.py`**
+- [x] **Step 3: implementar índice y resolución canónica en `review_references.py`**
 
 Implementar validate_reference_index y canonical_reference con el schema exacto del spec §8. Verificar hash original, destinos seleccionados, alias de un salto y rechazo de cadena/ciclo; no tocar bytes de paquetes originales.
 
-- [ ] **Step 4: implementar validación semántica y de inputs materiales**
+- [x] **Step 4: implementar validación semántica y de inputs materiales**
 
 Implementar validate_semantic_references y validate_material_inputs según spec §8–9.1. La comparación de identidad acepta hexadecimal o prefijo sha256 sin reescribirlo. La descripción sin fuente verificable no acredita aligned.
 
-- [ ] **Step 5: integrar sidecar y preservar los formatos existentes**
+- [x] **Step 5: integrar sidecar y preservar los formatos existentes**
 
 Conectar los validadores con contract/packets y el gate seleccionado de artifacts. Capturar el hash del índice antes del trabajo; nunca incluirlo en su propio inputs. Añadir al fixture temporal las siguientes aserciones de compatibilidad:
 
@@ -370,29 +370,29 @@ self.assertEqual({p.name for p in history_dir.iterdir()},
 
 Crear run/history_dir siguiendo los fixtures de `test_review_artifacts.py` y `test_review_history.py`. No admitir archive 7 en el helper nativo. Añadir dos subcasos al test del índice: claves planas `evidence/a→evidence/b→evidence/c` y `evidence/a→evidence/b→evidence/a` devuelven issues, incluso si todas sus fuentes seleccionadas contienen bytes vacíos y digests correctos; el rechazo debe deberse a cadena/ciclo, no a una ruta inválida.
 
-- [ ] **Step 6: documentar sidecar y las tres garantías diferentes**
+- [x] **Step 6: documentar sidecar y las tres garantías diferentes**
 
 Actualizar `references/contracts/result-contract.md`: integridad nativa existente, auditoría semántica guiada y consulta HP. El sidecar no amplía los campos exactos del resultado schema 10 ni de HP.
 
-- [ ] **Step 7: ejecutar test_review_reference_index.py**
+- [x] **Step 7: ejecutar test_review_reference_index.py**
 
 Run: `python -m unittest discover -s tests -p test_review_reference_index.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 8: ejecutar test_review_contract.py**
+- [x] **Step 8: ejecutar test_review_contract.py**
 
 Run: `python -m unittest discover -s tests -p test_review_contract.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 9: ejecutar test_review_packets.py**
+- [x] **Step 9: ejecutar test_review_packets.py**
 
 Run: `python -m unittest discover -s tests -p test_review_packets.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 10: commit**
+- [x] **Step 10: commit**
 
 ```powershell
 git add -- scripts/review_references.py scripts/review_contract.py scripts/review_packets.py scripts/review_artifacts.py tests/test_review_reference_index.py references/contracts/result-contract.md

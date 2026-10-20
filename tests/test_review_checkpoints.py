@@ -98,7 +98,8 @@ class CheckpointTests(unittest.TestCase):
     def test_packet_checkpoint_without_verdict(self):
         run, context = self.start_run()
         artifacts.record_event(run, self.write('work-start.json',
-            {'kind': 'discovery', 'status': 'started', 'summary': 'Discovery started'}))
+            {'kind': 'discovery', 'status': 'started', 'summary': 'Discovery started',
+             'evidence': ['evidence/briefs.json#D1']}))
         packets = self.packet_files()
         checkpoint = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                           phase='discovery')

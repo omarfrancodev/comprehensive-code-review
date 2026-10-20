@@ -90,7 +90,19 @@ def public_url(value):
         return False
 
 
-def validate(record):
+def validate_reference_semantics(record, context, reference_index, sources, packets=None):
+    """Validate opt-in guided-reference semantics without changing record schemas."""
+    import review_references
+    diagnostics = review_references.validate_semantic_references(
+        record, packets or [], reference_index, sources)
+    diagnostics.extend(review_references.validate_material_inputs(
+        record, context, reference_index, sources))
+    messages = [f"{item['field']}: {item['message']}" for item in diagnostics]
+    return list(dict.fromkeys(messages))
+
+
+def validate(record, *, reference_index=None, reference_sources=None,
+             reference_context=None, packets=None):
     """Return all observable contract errors; never modify the supplied record."""
     errors = []
 
@@ -524,6 +536,10 @@ def validate(record):
         text(residual, f'resources.residuals[{i}]')
     if residuals and resources.get('cleanup') != 'pending':
         error('resources.cleanup', 'residual resources require pending cleanup')
+    if reference_index is not None:
+        errors.extend(validate_reference_semantics(
+            record, reference_context, reference_index,
+            reference_sources if isinstance(reference_sources, dict) else {}, packets))
     return errors
 
 
