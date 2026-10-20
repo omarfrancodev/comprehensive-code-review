@@ -83,15 +83,22 @@ python /absolute/skill/scripts/review_setup.py context \
 Run registration preflight, then register the context and owned resources. Before dispatch, ensure the registered plan has an active required assignment and pass discovery preflight.
 
 ```sh
+# ccr-example: preflight-register
 python /absolute/skill/scripts/review_artifacts.py preflight \
   --run-dir /absolute/returned/run \
   --context-input /absolute/owned/session/evidence/context.json --phase register
+```
 
+```sh
+# ccr-example: register
 python /absolute/skill/scripts/review_artifacts.py register \
   --run-dir /absolute/returned/run \
   --temporary-path /absolute/owned/session \
   --context-input /absolute/owned/session/evidence/context.json
+```
 
+```sh
+# ccr-example: preflight-discovery
 python /absolute/skill/scripts/review_artifacts.py preflight \
   --run-dir /absolute/returned/run \
   --context-input /absolute/owned/session/evidence/context.json --phase discovery
@@ -119,10 +126,7 @@ Only after the discovery gate passes, dispatch the assignment. Create an event f
 ```
 
 ```sh
-python /absolute/skill/scripts/review_setup.py event \
-  --input /absolute/owned/session/evidence/dispatch-input.json \
-  --output /absolute/owned/session/evidence/dispatch-event.json
-
+# ccr-example: record-event
 python /absolute/skill/scripts/review_artifacts.py record-event \
   --run-dir /absolute/returned/run \
   --event-file /absolute/owned/session/evidence/dispatch-event.json
@@ -131,13 +135,18 @@ python /absolute/skill/scripts/review_artifacts.py record-event \
 Record each later observed result with both its active brief and result references. Checkpoint selected context/packets and the structurally final record when available. A checkpoint stays provisional; source gates still apply at retention.
 
 ```sh
+# ccr-example: checkpoint
 python /absolute/skill/scripts/review_artifacts.py checkpoint \
   --run-dir /absolute/returned/run --phase report \
   --context-input /absolute/owned/session/evidence/context.json \
   --evidence-input /absolute/owned/session/evidence/briefs.json \
   --evidence-input /absolute/owned/session/evidence/results.json \
+  --evidence-input /absolute/owned/session/evidence/reference-index.json \
   --input /absolute/owned/session/evidence/final-review.json
+```
 
+```sh
+# ccr-example: preflight-retain
 python /absolute/skill/scripts/review_artifacts.py preflight \
   --run-dir /absolute/returned/run \
   --context-input /absolute/owned/session/evidence/context.json \
@@ -145,10 +154,13 @@ python /absolute/skill/scripts/review_artifacts.py preflight \
 ```
 
 ```sh
-# ccr-example: retain, validate-retained, cleanup the owned session, close, validate-complete
+# ccr-example: retain
 python /absolute/skill/scripts/review_artifacts.py retain \
   --run-dir /absolute/returned/run --expected-schema 10
+```
 
+```sh
+# ccr-example: validate-retained
 python /absolute/skill/scripts/review_artifacts.py validate \
   --run-dir /absolute/returned/run --require-retained
 ```
@@ -156,9 +168,13 @@ python /absolute/skill/scripts/review_artifacts.py validate \
 After the retention gate, verify ownership and dispose of this exact native session through its native owner. Workspace sessions instead use `review_workspace.py cleanup --manifest <session>/manifest.json --run-dir <run>`; do not apply native deletion to a workspace session. Only after observing successful disposal:
 
 ```sh
+# ccr-example: close
 python /absolute/skill/scripts/review_artifacts.py close \
   --run-dir /absolute/returned/run --cleanup complete
+```
 
+```sh
+# ccr-example: validate-complete
 python /absolute/skill/scripts/review_artifacts.py validate \
   --run-dir /absolute/returned/run --require-complete
 ```

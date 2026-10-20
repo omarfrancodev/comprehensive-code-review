@@ -55,6 +55,21 @@ class ReviewRecoveryTests(unittest.TestCase):
                               sources if sources is not None else captured.get('sources', {}),
                               source_set_complete=True, **identities)
 
+    def register_plan_context(self, run):
+        from recovery_fixtures import context10, record10
+        manifest = self.read(run / 'cierre.json')
+        selection = manifest['profile_history'][-1]
+        final = record10(selection['profile'], selection['selection_source'])
+        final['scope'] = manifest['scope']
+        context = context10(final)
+        context['profile_history'] = manifest['profile_history']
+        context['profile'] = selection['profile']
+        context['selection_source'] = selection['selection_source']
+        context['profile_reference'] = selection['reference']
+        context['review_inputs'] = manifest['review_inputs']
+        artifacts.register(run, [], context_input=self.write('plan-context.json', context))
+        return context['execution_plan'][0]['reference']
+
     def retained_claimed_run(self):
         session = Path(review_workspace.prepare(argparse.Namespace(
             repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
@@ -210,7 +225,9 @@ class ReviewRecoveryTests(unittest.TestCase):
         prepared = self.prepare7()
         processing = self.prepare7()
         artifacts.record_event(processing, self.write('worker-start.json', {
-            'kind': 'agent', 'status': 'started', 'summary': 'Observed worker start',
+            # This fixture tests processing/read-only inspection, not assignment
+            # lifecycle. Checks use their own executor contract and need no brief.
+            'kind': 'check', 'status': 'started', 'summary': 'Observed check start',
             'executor': {'name': 'worker-1', 'provider_id': 'codex'}}))
         paused = self.prepare7()
         artifacts.pause(paused, authority='User requested pause', reason='Waiting for input', phase='verification')
@@ -442,8 +459,11 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_cross_harness_resume_preserves_prior_worker_identity(self):
         old_controller = self.controller('Codex coordinator', 'codex')
         run = self.prepare7(controller=old_controller)
+        assignment = self.register_plan_context(run)
         artifacts.record_event(run, self.write('worker.json', {
             'kind': 'agent', 'status': 'completed', 'summary': 'Worker completed discovery',
+            'actor': {'kind': 'agent', 'name': 'claude-worker', 'provider_id': 'claude-code'},
+            'evidence': [assignment],
             'executor': {'name': 'claude-worker', 'provider_id': 'claude-code'}}))
         prior_events = self.events(run)
         prior_executors = copy.deepcopy(self.read(run / 'cierre.json')['executors'])
@@ -562,8 +582,11 @@ class ReviewRecoveryTests(unittest.TestCase):
 
     def test_restart_links_source_without_relabelling_results(self):
         source = self.prepare7('standard')
+        assignment = self.register_plan_context(source)
         artifacts.record_event(source, self.write('old-worker.json', {
             'kind': 'agent', 'status': 'completed', 'summary': 'Original independent discovery',
+            'actor': {'kind': 'agent', 'name': 'worker-original', 'provider_id': 'codex'},
+            'evidence': [assignment],
             'executor': {'name': 'worker-original', 'provider_id': 'codex'}}))
         source_before = self.read(source / 'cierre.json')
         worker_before = self.events(source)[-1]
@@ -603,7 +626,8 @@ class ReviewRecoveryTests(unittest.TestCase):
         selection = self.read(source / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                    'profile_reference': selection['reference'], 'profile_history': [selection],
-                   'execution_plan': [], 'executors': []}
+                   'execution_plan': [], 'executors': [],
+                   'review_inputs': self.read(source / 'cierre.json')['review_inputs']}
         artifacts.register(source, [str(session)], context_input=self.write('source-context.json', context))
         before = self.snapshot(session)
         with self.assertRaisesRegex(ValueError, 'transfer paths'):
@@ -653,7 +677,8 @@ class ReviewRecoveryTests(unittest.TestCase):
         selection = self.read(source / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                    'profile_reference': selection['reference'], 'profile_history': [selection],
-                   'execution_plan': [], 'executors': []}
+                   'execution_plan': [], 'executors': [],
+                   'review_inputs': self.read(source / 'cierre.json')['review_inputs']}
         artifacts.register(source, [str(session)], context_input=self.write('missing-context.json', context))
         session_manifest = self.read(session / 'manifest.json')
         workspace = Path(session_manifest['workspaces'][0]['path'])
@@ -976,7 +1001,8 @@ class ReviewRecoveryTests(unittest.TestCase):
         selection = self.read(run / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                    'profile_reference': selection['reference'], 'profile_history': [selection],
-                   'execution_plan': [], 'executors': []}
+                   'execution_plan': [], 'executors': [],
+                   'review_inputs': self.read(run / 'cierre.json')['review_inputs']}
         artifacts.register(run, [str(session)], context_input=self.write('cleanup-register-context.json', context))
 
         result = review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
@@ -1105,15 +1131,19 @@ class ReviewRecoveryTests(unittest.TestCase):
         selection = self.read(source / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                    'profile_reference': selection['reference'], 'profile_history': [selection],
-                   'execution_plan': [], 'executors': []}
+                   'execution_plan': [], 'executors': [],
+                   'review_inputs': self.read(source / 'cierre.json')['review_inputs']}
         artifacts.register(source, [str(session)], context_input=self.write('cleanup-conflict-context.json', context))
         successor = self.prepare7('focused')
+        successor_manifest = self.read(successor / 'cierre.json')
+        successor_selection = successor_manifest['profile_history'][0]
         artifacts.register(successor, [], context_input=self.write('cleanup-successor-context.json', {
-            'profile': self.read(successor / 'cierre.json')['profile_history'][0]['profile'],
-            'selection_source': 'automatic',
-            'profile_reference': self.read(successor / 'cierre.json')['profile_history'][0]['reference'],
-            'profile_history': self.read(successor / 'cierre.json')['profile_history'],
-            'execution_plan': [], 'executors': []}))
+            'profile': successor_selection['profile'],
+            'selection_source': successor_selection['selection_source'],
+            'profile_reference': successor_selection['reference'],
+            'profile_history': successor_manifest['profile_history'],
+            'execution_plan': [], 'executors': [],
+            'review_inputs': successor_manifest['review_inputs']}))
         artifacts.begin_resource_cleanup(source, session)
         before = (self.snapshot(source), self.snapshot(successor), self.snapshot(session))
 
@@ -1130,7 +1160,8 @@ class ReviewRecoveryTests(unittest.TestCase):
         selection = self.read(run / 'cierre.json')['profile_history'][0]
         context = {'profile': selection['profile'], 'selection_source': selection['selection_source'],
                    'profile_reference': selection['reference'], 'profile_history': [selection],
-                   'execution_plan': [], 'executors': []}
+                   'execution_plan': [], 'executors': [],
+                   'review_inputs': self.read(run / 'cierre.json')['review_inputs']}
         artifacts.register(run, [str(session)], context_input=self.write('missing-context.json', context))
         shutil.rmtree(session)
 

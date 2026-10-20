@@ -137,6 +137,7 @@ class LayoutTests(unittest.TestCase):
         manifest = self.read(run / 'cierre.json')
         context = {'profile': manifest['profile_history'][-1]['profile'],
                    'selection_source': manifest['profile_history'][0]['selection_source'],
+                   'profile_reference': manifest['profile_history'][-1]['reference'],
                    'profile_history': manifest['profile_history'], 'execution_plan': [], 'executors': [],
                    'review_inputs': manifest['review_inputs']}
         context_file = self.write('planned-context.json', context)

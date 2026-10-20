@@ -858,6 +858,8 @@ git commit -m "feat(trazabilidad): registrar modelo observado por actividad"
 - Modify: `SKILL.md`
 - Modify: `docs/usage.md`
 - Modify: `CHANGELOG.md`
+- Modify: `docs/examples/archive8-lifecycle.md` — comandos identificables y evidencia de índice en el checkpoint
+- Modify: fixtures de `tests/test_review_recovery.py`, `tests/test_review_recovery_followup.py`, `tests/test_review_artifact_layout.py` y `tests/test_artifact_lifecycle_policy.py` — mantener briefs, referencias de perfil e inputs capturados del contrato vigente
 - Create: `docs/validation/2026-10-19-review-execution-consistency.md`
 - Test: `tests/test_review_operational_summary.py`
 
@@ -868,7 +870,7 @@ git commit -m "feat(trazabilidad): registrar modelo observado por actividad"
 - Produces: `continuation_decision(manifest: dict, *, input_appraisal: dict, pending_operation: dict | None, candidate_issues: list[dict]) -> dict`: `{action, reason, requires_authority, new_work}`; los dos últimos son bool. Actions `rebuild_candidate|recover|resume|restart|show_history|preserve`; diagnóstico, no ejecución.
 - `inspect_run` añade `operational_summary` sólo después de verificar layout nativo, sin cambiar el significado de campos actuales. Un origen unsupported_layout conserva su diagnóstico actual; no pasa a operational_summary ni recibe resume/restart/ready. La matriz de continuidad es la del spec §7; las autoridades y el restart durable siguen a cargo de las operaciones existentes. `select_latest` y review_history.py conservan sus interfaces y garantías.
 
-- [ ] **Step 1: escribir tests de candidato regenerable y transferencia bloqueada (RF5)**
+- [x] **Step 1: escribir tests de candidato regenerable y transferencia bloqueada (RF5)**
 
 Importar `review_recovery as recovery` y copy en `OperationalSummaryTests(unittest.TestCase)`:
 
@@ -899,21 +901,21 @@ def test_candidate_rebuild_requires_no_new_review(self):
 
 Estos dicts prueban clasificación pura, no integridad durable. La capa IO verifica el manifest completo y su ownership antes de invocarla. Una identidad capturada inválida no se representa como candidate.reference regenerable.
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_operational_summary.py -v`
 
 Expected: interfaz ausente o decisión diferente de preserve/rebuild_candidate. No forzar ready sobre una transferencia incompletable.
 
-- [ ] **Step 3: implementar continuation_decision en `review_recovery.py`**
+- [x] **Step 3: implementar continuation_decision en `review_recovery.py`**
 
 Aplicar spec §7: preservación para transacción bloqueada/frescura desconocida, regeneración sólo de candidatos no retenidos con inputs idénticos y recover/resume/restart delegados al protocolo existente. No iniciar agentes ni crear un sucesor desde esta función.
 
-- [ ] **Step 4: implementar operational_summary e integrarlo con inspect**
+- [x] **Step 4: implementar operational_summary e integrarlo con inspect**
 
 Derivar los cinco campos de cierre/traza verificados. No inferir successor desde prosa ni liveness desde processing. unsupported_layout conserva su diagnóstico antes de lectura operativa; no cambiar select_latest ni el lector histórico.
 
-- [ ] **Step 5: añadir tests de snapshot, historia y límite de continuidad**
+- [x] **Step 5: añadir tests de snapshot, historia y límite de continuidad**
 
 En el fixture temporal de recovery, retener record10, añadir un authorized-publication con autoridad explícita sintética y conservar la traza observada. Nombrar los tests `test_publication_after_retain_preserves_snapshot`, `test_historical_source_never_gets_native_summary` y `test_complete_source_never_resumes`. Sus aserciones son:
 
@@ -932,7 +934,9 @@ self.assertNotIn(decision['action'], {'resume', 'rebuild_candidate'})
 
 summary es operational_summary sobre el manifest y los eventos verificados del fixture; publication_event es la fila real de su traza, con event_id/occurred_at observados; record es el JSON retenido antes de ese evento, original_publication su valor previo y before/after_snapshot_bytes sus bytes. inspected procede de inspect_run histórico y decision de continuation_decision sobre un manifest completo. No cambiar metadata para fabricar esa observación.
 
-- [ ] **Step 6: actualizar el flujo operativo y changelog**
+La integración también mantiene fixtures existentes compatibles con la barrera actual: eventos de agente enlazan un brief activo, registros conservan profile_reference y review_inputs exactos, y el ejemplo de archive 8 selecciona el índice al checkpoint.
+
+- [x] **Step 6: actualizar el flujo operativo y changelog**
 
 Actualizar los siete documentos operativos de Files conservando lookup/elección explícita de rerun/latest y subaspectos ABCDE; insertar preflight antes del primer dispatch. Documentar restart nativo y previous-run sólo con origen nativo válido; HP no es lineage operativo. Changelog registra el comportamiento sin inventar una release publicada.
 
@@ -942,26 +946,32 @@ Run: `python -m unittest discover -s tests -v`
 
 Expected: suite completa `OK`, exit 0; descubrir los ocho módulos nuevos más archive8/layout_v2/history/latest/restart_v2. Estos módulos existentes deben conservar empate/barrido incompleto de latest y bytes/reserva del productor v2 previo. Una selección parcial o interrumpida no acredita suite completa. No repetir primero todos los módulos individualmente: repetir sólo por cambio, fallo o preocupación nueva.
 
-- [ ] **Step 8: registrar evidencia de implementación realmente observada**
+Resultado observado en esta implementación: la suite global se inició pero se interrumpió manualmente cuando un test de replay de reservas dejó de producir avance durante más de 40 minutos. No emitió conteo final ni se acredita como completa. Los tests focalizados de continuidad, recovery, ejemplo documentado y layout se registran por separado en el informe de validación.
 
-Crear el documento de validación de Files con base/HEAD, comandos, exit codes, duraciones observadas, resultados RED/GREEN, omisiones y límites de plataforma. Relacionar las regresiones sintéticas de MR 781/PR 1/MR 47 con los tests previos de plan/perfil/alias y MR 1021 con la proyección/borrador de Task 6; registrar exactamente un run y cero dispatches adicionales al regenerar un candidato o ajustar el contexto público. No declarar comprobaciones futuras como realizadas.
+- [x] **Step 8: registrar evidencia de implementación realmente observada**
 
-- [ ] **Step 9: comprobar whitespace final**
+Crear el documento de validación de Files con base/HEAD, comandos, exit codes, duraciones observadas, resultados RED/GREEN, omisiones y límites de plataforma. Relacionar las regresiones sintéticas de MR 781/PR 1/MR 47 con los tests previos de plan/perfil/alias y MR 1021 con la proyección/borrador de Task 6; registrar un fixture de run y cero dispatches nuevos al clasificar una regeneración de candidato o corregir contexto público. No declarar comprobaciones futuras como realizadas.
+
+- [x] **Step 9: comprobar whitespace final**
 
 Run: `git diff --check`
 
 Expected: sin salida de errores y exit 0.
 
-- [ ] **Step 10: ejecutar test_reference_layout.py**
+Resultado observado tras editar el informe de validación: exit 0; sólo aviso de conversión CRLF/LF del plan.
+
+- [x] **Step 10: ejecutar test_reference_layout.py**
 
 Run: `python -m unittest discover -s tests -p test_reference_layout.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 11: commit de integración y evidencia**
+Resultado observado tras editar el informe de validación: 1/1, exit 0.
+
+- [x] **Step 11: commit de integración y evidencia**
 
 ```powershell
-git add -- scripts/review_recovery.py scripts/review_artifacts.py tests/test_review_operational_summary.py references/archive/recovery.md references/archive/history.md references/workflow/reading-strategy.md references/reporting/publication.md SKILL.md docs/usage.md CHANGELOG.md docs/validation/2026-10-19-review-execution-consistency.md
+git add -- CHANGELOG.md SKILL.md docs/examples/archive8-lifecycle.md docs/superpowers/plans/2026-10-19-review-execution-consistency.md docs/usage.md docs/validation/2026-10-19-review-execution-consistency.md references/archive/history.md references/archive/recovery.md references/reporting/publication.md references/workflow/reading-strategy.md scripts/review_recovery.py tests/test_artifact_lifecycle_policy.py tests/test_review_artifact_layout.py tests/test_review_operational_summary.py tests/test_review_recovery.py tests/test_review_recovery_followup.py
 git commit -m "feat(continuidad): proyectar estado operativo sin repetir revisiones"
 ```
 
@@ -985,11 +995,11 @@ git commit -m "feat(continuidad): proyectar estado operativo sin repetir revisio
 
 Comprobar antes de ejecutar: nombres y tipos de interfaces coinciden entre tasks; cada fila de la matriz tiene regresión; ningún paso exige resultados futuros como parte de prepare; no se añade un mutador de identidad ni una migración encubierta. Se reutilizan layout/latest/historia/replay de 2.13.0 y no se propone reabrir archives schema 7. Los módulos nuevos de preflight/referencias son puros; sólo la captura de checks ejecuta la orden explícitamente autorizada.
 
-Las tasks siguen sin marcar porque todavía no se implementan. La ejecución requiere revisión del plan y elección de método; no se presupone ejecución con subagentes.
+La ejecución inline terminó Tasks 1–7 en commits locales separados y Task 8 integra continuidad, documentación y validación. No se ejecutan push, PR, publicación, merge ni release dentro de este plan.
 
 ## Execution Handoff
 
 - **Subagent-driven:** implementador y revisor frescos por tarea, con revisión de rama al final; más contextos e independencia por task.
-- **Native:** ejecución inline de las ocho tareas, seguida de una revisión independiente de la rama; conserva las interfaces compartidas en el mismo contexto.
+- **Native:** ejecución inline de las ocho tareas, seguida de verificación integrada; conserva las interfaces compartidas en el mismo contexto.
 
-Se recomienda Native por las dependencias secuenciales de estas ocho tareas. Antes de implementar, solicitar revisión del plan y elección explícita de método. No ejecutar push, PR, publicación, merge ni release como parte de esta preparación.
+Se usó Native por las dependencias secuenciales de estas ocho tareas y la instrucción del usuario de proceder inline. No ejecutar push, PR, publicación, merge ni release como parte de esta implementación.

@@ -30,7 +30,7 @@ python /absolute/skill/scripts/review_comment.py prepare \
   --check-publication-context /absolute/owned/publication-session/evidence/check-publication.json
 ```
 
-The draft records the source hash, both optional classification contexts, the exact `render(comment)` body and its UTF-8 hash. Before sending, run `review_comment.py verify` against the exact outbound body. Do not edit, trim, translate or normalize the draft after that check; change the public context and prepare a new draft instead. This corrects presentation without repeating discovery or code verification while the source record remains current.
+The draft records the source hash, both optional classification contexts, the exact `render(comment)` body and its UTF-8 hash. Before sending, run `review_comment.py verify` against the exact outbound body. Do not edit, trim, translate or normalize the draft after that check; change the structured public context and prepare a new draft instead. If a value is private, correct its source classification/context before rendering rather than patching generated text. This corrects presentation without repeating discovery or code verification while the source record remains current. A post-close publication is recorded as a separate verified event; it does not rewrite the retained result or draft.
 
 After an authorized send, read the body returned by the remote service and verify it with `review_comment.py verify --remote`; this permits CRLF-to-LF comparison only. Verification does not mean published. If the response is missing or differs, preserve the observation and inspect the existing remote comment before retrying. Record publication afterward as an observed trace event, in the open run or a separate post-close operation linked to the review.
 

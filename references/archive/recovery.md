@@ -89,7 +89,7 @@ python /absolute/skill/scripts/review_artifacts.py inspect \
   --current-inputs /absolute/owned/session/current-inputs.json
 ```
 
-`inspect` reports integrity, phase, disposition, retained/missing sources, owned resources, pending helper transaction, freshness and allowed actions. It does not infer worker liveness or fix errors. If there are pending helper-owned bytes, `recover` can complete only the recorded hash-bound transaction; otherwise it returns a bounded plan or provisional result and does not run commands, checks or agents.
+`inspect` reports integrity, phase, disposition, retained/missing sources, owned resources, pending helper transaction, freshness and allowed actions. For a fully verified native schema 8/layout 2 run with no pending transaction, it also returns `operational_summary` with `disposition`, observed `phase`, durable `successor`, cleanup status and publication status/source/time/reason. A post-close publication comes from its verified trace event and does not rewrite `review.json`; without such an event the summary uses the retained publication snapshot. Historical or unverified sources never receive this projection. It does not infer worker liveness or fix errors. If there are pending helper-owned bytes, `recover` can complete only the recorded hash-bound transaction; otherwise it returns a bounded plan or provisional result and does not run commands, checks or agents.
 
 Mutation commands require structured controller/authority/current-input files and an explicit user direction when the operation needs continuation authority:
 
@@ -104,6 +104,8 @@ python /absolute/skill/scripts/review_artifacts.py restart --help
 `pause` records an explicit user-directed stop; `block` records a failure actually observed by the harness. `resume` is limited to an intact archive-8 run whose exact scope and source hashes still match, and requires authority to continue a paused/blocked run or take over a different controller. It preserves old worker/executor events; it does not call them new independent work. `recover` consumes only an exact recorded helper transaction and never dispatches.
 
 `restart` creates a fresh run ID linked to the selected source and can use a changed scope within the same repository. It does not copy findings, checks or execution results into the new run as current work. It transfers workspaces only when each exact owned path is explicitly selected and authority is recorded; otherwise preserve those resources for their owner.
+
+For an unretained candidate with only `candidate.*` construction or serialization issues and applicable captured inputs, rebuild that candidate in the same run and rerun retain preflight. This is not a new review and does not dispatch discovery or verification again. A changed/unknown input, invalid captured profile, missing plan, or non-candidate gate keeps the source intact and calls for a linked restart plan. A pending helper transaction can be recovered only from its exact recorded bytes; a complete or superseded run is history. `continuation_decision` reports these options without executing them; existing preflight, resume, recover and restart commands remain the mutation gates.
 
 ### Recover or restart without duplicating a run
 

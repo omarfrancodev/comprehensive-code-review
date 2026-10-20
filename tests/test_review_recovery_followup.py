@@ -1,5 +1,6 @@
 """Regressions from the second independent review of PR 19."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -182,7 +183,7 @@ class RecoveryFollowupTests(unittest.TestCase):
         request = self.restart_request(source)
         request['current_inputs']['sources'] = {'docs/spec.md': 'a' * 64}
         before = self.snapshot(source)
-        with self.assertRaisesRegex(ValueError, 'evidence/'):
+        with self.assertRaisesRegex(ValueError, 'retained local evidence'):
             artifacts.restart(source, **request)
         self.assertEqual(self.snapshot(source), before)
         self.assertFalse((source.parent / '.restart-intents').exists())
@@ -367,8 +368,9 @@ a.restart(source, **request)
 
     def test_superseded_assignment_cannot_start(self):
         source, session, context = self.registered_session()
-        candidate = selection_input('standard', phase='discovery', affected_assignments=['D2'],
-            reason='Only one independent flow remains in the verified scope', reference='evidence/scope.md#decision')
+        candidate = selection_input('standard', 'explicit', phase='discovery', affected_assignments=['D2'],
+            reason='Only one independent flow remains in the verified scope',
+            reference='evidence/context.json#profile')
         manifest = artifacts.select_profile(source, candidate)
         context['profile'] = 'standard'
         context['profile_history'] = manifest['profile_history']
@@ -400,6 +402,12 @@ a.restart(source, **request)
             return path
         write('scope.json', self.read(self.scope))
         write('profile-selection.json', self.profile_input('standard'))
+        index_path = write('reference-index.json', {'schema_version': 1, 'aliases': {}, 'inputs': []})
+        write('current-inputs.json', {
+            'scope': self.read(self.scope),
+            'sources': {'evidence/reference-index.json': hashlib.sha256(index_path.read_bytes()).hexdigest()},
+            'source_set_complete': True,
+        })
         substitutions = {'/absolute/skill': skill, '/absolute/project': self.repo,
                          '/absolute/owned/session': session, '/absolute/archive': self.output}
         def execute(name):
@@ -428,15 +436,12 @@ a.restart(source, **request)
             final['coverage']['execution']['profile_history'] = self.read(source / 'cierre.json')['profile_history']
             context = context10(final)
             context['review_inputs'] = self.read(source / 'cierre.json')['review_inputs']
+            context['reference_index'] = 'evidence/reference-index.json'
             write('context.json', context)
         refresh_context()
+        execute('preflight-register')
         execute('register')
-        write('selection-change.json', selection_input('standard', 'explicit', phase='discovery',
-            reason='User confirmed the same review profile after scoping',
-            reference='evidence/context.json#profile_history/1/profile'))
-        execute('select-profile')
-        refresh_context()
-        execute('register-updated')
+        execute('preflight-discovery')
         from recovery_fixtures import source_events
         for event in source_events(final):
             if event['kind'] == 'profile':
@@ -448,13 +453,14 @@ a.restart(source, **request)
                 raw['actor'] = dict(event['actor'], kind='agent')
             if event.get('executor'):
                 raw['executor'] = event['executor']
-            write('event.json', raw)
+            write('dispatch-event.json', raw)
             execute('record-event')
         write('briefs.json', {row['id']: {'question': 'Check invariant'} for row in final['coverage']['execution']['plan']})
         write('results.json', {row['id']: {'result': 'reviewed'} for row in final['coverage']['execution']['plan']})
         write('final-review.json', final)
         checkpoint = execute('checkpoint')
         self.assertEqual(checkpoint['gate_errors'], [])
+        execute('preflight-retain')
         execute('retain')
         execute('validate-retained')
         shutil.rmtree(session)
