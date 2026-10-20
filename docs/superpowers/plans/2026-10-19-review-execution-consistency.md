@@ -504,8 +504,8 @@ git commit -m "feat(preparacion): generar candidatos con contratos verificables"
 
 - Consumes: ReferenceIssue y resolución de Task 1; `validate_check_sources(record, executors)` existente; guards actuales de workspace/ownership antes de ejecutar.
 - Produces: `validate_receipt(receipt: dict, sources: dict[str, bytes], *, check: dict, executors: list[dict]) -> list[ReferenceIssue]`: campos exactos del spec §9.2, hashes y vinculación de revisión/executor.
-- Produces: `capture_check(*, check_id: str, argv: list[str], command: str, cwd: str, executor_workspace: str, revision: str, executor: str, output_dir: str) -> dict`: ejecuta sólo la orden indicada y produce el recibo con observaciones reales; command debe ser `shlex.join(argv)`, cwd debe coincidir con workspace registrado y output_dir debe ser nuevo y propio.
-- CLI `review_check_receipts.py run --request <json> --output-dir <owned-new-dir>`: request contiene check_id/argv/command/cwd/executor_workspace/revision/executor; salida no mezcla exit del helper con exit del check. La validación de command, permisos/ownership y workspace precede a iniciar proceso. La validación retenida vuelve a comprobar command/argv y cwd/workspace.
+- Produces: `capture_check(*, check_id: str, argv: list[str], command: str, cwd: str, executor_workspace: str, revision: str, executor: str, output_dir: str) -> dict`: ejecuta sólo la orden indicada y produce el recibo con observaciones reales; command debe ser `shlex.join(argv)`, cwd debe coincidir con el workspace único de ese executor en `evidence/context.json` de la sesión y con `executor_workspace`, y output_dir debe ser nuevo y propio.
+- CLI `review_check_receipts.py run --request <json> --output-dir <owned-new-dir>`: request contiene check_id/argv/command/cwd/executor_workspace/revision/executor; salida no mezcla exit del helper con exit del check. La validación de command, permisos/ownership, ID de executor y workspace precede a cualquier consulta Git o inicio de proceso. La validación retenida vuelve a comprobar command/argv y cwd/workspace.
 
 - [x] **Step 1: escribir el test de log vacío y exit observado**
 

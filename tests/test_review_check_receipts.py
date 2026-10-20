@@ -178,6 +178,9 @@ class CaptureCheckTests(unittest.TestCase):
             session = Path(manifest['session_dir'])
             evidence = session / 'evidence'
             evidence.mkdir()
+            (evidence / 'context.json').write_text(json.dumps({
+                'executors': [{'executor': 'X1', 'workspace': str(cwd)}]
+            }), encoding='utf-8')
             revision = review_workspace.out(cwd, 'rev-parse', 'HEAD').decode().strip()
             argv = [sys.executable, '-c',
                     'import json,sys; print(json.dumps(sys.argv[1:]))',
@@ -268,6 +271,46 @@ class CaptureCheckTests(unittest.TestCase):
                 receipts.capture_check(**common, command=shlex.join(argv),
                                        executor_workspace=str(other_workspace))
             self.assertFalse(marker.exists())
+
+    def test_capture_rejects_executor_bound_to_another_owned_workspace_before_process(self):
+        with tempfile.TemporaryDirectory(dir=str(Path.cwd())) as directory:
+            root = Path(directory).resolve()
+            session = root / 'session'
+            evidence = session / 'evidence'
+            workspace_a = session / 'executor-a'
+            workspace_b = session / 'executor-b'
+            repo = root / 'repo'
+            for path in (evidence, workspace_a, workspace_b, repo):
+                path.mkdir(parents=True, exist_ok=True)
+            (evidence / 'context.json').write_text(json.dumps({
+                'executors': [{'executor': 'X1', 'workspace': str(workspace_a)}]
+            }), encoding='utf-8')
+            manifest = {
+                'status': 'active', 'mode': 'commit', 'repo': str(repo),
+                'workspaces': [{'role': 'executor-a', 'path': str(workspace_a)},
+                               {'role': 'executor-b', 'path': str(workspace_b)}],
+            }
+
+            def fake_git_out(worktree, *args):
+                if args == ('rev-parse', '--show-toplevel'):
+                    return (str(worktree) + '\n').encode('utf-8')
+                if args == ('rev-parse', 'HEAD'):
+                    return b'same-head\n'
+                raise AssertionError('unexpected Git query: ' + repr(args))
+
+            with patch('review_workspace.load', return_value=manifest), \
+                    patch('review_workspace.out', side_effect=fake_git_out) as git_out, \
+                    patch('review_check_receipts.subprocess.run') as run:
+                run.return_value = subprocess.CompletedProcess(['python', '-V'], 0)
+                with self.assertRaisesRegex(ValueError, 'executor X1 is registered to another workspace'):
+                    receipts.capture_check(
+                        check_id='C001', argv=[sys.executable, '-V'],
+                        command=shlex.join([sys.executable, '-V']),
+                        cwd=str(workspace_b), executor_workspace=str(workspace_b),
+                        revision='same-head', executor='X1',
+                        output_dir=str(evidence / 'attempt-1'))
+                git_out.assert_not_called()
+                run.assert_not_called()
 
 
 if __name__ == '__main__':

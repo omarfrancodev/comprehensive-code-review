@@ -146,6 +146,8 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
             revision=head, snapshot=None, manifest=workspace_manifest['manifest'],
             dependencies='none', dependency_reason='No dependencies')]
         context_file = self.fixture.write('context-with-receipt-executor.json', context)
+        (evidence_dir / 'context.json').write_text(
+            json.dumps(context, ensure_ascii=False), encoding='utf-8')
         self.artifacts.register(run, [str(session)], context_input=context_file)
 
         output_dir = evidence_dir / 'attempt-1'

@@ -24,6 +24,7 @@ STREAM_FIELDS = {'reference', 'sha256', 'bytes'}
 CHECK_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,63}')
 SHA256 = re.compile(r'[0-9a-f]{64}')
 MAX_REQUEST_BYTES = 131072
+MAX_CONTEXT_BYTES = 131072
 
 
 def _issue(field, reference, message, expected):
@@ -295,6 +296,29 @@ def _validate_owned_workspace(*, check_id, argv, command, cwd, executor_workspac
             str(Path(row['path']).absolute()) for row in workspace_entries
             if isinstance(row, dict) and isinstance(row.get('path'), str)}:
         raise ValueError('cwd is not a workspace owned by the output session')
+    context_path = review_workspace.no_links(session_dir / 'evidence' / 'context.json')
+    if not context_path.is_file():
+        raise ValueError('registered executor context is missing from the owned session')
+    try:
+        with context_path.open('rb') as handle:
+            context_bytes = handle.read(MAX_CONTEXT_BYTES + 1)
+        if len(context_bytes) > MAX_CONTEXT_BYTES:
+            raise ValueError('registered executor context exceeds the bounded size')
+        context = json.loads(context_bytes.decode('utf-8'))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError('registered executor context is invalid UTF-8 JSON') from exc
+    executors = context.get('executors') if isinstance(context, dict) else None
+    if not isinstance(executors, list):
+        raise ValueError('registered executor context must contain an executors array')
+    matching = [row for row in executors if isinstance(row, dict)
+                and row.get('executor') == executor]
+    if len(matching) != 1:
+        raise ValueError('executor must be uniquely registered in the owned session context')
+    registered_workspace = matching[0].get('workspace')
+    if (_workspace_identity(registered_workspace) is None
+            or _workspace_identity(registered_workspace) != _workspace_identity(cwd)
+            or _workspace_identity(registered_workspace) != _workspace_identity(executor_workspace)):
+        raise ValueError('executor ' + executor + ' is registered to another workspace')
     actual_root = review_workspace.out(worktree, 'rev-parse', '--show-toplevel').decode().strip()
     if (not worktree.is_dir() or os.path.normcase(str(Path(actual_root).resolve()))
             != os.path.normcase(str(worktree.resolve()))):

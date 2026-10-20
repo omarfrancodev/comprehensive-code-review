@@ -68,3 +68,16 @@ Se verificaron los cuatro hallazgos del comentario sobre el commit `1d037b76bbe0
 | `git diff --check` | Exit 0, sin errores de whitespace. |
 
 Las pruebas de captura exitosa y retención que crean worktrees no pudieron ejecutar la preparación con Git for Windows en este host: el proceso falla antes de iniciar el helper con `fatal: '$GIT_DIR' too big`. Por eso estas pruebas permanecen pendientes de un runner compatible y la validación posterior es focalizada, no una declaración de suite completa.
+
+## Segunda revisión del comentario CCR de PR #27
+
+El 2026-10-20 se repasaron otra vez F001, F002, F003 y F004 contra el código y se detectó que la primera corrección de F004 sólo protegía la validación retenida: la captura comparaba `cwd` con un campo `executor_workspace` del mismo request, pero no comprobaba que ese ID estuviera ligado a ese workspace en el contexto registrado. Una reproducción con X1 registrado en A confirmó que se aceptaba y ejecutaba un request atribuido a X1 desde B. La captura ahora lee `evidence/context.json`, requiere una única entrada para el executor y compara su workspace normalizado con `cwd` y `executor_workspace` antes de consultar Git o iniciar el proceso. Se añadió una regresión con dos workspaces de la misma sesión para este caso.
+
+| Verificación actualizada | Resultado |
+|---|---|
+| `test_review_check_receipts.py` | 11/11, exit 0; incluye captura exitosa, rechazos previos al proceso y el binding X1/A frente a captura en B. |
+| `test_retention_preflight_and_gate_verify_selected_receipt_bytes` | 1/1, exit 0; integración de captura, preflight, retención y verificación de recibo. |
+| Re-revisión de F001/F002/F003 | Referencias históricas S001/S002+, digest aliasado y binding `command`/`argv` quedan cubiertos por las pruebas focalizadas existentes. |
+| Regresión global | No se volvió a ejecutar; este resultado focalizado no acredita toda la suite. |
+
+Para estas pruebas se usó el intérprete Python empaquetado y TEMP/TMP dentro del worktree autorizado. Esto evitó el fallo de permisos del directorio temporal de Windows observado en el primer intento; los resultados no se extrapolan a la suite completa.
