@@ -15,6 +15,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from recovery_fixtures import context10, record10, selection, source_events
 import review_delivery
+import review_model_usage
 
 
 class CheckpointTests(unittest.TestCase):
@@ -144,6 +145,55 @@ class CheckpointTests(unittest.TestCase):
         self.assertTrue(retained['retained'])
         self.assertTrue((run / 'review.json').is_file())
         self.assertEqual(artifacts.validate(run, require_retained=True)['retained'], True)
+
+    def test_private_model_usage_sidecar_is_selected_and_retained_by_link(self):
+        run, context_file, packets = self.prepare_promotable_checkpoint()
+        manifest = self.read(run / 'cierre.json')
+        observation = review_model_usage.observation_from_metadata(
+            {'model': 'configured-coordinator'},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            phase='report', activity='reporting')
+        ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + manifest['run_id'],
+            harness_id=manifest['harness_id'])
+        context = self.read(context_file)
+        context['model_usage_reference'] = 'evidence/model-usage.json'
+        linked_context = self.write('model-context.json', context)
+        model_usage_file = self.write('model-usage.json', ledger)
+
+        artifacts.checkpoint(run, context_input=linked_context,
+            evidence_inputs=packets + [model_usage_file],
+            input_record=run / 'pending' / 'review.json', phase='report')
+        pending = self.read(run / 'cierre.json')
+        self.assertIn('pending/evidence/model-usage.json', pending['pending_hashes'])
+        pending_context = self.read(run / 'pending' / 'context.json')
+        self.assertEqual(pending_context['model_usage_reference'], 'evidence/model-usage.json')
+        self.assertNotIn('model-usage', pending_context['review_inputs']['sources'])
+
+        artifacts.retain(run)
+        retained = self.read(run / 'cierre.json')
+        self.assertIn('evidence/model-usage.json', retained['hashes'])
+        self.assertEqual(self.read(run / 'evidence' / 'model-usage.json'), ledger)
+
+    def test_model_usage_link_with_wrong_review_binding_fails_before_checkpoint_write(self):
+        run, context_file = self.start_run()
+        context = self.read(context_file)
+        context['model_usage_reference'] = 'evidence/model-usage.json'
+        linked_context = self.write('wrong-model-context.json', context)
+        manifest = self.read(run / 'cierre.json')
+        observation = review_model_usage.observation_from_metadata(
+            {'model': 'configured-coordinator'},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            phase='discovery', activity='coordination')
+        wrong_ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + 'b' * 20,
+            harness_id=manifest['harness_id'])
+        sidecar = self.write('model-usage.json', wrong_ledger)
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'another review'):
+            artifacts.checkpoint(run, context_input=linked_context,
+                evidence_inputs=[sidecar], phase='discovery')
+        self.assertEqual(self.snapshot(run), before)
 
     def test_captured_external_source_hash_is_checked_before_retention(self):
         requirements = self.write('requirements.md', {'revision': 'current'})

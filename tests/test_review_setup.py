@@ -116,6 +116,39 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'active required assignment brief'):
             setup.build_assignment_event(raw, assignment)
 
+    def test_model_usage_update_links_private_sidecar_and_preserves_history(self):
+        _, context, manifest, _, _ = fixture_context()
+        original = copy.deepcopy(context)
+        actor = {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None}
+        linked, ledger = setup.build_model_usage_update(
+            context, None, {'model': 'configured-coordinator'}, actor=actor,
+            phase='discovery', activity='coordination', review_id='CR-' + 'a' * 20,
+            harness_id='codex-desktop')
+        self.assertEqual(context, original)
+        self.assertEqual(linked['model_usage_reference'], 'evidence/model-usage.json')
+        self.assertNotIn('model-usage', linked['review_inputs']['sources'])
+        self.assertEqual(ledger['entries'][0]['status'], 'configured_only')
+
+        updated, same_ledger = setup.build_model_usage_update(
+            linked, ledger, {'model': 'configured-coordinator'}, actor=actor,
+            phase='discovery', activity='coordination', review_id='CR-' + 'a' * 20,
+            harness_id='codex-desktop')
+        self.assertEqual(len(same_ledger['entries']), 1)
+        self.assertEqual(updated['model_usage_reference'], linked['model_usage_reference'])
+
+    def test_model_usage_capture_limits_add_bounded_nonblocking_diagnostics(self):
+        context = {'existing': 'preserved'}
+        linked, ledger = setup.build_model_usage_update(
+            context, None, {'model': 'm' * 201},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            phase='report', activity='reporting', review_id='CR-' + 'a' * 20,
+            harness_id=None)
+        self.assertEqual(ledger, None)
+        self.assertNotIn('model_usage_reference', linked)
+        self.assertEqual(context, {'existing': 'preserved'})
+        self.assertEqual(len(linked['model_usage_diagnostics']), 1)
+        self.assertLessEqual(len(linked['model_usage_diagnostics'][0]), 500)
+
 
 @unittest.skipUnless(shutil.which('git'), 'Git is required for owned-session CLI integration')
 class SetupCliTests(unittest.TestCase):

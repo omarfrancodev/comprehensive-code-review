@@ -33,6 +33,7 @@ import review_resource_claims
 import review_layout
 import review_references
 import review_preflight
+import review_model_usage
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
@@ -1369,6 +1370,8 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
                 raise ValueError('modified prior checkpoint evidence: ' + name)
             source_contents['evidence/' + name.split('/', 2)[2]] = prior
             evidence_total += len(prior)
+
+    _validate_model_usage_context(context, lambda name: source_contents.get(name), manifest)
 
     diagnostics = _checkpoint_diagnostics(gate_errors)
     final = None
@@ -3973,6 +3976,7 @@ def _execution_gate(run, manifest, value, contents):
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')
+    _validate_model_usage_context(context, source, manifest)
     events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
@@ -4109,6 +4113,27 @@ def _execution_gate(run, manifest, value, contents):
                     errors.append('checks.execution.sources: retained context and closure binding differ')
     if errors:
         raise ValueError('; '.join(errors))
+
+
+def _validate_model_usage_context(context, source, manifest):
+    """Validate the optional private sidecar without mixing it into captured inputs."""
+    reference = context.get('model_usage_reference') if isinstance(context, dict) else None
+    if reference is None:
+        return
+    if reference != 'evidence/model-usage.json':
+        raise ValueError('model usage reference must identify evidence/model-usage.json')
+    try:
+        payload = source(reference)
+        if len(payload) > review_model_usage.MAX_LEDGER_BYTES:
+            raise ValueError('model usage sidecar exceeds the 256 KiB bound')
+        ledger = json.loads(payload.decode('utf-8'))
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError, OSError, ValueError) as exc:
+        raise ValueError('selected model usage evidence is unreadable: ' + str(exc)) from exc
+    expected_review_id = ('CR-' + manifest['run_id']) if isinstance(manifest.get('run_id'), str) else None
+    issues = review_model_usage.validate_model_usage(
+        ledger, review_id=expected_review_id, harness_id=manifest.get('harness_id'))
+    if issues:
+        raise ValueError('selected model usage evidence is invalid: ' + issues[0]['message'])
 
 
 def _present_resources(registered):

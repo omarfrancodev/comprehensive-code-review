@@ -12,6 +12,7 @@ import uuid
 
 import review_artifacts
 import review_layout
+import review_model_usage
 import review_preflight
 import review_profiles
 import review_references
@@ -113,6 +114,51 @@ def build_context(manifest: dict, *, execution_plan: list[dict],
     if not preflight['ready']:
         raise ValueError('context does not satisfy registration preflight: ' + _issues_message(preflight))
     return result
+
+
+def build_model_usage_update(context: dict, ledger: dict | None, metadata: dict, *,
+                             actor: dict, phase: str, activity: str,
+                             review_id: str, harness_id: str | None,
+                             assignment_id: str | None = None,
+                             check_id: str | None = None) -> tuple[dict, dict | None]:
+    """Add already-observed model metadata without making its absence a review gate."""
+    if not isinstance(context, dict):
+        raise ValueError('model usage update requires an execution context object')
+    updated_context = copy.deepcopy(context)
+    expected_reference = 'evidence/model-usage.json'
+    if context.get('model_usage_reference') not in (None, expected_reference):
+        error = 'execution context has an unsupported model usage reference'
+        observation = None
+    elif context.get('model_usage_reference') == expected_reference and ledger is None:
+        error = 'existing model usage reference requires its current ledger'
+        observation = None
+    else:
+        try:
+            observation = review_model_usage.observation_from_metadata(
+                metadata, actor=actor, phase=phase, activity=activity,
+                assignment_id=assignment_id, check_id=check_id)
+            updated_ledger = review_model_usage.append_model_observation(
+                ledger, observation, review_id=review_id, harness_id=harness_id)
+        except (TypeError, ValueError) as exc:
+            error = str(exc)
+        else:
+            updated_context['model_usage_reference'] = expected_reference
+            return updated_context, updated_ledger
+
+    diagnostics = context.get('model_usage_diagnostics', [])
+    if not isinstance(diagnostics, list):
+        diagnostics = []
+    diagnostics = [item[:500] for item in diagnostics
+                   if isinstance(item, str) and item.strip()][:32]
+    message = ('model usage capture incomplete: ' + error).replace('\r', ' ').replace('\n', ' ')[:500]
+    if len(diagnostics) < 32:
+        if message not in diagnostics:
+            diagnostics.append(message)
+    elif 'additional model usage capture failures were omitted' not in diagnostics[-1].lower():
+        diagnostics[-1] = 'Additional model usage capture failures were omitted due to the diagnostic limit.'
+    if diagnostics:
+        updated_context['model_usage_diagnostics'] = diagnostics
+    return updated_context, copy.deepcopy(ledger)
 
 
 def build_assignment_event(raw: dict, assignment: dict) -> dict:

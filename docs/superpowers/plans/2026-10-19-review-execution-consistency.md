@@ -745,7 +745,7 @@ git commit -m "fix(publicacion): generar comentarios canónicos sin retoques man
 - Produces: `observation_from_metadata(metadata: dict, *, actor: dict, phase: str, activity: str, assignment_id: str | None = None, check_id: str | None = None) -> dict`. model del run.json actual se trata como configured_model; observed_model sólo se acepta con model_source explícito platform/adapter_observed. occurred_at no se inventa.
 - Produces: sidecar privado `evidence/model-usage.json`, seleccionado por checkpoint/retain e identificado por context.model_usage_reference y cierre.hashes, sin campos nuevos en resultado/trace/harness catalog.
 
-- [ ] **Step 1: escribir tests de modelo configurado, observado y ausente**
+- [x] **Step 1: escribir tests de modelo configurado, observado y ausente**
 
 Importar `review_model_usage as models` y copy. En ModelUsageTests(unittest.TestCase):
 
@@ -791,23 +791,23 @@ def test_model_switch_preserves_each_observation_and_assignment(self):
 
 configured-A/observed-A/B son etiquetas sintéticas, no elecciones reales de modelo. Añadir un proceso de tests con source.kind=not_applicable y ambos modelos null: status not_applicable, sin heredar el modelo del actor que escribió la reproducción.
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_model_usage.py -v`
 
 Expected: módulo nuevo ausente o model del argumento promovido incorrectamente a observado. No añadir datos de configuración para ocultar el caso unknown.
 
-- [ ] **Step 3: implementar normalización y acumulación puras**
+- [x] **Step 3: implementar normalización y acumulación puras**
 
 Implementar las cuatro firmas de Produces con las formas exactas del spec §12. Sólo platform/adapter_observed con referencia verificable acredita observed_model. Una configuración distinta del observado se conserva en ambos campos; no demuestra conflicto por sí sola. Observaciones incompatibles para el mismo source.reference/actor/contexto se conservan con status conflict en la nueva fila, sin reescribir la anterior. Ante un límite, el caller conserva el prefijo válido y agrega captura incompleta en context.model_usage_diagnostics (32 textos/500 caracteres); no convertirlo en fallo del producto ni iniciar trabajo para rellenar lo desconocido.
 
-- [ ] **Step 4: integrar el sidecar en la evidencia del flujo guiado**
+- [x] **Step 4: integrar el sidecar en la evidencia del flujo guiado**
 
 Añadir observación inicial del coordinador y posteriores observaciones sólo con información ya disponible. Acumular en la sesión propia, seleccionar el estado del registro en checkpoint/retain y enlazarlo desde context.model_usage_reference. No agregarlo a review_inputs.sources ni al catálogo del harness: es metadata de ejecución acumulable. No reinterpretar ni cambiar provider IDs, tiempos de trace ni el campo model legacy del runner.
 
 Para un run ya cerrado o una publicación posterior, usar la operación separada vinculada al review, sin rellenar el archive anterior. El registro ausente sigue permitido en runs existentes; un paquete HP no adquiere este sidecar. La identidad de modelo no afecta las obligaciones de independencia del perfil ni llega al comentario público.
 
-- [ ] **Step 5: añadir aserciones de vínculo, límites y ausencia de sondeos**
+- [x] **Step 5: añadir aserciones de vínculo, límites y ausencia de sondeos**
 
 En fixtures temporales, conservar bytes de manifest/catalog/trace antes y después; validar sidecar con review_id/harness_id correctos y luego con IDs distintos. Las aserciones decisivas son:
 
@@ -823,23 +823,23 @@ self.assertNotIn('model-usage', public_comment)
 
 ledger es el registro creado por el test anterior; public_comment es render(comment) del fixture de Task 6, sin mezclar el sidecar privado con su contexto público. Añadir pruebas con 257 entradas, >256 KiB y modelos >200 caracteres: diagnóstico acotado sin nueva invocación. En la llamada pura con metadata vacía, mockear subprocess.run y afirmar assert_not_called(); revisar que el módulo no abra red ni lea historiales por su cuenta.
 
-- [ ] **Step 6: documentar procedencia y datos desconocidos**
+- [x] **Step 6: documentar procedencia y datos desconocidos**
 
 Actualizar los tres documentos de Files con distinción harness/model/provider_id, configured_only frente a observed, vínculo por asignación/fase y dato ausente no bloqueante. Conservar el registro literal suministrado y su fuente; no presentar argumentos de configuración como prueba del modelo efectivo ni calcular costes a partir de ellos.
 
-- [ ] **Step 7: ejecutar GREEN del registro de modelos**
+- [x] **Step 7: ejecutar GREEN del registro de modelos**
 
 Run: `python -m unittest discover -s tests -p test_review_model_usage.py -v`
 
 Expected: módulo OK, exit 0; cambios de modelo conservados por actividad y ausencia sin sondeos/reintentos.
 
-- [ ] **Step 8: ejecutar regresión del harness**
+- [x] **Step 8: ejecutar regresión del harness**
 
 Run: `python -m unittest discover -s tests -p test_review_harness.py -v`
 
 Expected: módulo OK, exit 0; no hay modelos convertidos en alias del harness ni cambios en su catálogo/identidad.
 
-- [ ] **Step 9: commit**
+- [x] **Step 9: commit**
 
 ```powershell
 git add -- scripts/review_model_usage.py scripts/review_setup.py scripts/review_artifacts.py tests/test_review_model_usage.py tests/test_review_harness.py references/archive/artifacts.md references/archive/lifecycle-trace.md references/execution/worker-packets.md
