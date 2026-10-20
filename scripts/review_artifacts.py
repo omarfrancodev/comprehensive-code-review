@@ -31,6 +31,7 @@ import review_inputs
 import review_restart
 import review_resource_claims
 import review_layout
+import review_references
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
@@ -1114,7 +1115,9 @@ def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity
     if selected_profile is not None and selected_profile != profile:
         raise ValueError(label + ' profile differs from the captured profile selection')
     for reference in value['sources']:
-        if not reference.split('#', 1)[0].startswith('evidence/'):
+        path, _ = review_references.parse_reference(
+            reference, field=label + ' source', allow_alias_key=True)
+        if not path.startswith('evidence/'):
             raise ValueError(label + ' source references must identify selected evidence/ files')
     return value
 
@@ -1221,11 +1224,16 @@ def _evidence_name(name):
 
 
 def _retained_name(name):
-    if name in FILES + OPTIONAL_FILES + TRACE_FILES:
+    try:
+        path, fragment = review_references.parse_reference(name, field='retained name')
+    except ValueError:
+        return False
+    if fragment is not None:
+        return False
+    if path in FILES + OPTIONAL_FILES + TRACE_FILES:
         return True
-    return (isinstance(name, str) and name.startswith('evidence/')
-            and name.count('/') == 1 and '\\' not in name
-            and name[9:] == _evidence_name(name[9:]) and name[9:] not in {'.', '..'})
+    return (path.startswith('evidence/') and path.count('/') == 1
+            and path[9:] == _evidence_name(path[9:]) and path[9:] not in {'.', '..'})
 
 
 def _check_evidence_target(run, manifest, name):
@@ -3932,33 +3940,10 @@ def _execution_gate(run, manifest, value, contents):
     references = set()
     resolved = {}
     for reference in requested:
-        parsed = urlsplit(reference)
-        if parsed.scheme or parsed.netloc or parsed.query:
-            raise ValueError('execution source must resolve inside the retained run')
-        raw = source(parsed.path)
-        if not parsed.fragment:
-            resolved[reference] = raw
-        elif parsed.path.endswith('.json'):
-            document = json.loads(raw)
-            keys = parsed.fragment.lstrip('/').split('/')
-            for key in keys:
-                key = key.replace('~1', '/').replace('~0', '~')
-                try:
-                    document = document[int(key)] if isinstance(document, list) else document[key]
-                except (KeyError, IndexError, ValueError, TypeError) as exc:
-                    raise ValueError('missing execution source fragment: ' + reference) from exc
-            resolved[reference] = document
-        elif parsed.path == review_trace.NAME:
-            matching = [row for row in events if row['event_id'] == parsed.fragment]
-            if not matching:
-                raise ValueError('missing observed trace event source: ' + reference)
-            resolved[reference] = matching[0]
-        elif parsed.path.endswith('.md') and re.search(
-                r'(?:<a\s+id=["\x27]' + re.escape(parsed.fragment) + r'["\x27]|^#{1,6}\s+'
-                + re.escape(parsed.fragment) + r'(?:\s|$))', raw.decode('utf-8'), re.MULTILINE):
-            resolved[reference] = raw
-        else:
-            raise ValueError('unresolved execution source fragment: ' + reference)
+        path, _ = review_references.parse_reference(reference, field='execution source')
+        raw = source(path)
+        resolved[reference] = review_references.resolve_reference(
+            reference, {path: raw}, field='execution source')
         references.add(reference)
     if captured_inputs is not None:
         for reference, expected in captured_inputs['sources'].items():
