@@ -417,7 +417,7 @@ git commit -m "feat(evidencia): comprobar referencias e insumos materiales"
 - Produces: `build_assignment_event(raw: dict, assignment: dict) -> dict`: valida con `review_trace.event_input` y mantiene provider/time observados o null.
 - CLI `review_setup.py profile|context|event --input <json> --output <json>`: cada input tiene exactamente `{session, arguments}`; session identifica una sesión de evidencia propia con manifest verificable y arguments contiene los argumentos de la función correspondiente. Rechazar destino existente, enlaces y salida fuera de esa sesión; no invocar prepare/register/dispatch.
 
-- [ ] **Step 1: escribir los tests de autoridad y observaciones preservadas**
+- [x] **Step 1: escribir los tests de autoridad y observaciones preservadas**
 
 Importar `review_setup as setup`, unittest y selection_input/record10. En `SetupTests(unittest.TestCase)`:
 
@@ -438,17 +438,17 @@ def test_authority_is_required_and_execution_facts_are_not_invented(self):
     self.assertEqual(event['evidence'], [assignment['reference']])
 ```
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_setup.py -v`
 
 Expected: builder ausente o autoridad/observación modificada; no inventar autoridad para hacer pasar el fixture.
 
-- [ ] **Step 3: implementar los tres constructores puros**
+- [x] **Step 3: implementar los tres constructores puros**
 
 Usar las firmas de Produces y los validadores consumidores. build_context copia el historial y las entradas capturadas, incluido logical_scope_identity; identidad contradictoria falla con ValueError. No generar event/provider IDs.
 
-- [ ] **Step 4: implementar CLI y sus tests de salida propia**
+- [x] **Step 4: implementar CLI y sus tests de salida propia**
 
 Sobre exacto `{session, arguments}`, manifest de sesión verificable y destino nuevo dentro de la sesión. Escribir JSON canónico UTF-8 sin salida parcial; fallo por colisión/enlace/escape deja los bytes iguales. Añadir al fixture de Task 2 las aserciones:
 
@@ -466,23 +466,23 @@ self.assertEqual(after, before)
 
 manifest/original_manifest son el manifest del fixture y su deepcopy antes de llamar; context proviene de build_context con su plan/executors/inputs/índice registrados. completed es el CLI de Produces, lanzado sin shell con el sobre serializado en input; before/after usan el inventario de bytes de Task 2.
 
-- [ ] **Step 5: actualizar el ejemplo canónico y los contratos de workers**
+- [x] **Step 5: actualizar el ejemplo canónico y los contratos de workers**
 
 Modificar los cuatro documentos de Files: lookup/elección explícita → prepare → construir desde cierre → preflight/register → dispatch observado → record-event. Conservar archive7-lifecycle como histórico; el builder no selecciona latest ni normaliza intents antiguos.
 
-- [ ] **Step 6: ejecutar test_review_setup.py**
+- [x] **Step 6: ejecutar test_review_setup.py**
 
 Run: `python -m unittest discover -s tests -p test_review_setup.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 7: ejecutar test_reference_layout.py**
+- [x] **Step 7: ejecutar test_reference_layout.py**
 
 Run: `python -m unittest discover -s tests -p test_reference_layout.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 8: commit**
+- [x] **Step 8: commit**
 
 ```powershell
 git add -- scripts/review_setup.py tests/test_review_setup.py docs/examples/archive8-lifecycle.md references/archive/artifacts.md references/archive/lifecycle-trace.md references/execution/worker-packets.md

@@ -28,7 +28,7 @@ Lifecycle state: `prepared → processing → retaining → closing → complete
 
 Register resources while prepared or processing, before using them. Retain directly from prepared remains compatible with callers supplying an already-built result; it does not invent earlier activity. New skill executions still record their meaningful start. Schema 4 preserves its previous states; schemas 1–3 do not acquire synthetic traces. A failed/pending transaction prevents a validated state claim and is recovered using its original event bytes. Later checkpoints never regress closing to processing.
 
-Load this reference before creating any artifact. First pin inputs with read-only inspection. Before durable `prepare`, put its required `scope.json` in `evidence/` of an exclusive owned session, with an ownership manifest recording that bootstrap. A writing executor's session uses workspaces.md; a static-only review may use a native owned evidence session without creating a Git worktree. This bounded preparation is the only pre-run artifact phase: pass that session via `prepare --temporary-path`, validate the returned run, and finish registration before discovery, worker dispatch or validation commands.
+Load this reference before creating any artifact. First pin inputs with read-only inspection and bounded `lookup`; choose any candidate explicitly. Before durable `prepare`, put `scope.json`, the validated profile-selection candidate and the selected `reference-index.json` in `evidence/` of an exclusive owned session, with an ownership manifest recording that bootstrap. Capture the index digest in `review_inputs.sources` before work. A writing executor's session uses workspaces.md; a static-only review may use a native owned evidence session without creating a Git worktree. This bounded preparation is the only pre-run artifact phase: pass that session via `prepare --temporary-path`, validate the returned run, and finish registration before discovery, worker dispatch or validation commands.
 
 Once prepared, create descriptions, captures, identity hashes, discussions, context/checks and role packets within that registered session's `evidence/`. Additional owned sessions/executors need `register --temporary-path` before use; planned directories can be registered before creation, and registration repeated after their ownership manifest exists. Do not create a parallel scratch directory beside `reviews/` or elsewhere outside the registered session. Original user inputs can be read where they exist; this rule governs review-created temporaries. Workers write assigned evidence; the coordinator owns durable metadata.
 
@@ -64,6 +64,14 @@ python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/
 python /absolute/skill/scripts/review_artifacts.py close --run-dir /absolute/returned/run --cleanup complete
 python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run --require-complete
 ```
+
+### Preparation builders
+
+`review_setup.py profile|context|event --input <envelope.json> --output <new-evidence.json>` builds candidates only; it does not prepare/register a run, append trace events or dispatch work. The input envelope has exactly `{session, arguments}`. `session` points to an owned `review_workspace.py` manifest that passes its owner/path checks. The output is a new direct child of that session's `evidence/`; collisions, links and paths outside the session fail without changing existing bytes.
+
+Use `profile` before `prepare` to validate the supplied selection and preserve explicit user authority. After prepare, use `context` with the exact returned `cierre.json`, planned assignments, executors, captured `review_inputs` and `{reference: "evidence/reference-index.json", sha256: ...}` descriptor. The helper verifies the session sidecar and its selected source hashes, checks the descriptor against the initially captured source digest, copies the exact profile history and inputs, and includes `reference_index` in context. Run `preflight --phase register` before `register`; after an active required assignment is registered, run `preflight --phase discovery` before dispatch.
+
+Use `event` for an observed assignment milestone with its active brief and observed actor. Missing provider IDs and times remain null; the builder neither adds assignment evidence nor fabricates a past start. Every work milestone, including completion, carries the active required brief in `evidence`; add the result reference alongside it when one exists. Dispatch remains coordinator-owned and occurs only after the discovery preflight succeeds.
 
 prepare accepts optional --output-root and --previous-run. Supply canonical scope. `register` adds resources while state is prepared or processing; `retain --temporary-path` remains compatible but does not replace registration before use. Register only exact review-owned temporary directories after checking ownership; never the user checkout, another task's workspace or the persistent archive. Registration observes paths/manifests but does not create resources, delete them or prove ownership.
 
@@ -135,6 +143,7 @@ Every `register --context-input` and final retention uses this context object:
   "profile_history": [],
   "execution_plan": [],
   "executors": [],
+  "reference_index": "evidence/reference-index.json",
   "review_inputs": {"scope": {}, "sources": {}, "source_set_complete": true}
 }
 ```

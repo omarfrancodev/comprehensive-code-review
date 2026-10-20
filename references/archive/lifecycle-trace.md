@@ -29,12 +29,12 @@ For a static coordinator discovery, write this bounded input in the already-regi
   "executor": null,
   "provenance": {"kind": "agent", "source": null},
   "occurred_at": null,
-  "evidence": [],
+  "evidence": ["evidence/briefs.json#D1"],
   "relations": []
 }
 ```
 
-For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
+For new executions, create assignment events with `review_setup.py event` from an envelope bound to the owned session, then pass the resulting JSON to `record-event`. The builder requires the active required brief to already appear in evidence and preserves the supplied actor/provider/time. For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. Every work milestone, including completion, carries the active brief plus any observed result reference. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
 
 ## Participants and explicit links
 
