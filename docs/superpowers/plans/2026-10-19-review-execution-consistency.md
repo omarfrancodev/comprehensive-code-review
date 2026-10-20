@@ -614,7 +614,7 @@ git commit -m "feat(validacion): conservar recibos reproducibles de checks"
 - Produces: CLI `prepare --input <record> --session <owned-session> --output <draft.json> [--publication-context <json>] [--check-publication-context <json>]` y `verify --input <record> --draft <draft.json> --body <body.md> [--remote]`. Exit 0 preparado/verificado; 1 contrato/mismatch; 2 acceso/parseo. Sin cliente remoto.
 - Produces (test fixture): `publication_record() -> dict` y `check_classification(record: dict) -> dict` en tests/publication_fixtures.py. No importar clases de tests para construir datos compartidos.
 
-- [ ] **Step 1: escribir fixture y tests de la fuga reproducida en MR 1021 (RF4)**
+- [x] **Step 1: escribir fixture y tests de la fuga reproducida en MR 1021 (RF4)**
 
 publication_record parte de record10() y crea C001 passed/head, C002 failed/product/head y C003 passed/base; checks locales sintéticos X1/X2, con los campos exactos actuales. reference son `evidence/scheduling.log`, `evidence/repro-head.log`, `evidence/repro-base.log`; evidence contiene sólo resultados de producto. C003 conserva `rerun_reason='CS2012; log evidence/attempt1.log; reintento -m:1'`, command `dotnet test -m:1` y revision=scope.base. Ningún comando se ejecuta.
 
@@ -640,17 +640,17 @@ def test_public_checks_do_not_publish_internal_execution_data(self):
 
 Añadir test sin contexto sobre un check sin motivos libres, pero con reference relativa: el renderer debe omitir la referencia sin requerir clasificación innecesaria. Reuso sustantivo mantiene su revisión original y resumen público; actualizar el test existente de reutilización para suministrar ese contexto cuando corresponda.
 
-- [ ] **Step 2: ejecutar RED del renderer/política**
+- [x] **Step 2: ejecutar RED del renderer/política**
 
 Run: `python -m unittest discover -s tests -p test_review_publication_policy.py -v`
 
 Expected: interfaz/keyword nuevo ausente o exposición de referencias/motivo interno. No borrar reference/rerun_reason del fixture para hacerlo pasar.
 
-- [ ] **Step 3: implementar public_checks y conectar render-comment**
+- [x] **Step 3: implementar public_checks y conectar render-comment**
 
 Proyectar por campos antes de construir Markdown. Bloquear digest incorrecto, filas faltantes/duplicadas, campos extra que intenten cambiar status/revision y URL nueva no procedente del check. Referencias locales siempre privadas. Razones libres requieren clasificación explícita; no inferir materialidad por blacklist ni aplicar reemplazos al cuerpo final. La evidencia/validación material conserva su impacto público. Mantener public_projection como defensa existente, sin convertirla en otro saneador de texto.
 
-- [ ] **Step 4: escribir tests de borrador reproducible y retoque posterior**
+- [x] **Step 4: escribir tests de borrador reproducible y retoque posterior**
 
 Importar prepare_public_comment/verify_public_comment de review_comment y el fixture. En tests/test_review_comment.py:
 
@@ -684,41 +684,41 @@ def test_crlf_is_only_allowed_for_remote_transport(self):
 
 Añadir subcasos que cambian source_sha256, una fila de contexto, status añadido y body_sha256. Cada uno falla sin modificar record/draft ni empezar un envío. Un ajuste editorial se realiza en el contexto público de un nuevo borrador, nunca mutando el borrador vinculado por hashes o el archive.
 
-- [ ] **Step 5: ejecutar RED del borrador**
+- [x] **Step 5: ejecutar RED del borrador**
 
 Run: `python -m unittest discover -s tests -p test_review_comment.py -v`
 
 Expected: módulo aún ausente o diferencia aceptada incorrectamente. Los tests son puros y no envían comentarios.
 
-- [ ] **Step 6: implementar preparación/verificación canónica y CLI local**
+- [x] **Step 6: implementar preparación/verificación canónica y CLI local**
 
 Implementar las firmas de Produces: verificar source_sha256 canónico, forma exacta del borrador, contextos y re-render independiente antes de comparar el cuerpo. Usar UTF-8 exacto antes de envío; sólo remote=True permite CRLF→LF, nunca strip, traducción, espacios ni reemplazos. ValueError incluye body_mismatch para diferencia de cuerpo; source_mismatch para fuente distinta.
 
 El CLI prepare escribe sólo en sesión propia verificada/destino nuevo usando los guards de Task 4; verify es read-only y nunca crea locks del archivo. No añadir una herramienta de publicación. Si hay resultado de envío incierto o cuerpo remoto distinto, el flujo inspecciona la nota existente antes de reintentar.
 
-- [ ] **Step 7: documentar la única pasada editorial antes del render**
+- [x] **Step 7: documentar la única pasada editorial antes del render**
 
 Actualizar report-format.md y publication.md: redactar/validar campos públicos → render canónico → verificar cuerpo enviado → leer/verificar cuerpo remoto → registrar publicación observada. Si falla la redacción, ajustar contexto público y re-renderizar. Conservar freshness, autorización y post-close separado; no repetir code review por un retoque editorial. No recortar Markdown ni borrar trazabilidad para satisfacer el comentario público.
 
-- [ ] **Step 8: ejecutar GREEN de publicación**
+- [x] **Step 8: ejecutar GREEN de publicación**
 
 Run: `python -m unittest discover -s tests -p test_review_publication_policy.py -v`
 
 Expected: módulo OK, exit 0; incertidumbres/materialidad y clasificación legacy de limitaciones mantienen sus gates.
 
-- [ ] **Step 9: ejecutar GREEN del borrador**
+- [x] **Step 9: ejecutar GREEN del borrador**
 
 Run: `python -m unittest discover -s tests -p test_review_comment.py -v`
 
 Expected: módulo OK, exit 0; mismatches no se presentan como publicados y no producen cambios ni envíos.
 
-- [ ] **Step 10: ejecutar regresión de formato/renderer**
+- [x] **Step 10: ejecutar regresión de formato/renderer**
 
 Run: `python -m unittest discover -s tests -p test_review_contract.py -v`
 
 Expected: módulo OK, exit 0; orden fijo, IDs/conteos, revisión base y evidencia de producto siguen visibles. La suite final de Task 8 incluye presentation e integración.
 
-- [ ] **Step 11: commit**
+- [x] **Step 11: commit**
 
 ```powershell
 git add -- scripts/review_publication.py scripts/review_contract.py scripts/review_comment.py tests/publication_fixtures.py tests/test_review_comment.py tests/test_review_contract.py tests/test_review_publication_policy.py tests/test_review_presentation.py references/reporting/report-format.md references/reporting/publication.md
