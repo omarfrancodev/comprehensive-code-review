@@ -36,6 +36,7 @@ import review_preflight
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
+import review_check_receipts
 
 
 FILES = ('review.json', 'informe.md')
@@ -3879,10 +3880,19 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     if manifest['schema_version'] == 8:
         context = _input_object(context_input, 'execution context') if context_input is not None else None
+        preflight_sources = ({'evidence/context.json': _json_bytes(context)} if context is not None else {})
+        for raw in evidence_inputs or []:
+            path = safe_path(raw)
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError('selected preflight evidence must be a regular file')
+            name = 'evidence/' + _evidence_name(path.name)
+            if name in preflight_sources:
+                raise ValueError('duplicate selected preflight evidence name: ' + name)
+            preflight_sources[name] = path.read_bytes()
         phase_preflight = review_preflight.validate_preflight(
             phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=value,
-            sources=({'evidence/context.json': _json_bytes(context)} if context is not None else {}))
+            sources=preflight_sources)
         if not phase_preflight['ready']:
             raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
@@ -3968,6 +3978,22 @@ def _execution_gate(run, manifest, value, contents):
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
     index_reference = context.get('reference_index')
+    checks = value.get('checks', []) if isinstance(value.get('checks'), list) else []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        receipt_ref = check.get('reference')
+        if review_check_receipts.is_receipt_reference(receipt_ref, check.get('id')):
+            requested.add(receipt_ref)
+            try:
+                receipt = json.loads(source(receipt_ref).decode('utf-8'))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(receipt, dict):
+                for stream_name in ('stdout', 'stderr'):
+                    stream = receipt.get(stream_name)
+                    if isinstance(stream, dict) and isinstance(stream.get('reference'), str):
+                        requested.add(stream['reference'])
     if index_reference is not None:
         if index_reference != 'evidence/reference-index.json':
             raise ValueError('guided reference_index must use evidence/reference-index.json')
@@ -4065,8 +4091,10 @@ def _execution_gate(run, manifest, value, contents):
         errors.extend(review_contract.validate_reference_semantics(
             value, context, reference_index, selected_sources, packets))
     if value.get('schema_version') in (9, 10):
-        errors.extend(validate_check_sources(value, context.get('executors')))
-        errors.extend(validate_check_sources(value, manifest.get('executors', [])))
+        errors.extend(validate_check_sources(value, context.get('executors'),
+                                             receipt_sources=selected_sources))
+        errors.extend(validate_check_sources(value, manifest.get('executors', []),
+                                             receipt_sources=selected_sources))
         # Both retained sources must bind each used identity to the same inputs.
         declared = context.get('executors', [])
         projected = manifest.get('executors', [])

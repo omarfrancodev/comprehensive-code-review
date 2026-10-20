@@ -2,6 +2,7 @@
 import review_inputs
 import review_layout
 import review_profiles
+import review_check_receipts
 from review_references import ReferenceIssue, validate_selection_reference
 
 
@@ -168,4 +169,7 @@ def validate_preflight(*, phase: str, manifest: dict | None,
         issues.append(_issue('missing_input', 'record', None,
                              'retain preflight is incomplete without a final candidate',
                              'the structurally final review candidate'))
+    elif phase == 'retain' and record.get('schema_version') in (9, 10):
+        issues.extend(review_check_receipts.validate_record_receipts(
+            record, sources, context.get('executors', []) if isinstance(context, dict) else []))
     return _ordered(phase, issues)

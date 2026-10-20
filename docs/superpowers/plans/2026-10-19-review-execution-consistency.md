@@ -507,7 +507,7 @@ git commit -m "feat(preparacion): generar candidatos con contratos verificables"
 - Produces: `capture_check(*, check_id: str, argv: list[str], cwd: str, revision: str, executor: str, output_dir: str) -> dict`: ejecuta sólo la orden indicada y produce el recibo con observaciones reales; output_dir debe ser nuevo y propio.
 - CLI `review_check_receipts.py run --request <json> --output-dir <owned-new-dir>`: request contiene check_id/argv/cwd/revision/executor; salida no mezcla exit del helper con exit del check. La validación de permisos/ownership y workspace precede a iniciar proceso.
 
-- [ ] **Step 1: escribir el test de log vacío y exit observado**
+- [x] **Step 1: escribir el test de log vacío y exit observado**
 
 Importar `review_check_receipts as receipts` y hashlib en `CheckReceiptTests(unittest.TestCase)`:
 
@@ -534,21 +534,21 @@ def test_empty_streams_need_observed_exit(self):
 
 Este test valida contenido y vínculos puros. No prueba ownership del cwd: captura y retención deben verificarlo con el workspace registrado, sin probes de filesystem dentro de validate_receipt.
 
-- [ ] **Step 2: ejecutar RED**
+- [x] **Step 2: ejecutar RED**
 
 Run: `python -m unittest discover -s tests -p test_review_check_receipts.py -v`
 
 Expected: módulo/interfaz ausente o aceptación incorrecta del recibo incompleto. Un comando silencioso no falla sólo por producir cero bytes.
 
-- [ ] **Step 3: implementar validate_receipt**
+- [x] **Step 3: implementar validate_receipt**
 
 Validar campos exactos, hashes/bytes, timestamps ordenados y vínculo check/executor/revision. exit_code null no acredita passed/failed. No ejecutar procesos ni cambiar check.execution.
 
-- [ ] **Step 4: implementar capture_check y su CLI**
+- [x] **Step 4: implementar capture_check y su CLI**
 
 Comprobar ownership/workspace y salida nueva antes de subprocess con argv y shell=False; conservar streams y tiempos reales. No inferir intérpretes ni instalar dependencias. Un comando fallido conserva exit_code no cero aunque se haya escrito el recibo.
 
-- [ ] **Step 5: añadir test de argv literal y conservación del primer intento**
+- [x] **Step 5: añadir test de argv literal y conservación del primer intento**
 
 Crear executor propio temporal con `review_workspace.prepare` y registrarlo siguiendo `test_review_check_provenance.py`. Lanzar capture_check con argv exacto `[sys.executable, '-c', 'import json,sys; print(json.dumps(sys.argv[1:]))', 'a b', '$value', '`tick`']`. El programa sólo imprime argumentos. Las aserciones decisivas son:
 
@@ -566,23 +566,23 @@ self.assertEqual(after, before)
 
 receipt es la primera salida de capture_check; stdout_path es el archivo de stdout identificado por ella; same_request contiene los mismos argumentos/output_dir; before/after son inventarios de bytes del output_dir. Nombrar el método `test_receipt_preserves_literal_argv_and_previous_attempt`. Añadir subcasos de bytes alterados, executor/revisión distintos y validate sin subprocess: invalid_receipt y cero llamadas a procesos.
 
-- [ ] **Step 6: integrar y documentar recibos**
+- [x] **Step 6: integrar y documentar recibos**
 
 Conectar validación en preflight/retención; check.reference apunta al recibo, logs seleccionados aparte. Mostrar comando desde argv exacto. Documentar intérprete explícito para entrypoints shell y retries con nuevas rutas. No modificar review_runner.py ni activar mediciones.
 
-- [ ] **Step 7: ejecutar test_review_check_receipts.py**
+- [x] **Step 7: ejecutar test_review_check_receipts.py**
 
 Run: `python -m unittest discover -s tests -p test_review_check_receipts.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 8: ejecutar test_review_check_provenance.py**
+- [x] **Step 8: ejecutar test_review_check_provenance.py**
 
 Run: `python -m unittest discover -s tests -p test_review_check_provenance.py -v`
 
 Expected: el módulo termina OK, exit 0; no acredita la suite completa por sí solo.
 
-- [ ] **Step 9: commit**
+- [x] **Step 9: commit**
 
 ```powershell
 git add -- scripts/review_check_receipts.py scripts/review_check_provenance.py scripts/review_preflight.py scripts/review_artifacts.py tests/test_review_check_receipts.py references/contracts/result-contract.md references/execution/workspaces.md
