@@ -51,3 +51,20 @@ Estas verificaciones se ejecutaron y quedaron registradas en el ledger local ant
 La regeneración y edición de contexto se validaron en fixtures puros: una sola identidad de run, acción `rebuild_candidate` y cero trabajo/dispatch nuevo recomendado. No se atribuye esa comprobación sintética a una ejecución real de CCR.
 
 Después de redactar este informe, se repitió `test_review_operational_summary.py`: 11/11, exit 0, 20.386 s; `test_reference_layout.py`: 1/1, exit 0, 0.079 s; y `git diff --check`: exit 0 (aviso de conversión CRLF/LF del plan). La repetición confirma también que este documento conserva los enlaces y ubicaciones canónicas.
+
+## Seguimiento de hallazgos CCR del PR #27
+
+Se verificaron los cuatro hallazgos del comentario sobre el commit `1d037b76bbe0273f3df869ffb89f0cb58093e598`; todos reproducían una discrepancia real entre código y contrato. El commit `d7bcb0ea82f121cb8712576e0cf712d3c67f26d8` corrige referencias S001/S002+, resolución de digest por alias, y bindings de `command`/`argv` y `cwd`/workspace del executor. El spec y el plan incorporan esos contratos y casos de regresión.
+
+| Verificación posterior | Resultado |
+|---|---|
+| `test_review_references.py` | 4/4, exit 0; incluye la transición S002 y rechazo de un índice incorrecto. |
+| `test_review_reference_index.py` | 10/10, exit 0; incluye una fuente aliasada anidada y hash capturado. |
+| `CheckReceiptTests` | 7/7, exit 0; incluye discrepancias de command y workspace en la validación retenida. |
+| Barreras de captura para comando/workspace y workspace no propio | 2/2, exit 0. |
+| `PreflightTests` | 2/2, exit 0. |
+| `test_review_profiles.py` | 25/25, exit 0. |
+| `CheckProvenanceTests` | 6/6, exit 0. |
+| `git diff --check` | Exit 0, sin errores de whitespace. |
+
+Las pruebas de captura exitosa y retención que crean worktrees no pudieron ejecutar la preparación con Git for Windows en este host: el proceso falla antes de iniciar el helper con `fatal: '$GIT_DIR' too big`. Por eso estas pruebas permanecen pendientes de un runner compatible y la validación posterior es focalizada, no una declaración de suite completa.
