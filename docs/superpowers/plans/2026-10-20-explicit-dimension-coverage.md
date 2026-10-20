@@ -1,16 +1,14 @@
-# Cobertura explícita de dimensiones ABCDE — Implementation Plan
+# Cobertura explícita de dimensiones ABCDE Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** impedir omisiones silenciosas de dimensiones mediante 27 decisiones explícitas, validadas y visibles en los reportes nuevos.
+**Goal:** impedir omisiones silenciosas mediante 27 dimensiones obligatorias con estado, evidencia o motivo, visibles en los reportes nuevos.
 
-**Architecture:** final schema 11 añade dimensiones obligatorias a las cinco filas ABCDE; un módulo puro concentra catálogo, agregación y validación. Los helpers existentes conservan persistencia, provenance y proyecciones, aceptando 10 para continuidad histórica y 11 para el flujo actualizado.
+**Architecture:** un módulo puro define el catálogo y valida dimensiones y resúmenes. Final schema 11 incorpora ese contrato; los helpers existentes conservan provenance, archive 8 y continuidad de schema 10. Los renderers consumen los mismos datos para el informe, comentario público y entregas.
 
 **Tech Stack:** Python 3.10+, biblioteca estándar, unittest, Git y Markdown.
 
 **Spec:** [2026-10-20-explicit-dimension-coverage-design.md](../specs/2026-10-20-explicit-dimension-coverage-design.md).
-
-**Estado:** plan propuesto; implementación pendiente de revisión del usuario y elección de ejecución. Base `main` / `09eeb03` / CCR 2.13.0. No hay autorización para ejecutar estos pasos por el hecho de haber solicitado los documentos.
 
 ## Global Constraints
 
@@ -25,127 +23,597 @@
 
 ## Review Focus
 
-1. Un ID ausente, repetido, ajeno al área o con un tipo no hashable debe producir errores de validación, nunca excepción ni una cobertura implícita: tarea 1.
-2. Una mezcla de dimensiones cubiertas y pendientes no debe admitir un área cubierta ni perder el efecto de una brecha material: tareas 1 y 2.
-3. Una rama `schema_version == 10` olvidada no debe permitir que 11 omita historia de perfiles, checks locales o fuentes de ejecución: tarea 2.
-4. Una dimensión con rutas privadas o texto Markdown hostil no debe filtrar evidencia, alterar IDs ni romper las proyecciones: tarea 3.
-5. Un archivo 10 abierto, cerrado o con operación interrumpida debe conservar sus bytes y su continuidad sin adquirir dimensiones inventadas: tareas 2 y 4.
+1. IDs no hashables, ausentes, duplicados o colocados en otra área producen errores con ruta, nunca excepciones ni cobertura implícita: Task 1.
+2. Una dimensión pendiente material impide aprobar aunque el resumen del área intente marcarse cubierto: Tasks 1–2.
+3. Schema 11 conserva historia de perfiles, fuentes y provenance de checks; ninguna rama de versión los omite: Tasks 2–3.
+4. Texto hostil y rutas privadas en dimensiones se escapan o sanean sin cambiar IDs ni el resultado original: Tasks 4–5.
+5. Archivos y operaciones interrumpidas de schema 10 conservan sus bytes; recuperar no inventa dimensiones: Task 3.
 
-## Preparación
+---
 
-Trabajar en el worktree aislado de esta rama, o en el aislamiento expresamente elegido para ejecutar el plan. No tocar el checkout principal ni el visor. No instalar dependencias: el proyecto utiliza la biblioteca estándar.
+## Estado y preparación
 
-Los comandos usan `python` para el intérprete efectivo. Si WindowsApps no es ejecutable, usar el Python empaquetado disponible en `%USERPROFILE%/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`. Fijar TEMP/TMP a un temporal propio fuera del checkout principal y usar `-B` para evitar bytecode. No confundir una ejecución focalizada con la suite completa.
+Plan propuesto, pendiente de revisión y elección del método de ejecución. Base `main` / `09eeb03` / CCR 2.13.0; worktree `.worktrees/explicit-dimensions-spec`, rama `docs/explicit-dimensions-spec`. Este documento no registra implementación.
 
-Las nuevas fixtures serán sintéticas. `tests/recovery_fixtures.py:record10`, `context10`, `source_events` y las factories de `tests/test_review_artifacts.py` ya modelan perfiles y ciclos de vida; no duplicarlos ni modificar en bloque las fixtures históricas para convertirlas a 11.
+Ejecutar desde el worktree aislado. `python` representa el intérprete efectivo; si WindowsApps no funciona, usar `%USERPROFILE%/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe`. Fijar TEMP/TMP a un temporal propio y usar `-B`. Sin instalaciones ni datos reales de reviews.
 
-## Mapa de archivos e interfaces
+Los bloques de tests son métodos para las clases indicadas, con imports explícitos por tarea. Son código a escribir durante implementación; no se ejecutan como parte de preparar este documento. No modificar fixtures históricas para que aparenten evidencia nueva.
+
+## File Structure
 
 | Archivo | Responsabilidad |
 |---|---|
-| `scripts/review_dimensions.py` (nuevo) | Catálogo puro de 27 IDs/etiquetas; agregación y validación de dimensiones |
-| `scripts/review_contract.py` | Activar final 11, validar sus áreas y renderizar desglose privado |
-| `scripts/review_profiles.py`, `review_execution.py`, `review_check_provenance.py`, `review_publication.py` | Aplicar a 11 las garantías existentes de 10 |
-| `scripts/review_artifacts.py` | Admitir 11 en checkpoint/retain/validate sin cambiar archive 8 |
-| `scripts/review_history.py`, `review_recovery.py` | Identidad, lectura y continuidad sin reconstruir cobertura |
-| `scripts/review_delivery.py` | Política de nuevos campos, full y resumen brief |
-| `tests/dimension_fixtures.py` (nuevo) | Datos sintéticos nuevos 11; reusar las factories históricas |
-| `tests/test_review_dimensions.py`, `test_review_dimensions_integration.py` (nuevos) | Contrato puro, renderer y lifecycle 10/11 |
-| `tests/test_review_delivery.py`, `test_review_areas.py`, `test_reference_layout.py` | Proyecciones y compatibilidad documental |
-| `SKILL.md`, referencias de workflow/ejecución/contratos/archivo/reportes y `references/dimensions/*.md` | Selección, seguimiento y cierre obligatorio por dimensión |
-| `README.md`, `docs/usage.md`, `CHANGELOG.md`, `docs/validation/2026-10-20-explicit-dimension-coverage.md` | Uso, límites, cambios y evidencia observada de implementación |
+| `scripts/review_dimensions.py` (nuevo) | Catálogo, etiquetas, resumen y validación puros |
+| `scripts/review_contract.py` | Schema 11 y presentación privada/pública |
+| `scripts/review_profiles.py`, `scripts/review_execution.py`, `scripts/review_check_provenance.py`, `scripts/review_publication.py` | Garantías heredadas de schema 10 |
+| `scripts/review_artifacts.py`, `scripts/review_history.py` | Gates de archivo, identidad y continuidad; recovery consume estos lectores sin cambiar su formato |
+| `scripts/review_delivery.py` | Full/brief y política de datos portátiles |
+| `tests/dimension_fixtures.py` (nuevo) | Construcción exclusivamente sintética de dimensiones y finales 11 |
+| `tests/test_review_dimensions.py` (nuevo) | Contrato puro y envelope 11 |
+| `tests/test_review_dimensions_archive.py` (nuevo) | Persistencia, lectura y checkpoint/recovery |
+| `tests/test_review_dimensions_rendering.py` (nuevo) | Informe y comentario público |
+| `tests/test_review_dimensions_delivery.py` (nuevo) | Entregas y saneamiento |
+| `tests/test_review_dimension_policy.py` (nuevo) | Correspondencia de catálogo, packet 1 e instrucciones |
+| Referencias y documentación de Task 6 | Contrato operativo y resultados observados |
 
-Interfaces nuevas, sin framework ni IO en el módulo puro:
+### Task 1: Catálogo y validación pura de las 27 dimensiones
+
+**Files:**
+- Create: `scripts/review_dimensions.py`
+- Create: `tests/dimension_fixtures.py`
+- Test: `tests/test_review_dimensions.py`
+
+**Interfaces:**
+- Consumes: secciones 3–4 del spec; no depende todavía de schema 11 ni de archivos de reviews.
+- Produces: `DIMENSIONS: dict[str, tuple[str, ...]]`, `DIMENSION_LABELS: dict[str, str]`, `dimension_summary(dimensions: list[dict]) -> dict`, `validate_dimensions(areas: object, finding_ids: set[str]) -> list[str]` en `review_dimensions.py`.
+- Produces: `dimension_row(identifier: str, status='covered', **updates) -> dict` y `dimension_areas() -> list[dict]` en `dimension_fixtures.py`. La primera devuelve exactamente `{id, status, details, material, finding_ids}`; la segunda crea las cinco áreas sintéticas, todas cubiertas, con sus 27 dimensiones y resúmenes coherentes. No usa resultados retenidos.
+- `dimension_summary` consume filas ya válidas y devuelve únicamente `{status, material, finding_ids}`, con referencias ordenadas y únicas. `validate_dimensions` recibe datos arbitrarios y devuelve errores con rutas `coverage.areas[i]...` sin lanzar errores de tipo.
+
+- [ ] **Step 1: Write the failing test**
+
+En `tests/test_review_dimensions.py`, crear `DimensionCatalogTests(unittest.TestCase)`; imports: `copy`, `unittest`, `contract` desde `test_review_contract` (establece scripts en sys.path), `review_dimensions as dimensions`, y `dimension_row`, `dimension_areas` desde `dimension_fixtures`. Añadir estos métodos:
 
 ```python
-# scripts/review_dimensions.py
-DIMENSIONS: dict[str, tuple[str, ...]]  # A..D: cinco IDs; E: siete IDs
-DIMENSION_LABELS: dict[str, str]        # etiquetas españolas
-dimension_summary(dimensions: list[dict]) -> dict
-# Entrada ya validada; devuelve {status, material, finding_ids}.
-# finding_ids ordenados y sin duplicados. No infiere details ni cobertura.
-validate_dimensions(areas: object, finding_ids: set[str]) -> list[str]
-# Lista de errores con rutas coverage.areas[i].dimensions[j] o del resumen.
-# Acepta entradas hostiles como datos: reporta errores, no lanza TypeError.
+def test_exact_catalog_and_every_missing_dimension(self):
+    expected = {a: tuple(f'{a}{i:02d}' for i in range(1, n + 1))
+                for a, n in [('A', 5), ('B', 5), ('C', 5), ('D', 5), ('E', 7)]}
+    self.assertEqual(dimensions.DIMENSIONS, expected)
+    self.assertEqual(set(dimensions.DIMENSION_LABELS), {i for ids in expected.values() for i in ids})
+    self.assertEqual(dimensions.validate_dimensions(dimension_areas(), set()), [])
+    for index, area in enumerate(dimension_areas()):
+        for identifier in expected[area['area']]:
+            rows = dimension_areas()
+            rows[index]['dimensions'] = [d for d in rows[index]['dimensions'] if d['id'] != identifier]
+            self.assertTrue(any(f'coverage.areas[{index}].dimensions' in e
+                                for e in dimensions.validate_dimensions(rows, set())))
 
-# tests/dimension_fixtures.py
-record11(profile='focused', source='automatic') -> dict
-# Reusa record10; cambia solo schema y añade dimensiones sintéticas coherentes.
-dimension_row(identifier: str, status='covered', **updates) -> dict
-# {id, status, details, material, finding_ids}; no afirma evidencia real.
+def test_malformed_rows_return_errors(self):
+    for bad in ('Z99', 'E01', [], {}, None):
+        rows = dimension_areas()
+        rows[0]['dimensions'][0]['id'] = bad
+        self.assertTrue(dimensions.validate_dimensions(rows, set()))
+    for change in ({'id': 'A02'}, {'details': ' '}, {'extra': True},
+                   {'status': 'unknown'}, {'material': 'true'}, {'finding_ids': ['missing']}):
+        rows = dimension_areas()
+        rows[0]['dimensions'][0].update(change)
+        self.assertTrue(dimensions.validate_dimensions(rows, set()))
+    rows = dimension_areas()
+    del rows[0]['dimensions'][0]['details']
+    self.assertTrue(dimensions.validate_dimensions(rows, set()))
+
+def test_summary_truth_table_and_finding_union(self):
+    for states, expected in [(['not_applicable'], 'not_applicable'),
+        (['covered', 'not_applicable'], 'covered'),
+        (['not_evaluated', 'not_applicable'], 'not_evaluated'),
+        (['covered', 'not_evaluated'], 'partial'), (['partial'], 'partial')]:
+        rows = [dimension_row(f'A{i:02d}', status=s) for i, s in enumerate(states, 1)]
+        self.assertEqual(dimensions.dimension_summary(rows)['status'], expected)
+    rows = [dimension_row('A01', finding_ids=['F001']),
+            dimension_row('A02', status='partial', material=True, finding_ids=['F001'])]
+    self.assertEqual(dimensions.dimension_summary(rows),
+                     {'status': 'partial', 'material': True, 'finding_ids': ['F001']})
+
+def test_parent_and_nonapplicability_cannot_hide_inconsistency(self):
+    for update in ({'status': 'partial'}, {'material': True}, {'finding_ids': ['F001']}):
+        rows = dimension_areas()
+        rows[0].update(update)
+        self.assertTrue(dimensions.validate_dimensions(rows, {'F001'}))
+    for update in ({'material': True}, {'finding_ids': ['F001']}):
+        rows = dimension_areas()
+        rows[0]['dimensions'][0].update(status='not_applicable', **update)
+        self.assertTrue(dimensions.validate_dimensions(rows, {'F001'}))
 ```
 
-El contrato existente sigue entrando por `review_contract.validate(record) -> list[str]` y `render(record, audience='user', publication_context=None) -> str`. `review_artifacts.retain(..., expected_schema=None)` conserva firma; amplía el conjunto válido a 1–11. `context10(record)` y `source_events(record)` pueden usarse con 11 porque sus campos de ejecución no cambian; su nombre histórico no autoriza alterar `record10`.
+- [ ] **Step 2: Run test to verify it fails**
 
-### Task 1: Catálogo y coherencia de dimensiones
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`
 
-**Files:** Create `scripts/review_dimensions.py`, `tests/dimension_fixtures.py`, `tests/test_review_dimensions.py`. Modify `scripts/review_contract.py`.
+Expected: FAIL por `review_dimensions` ausente. Fallos del intérprete o permisos no son RED funcional.
 
-**Interfaces:** produce las constantes, `dimension_summary`, `validate_dimensions` y factories anteriores. `review_contract.validate` consume `validate_dimensions` solo para final 11; mantiene las reglas de 1–10. Las ramas de ejecución de 11 se completan en la tarea 2 antes de usarlo como resultado durable.
+- [ ] **Step 3: Implement `dimension_summary(dimensions: list[dict]) -> dict` and `validate_dimensions(areas: object, finding_ids: set[str]) -> list[str]` in `scripts/review_dimensions.py`**
 
-- [ ] **Step 1: Escribir casos RED del catálogo y el resumen.** En `test_review_dimensions.py`, crear `DimensionContractTests`. `test_catalog_has_exactly_27_stable_ids` afirma A01–A05, B01–B05, C01–C05, D01–D05 y E01–E07; es la única expectativa literal completa del catálogo en tests. `test_every_dimension_is_required` elimina sucesivamente cada ID y exige su ruta en errores. `test_rejects_duplicate_foreign_unknown_and_nonhashable_ids` prueba repetido, A01 dentro de E, Z99, lista y objeto como ID. `test_requires_exact_fields_and_nonempty_details` cubre ausencia, extra, whitespace y tipos no válidos.
-- [ ] **Step 2: Escribir casos RED de agregación.** `test_summary_state_truth_table` afirma: todo N/A → N/A; cubiertas más N/A → cubierta; sin evaluar más N/A → no evaluada; cubierta más sin evaluar → parcial; cualquier parcial → parcial. `test_summary_material_and_finding_union` exige OR material y unión de IDs, con un hallazgo compartido sin duplicación. `test_rejects_inconsistent_parent` altera por separado estado, materialidad y referencias del área y exige errores. `test_nonapplicable_cannot_hold_findings_or_material_gap` y `test_rejected_or_missing_findings_are_not_references` fijan las restricciones del spec.
-- [ ] **Step 3: Ejecutar RED.** `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`. Esperado: falla por módulo nuevo ausente o contrato todavía sin soporte; no aceptar problemas del entorno como RED funcional.
-- [ ] **Step 4: Implementar catálogo, resumen y validador puro.** Adoptar exactamente los IDs de la sección 3 del spec. Validar tipos antes de pertenencia/conjuntos. Integrar esquema 11 final sin aceptar nuevos campos en 10 ni asignar dimensiones por defecto. Las constantes y funciones producen únicamente los campos definidos en Interfaces.
-- [ ] **Step 5: Ejecutar GREEN.** Repetir el comando anterior y `python -B -m unittest discover -s tests -p test_review_areas.py -v`. Esperado: sin fallos; tests de schemas históricos intactos. La prueba histórica que acepta registros sin dimensiones continúa probando su versión original.
-- [ ] **Step 6: Commit focalizado.** Incluir exclusivamente los cuatro archivos de esta tarea con mensaje `feat(cobertura): validar dimensiones explícitas por área`.
+Definir los 27 IDs y sus etiquetas según el spec. Validar shape exacto y tipos antes de usar conjuntos; aplicar la tabla de agregación y unión, materialidad y restricciones N/A. Implementar las dos factories sintéticas de Interfaces en `tests/dimension_fixtures.py`. Mantener esta tarea pura: no habilitar parcialmente schema 11 en el contrato raíz.
 
-### Task 2: Schema 11 completo y gates durables
+- [ ] **Step 4: Run test to verify it passes**
 
-**Files:** Modify `scripts/review_contract.py`, `review_profiles.py`, `review_execution.py`, `review_check_provenance.py`, `review_publication.py`, `review_artifacts.py`, `review_history.py`, `review_recovery.py` solo donde su dispatch de versión lo requiera. Create `tests/test_review_dimensions_integration.py`; extend `tests/test_review_dimensions.py`.
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`
 
-**Interfaces:** consume `record11` y las validaciones de tarea 1. Produce aceptación integral de 11 en `validate`, checkpoint, `retain(expected_schema=11)`, `validate_execution_sources`, recuperación y lectura histórica; archive 8 conserva su forma. Mantiene aceptación explícita de 10 para operaciones existentes. No cambia firmas ni reservas/locks/claims.
+Expected: PASS, cuatro métodos y todos sus casos internos, sin excepción ante IDs no hashables.
 
-- [ ] **Step 1: Escribir RED de herencia y veredicto.** En `DimensionContractTests`, `test_material_gap_and_blocker_precedence` usa una dimensión pendiente material: `approvable` inválido; `insufficient_evidence` válido; con hallazgo bloqueante confirmado, `not_approvable` válido. `test_schema11_keeps_schema10_profile_and_executor_guards` corrompe por separado history, selection_id, superseded_by y executor/revision y exige los mismos rechazos de 10. `test_legacy_1_to_10_have_no_dimensions_requirement` reutiliza factories existentes por versión sin añadirles datos.
-- [ ] **Step 2: Escribir RED del lifecycle sintético.** `DimensionArchiveTests` reutiliza `ArchiveTests` y los patrones de `test_review_archive8.py`. `test_archive8_retain_validate_close_schema11` prepara, registra contexto/fuentes observadas sintéticas, retiene con expected 11, verifica, cierra y exige validación completa. `test_expected_11_rejects_10_and_missing_dimensions_without_output_change` compara hashes antes/después del rechazo. `test_schema11_does_not_bypass_source_or_check_provenance` prueba fuente de perfil contradictoria y ejecución local sin binding, sin permitir retención.
-- [ ] **Step 3: Escribir RED de continuidad histórica.** `test_schema10_open_closed_and_pending_operations_remain_schema10` cubre run abierta, cerrada y reserva interrumpida; permite solo las escrituras propias de la recuperación ya autorizada sobre su fixture y exige idénticos bytes del resultado 10. `test_recovery_replays_reserved_schema11_bytes` reanuda bytes reservados 11 válidos sin volver a generar dimensiones. `test_checkpoint_and_history_bind_review_id_for_11` rechaza CR ID ajeno en ambos lectores. `test_latest_reads_both_versions_without_starting_run` compara árboles antes/después, conserva la selección por entradas/vigencia existente y no inventa cobertura.
-- [ ] **Step 4: Ejecutar RED.** Ejecutar las suites nuevas con `python -B -m unittest discover -s tests -p test_review_dimensions*.py -v`. Esperado: fallos por guards de versión o lifecycle aún restringidos a 10.
-- [ ] **Step 5: Extender soporte explícito de 11.** Revisar guards `== 10`, `!= 10`, tuplas que terminan en 10 y rangos de schema en los archivos enumerados. Aplicar a 11 todas las garantías heredadas; no sustituir globalmente 10 por 11. Archive 8 admite finales 10/11 en checkpoint, retain y validate; CLI `--expected-schema` admite 1–11. El error de expected 11 ante 10 permanece anterior a la escritura de resultados. Mantener el formato de contexto, trace, manifiesto y packets.
-- [ ] **Step 6: Ejecutar GREEN y regresiones de provenance.** Repetir suites nuevas y ejecutar individualmente `test_review_execution_policy.py`, `test_review_check_provenance.py`, `test_review_profiles.py`, `test_review_archive8.py` y `test_review_history.py` con unittest discover. Esperado: sin fallos; legacy no cambia schema ni representación. Registrar cualquier omisión de plataforma.
-- [ ] **Step 7: Commit focalizado.** Mensaje `feat(contratos): conservar provenance y archivo para schema 11` con los archivos concretos modificados y los tests de esta tarea.
+- [ ] **Step 5: Commit**
 
-### Task 3: Desglose en reportes y proyección portátil
+```powershell
+git add -- scripts/review_dimensions.py tests/dimension_fixtures.py tests/test_review_dimensions.py
+git commit -m 'feat(cobertura): validar catálogo y dimensiones explícitas'
+```
 
-**Files:** Modify `scripts/review_contract.py`, `scripts/review_delivery.py`, `scripts/review_publication.py` si hace falta para la selección pública, `tests/test_review_dimensions.py`, `tests/test_review_delivery.py`, `tests/test_review_dimensions_integration.py`.
+### Task 2: Final schema 11 con veredicto y provenance íntegros
 
-**Interfaces:** consume catálogo, labels y finales 11 válidos. `render(..., audience='user')` añade `### Dimensiones evaluadas` después de la matriz y antes de incertidumbres. `render(..., audience='comment')` conserva política pública. `deliver` mantiene firma y entrega full/brief según sección 6 del spec.
+**Files:**
+- Modify: `scripts/review_contract.py:93` (`validate`) y `:553` (`canonicalize_ids`)
+- Modify: `scripts/review_profiles.py:258` (`validate_profile_execution`)
+- Modify: `scripts/review_execution.py:10` (`validate_execution`) y `:208` (`validate_execution_sources`)
+- Modify: `scripts/review_check_provenance.py:8` y `:37` (validación de checks y fuentes)
+- Modify: `scripts/review_publication.py:11` (`public_limitations`)
+- Modify: `tests/dimension_fixtures.py`
+- Test: `tests/test_review_dimensions.py`
 
-- [ ] **Step 1: Escribir RED del renderer.** Añadir `DimensionRenderingTests`: `test_user_report_lists_every_dimension_in_canonical_order` afirma 27 filas con etiqueta, estado, detalle y referencias; incluye las cuatro clases de estado. `test_hostile_text_is_escaped_without_mutating_record` usa pipes, HTML, saltos y Markdown, y compara deep copy antes/después. `test_schema10_render_has_no_invented_dimension_section` conserva salida histórica. `test_public_comment_omits_taxonomy_but_keeps_one_material_gap` exige una sola incertidumbre material, sin tabla ni etiquetas generadas de dimensiones.
-- [ ] **Step 2: Escribir RED de entrega.** En `test_review_delivery.py`, `test_schema11_full_preserves_27_dimension_rows_and_identity` valida JSON portátil, CR ID y recibo de origen. `test_schema11_brief_accounts_for_every_id_and_pending_reason` exige todos los IDs agrupados por estado y motivos pendientes/N/A. `test_dimension_details_are_sanitized_but_ids_preserved` inserta rutas Windows/POSIX y evidencia privada en details y comprueba su saneamiento. `test_unknown_dimension_fields_are_not_silently_projected` rechaza antes de crear salida; no reemplazar errores con un JSON degradado a 10.
-- [ ] **Step 3: Ejecutar RED.** Ejecutar `test_review_dimensions.py` y `test_review_delivery.py` con unittest discover. Esperado: fallos por sección inexistente o campo nuevo aún sin política portátil.
-- [ ] **Step 4: Implementar proyecciones.** El renderer usa el catálogo y helpers existentes de escape; conserva 1–10. Full mantiene todas las dimensiones. Brief representa todos los IDs y motivos pendientes/N/A sin duplicar evidencia cubierta. En `_Projection`, clasificar explícitamente `coverage.areas[].dimensions[].id`, `.status`, `.finding_ids[]` como STRUCTURAL y `.details` como PROSE; los booleanos siguen el manejo tipado existente. Extender los guards de versión de identidad y limitaciones en delivery/publication para heredar las garantías de 10.
-- [ ] **Step 5: Ejecutar GREEN.** Repetir ambas suites y `test_review_publication_policy.py`. Esperado: sin fallos; ni rutas privadas ni campos desconocidos pasan por una política permisiva. Verificar que las brechas agregadas conservan impacto público y no duplican limitaciones.
-- [ ] **Step 6: Commit focalizado.** Mensaje `feat(reportes): mostrar dimensiones y conservarlas en entregas`.
+**Interfaces:**
+- Consumes: catálogo, factories y funciones puras de Task 1.
+- Produces: `review_contract.validate(record) -> list[str]` y `canonicalize_ids(record, reserved_ids=None) -> tuple[dict, dict]` aceptan 11 con todas las garantías heredadas de 10; la segunda conserva su retorno `(record, source_maps)`. Schemas 1–10 mantienen sus reglas. Se conservan firmas existentes de los validadores de ejecución/perfiles/checks.
+- Produces: `record11(profile='focused', source='automatic') -> dict`, que copia `recovery_fixtures.record10(profile, source)`, fija schema 11 y usa `dimension_areas()`; y `set_dimension(record: dict, identifier: str, **updates) -> None`, que actualiza una dimensión sintética y recomputa únicamente status/material/finding_ids de su área usando `dimension_summary`.
 
-### Task 4: Flujo obligatorio, compatibilidad y validación final
+- [ ] **Step 1: Write the failing test**
 
-**Files:** Modify `SKILL.md`, `references/workflow/review-areas.md`, `references/execution/reviewers.md`, `worker-packets.md`, `references/contracts/result-contract.md`, `references/archive/artifacts.md`, `references/reporting/report-format.md`, `delivery.md`, `references/dimensions/design-testability.md`, `contracts-data.md`, `security-operation.md`, `README.md`, `docs/usage.md`, `CHANGELOG.md`, `tests/test_reference_layout.py` cuando proceda. Add scenarios to `tests/test_review_scenarios.py` o pruebas documentales en `tests/test_review_dimensions.py`. Create `docs/validation/2026-10-20-explicit-dimension-coverage.md` para resultados de implementación, distinto del registro de preparación.
+Añadir `DimensionFinalTests(unittest.TestCase)` en `test_review_dimensions.py`. Imports adicionales: `record11`, `set_dimension`; `record10` desde `recovery_fixtures`; `finding` desde `test_review_contract`; `check` desde `test_review_traceability_contract`; `validate_check_sources` desde `review_check_provenance`.
 
-**Interfaces:** consume soporte 11 completo de tareas 1–3. Produce instrucciones coherentes con catálogo, packets 1, reporte y `retain --expected-schema 11`, además de evidencia observada de implementación. No cambia la versión de release ni el visor.
+```python
+def test_schema11_requires_dimensions_but_10_does_not(self):
+    self.assertEqual(contract.validate(record10()), [])
+    for profile in ('focused', 'standard', 'deep', 'extended'):
+        for source in ('automatic', 'explicit'):
+            self.assertEqual(contract.validate(record11(profile, source)), [])
+    value = record11()
+    self.assertEqual(contract.validate(value), [])
+    del value['coverage']['areas'][0]['dimensions']
+    self.assertTrue(any('dimensions' in e for e in contract.validate(value)))
 
-- [ ] **Step 1: Escribir RED documental.** `test_dimension_catalog_matches_operational_references` comprueba que los 27 IDs y sus áreas se encuentran en las referencias correspondientes. `test_new_workflow_requires_schema11_and_no_silent_downgrade` exige el guard de retención e instrucciones de no inferir cobertura desde asignación/área. `test_worker_packet_stays_version1_with_dimension_flow_text` valida packet 1 con IDs en flows/limitations y sin campos nuevos; el coordinador conserva ausencia de respuesta como brecha. `test_rereview_cannot_infer_dimensions_from_legacy_area_status` fija esa regla en los escenarios documentados.
-- [ ] **Step 2: Ejecutar RED.** Ejecutar `test_review_dimensions.py` y `test_reference_layout.py`. Esperado: fallos por instrucciones y referencias todavía de schema 10, no por enlaces inexistentes fabricados.
-- [ ] **Step 3: Actualizar referencias y ejemplos.** Documentar los 27 estados obligatorios, precedencia agregada, selección por mecanismo, texto de IDs en packet 1, verificación existente, re-review y compatibilidad 10/11. Revisar todos los «new final schema 10»/«expected-schema 10» operativos: cambiar solo los productores nuevos; preservar ejemplos históricos identificados. Mostrar un ejemplo completo sintético 11 en las pruebas y fragmentos explícitamente parciales en Markdown. Conservar instrucciones operativas en inglés y reportes/docs de usuario en español. Añadir un único bloque unreleased según CONTRIBUTING, sin número de release.
-- [ ] **Step 4: Registrar tres escenarios de flujo y su contraste.** (a) Cambio de reintentos: E05, A03 y D05 comparten evidencia y una causa; un hallazgo. (b) Revisor omite respuesta a E05: queda no evaluada/material cuando impide establecer idempotencia, no cubierta/N/A. (c) Re-review de schema 10: no deriva A01–A05 desde A cubierta, conserva original y produce nueva clasificación. Diferenciar expectativas documentadas de una run realmente ejecutada; no afirmar calidad del modelo a partir de strings de tests.
-- [ ] **Step 5: Ejecutar GREEN focalizado.** Ejecutar `test_review_dimensions*.py`, `test_review_areas.py`, `test_review_packets.py`, `test_reference_layout.py`, `test_review_delivery.py`, `test_review_publication_policy.py`, `test_review_archive8.py`, `test_review_history.py`, `test_review_latest.py` y `test_review_profiles.py` con unittest discover. Esperado: sin fallos y omisiones explicadas.
-- [ ] **Step 6: Ejecutar suite completa una vez.** `python -B -m unittest discover -s tests -v`. Incluye matrices extensas de restart/resource replay; no repetirlas si ya terminaron en esta ejecución. Registrar exit code, conteo, omisiones y duración real. `git diff --check` debe salir sin errores. Fallos de entorno se registran y no equivalen a suite aprobada.
-- [ ] **Step 7: Revisar alcance y evidencia.** Confirmar AC1–AC10 del spec con sus tests/escenarios; comprobar que solo se usaron fixtures sintéticas y que el visor no fue tocado. Registrar comandos/resultados observados y compatibilidad no verificada en el nuevo documento de validación. El original de preparación no se reescribe como si hubiese ejecutado implementación.
-- [ ] **Step 8: Commit focalizado.** Mensaje `docs(cobertura): exigir trazabilidad explícita de dimensiones` y cierre de implementación solo después de la revisión de rama correspondiente al método elegido.
+def test_material_gap_and_confirmed_blocker_precedence(self):
+    value = record11()
+    set_dimension(value, 'E05', status='partial', material=True, details='Concurrent claim remains unverified')
+    self.assertTrue(any('verdict' in e for e in contract.validate(value)))
+    value['verdict'] = 'insufficient_evidence'
+    self.assertEqual(contract.validate(value), [])
+    value['findings'] = [dict(finding(blocking=True), id='F001')]
+    set_dimension(value, 'B01', finding_ids=['F001'])
+    value['verdict'] = 'not_approvable'
+    self.assertEqual(contract.validate(value), [])
+    value['findings'][0]['status'] = 'rejected'
+    self.assertTrue(any('finding_ids' in e for e in contract.validate(value)))
 
-## Cobertura del spec y revisión propia del plan
+def test_schema11_keeps_profile_and_check_guards(self):
+    for field, bad in [('profile_history', []), ('plan', [])]:
+        value = record11()
+        value['coverage']['execution'][field] = bad
+        self.assertTrue(contract.validate(value))
+    value = record11()
+    value['coverage']['execution']['plan'][0]['selection_id'] = 'S999'
+    self.assertTrue(contract.validate(value))
+    value = record11()
+    value['coverage']['execution']['plan'][0]['superseded_by'] = 'S999'
+    self.assertTrue(contract.validate(value))
+    value = record11()
+    value['checks'] = [dict(check(), execution={'kind': 'local', 'executor': None})]
+    self.assertTrue(any('executor' in e for e in contract.validate(value)))
+    value['checks'][0]['execution']['executor'] = 'X1'
+    self.assertTrue(validate_check_sources(value, []))
+    self.assertTrue(validate_check_sources(value, [dict(executor='X1', revision='unrelated', snapshot=None)]))
 
-| Criterios | Tareas |
+def test_allocation_remaps_dimension_and_parent_references_atomically(self):
+    value = record11()
+    value['findings'] = [dict(finding(), id='D1-F001')]
+    set_dimension(value, 'B01', finding_ids=['D1-F001'])
+    allocated, sources = contract.canonicalize_ids(value)
+    self.assertEqual(sources['findings']['D1-F001'], 'F001')
+    self.assertEqual(allocated['coverage']['areas'][1]['finding_ids'], ['F001'])
+    self.assertEqual(allocated['coverage']['areas'][1]['dimensions'][0]['finding_ids'], ['F001'])
+    self.assertEqual(contract.validate(allocated), [])
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`
+
+Expected: FAIL por factory nueva o schema 11 sin soporte, mientras los tests puros de Task 1 siguen pasando.
+
+- [ ] **Step 3: Extend the schema dispatch in the functions listed under Files**
+
+Implementar `record11` y `set_dimension` según Interfaces. Admitir final 11, exigir `dimensions` solo allí y validar con `validate_dimensions`. Extender explícitamente a 11 los guards de 10 para perfiles, fuentes, checks, IDs y limitaciones públicas; no hacer reemplazo global de versiones. Remapear también `dimensions[].finding_ids` en la asignación atómica de IDs. Reutilizar el efecto actual de brecha material desde el área agregada y conservar prioridad de bloqueantes.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```powershell
+python -B -m unittest discover -s tests -p test_review_dimensions.py -v
+python -B -m unittest discover -s tests -p test_review_areas.py -v
+python -B -m unittest discover -s tests -p test_review_contract.py -v
+python -B -m unittest discover -s tests -p test_review_profiles.py -v
+python -B -m unittest discover -s tests -p test_review_check_provenance.py -v
+```
+
+Expected: PASS en cada comando; legacy válido sin dimensiones. Ante cualquier exit distinto de cero, resolver antes de seguir.
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add -- scripts/review_contract.py scripts/review_profiles.py scripts/review_execution.py scripts/review_check_provenance.py scripts/review_publication.py tests/dimension_fixtures.py tests/test_review_dimensions.py
+git commit -m 'feat(contratos): conservar garantías de schema 10 en schema 11'
+```
+
+### Task 3: Archive 8 y continuidad 10/11 sin reconstruir resultados
+
+**Files:**
+- Modify: `scripts/review_artifacts.py:1492` (`checkpoint`), `:3624` (`validate`), `:3797` (`retain`) y guards de su diagnóstico de checkpoint/CLI
+- Modify: `scripts/review_history.py:62` (`_source_snapshot`)
+- Modify: `tests/test_review_artifacts.py:210` (`ArchiveTests.retain`, helper sintético)
+- Test: `tests/test_review_dimensions_archive.py`
+
+**Interfaces:**
+- Consumes: finales 11 válidos de Task 2; `archive.ArchiveTests` de `test_review_artifacts`; `checkpoints.CheckpointTests` de `test_review_checkpoints`; `record10`, `current_inputs` de `recovery_fixtures`.
+- Produces: soporte final 10/11 en archive 8; `retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None) -> dict`, `checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=None, phase, gate_errors=None, max_evidence_bytes=CHECKPOINT_EVIDENCE_LIMIT) -> dict` y `validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False) -> dict` conservan sus firmas. Expected-schema 11 rechaza 10 antes de escribir resultados. No cambia manifest, layout, reservas ni locks.
+- Test support: reutilizar setUp, git, write, read, snapshot, prepare, retain y close de `ArchiveTests` como atributos de `DimensionArchiveTests(unittest.TestCase)`. Su helper `retain` extiende las comparaciones de 10 a `(10, 11)` y el conjunto `(None, 10)` a `(None, 10, 11)`, preservando binding de scope/CR ID/historia y eventos. No altera el resultado de las fixtures 10.
+- Test support: `DimensionCheckpointTests(checkpoints.CheckpointTests)` sobrescribe solo `final_record(self, run, profile='focused', late_profile=False) -> dict`: consume el resultado sintético del método padre y le aplica schema 11 y `dimension_areas()`. Los tests heredados de interrupción y promoción se ejecutan así contra 11; los originales siguen ejercitando 10. Importar módulos de tests, no sus clases, evita que unittest redescubra además la clase importada.
+
+- [ ] **Step 1: Write the failing test**
+
+Crear las dos clases anteriores. Imports: `unittest`; `Path` desde `pathlib`; `test_review_artifacts as archive`; `test_review_checkpoints as checkpoints`; `record10`, `current_inputs` desde `recovery_fixtures`; `record11`, `dimension_areas` desde `dimension_fixtures`; `review_history`, `review_recovery`. Definir `artifacts = archive.artifacts`. En `DimensionArchiveTests`, añadir:
+
+```python
+def test_retain_close_and_read_both_versions_without_mutation(self):
+    for version, factory in [(10, record10), (11, record11)]:
+        archive_root = self.root / f'archive-{version}'
+        run = self.prepare(output_root=archive_root)
+        self.final = self.write(f'final-{version}.json', factory())
+        self.retain(run, expected_schema=version)
+        self.assertTrue(artifacts.validate(run, require_retained=True)['retained'])
+        self.close(run)
+        self.assertEqual(artifacts.validate(run, require_complete=True)['state'], 'complete')
+        before = self.snapshot(run)
+        value = self.read(run / 'review.json')
+        self.assertEqual(value['schema_version'], version)
+        self.assertEqual(review_history.inspect_source(run)['review_schema'], version)
+        result = review_recovery.select_latest(self.repo, value['scope'],
+            current_inputs=current_inputs(value['scope'], source_set_complete=True),
+            archive_root=archive_root)
+        self.assertEqual(result['status'], 'selected')
+        self.assertEqual(self.snapshot(run), before)
+
+def test_expected11_rejects10_or_missing_dimension_before_retention(self):
+    for name in ('legacy', 'missing'):
+        case = DimensionCheckpointTests('test_valid_final_checkpoint_can_be_promoted_without_external_files')
+        self.addCleanup(case.doCleanups)
+        case.setUp()
+        run, _, _ = case.prepare_promotable_checkpoint()
+        value = case.read(run / 'pending' / 'review.json')
+        if name == 'legacy':
+            value['schema_version'] = 10
+            for area in value['coverage']['areas']:
+                del area['dimensions']
+        if name == 'missing':
+            value['coverage']['areas'][0]['dimensions'].pop()
+        before = case.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'expected schema|dimensions'):
+            artifacts.retain(run, case.write(f'{name}.json', value), expected_schema=11)
+        self.assertEqual(case.snapshot(run), before)
+
+def test_reserved_checkpoint_keeps_exact_schema11_bytes(self):
+    case = DimensionCheckpointTests('test_valid_final_checkpoint_can_be_promoted_without_external_files')
+    self.addCleanup(case.doCleanups)
+    case.setUp()
+    run, _, _ = case.prepare_promotable_checkpoint()
+    reserved = (run / 'pending' / 'review.json').read_bytes()
+    artifacts.retain(run, expected_schema=11)
+    self.assertEqual((run / 'review.json').read_bytes(), reserved)
+    self.assertEqual(case.read(run / 'review.json')['schema_version'], 11)
+```
+
+`DimensionCheckpointTests` hereda también `test_final_checkpoint_with_profile_source_gate_error_is_not_retained`: sus aserciones exigen ausencia de `review.json` retenido y `archive profile history` en gate_errors. Hereda `test_checkpoint_retry_after_each_write_boundary` y `test_modified_or_foreign_pending_bytes_are_refused`, con las mismas aserciones de bytes e integridad. No copiar sus cuerpos; ejecutar el módulo original prueba 10 y el nuevo prueba 11.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions_archive.py -v`
+
+Expected: FAIL porque archive 8, expected-schema y/o checkpoint todavía exigen final 10; no aceptar como GREEN una fixture que convierte 11 otra vez a 10.
+
+- [ ] **Step 3: Extend `retain(..., expected_schema=None)`, checkpoint gates and archive readers**
+
+Aplicar a 11 las mismas comprobaciones de identidad, historia, fuentes y ejecutores que a 10. Admitir 10/11 en archive 8 y rango 1–11 en expected-schema, sin modificar el formato del archivo. Implementar únicamente el soporte de tests descrito en Interfaces. Extender el binding CR ID de `review_history._source_snapshot`; conservar bytes de recovery, sin regenerar dimensiones. `review_recovery` ya delega en los lectores actualizados y queda intacto.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```powershell
+python -B -m unittest discover -s tests -p test_review_dimensions_archive.py -v
+python -B -m unittest discover -s tests -p test_review_checkpoints.py -v
+python -B -m unittest discover -s tests -p test_review_atomic_recovery.py -v
+python -B -m unittest discover -s tests -p test_review_execution_policy.py -v
+python -B -m unittest discover -s tests -p test_review_archive8.py -v
+python -B -m unittest discover -s tests -p test_review_history.py -v
+python -B -m unittest discover -s tests -p test_review_latest.py -v
+```
+
+Expected: PASS; se registran omisiones reales de plataforma. Las interrupciones simuladas se resuelven según sus tests, sin escribir fuera del temporal sintético.
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add -- scripts/review_artifacts.py scripts/review_history.py tests/test_review_artifacts.py tests/test_review_dimensions_archive.py
+git commit -m 'feat(archivo): retener schema 11 y conservar continuidad histórica'
+```
+
+### Task 4: Informe explícito y comentario público sin taxonomía interna
+
+**Files:**
+- Modify: `scripts/review_contract.py:703` (`render`) y `:851` (`render_handoff`)
+- Test: `tests/test_review_dimensions_rendering.py`
+
+**Interfaces:**
+- Consumes: `DIMENSIONS`, `DIMENSION_LABELS`, `record11`, `set_dimension` y finales 11 validados de Tasks 1–2.
+- Produces: `render(record, audience='user', publication_context=None) -> str` con sección `### Dimensiones evaluadas` entre matriz e incertidumbres; 27 filas ID/nombre/estado/details/hallazgos, ordenadas A–E/ID. `audience='comment'` no genera taxonomía; mantiene impacto material agregado sin duplicados. `render_handoff` hereda la misma cobertura privada. Firmas existentes sin cambios.
+
+- [ ] **Step 1: Write the failing test**
+
+Crear `DimensionRenderingTests(unittest.TestCase)`; imports: `copy`, `unittest`; `contract` desde `test_review_contract`; `record10` desde `recovery_fixtures`; `record11`, `set_dimension` desde `dimension_fixtures`; `DIMENSIONS`, `DIMENSION_LABELS` desde `review_dimensions`. Añadir:
+
+```python
+def test_private_report_has_every_dimension_in_order(self):
+    value = record11()
+    set_dimension(value, 'A01', status='not_applicable', details='No ownership boundary changed')
+    set_dimension(value, 'E05', status='not_evaluated', details='Concurrent claim not inspected')
+    set_dimension(value, 'D05', status='partial', details='Recovery path partly inspected')
+    report = contract.render(value)
+    self.assertLess(report.index('### Matriz ABCDE'), report.index('### Dimensiones evaluadas'))
+    ordered = [i for ids in DIMENSIONS.values() for i in ids]
+    positions = [report.index(f'| {i} |') for i in ordered]
+    self.assertEqual(positions, sorted(positions))
+    for identifier in ordered:
+        self.assertIn(DIMENSION_LABELS[identifier], report)
+        self.assertIn(f'| {identifier} |', contract.render_handoff(value))
+    for text in ('No ownership boundary changed', 'Concurrent claim not inspected',
+                 'Recovery path partly inspected'):
+        self.assertIn(text, report)
+
+def test_escaping_legacy_and_input_immutability(self):
+    value = record11()
+    set_dimension(value, 'A01', details='src/a.py | <script>alert(1)</script>\nnext')
+    before = copy.deepcopy(value)
+    report = contract.render(value)
+    self.assertIn(r'\|', report)
+    self.assertNotIn('<script>', report)
+    self.assertEqual(value, before)
+    self.assertNotIn('### Dimensiones evaluadas', contract.render(record10()))
+
+def test_public_gap_remains_once_without_generated_taxonomy(self):
+    value = record11()
+    gap = 'Concurrent claim remains unverified'
+    set_dimension(value, 'E05', status='partial', material=True, details=gap)
+    value['coverage']['areas'][4]['details'] = gap
+    value['coverage']['limitations'] = [dict(kind='validation', detail=gap, material=True, public_summary=None)]
+    value['verdict'] = 'insufficient_evidence'
+    comment = contract.render(value, audience='comment')
+    self.assertEqual(comment.count(gap), 1)
+    for text in ('### Matriz ABCDE', '### Dimensiones evaluadas', '| E05 |'):
+        self.assertNotIn(text, comment)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions_rendering.py -v`
+
+Expected: FAIL por sección y filas de dimensiones inexistentes; los finales 11 ya son válidos desde Task 2.
+
+- [ ] **Step 3: Extend `render(record, audience='user', publication_context=None) -> str`**
+
+Añadir las tablas privadas desde el catálogo con `table_cell` y escapes existentes; no copiar el catálogo al renderer. Mantener schema 1–10, ausencia de mutación y publicación de brechas por el área agregada. Asegurar que la proyección privada de `render_handoff` usa este mismo resultado sin perder las dimensiones.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```powershell
+python -B -m unittest discover -s tests -p test_review_dimensions_rendering.py -v
+python -B -m unittest discover -s tests -p test_review_presentation.py -v
+python -B -m unittest discover -s tests -p test_review_publication_policy.py -v
+```
+
+Expected: PASS; no taxonomía generada en comentarios ni cambios de representación histórica.
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add -- scripts/review_contract.py tests/test_review_dimensions_rendering.py
+git commit -m 'feat(reportes): mostrar las 27 dimensiones con su evidencia'
+```
+
+### Task 5: Dimensiones en full/brief y política portátil explícita
+
+**Files:**
+- Modify: `scripts/review_delivery.py` (`_Projection`, `_brief`, `deliver`)
+- Test: `tests/test_review_dimensions_delivery.py`
+
+**Interfaces:**
+- Consumes: archivo 11 válido de Task 3 y renderer de Task 4; fixtures `archive_tests.DimensionArchiveTests` y `record11`.
+- Produces: `deliver(run_dir, delivery, project_root, output_root=None, context=None) -> Path` conserva firma y recibo de origen; full mantiene JSON/Markdown con 27 dimensiones; brief enumera todos los IDs por área/estado y motivos pendientes/N/A. `_Projection.value(self, value, path='record')` conserva sus convenciones de ruta y clasifica campos nuevos explícitamente.
+- Test support: `DimensionDeliveryTests(unittest.TestCase)` reutiliza solo los atributos de fixture setUp, git, write, read, snapshot, prepare, retain y close de `archive_tests.DimensionArchiveTests`, sin heredar sus tests. No usar `DeliveryTests.retained`, que normaliza a 10, ni importar una clase TestCase adicional que unittest redescubra.
+
+- [ ] **Step 1: Write the failing test**
+
+Imports: `Path` desde `pathlib`; `unittest`; `test_review_dimensions_archive as archive_tests`; `record11`, `set_dimension` desde `dimension_fixtures`; `DIMENSIONS` desde `review_dimensions`; `review_delivery as delivery`. Definir `artifacts = archive_tests.artifacts`. Añadir en `DimensionDeliveryTests`:
+
+```python
+def test_full_and_brief_account_for_every_dimension(self):
+    value = record11()
+    set_dimension(value, 'A01', status='not_applicable', details='No ownership boundary changed')
+    set_dimension(value, 'E05', status='not_evaluated', details='Concurrent claim not inspected')
+    run = self.prepare()
+    self.final = self.write('dimension-final.json', value)
+    self.retain(run, expected_schema=11)
+    self.close(run)
+    before = self.snapshot(run)
+    full = Path(delivery.deliver(run, 'full', self.repo, self.root / 'full'))
+    brief = Path(delivery.deliver(run, 'brief', self.repo, self.root / 'brief'))
+    portable = self.read(full / 'review.json')
+    retained = self.read(run / 'review.json')
+    self.assertEqual(portable['schema_version'], 11)
+    self.assertEqual(portable['review_id'], retained['review_id'])
+    self.assertEqual(artifacts.review_contract.validate(portable), [])
+    self.assertEqual(sum(len(a['dimensions']) for a in portable['coverage']['areas']), 27)
+    self.assertEqual(self.read(full / '.ccr-delivery.json')['source_schema_version'], 11)
+    for filename, directory in [('informe.md', full), ('resumen.md', brief)]:
+        text = (directory / filename).read_text(encoding='utf-8')
+        for identifier in [i for ids in DIMENSIONS.values() for i in ids]:
+            self.assertIn(identifier, text)
+        self.assertIn('No ownership boundary changed', text)
+        self.assertIn('Concurrent claim not inspected', text)
+    self.assertEqual(self.snapshot(run), before)
+
+def test_dimension_prose_is_sanitized_and_unknown_fields_refused(self):
+    value = record11()
+    set_dimension(value, 'A01', details=r'C:\private\notes.txt and /srv/private/notes.txt')
+    projection = delivery._Projection(value,
+        {'repository_path': str(self.repo), 'archive_root': str(self.output)}, self.repo, 'a' * 64)
+    portable = projection.value(value)
+    row = portable['coverage']['areas'][0]['dimensions'][0]
+    self.assertEqual(row['id'], 'A01')
+    self.assertNotIn('C:\\private', row['details'])
+    self.assertNotIn('/srv/private', row['details'])
+    value['coverage']['areas'][0]['dimensions'][0]['extra'] = 'unclassified'
+    with self.assertRaises(ValueError):
+        projection.value(value)
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -B -m unittest discover -s tests -p test_review_dimensions_delivery.py -v`
+
+Expected: FAIL por nuevos campos sin política portátil o brief sin resumen de dimensiones.
+
+- [ ] **Step 3: Extend `_Projection`, `_brief(record) -> str` and identity guards in `deliver`**
+
+Clasificar `coverage.areas[].dimensions[].id`, `.status`, `.finding_ids[]` como STRUCTURAL y `.details` como PROSE; `.material` usa el manejo booleano actual. Full conserva las filas y brief agrupa todos los IDs por estado con motivos pendientes/N/A, sin reproducir evidencia cubierta. Extender a 11 los guards de identidad y ejecución de 10. Campos desconocidos siguen rechazándose; no sanear IDs ni convertir la salida a 10.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+```powershell
+python -B -m unittest discover -s tests -p test_review_dimensions_delivery.py -v
+python -B -m unittest discover -s tests -p test_review_delivery.py -v
+```
+
+Expected: PASS; el resultado original conserva sus bytes, la entrega valida como 11 y el recibo identifica la fuente real.
+
+- [ ] **Step 5: Commit**
+
+```powershell
+git add -- scripts/review_delivery.py tests/test_review_dimensions_delivery.py
+git commit -m 'feat(entregas): conservar dimensiones con política portátil explícita'
+```
+
+### Task 6: Reglas operativas, escenarios y evidencia de implementación
+
+**Files:**
+- Modify: `SKILL.md`
+- Modify: `references/workflow/review-areas.md`
+- Modify: `references/execution/reviewers.md`, `references/execution/worker-packets.md`
+- Modify: `references/contracts/result-contract.md`, `references/archive/artifacts.md`
+- Modify: `references/reporting/report-format.md`, `references/reporting/delivery.md`
+- Modify: `references/dimensions/design-testability.md`, `references/dimensions/contracts-data.md`, `references/dimensions/security-operation.md`
+- Modify: `README.md`, `docs/usage.md`, `CHANGELOG.md`
+- Create: `docs/validation/2026-10-20-explicit-dimension-coverage.md`
+- Test: `tests/test_review_dimension_policy.py`
+
+**Interfaces:**
+- Consumes: soporte completo de Tasks 1–5 y secciones 5–8 del spec.
+- Produces: instrucciones en inglés que exigen IDs en briefs/flows/limitations, final 11 y `retain --expected-schema 11`; documentación de usuario en español. Packet version 1 no cambia shape. El registro nuevo distingue resultados observados de escenarios esperados.
+- No se crea un motor que interprete prosa de packets. Los escenarios de respuesta omitida y re-review se evalúan en las verificaciones existentes; los tests documentales solo verifican que la regla esté presente.
+
+- [ ] **Step 1: Write the failing test**
+
+Crear `DimensionPolicyTests(unittest.TestCase)`. Imports: `unittest`, `Path`, `contract` desde `test_review_contract`, `DIMENSIONS` desde `review_dimensions`, `validate as validate_packet` desde `review_packets`. Definir `ROOT = Path(__file__).resolve().parents[1]`. Añadir:
+
+```python
+def test_catalog_ids_are_present_in_their_operational_references(self):
+    files = {'A': 'design-testability.md', 'B': 'design-testability.md',
+             'C': 'contracts-data.md', 'D': 'contracts-data.md', 'E': 'security-operation.md'}
+    for area, filename in files.items():
+        text = (ROOT / 'references/dimensions' / filename).read_text(encoding='utf-8')
+        for identifier in DIMENSIONS[area]:
+            self.assertIn(identifier, text)
+
+def test_workflow_names_schema_guard_and_no_inferred_coverage(self):
+    text = (ROOT / 'SKILL.md').read_text(encoding='utf-8')
+    self.assertIn('--expected-schema 11', text)
+    rules = (ROOT / 'references/workflow/review-areas.md').read_text(encoding='utf-8')
+    self.assertIn('An unanswered applicable dimension remains not_evaluated.', rules)
+    self.assertIn('Do not infer dimensions from a legacy area status.', rules)
+
+def test_worker_packet1_accepts_dimension_ids_without_new_fields(self):
+    packet = dict(packet_version=1, stage='discovery', context_id='synthetic-context',
+        findings=[], check_ids=[], coverage=dict(flows=['E05 inspected in src/jobs.py:claim'],
+        limitations=[dict(detail='D05 recovery boundary remains unverified', material=True)]))
+    self.assertEqual(validate_packet(packet), [])
+    self.assertEqual(set(packet['coverage']), {'flows', 'limitations'})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `python -B -m unittest discover -s tests -p test_review_dimension_policy.py -v`
+
+Expected: FAIL por IDs y reglas todavía ausentes; el test de packet 1 debe pasar sin cambiar su schema.
+
+- [ ] **Step 3: Update the operational contract and user documentation**
+
+Documentar catálogo, estados, agregación, seguimiento en las asignaciones existentes, re-review y la obligación de cierre con 11. Incluir literalmente las dos reglas inglesas de Step 1 en `review-areas.md`. Actualizar productores nuevos que dicen schema/expected-schema 10; preservar ejemplos históricos identificados. Añadir el bloque unreleased según CONTRIBUTING, sin número de release. Crear el registro de implementación con estos tres escenarios, sus entradas y resultados esperados: E05/A03/D05 comparten una causa y un hallazgo; respuesta omitida a E05 queda pendiente/material cuando impide establecer idempotencia; área antigua cubierta no prueba dimensiones de la nueva revisión. No atribuir resultados observados al modelo si solo se documentaron expectativas.
+
+- [ ] **Step 4: Run focused tests to verify they pass**
+
+```powershell
+python -B -m unittest discover -s tests -p test_review_dimension_policy.py -v
+python -B -m unittest discover -s tests -p test_reference_layout.py -v
+```
+
+Expected: PASS en ambos comandos, sin añadir campos a packet 1 ni referencias locales rotas.
+
+- [ ] **Step 5: Run complete verification**
+
+```powershell
+python -B -m unittest discover -s tests -v
+git diff --check
+```
+
+Expected: ambos comandos con exit 0; identificar omisiones reales de plataforma. La suite completa ya incluye matrices extensas de restart/resources: no repetirlas si completaron aquí.
+
+- [ ] **Step 6: Record observed implementation evidence**
+
+Completar `docs/validation/2026-10-20-explicit-dimension-coverage.md` con comandos, conteos, exit codes, omisiones y alcance real de Steps 4–5. Vincular AC1–AC10 con la tabla de Self-Review y distinguir los tres escenarios documentados de ejecuciones reales del modelo. El registro separado de preparación permanece histórico.
+
+- [ ] **Step 7: Commit**
+
+```powershell
+git add -- SKILL.md references/workflow/review-areas.md references/execution/reviewers.md references/execution/worker-packets.md references/contracts/result-contract.md references/archive/artifacts.md references/reporting/report-format.md references/reporting/delivery.md references/dimensions/design-testability.md references/dimensions/contracts-data.md references/dimensions/security-operation.md README.md docs/usage.md CHANGELOG.md docs/validation/2026-10-20-explicit-dimension-coverage.md tests/test_review_dimension_policy.py
+git commit -m 'docs(cobertura): exigir trazabilidad explícita y registrar validación'
+```
+
+## Self-Review
+
+| Spec | Tareas y evidencia prevista |
 |---|---|
-| AC1–AC3: catálogo, completitud y agregación | 1 |
-| AC4: veredicto y provenance heredada | 2 |
-| AC5–AC6: informe, full/brief y comentario público | 3 |
-| AC7: gates, identidad y continuidad sin migración | 2, 4 |
-| AC8: asignación, respuesta omitida y verificación existente | 4 |
-| AC9: política portátil y texto hostil | 3 |
-| AC10: legacy sin reconstrucción y datos sintéticos | 1, 2, 4 |
+| AC1–AC3: catálogo, ausencia/shape y coherencia | Task 1; `DimensionCatalogTests` |
+| AC4: materialidad y veredicto | Task 2; `test_material_gap_and_confirmed_blocker_precedence` |
+| AC5: informe/full/brief explícitos | Tasks 4–5; `DimensionRenderingTests`, `DimensionDeliveryTests` |
+| AC6: impacto público sin taxonomía | Task 4; `test_public_gap_remains_once_without_generated_taxonomy` |
+| AC7: identidad, fuentes, recovery y bytes 10/11 | Tasks 2–3; `DimensionFinalTests`, `DimensionArchiveTests`, `DimensionCheckpointTests` |
+| AC8: asignación y brechas sin agentes adicionales | Task 6; reglas operativas, packet 1 y escenarios documentados |
+| AC9: política portátil | Task 5; `test_dimension_prose_is_sanitized_and_unknown_fields_refused` |
+| AC10: legacy y datos sintéticos | Tasks 2–3 y suite completa de Task 6 |
 
-No hay tareas de UI del visor, release, migración ni nuevos agentes de revisión. Las cinco clases de Review Focus tienen pruebas asignadas. Los pasos RED/GREEN son trabajo pendiente; este documento no afirma que el contrato 11 ya exista.
+Los seis entregables tienen ciclo RED/GREEN y commit independiente. Ninguna tarea habilita parcialmente schema 11 para que otra deba arreglar sus tests. Los nombres y shapes de fixtures y funciones se definen en Interfaces antes de usarlos. Las cinco clases de Review Focus tienen aserciones asignadas. El plan contiene contratos y tests, no cuerpos de implementación de producto.
 
-## Handoff
+## Execution Handoff
 
-Revisar spec y plan antes de implementar. La petición actual autoriza prepararlos juntos. Para ejecución posterior se recomienda el método nativo secuencial: cuatro tareas relacionadas por un mismo contrato, con revisión de la rama al final según Superpowers. El usuario puede elegir subagent-driven-development; no se lanzan agentes por la preparación de estos documentos.
+Revisar este plan y el spec antes de ejecutar. No se ha seleccionado un método. Se recomienda **Native**, porque las seis tareas dependen del mismo contrato y pueden ejecutarse en secuencia con una revisión de rama al final. **Subagent-driven** permite un implementador y revisor nuevos por tarea, más revisión final; implica contextos adicionales. La elección y revisión del usuario preceden a la implementación.

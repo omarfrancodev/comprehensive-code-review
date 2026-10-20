@@ -37,3 +37,20 @@ Son 51 pruebas existentes aprobadas. No prueban el comportamiento futuro de sche
 - Los documentos definen garantías estructurales, sin afirmar que un test certifique el criterio del modelo o la verdad de la evidencia.
 
 Solo se prepararon los tres documentos. No se modificaron SKILL, helpers, referencias operativas, tests, visor ni archivos reales de reviews. El spec y el plan permanecen propuestos, pendientes de revisión del usuario y elección del método de implementación. No hay publicación ni release.
+
+## Corrección de estructura solicitada por el usuario
+
+La primera versión del plan agrupó acciones, presentó pruebas en prosa y omitió comandos explícitos de commit; no satisfacía la estructura de `superpowers:writing-plans`. La afirmación inicial de revisión propia no detectó esas omisiones. Se conserva arriba como registro de la primera preparación, no como certificación del plan corregido.
+
+Se reescribió el plan en seis entregables verificables: módulo puro, contrato final, archivo/continuidad, reportes, entregas y reglas operativas. Cada tarea declara Files, Consumes/Produces, tests con aserciones en código, comandos RED/GREEN y commit. La validación final y su registro son pasos separados. El spec y el alcance funcional se conservan.
+
+Se contrastaron firmas y factories con el código actual. El plan conserva el retorno real `(record, source_maps)` de canonicalize_ids, exige remapear referencias de dimensiones y evita usar un helper de entrega que convertiría fixtures 11 de vuelta a 10. Los casos heredados de checkpoint ejercitan también 11; las clases de tests se importan mediante módulos para evitar redescubrimiento accidental.
+
+Comprobaciones ejecutadas en esta corrección:
+
+- Verificador documental puntual: PASS para encabezado y orden requeridos, restricciones idénticas al spec, seis tareas, Files/Interfaces, pasos consecutivos, RED/GREEN/commit y ausencia de placeholders/whitespace final.
+- `ast.parse` de los seis bloques Python: PASS. Es validación de sintaxis, no ejecución de las pruebas propuestas ni validación de schema 11.
+- `python -B -m unittest discover -s tests -p test_reference_layout.py -v`: una prueba aprobada, exit 0.
+- `git diff --check`: exit 0.
+
+Esta corrección modifica únicamente plan y registro de preparación. Las 51 pruebas de la tabla inicial pertenecen a la preparación anterior; aquí no se vuelven a declarar como una nueva ejecución. El seguimiento continuó en línea; no se implementó producto ni se seleccionó método de ejecución.
