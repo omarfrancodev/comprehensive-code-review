@@ -98,7 +98,7 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(artifacts.validate(run)['state'], 'prepared')
         artifacts.validate(run, record_checkpoint=True)
         self.assertEqual(artifacts.validate(run)['state'], 'prepared')
-        artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Discovery began')))
+        artifacts.record_event(run, self.write('start.json', dict(kind='check', status='started', summary='Check began')))
         self.assertEqual(artifacts.validate(run)['state'], 'processing')
         self.register_empty(run)
         self.retain(run)
@@ -140,7 +140,7 @@ class TraceTests(unittest.TestCase):
                         raise OSError('interrupted processing transition')
                 original(path, data)
             with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
-                artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+                artifacts.record_event(run, self.write('start.json', dict(kind='check', status='started', summary='Observed start')))
             pending = self.read(run / 'cierre.json')['pending_trace']['events'][0]
             with self.assertRaisesRegex(ValueError, 'pending'):
                 artifacts.validate(run)
@@ -156,7 +156,7 @@ class TraceTests(unittest.TestCase):
                 raise OSError('manifest replace interrupted')
             original(path, data)
         with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
-            artifacts.record_event(run, self.write('start.json', dict(kind='discovery', status='started', summary='Observed start')))
+            artifacts.record_event(run, self.write('start.json', dict(kind='check', status='started', summary='Observed start')))
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
         self.register_empty(run)

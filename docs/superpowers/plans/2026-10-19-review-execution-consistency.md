@@ -178,6 +178,7 @@ git commit -m "feat(referencias): unificar validación de fuentes retenidas"
 - Modify: `scripts/review_artifacts.py:3797` — retain
 - Modify: `scripts/review_artifacts.py:4117` — CLI
 - Modify: `references/archive/artifacts.md`
+- Modify: `tests/test_review_artifacts.py` — fixtures de perfil/eventos existentes deben satisfacer la barrera de asignaciones
 - Test: `tests/test_review_preflight.py`
 - Test: `tests/test_review_trace.py`
 
@@ -222,7 +223,7 @@ Expected: interfaz nueva ausente o evento sin identidad aceptado; el fixture usa
 
 - [ ] **Step 3: implementar los dos validadores puros**
 
-Implementar las firmas de Produces por fase: plan vacío preparado permitido, trabajo sin asignación activa rechazado, identidad lógica contrastada cuando hay descriptor. Acumular issues independientes ordenados y acotados a 100; no acumular lecturas después de fallo de acceso/integridad.
+Implementar las firmas de Produces por fase: plan vacío preparado/registrado permitido, preflight de discovery requiere al menos una asignación requerida activa, trabajo sin asignación activa rechazado, identidad lógica contrastada cuando hay descriptor. Acumular issues independientes ordenados y acotados a 100; no acumular lecturas después de fallo de acceso/integridad.
 
 - [ ] **Step 4: integrar preflight, barrera y CLI**
 
@@ -256,6 +257,8 @@ self.assertEqual(context, original_context)
 ```
 
 before/after son mapas de rutas relativas a bytes de todos los archivos del root temporal; así también se detecta creación de locks. original_context es deepcopy antes de validar. result es validate_preflight en register con manifest/contexto del fixture y logical_scope del manifest, tras cambiar sólo context.review_inputs.logical_scope_identity a `'0'*64`. Añadir el par del mismo MR con otro head: mismo grupo lógico no produce inputs aplicables.
+
+Los fixtures existentes que preparan un perfil inicial usan `evidence/context.json#profile`; los eventos de completado de asignaciones retienen también el brief activo junto al resultado. Mantener las pruebas de checks sin asignación como checks (`kind=check`), porque checks usan su propio contrato de ejecutor.
 
 - [ ] **Step 6: documentar el comando preflight**
 

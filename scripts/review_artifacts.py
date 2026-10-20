@@ -32,6 +32,7 @@ import review_restart
 import review_resource_claims
 import review_layout
 import review_references
+import review_preflight
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
@@ -1196,6 +1197,10 @@ def record_event(run_dir, event_file, execution_metadata=None):
         disposition = manifest.get('operation', {}).get('disposition')
         if disposition != 'open':
             raise ValueError('review operation is ' + str(disposition) + '; resume or recover before starting work')
+        assignment_issues = review_preflight.validate_assignment_event(
+            event, manifest.get('assignment_registry', []))
+        if assignment_issues:
+            raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
         if (event['kind'] in {'agent', 'discovery', 'grouped-verification'}
                 and event.get('evidence')):
             registry = manifest.get('assignment_registry')
@@ -1627,6 +1632,11 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         logical_scope_input = copy.deepcopy(_restart_reservation['request']['logical_scope_input'])
     logical = review_layout.logical_scope(scope, logical_scope_input)
     selection = _initial_selection(profile_input)
+    selection_preflight = review_preflight.validate_preflight(
+        phase='prepare', manifest=None, logical_scope=logical, selection=selection,
+        context=None, record=None, sources={})
+    if not selection_preflight['ready']:
+        raise ValueError('; '.join(issue['message'] for issue in selection_preflight['issues']))
     captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs',
                                              logical_scope_identity=logical['identity'])
     controller_value = _controller(controller, selection['actor'])
@@ -1871,6 +1881,12 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                           _claim_run_dir=str(run))
     if manifest['schema_version'] == 8 and context_input is not None:
         context = _input_object(context_input, 'execution context')
+        phase_preflight = review_preflight.validate_preflight(
+            phase='register', manifest=manifest, logical_scope=manifest.get('logical_scope'),
+            selection=manifest['profile_history'][-1], context=context, record=None,
+            sources={'evidence/context.json': _json_bytes(context)})
+        if not phase_preflight['ready']:
+            raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
                 or context.get('selection_source') != manifest['profile_history'][0]['selection_source']
                 or context.get('profile_history') != manifest['profile_history']):
@@ -1899,6 +1915,11 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                 raise ValueError('execution context review_inputs cannot replace the original captured identities')
         assignment_registry = review_profiles.merge_assignment_registry(
             assignment_registry, context['execution_plan'], manifest['profile_history'], existing_trace)
+        for observed in existing_trace:
+            assignment_issues = review_preflight.validate_assignment_event(
+                observed, assignment_registry)
+            if assignment_issues:
+                raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
         references = {row['reference'] for row in assignment_registry}
         for row in existing_trace:
             if (isinstance(row, dict) and row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
@@ -3856,6 +3877,14 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('final review scope differs from the pinned scope')
     if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
+    if manifest['schema_version'] == 8:
+        context = _input_object(context_input, 'execution context') if context_input is not None else None
+        phase_preflight = review_preflight.validate_preflight(
+            phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
+            selection=manifest['profile_history'][-1], context=context, record=value,
+            sources=({'evidence/context.json': _json_bytes(context)} if context is not None else {}))
+        if not phase_preflight['ready']:
+            raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
     if set(declared_residuals) - set(temporary):
         raise ValueError('register declared temporary residuals before retaining cleanup evidence')
@@ -3894,6 +3923,30 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     manifest['residuals'] = present
     manifest['executors'] = executors
     return _retain_data(run, manifest, marker, contents)
+
+
+def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_inputs=None):
+    """Read-only phase preflight over one explicit native archive and selected inputs."""
+    try:
+        run, manifest, _ = _load_run(run_dir)
+        _verify_files(run, manifest)
+        context = _input_object(context_input, 'execution context', max_bytes=PENDING_CONTEXT_LIMIT)
+        sources = {'evidence/context.json': _json_bytes(context)}
+        for raw in evidence_inputs or []:
+            path = safe_path(raw)
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError('selected preflight evidence must be a regular file')
+            name = 'evidence/' + _evidence_name(path.name)
+            if name in sources:
+                raise ValueError('duplicate selected preflight evidence name: ' + name)
+            sources[name] = path.read_bytes()
+        record = read_json(input_file, max_bytes=CHECKPOINT_METADATA_LIMIT) if input_file else None
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return {'error': str(exc)}, 2
+    result = review_preflight.validate_preflight(
+        phase=phase, manifest=manifest, logical_scope=manifest.get('logical_scope'),
+        selection=None, context=context, record=record, sources=sources)
+    return result, 0 if result['ready'] else 1
 
 
 def _execution_gate(run, manifest, value, contents):
@@ -4133,6 +4186,13 @@ def main():
     inspect = commands.add_parser('inspect', help='Read-only status/integrity inspection of one explicit review run')
     inspect.add_argument('--run-dir', required=True)
     inspect.add_argument('--current-inputs', help='Existing JSON {scope, sources} verified by the coordinator')
+    preflight_command = commands.add_parser('preflight', help='Read-only phase-specific contract check before work or retention')
+    preflight_command.add_argument('--run-dir', required=True)
+    preflight_command.add_argument('--context-input', required=True)
+    preflight_command.add_argument('--phase', required=True, choices=('register', 'discovery', 'retain'))
+    preflight_command.add_argument('--input', help='Optional final review candidate for retain preflight')
+    preflight_command.add_argument('--evidence-input', action='append',
+                                   help='Explicit selected evidence source; repeat for each file')
     lookup = commands.add_parser('lookup', help='Find bounded prior-run candidates for one repository and scope')
     lookup.add_argument('--repo', required=True)
     lookup.add_argument('--scope-file', required=True)
@@ -4271,6 +4331,12 @@ def main():
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
             result = review_recovery.inspect_run(args.run_dir, current_inputs=current)
+        elif args.command == 'preflight':
+            result, exit_code = preflight_run(
+                args.run_dir, args.context_input, phase=args.phase,
+                input_file=args.input, evidence_inputs=args.evidence_input)
+            print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+            return exit_code
         elif args.command == 'lookup':
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
