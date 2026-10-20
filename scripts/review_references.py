@@ -136,10 +136,19 @@ def validate_selection_reference(selection: dict,
         return [_issue('missing_fragment', field, reference,
                        'profile selection requires a JSON profile fragment',
                        'evidence/context.json#profile')]
-    if path != 'evidence/context.json' or fragment != 'profile':
+    selection_id = selection.get('id') if isinstance(selection, dict) else None
+    expected_fragment = None
+    if selection_id in (None, 'S001'):
+        expected_fragment = 'profile'
+    else:
+        match = re.fullmatch(r'S(\d{3})', selection_id) if isinstance(selection_id, str) else None
+        if match is not None and int(match.group(1)) >= 2:
+            expected_fragment = f'profile_history/{int(match.group(1)) - 1}/profile'
+    expected_reference = 'evidence/context.json#' + expected_fragment if expected_fragment else None
+    if path != 'evidence/context.json' or fragment != expected_fragment:
         return [_issue('invalid_reference', field, reference,
-                       'profile selection must use the canonical profile source',
-                       'evidence/context.json#profile')]
+                       'profile selection must identify its canonical observed history row',
+                       expected_reference or 'a valid S001 profile or S002+ history reference')]
     if sources is None:
         return []
     if not isinstance(sources, dict) or path not in sources:

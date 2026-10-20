@@ -4,9 +4,12 @@ import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path
+import posixpath
 import re
+import shlex
 import subprocess
 import sys
 import uuid
@@ -31,6 +34,17 @@ def _issue(field, reference, message, expected):
 def _text(value, maximum=4000):
     return isinstance(value, str) and bool(value.strip()) and len(value) <= maximum \
         and not any(ord(char) < 32 for char in value)
+
+
+def _workspace_identity(value):
+    if not isinstance(value, str) or not value.strip():
+        return None
+    drive, _ = ntpath.splitdrive(value)
+    if drive and ntpath.isabs(value):
+        return 'windows:' + ntpath.normcase(ntpath.normpath(value))
+    if posixpath.isabs(value):
+        return 'posix:' + posixpath.normpath(value)
+    return None
 
 
 def _timestamp(value):
@@ -61,11 +75,12 @@ def validate_receipt(receipt: dict, sources: dict[str, bytes], *,
     check_id = receipt.get('check_id')
     if not isinstance(check_id, str) or CHECK_ID.fullmatch(check_id) is None:
         fail('check_id', None, 'invalid check ID', 'bounded safe check identity')
-    if (not isinstance(receipt.get('argv'), list) or not receipt['argv']
-            or len(receipt['argv']) > 256
-            or any(not isinstance(item, str) or len(item) > 8192 or '\0' in item
-                   for item in receipt['argv'])
-            or not receipt['argv'][0].strip()):
+    valid_argv = (isinstance(receipt.get('argv'), list) and bool(receipt['argv'])
+            and len(receipt['argv']) <= 256
+            and all(isinstance(item, str) and len(item) <= 8192 and '\0' not in item
+                    for item in receipt['argv'])
+            and bool(receipt['argv'][0].strip()))
+    if not valid_argv:
         fail('argv', None, 'argv must be a bounded literal argument array',
              'nonempty executable and literal string arguments')
     if not _text(receipt.get('cwd')):
@@ -141,6 +156,10 @@ def validate_receipt(receipt: dict, sources: dict[str, bytes], *,
             fail('check_id', None, 'receipt check ID differs from the source check', str(check.get('id')))
         if check.get('revision') != receipt.get('revision'):
             fail('revision', None, 'receipt revision differs from the source check', str(check.get('revision')))
+        if (not _text(check.get('command')) or not valid_argv
+                or check.get('command') != shlex.join(receipt['argv'])):
+            fail('command', None, 'source check command differs from the receipt argv',
+                 'the source check command matching receipt argv')
         execution = check.get('execution')
         if (not isinstance(execution, dict) or execution.get('kind') != 'local'
                 or execution.get('executor') != receipt.get('executor')):
@@ -174,6 +193,11 @@ def validate_receipt(receipt: dict, sources: dict[str, bytes], *,
             if receipt.get('revision') != expected_revision:
                 fail('revision', None, 'receipt revision differs from registered executor',
                      str(expected_revision))
+            if (_workspace_identity(receipt.get('cwd')) is None
+                    or _workspace_identity(receipt.get('cwd'))
+                    != _workspace_identity(executor.get('workspace'))):
+                fail('cwd', None, 'receipt cwd differs from the registered executor workspace',
+                     'the registered executor workspace')
 
     return issues
 
@@ -233,7 +257,8 @@ def validate_record_receipts(record: dict, sources: dict[str, bytes],
     return issues[:100]
 
 
-def _validate_owned_workspace(*, check_id, argv, cwd, revision, executor, output_dir):
+def _validate_owned_workspace(*, check_id, argv, command, cwd, executor_workspace,
+                              revision, executor, output_dir):
     if not isinstance(check_id, str) or CHECK_ID.fullmatch(check_id) is None:
         raise ValueError('check_id must be a bounded safe check identity')
     if not isinstance(argv, list) or not argv or len(argv) > 256 or any(
@@ -241,6 +266,11 @@ def _validate_owned_workspace(*, check_id, argv, cwd, revision, executor, output
         raise ValueError('argv must be a bounded literal argument array')
     if not argv[0].strip():
         raise ValueError('argv[0] must name the explicit executable')
+    if not _text(command) or command != shlex.join(argv):
+        raise ValueError('command must be the canonical display of the exact argv')
+    if (_workspace_identity(cwd) is None
+            or _workspace_identity(cwd) != _workspace_identity(executor_workspace)):
+        raise ValueError('cwd must match the registered executor workspace')
     if not _text(revision) or not _text(executor):
         raise ValueError('revision and executor must be observed nonempty text')
 
@@ -299,11 +329,13 @@ def _file_identity(path):
     return digest.hexdigest(), size
 
 
-def capture_check(*, check_id: str, argv: list[str], cwd: str, revision: str,
-                  executor: str, output_dir: str) -> dict:
+def capture_check(*, check_id: str, argv: list[str], command: str, cwd: str,
+                  executor_workspace: str, revision: str, executor: str,
+                  output_dir: str) -> dict:
     """Run one explicit argv in an owned workspace and retain a new attempt receipt."""
     worktree, target = _validate_owned_workspace(
-        check_id=check_id, argv=argv, cwd=cwd, revision=revision,
+        check_id=check_id, argv=argv, command=command, cwd=cwd,
+        executor_workspace=executor_workspace, revision=revision,
         executor=executor, output_dir=output_dir)
     prefix = target.name + '-' + check_id
     stdout_name, stderr_name = prefix + '-out.log', prefix + '-err.log'
@@ -366,9 +398,11 @@ def _read_request(path):
         request = json.loads(source.read_text(encoding='utf-8'))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError('check request is not readable UTF-8 JSON') from exc
-    fields = {'check_id', 'argv', 'cwd', 'revision', 'executor'}
+    fields = {'check_id', 'argv', 'command', 'cwd', 'executor_workspace',
+              'revision', 'executor'}
     if not isinstance(request, dict) or set(request) != fields:
-        raise ValueError('check request requires exactly check_id, argv, cwd, revision and executor')
+        raise ValueError('check request requires exactly check_id, argv, command, cwd, '
+                         'executor_workspace, revision and executor')
     return request
 
 

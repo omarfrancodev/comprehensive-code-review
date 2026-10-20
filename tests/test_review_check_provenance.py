@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 from pathlib import Path
+import shlex
 import sys
 import unittest
 from unittest.mock import patch
@@ -148,11 +149,14 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         self.artifacts.register(run, [str(session)], context_input=context_file)
 
         output_dir = evidence_dir / 'attempt-1'
+        argv = [sys.executable, '-c', "print('verified')"]
         receipt = review_check_receipts.capture_check(
-            check_id='C001', argv=[sys.executable, '-c', "print('verified')"],
-            cwd=str(workspace), revision=head, executor='X1', output_dir=str(output_dir))
+            check_id='C001', argv=argv, command=shlex.join(argv), cwd=str(workspace),
+            executor_workspace=str(workspace), revision=head, executor='X1',
+            output_dir=str(output_dir))
         receipt_reference = review_check_receipts.receipt_reference('C001', output_dir)
-        value['checks'] = [dict(check(), revision=head, reference=receipt_reference,
+        value['checks'] = [dict(check(), command=shlex.join(argv), revision=head,
+            reference=receipt_reference,
             execution=dict(kind='local', executor='X1'))]
         final_file = self.fixture.write('receipt-final.json', value)
         receipt_path = output_dir / Path(receipt_reference).name

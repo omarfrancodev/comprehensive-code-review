@@ -1,4 +1,5 @@
 """Shared grammar and resolution tests for retained evidence references."""
+import json
 import sys
 from pathlib import Path
 import unittest
@@ -25,6 +26,20 @@ class ReferenceTests(unittest.TestCase):
             'evidence/context.json': b'{"profile":"focused"}'}), [])
         self.assertTrue(refs.validate_selection_reference(
             dict(selected, reference='evidence/scope.json'), None))
+
+    def test_profile_transition_reference_resolves_its_stable_history_row(self):
+        selected = selection_input(profile='standard', id='S002',
+            reference='evidence/context.json#profile_history/1/profile')
+        selected['id'] = 'S002'
+        context = {'profile': 'standard', 'profile_history': [
+            {'id': 'S001', 'profile': 'focused'},
+            {'id': 'S002', 'profile': 'standard'},
+        ]}
+        sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
+
+        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
+        self.assertTrue(refs.validate_selection_reference(dict(
+            selected, reference='evidence/context.json#profile_history/0/profile'), sources))
 
     def test_json_fragment_escapes_and_indices(self):
         data = {'evidence/a.json': b'{"a/b":[{"~key":"focused"}]}'}

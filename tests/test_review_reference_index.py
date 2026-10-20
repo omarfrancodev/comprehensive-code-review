@@ -102,6 +102,44 @@ class ReferenceIndexTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'typed check reference'):
                 review_artifacts._execution_gate(Path('.'), manifest, record, contents)
 
+    def test_execution_gate_hashes_captured_alias_at_its_canonical_target(self):
+        record = record10()
+        record['schema_version'] = 8
+        record['description'] = {'status': 'unverified', 'identity': None,
+                                 'details': 'No captured description'}
+        alias = 'evidence/producer/notes.md'
+        canonical = 'evidence/notes.md'
+        alias_bytes = b'captured reviewer notes'
+        index = {'schema_version': 1, 'aliases': {
+            alias: {'reference': canonical, 'sha256': digest(alias_bytes)}}, 'inputs': []}
+        index_bytes = json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        context = context10(record)
+        context['reference_index'] = 'evidence/reference-index.json'
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': digest(index_bytes),
+            alias: digest(alias_bytes),
+        }
+        context['review_inputs']['description_identity'] = None
+        contents = {
+            'evidence/reference-index.json': index_bytes,
+            canonical: alias_bytes,
+            'evidence/briefs.json': json.dumps({'D1': {}, 'V1': {}}).encode('utf-8'),
+            'evidence/results.json': json.dumps({'D1': {}, 'V1': {}}).encode('utf-8'),
+            'evidence/example.py': b'# Example C004; not an executed review assertion',
+            'trazabilidad.jsonl': b'',
+        }
+        contents['evidence/context.json'] = json.dumps(
+            context, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+        identity = context['review_inputs']['logical_scope_identity']
+        manifest = {'schema_version': 8, 'review_inputs': context['review_inputs'],
+                    'scope': record['scope'],
+                    'profile_history': record['coverage']['execution']['profile_history'],
+                    'logical_scope': {'identity': identity},
+                    'assignment_registry': context['execution_plan'], 'executors': [], 'hashes': {}}
+
+        with patch.object(review_artifacts, 'validate_execution_sources', return_value=[]):
+            review_artifacts._execution_gate(Path('.'), manifest, record, contents)
+
     def test_selected_brief_markdown_links_resolve_against_retained_sources(self):
         record = record10()
         sources = {

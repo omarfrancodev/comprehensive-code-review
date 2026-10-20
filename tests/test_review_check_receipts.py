@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
+OWNED_WORKSPACE = str(Path(__file__).resolve().parents[1] / '.owned-executor')
 sys.path.insert(0, str(SCRIPTS))
 import review_check_receipts as receipts
 import review_preflight
@@ -28,7 +30,7 @@ def valid_receipt():
         'schema_version': 1,
         'check_id': 'C001',
         'argv': ['python', '-V'],
-        'cwd': '/owned/executor',
+        'cwd': OWNED_WORKSPACE,
         'revision': 'head-456',
         'executor': 'X1',
         'started_at': '2026-10-19T18:00:00+00:00',
@@ -42,9 +44,10 @@ def valid_receipt():
 
 
 def valid_binding():
-    check = {'id': 'C001', 'revision': 'head-456', 'status': 'passed',
+    check = {'id': 'C001', 'command': 'python -V', 'revision': 'head-456', 'status': 'passed',
              'execution': {'kind': 'local', 'executor': 'X1'}}
-    executor = {'executor': 'X1', 'revision': 'head-456', 'snapshot': None}
+    executor = {'executor': 'X1', 'revision': 'head-456', 'snapshot': None,
+                'workspace': OWNED_WORKSPACE}
     return check, [executor]
 
 
@@ -97,6 +100,26 @@ class CheckReceiptTests(unittest.TestCase):
         issues = receipts.validate_receipt(
             incomplete, sources, check=check, executors=executors)
         self.assertIn('invalid_receipt', {issue['code'] for issue in issues})
+
+    def test_receipt_command_must_match_the_argv_declared_by_the_check(self):
+        receipt = valid_receipt()
+        check, executors = valid_binding()
+        sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
+        check['command'] = 'pytest -q'
+
+        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+
+        self.assertTrue(any(issue['field'] == 'command' for issue in issues))
+
+    def test_receipt_cwd_must_match_registered_executor_workspace(self):
+        receipt = valid_receipt()
+        check, executors = valid_binding()
+        executors[0]['workspace'] = str(Path(OWNED_WORKSPACE).with_name('different-executor'))
+        sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
+
+        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+
+        self.assertTrue(any(issue['field'] == 'cwd' for issue in issues))
 
     def test_tampered_bytes_and_mismatched_executor_or_revision_fail(self):
         receipt = valid_receipt()
@@ -161,7 +184,8 @@ class CaptureCheckTests(unittest.TestCase):
                     'a b', '$value', '`tick`']
             output_dir = evidence / 'attempt-1'
             request = {'check_id': 'C001', 'argv': argv, 'cwd': str(cwd),
-                       'revision': revision, 'executor': 'X1',
+                       'command': shlex.join(argv), 'revision': revision, 'executor': 'X1',
+                       'executor_workspace': str(cwd),
                        'output_dir': str(output_dir)}
             before = {str(path.relative_to(session)): path.read_bytes()
                       for path in session.rglob('*') if path.is_file()}
@@ -182,16 +206,20 @@ class CaptureCheckTests(unittest.TestCase):
                 for path in output_dir.rglob('*') if path.is_file()})
 
             failed_dir = evidence / 'attempt-2'
+            failed_argv = [sys.executable, '-c', 'raise SystemExit(7)']
             failed = receipts.capture_check(
-                check_id='C001', argv=[sys.executable, '-c', 'raise SystemExit(7)'],
-                cwd=str(cwd), revision=revision, executor='X1', output_dir=str(failed_dir))
+                check_id='C001', argv=failed_argv, command=shlex.join(failed_argv),
+                cwd=str(cwd), executor_workspace=str(cwd), revision=revision,
+                executor='X1', output_dir=str(failed_dir))
             self.assertEqual(failed['exit_code'], 7)
 
             request_path = root / 'request.json'
+            cli_argv = [sys.executable, '-c', 'raise SystemExit(9)']
             request_path.write_text(json.dumps({
                 'check_id': 'C001',
-                'argv': [sys.executable, '-c', 'raise SystemExit(9)'],
-                'cwd': str(cwd), 'revision': revision, 'executor': 'X1',
+                'argv': cli_argv, 'command': shlex.join(cli_argv),
+                'cwd': str(cwd), 'executor_workspace': str(cwd),
+                'revision': revision, 'executor': 'X1',
             }), encoding='utf-8')
             cli_dir = evidence / 'attempt-3'
             completed = subprocess.run([
@@ -212,9 +240,34 @@ class CaptureCheckTests(unittest.TestCase):
             with patch('review_check_receipts.subprocess.run') as run:
                 with self.assertRaises((ValueError, OSError)):
                     receipts.capture_check(check_id='C001', argv=[sys.executable, '-V'],
-                                           cwd=str(cwd), revision='head', executor='X1',
+                                           command=shlex.join([sys.executable, '-V']),
+                                           cwd=str(cwd), executor_workspace=str(cwd),
+                                           revision='head', executor='X1',
                                            output_dir=str(output_dir))
                 run.assert_not_called()
+
+    def test_capture_rejects_command_and_workspace_mismatches_before_execution(self):
+        with tempfile.TemporaryDirectory(prefix='review-check-binding-') as directory:
+            root = Path(directory).resolve()
+            cwd = root / 'registered-workspace'
+            other_workspace = root / 'other-workspace'
+            marker = root / 'command-ran.txt'
+            argv = [sys.executable, '-c',
+                    'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("ran")',
+                    str(marker)]
+            common = {'check_id': 'C001', 'argv': argv, 'cwd': str(cwd),
+                      'revision': 'head', 'executor': 'X1',
+                      'output_dir': str(root / 'session' / 'evidence' / 'attempt-1')}
+
+            with self.assertRaisesRegex(ValueError, 'canonical display'):
+                receipts.capture_check(**common, command='python -V',
+                                       executor_workspace=str(cwd))
+            self.assertFalse(marker.exists())
+
+            with self.assertRaisesRegex(ValueError, 'registered executor workspace'):
+                receipts.capture_check(**common, command=shlex.join(argv),
+                                       executor_workspace=str(other_workspace))
+            self.assertFalse(marker.exists())
 
 
 if __name__ == '__main__':

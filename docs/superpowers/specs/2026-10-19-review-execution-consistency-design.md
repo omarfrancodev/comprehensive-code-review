@@ -86,7 +86,7 @@ Las fuentes locales seleccionables usan la gramática vigente: `evidence/<basena
 
 Los fragmentos JSON siguen las reglas de claves/índices y escapes `~0`/`~1` que usa el gate actual. Los fragmentos de traza identifican eventos observados. La validación de forma y la resolución de bytes son fases distintas: prepare no puede exigir un resultado o evento que todavía no existe.
 
-Una selección nueva usa `evidence/context.json#profile`. `prepare` rechaza URL o una referencia sin fragmento JSON antes de asignar una identidad durable. En `register`, el contexto ya existe y el fragmento debe resolver exactamente al perfil seleccionado. El mismo resolver se vuelve a usar en `retain`.
+La selección inicial S001 usa `evidence/context.json#profile`. Una transición S002 o posterior apunta a su fila inmutable `evidence/context.json#profile_history/<n>/profile`, donde `<n>` es el índice cero basado en el ID (S002 → 1). `prepare` rechaza URL o una referencia que no corresponda al ID antes de asignar identidad durable. En `register`, el contexto ya existe y el fragmento debe resolver exactamente al perfil de esa fila; el mismo resolver se vuelve a usar en `retain`.
 
 ### 5.2 Diagnóstico estable
 
@@ -145,11 +145,11 @@ El índice debe corresponder a `review_inputs.sources`; no añade silenciosament
 
 ### 9.2 Recibos
 
-Un recibo nuevo tiene exactamente `schema_version=1`, `check_id`, `argv`, `cwd`, `revision`, `executor`, `started_at`, `finished_at`, `exit_code`, `stdout`, `stderr`. stdout/stderr contienen `{reference, sha256, bytes}`. El cwd y el executor corresponden al workspace registrado; los campos temporales son observaciones, nunca estimaciones. `exit_code=null` representa ejecución no terminada y no acredita passed/failed.
+Un recibo nuevo tiene exactamente `schema_version=1`, `check_id`, `argv`, `cwd`, `revision`, `executor`, `started_at`, `finished_at`, `exit_code`, `stdout`, `stderr`. stdout/stderr contienen `{reference, sha256, bytes}`. El `cwd` debe coincidir con `workspace` del executor registrado, tanto al capturar como al validar el recibo retenido. El campo `check.command` debe ser el render determinista `shlex.join(argv)` y el helper rechaza discrepancias antes de iniciar el proceso. Los campos temporales son observaciones, nunca estimaciones. `exit_code=null` representa ejecución no terminada y no acredita passed/failed.
 
-La función de ejecución recibe argv explícito y utiliza `subprocess` sin shell; no expande variables ni acepta una cadena shell. Los `.cmd`, `.bat` y `.ps1` requieren un intérprete explícito y no se infiere que citar argv elimine la semántica de ese intérprete. Ningún comando se ejecuta al validar un recibo. No capturar entorno completo ni secretos en metadata; la selección de logs sigue la política actual de evidencia necesaria.
+La función de ejecución recibe argv explícito, su texto `command`, `cwd`, el `executor_workspace` registrado, revisión, ejecutor e ID de check; utiliza `subprocess` sin shell y no expande variables ni acepta una cadena shell. El helper exige igualdad entre `cwd` y `executor_workspace` antes de ejecutar. Los `.cmd`, `.bat` y `.ps1` requieren un intérprete explícito y no se infiere que citar argv elimine la semántica de ese intérprete. Ningún comando se ejecuta al validar un recibo. No capturar entorno completo ni secretos en metadata; la selección de logs sigue la política actual de evidencia necesaria.
 
-El check existente puede apuntar al recibo mediante `reference`; los logs se seleccionan separadamente. El texto de comando mostrado deriva del argv exacto del recibo, sin placeholders. Logs vacíos son válidos con hash y exit observados. Reintentos tienen recibos y razones distintos; no se sobreescriben logs anteriores ni se cambia la revisión del check reutilizado.
+El check existente puede apuntar al recibo mediante `reference`; los logs se seleccionan separadamente. El texto de comando mostrado deriva del argv exacto del recibo, sin placeholders ni edición manual. Logs vacíos son válidos con hash y exit observados. Reintentos tienen recibos y razones distintos; no se sobreescriben logs anteriores ni se cambia la revisión del check reutilizado.
 
 ## 10. R6: disposición y vista operativa
 

@@ -4060,7 +4060,8 @@ def _execution_gate(run, manifest, value, contents):
         references.add(reference)
     if captured_inputs is not None:
         for reference, expected in captured_inputs['sources'].items():
-            name = urlsplit(reference).path
+            canonical = review_references.canonical_reference(reference, aliases)
+            name, _ = review_references.parse_reference(canonical, field='captured review input')
             if _digest(source(name)) != expected:
                 raise ValueError('selected external review input differs from its captured SHA-256 identity: '
                                  + reference)

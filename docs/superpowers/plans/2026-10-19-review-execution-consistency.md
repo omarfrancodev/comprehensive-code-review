@@ -101,7 +101,7 @@ Cada task realiza RED, cambio mínimo, GREEN y commit de sus archivos. El ledger
 - Produces: `ReferenceIssue`, TypedDict con `code: str`, `field: str`, `reference: str | None`, `message: str`, `expected: str`.
 - Produces: `parse_reference(reference: str, *, field: str, allow_alias_key: bool = False) -> tuple[str, str | None]`: retorna ruta y fragmento; ValueError para formato inválido.
 - Produces: `resolve_reference(reference: str, sources: dict[str, bytes], *, field: str) -> object`: bytes sin fragmento o valor JSON/evento/ancla según el contrato vigente; sin IO.
-- Produces: `validate_selection_reference(selection: dict, sources: dict[str, bytes] | None) -> list[ReferenceIssue]`: valida sintaxis sin fuentes; con fuentes, exige valor de perfil exacto.
+- Produces: `validate_selection_reference(selection: dict, sources: dict[str, bytes] | None) -> list[ReferenceIssue]`: valida sintaxis y que S001 use `#profile` o S002+ su fragmento indexado `#profile_history/<id-1>/profile`; con fuentes, exige valor de perfil exacto.
 - Los caller convierten ValueError en issues acotados; no se relajan los límites de lectura existentes.
 
 - [x] **Step 1: escribir los tests de gramática y perfil (RF1)**
@@ -504,8 +504,8 @@ git commit -m "feat(preparacion): generar candidatos con contratos verificables"
 
 - Consumes: ReferenceIssue y resolución de Task 1; `validate_check_sources(record, executors)` existente; guards actuales de workspace/ownership antes de ejecutar.
 - Produces: `validate_receipt(receipt: dict, sources: dict[str, bytes], *, check: dict, executors: list[dict]) -> list[ReferenceIssue]`: campos exactos del spec §9.2, hashes y vinculación de revisión/executor.
-- Produces: `capture_check(*, check_id: str, argv: list[str], cwd: str, revision: str, executor: str, output_dir: str) -> dict`: ejecuta sólo la orden indicada y produce el recibo con observaciones reales; output_dir debe ser nuevo y propio.
-- CLI `review_check_receipts.py run --request <json> --output-dir <owned-new-dir>`: request contiene check_id/argv/cwd/revision/executor; salida no mezcla exit del helper con exit del check. La validación de permisos/ownership y workspace precede a iniciar proceso.
+- Produces: `capture_check(*, check_id: str, argv: list[str], command: str, cwd: str, executor_workspace: str, revision: str, executor: str, output_dir: str) -> dict`: ejecuta sólo la orden indicada y produce el recibo con observaciones reales; command debe ser `shlex.join(argv)`, cwd debe coincidir con workspace registrado y output_dir debe ser nuevo y propio.
+- CLI `review_check_receipts.py run --request <json> --output-dir <owned-new-dir>`: request contiene check_id/argv/command/cwd/executor_workspace/revision/executor; salida no mezcla exit del helper con exit del check. La validación de command, permisos/ownership y workspace precede a iniciar proceso. La validación retenida vuelve a comprobar command/argv y cwd/workspace.
 
 - [x] **Step 1: escribir el test de log vacío y exit observado**
 
@@ -1003,3 +1003,16 @@ La ejecución inline terminó Tasks 1–7 en commits locales separados y Task 8 
 - **Native:** ejecución inline de las ocho tareas, seguida de verificación integrada; conserva las interfaces compartidas en el mismo contexto.
 
 Se usó Native por las dependencias secuenciales de estas ocho tareas y la instrucción del usuario de proceder inline. No ejecutar push, PR, publicación, merge ni release como parte de esta implementación.
+
+## Seguimiento de code review para PR #27 (2026-10-20)
+
+El comentario de CCR señaló cuatro discrepancias verificables entre los contratos y los gates. Corregirlas en este orden porque las referencias de selección y alias se validan antes de los recibos retenidos:
+
+1. **Transiciones de perfil:** permitir S001 sólo con `evidence/context.json#profile` y enlazar S002+ con el fragmento inmutable que corresponde al ID; probar referencia correcta y un índice incorrecto.
+2. **Aliases de inputs:** resolver primero el alias y comprobar el digest sobre el destino canónico conservando la clave original capturada; probar una fuente anidada renombrada.
+3. **Binding de recibos:** exigir `check.command == shlex.join(receipt.argv)` y `receipt.cwd == executor.workspace`; añadir esos valores al request del helper para rechazar desajustes antes de ejecutar y probar también el gate retenido.
+4. **Validación:** correr `test_review_references.py`, `test_review_reference_index.py`, `test_review_check_receipts.py` y `test_review_check_provenance.py`, además de `git diff --check`; registrar cualquier limitación del entorno que impida la integración.
+
+Los tests de los cuatro puntos se escriben primero; no se modifica producción antes de observar la regresión correspondiente. El render del comentario público permanece bajo control del renderizador y esta corrección no cambia ese flujo.
+
+**Evidencia de seguimiento:** las referencias (4), el índice de referencias (10), los recibos puros (7), las barreras de captura (2), el preflight puro (2), perfiles (25) y bindings puros de procedencia (6) pasan. `git diff --check` pasa. La prueba de captura/retención que crea un Git worktree no pudo completar preparación en este host: Git for Windows devuelve `fatal: '$GIT_DIR' too big` antes de invocar el helper; debe correr en el CI del PR.
