@@ -273,7 +273,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint boundary')
                         original(path, data, **kwargs)
 
-                    with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                    with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                         artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                              input_record=final_file, phase='verification')
                     result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
@@ -304,7 +304,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint ownership boundary')
                     original(path, data, **kwargs)
 
-                with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                     artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 self.assertEqual(result['id'], 'K001')
