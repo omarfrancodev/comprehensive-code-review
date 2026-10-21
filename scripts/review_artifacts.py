@@ -38,6 +38,12 @@ from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
 import review_check_receipts
+from ccr.contracts.scope import SCOPE_FIELDS, require_scope as _scope
+from ccr.shared.encoding import archive_bytes as _json_bytes
+from ccr.shared.git import git as _git, repository_identity
+from ccr.shared.installation import resource_path, skill_root
+from ccr.shared.json_io import atomic_write, read_bounded, read_json
+from ccr.shared.paths import contains as _contains, safe_path
 
 
 FILES = ('review.json', 'informe.md')
@@ -51,7 +57,6 @@ CHECKPOINT_EVIDENCE_COUNT_LIMIT = 64
 CHECKPOINT_METADATA_LIMIT = 16 * 1024 * 1024
 CHECKPOINT_EVIDENCE_LIMIT = 64 * 1024 * 1024
 CHECKPOINT_HASH = re.compile(r'[0-9a-f]{64}')
-SCOPE_FIELDS = {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}
 MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
     'phase', 'role', 'model', 'harness', 'started_at', 'finished_at', 'elapsed_seconds',
@@ -59,30 +64,10 @@ MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'stdout_bytes', 'stderr_bytes', 'exit_code', 'timed_out', 'workspace', 'output_dir'}
 
 
-def safe_path(value):
-    """Reject traversal and every existing link/reparse component before resolving."""
-    path = Path(value)
-    if not path.is_absolute() or '..' in path.parts:
-        raise ValueError('an absolute path without traversal is required: ' + str(path))
-    for component in path.parts[1:]:
-        if any(char in component for char in '<>:"|?*') or component.endswith((' ', '.')):
-            raise ValueError('unsafe path component: ' + component)
-    for current in (path, *path.parents):
-        try:
-            info = current.lstat()
-        except FileNotFoundError:
-            continue
-        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
-            raise ValueError('links/reparse points are not allowed: ' + str(current))
-    return path.resolve()
 
 
-def _contains(parent, child):
-    return child == parent or parent in child.parents
 
 
-def _json_bytes(value):
-    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
 
 
 def _digest(data):
@@ -425,126 +410,14 @@ def _restart_lock(source_path, *, timeout=30.0):
         lock.__exit__(None, None, None)
 
 
-def read_bounded(path, limit):
-    """Read a regular file within a byte budget, including growth after stat."""
-    if type(limit) is not int or limit < 0:
-        raise ValueError('read limit must be a nonnegative integer')
-    path = safe_path(path)
-    try:
-        with path.open('rb') as stream:
-            info = os.fstat(stream.fileno())
-            if not stat.S_ISREG(info.st_mode):
-                raise ValueError('bounded input must be a regular file: ' + str(path))
-            if info.st_size > limit:
-                raise ValueError('input exceeds the ' + str(limit) + '-byte limit: ' + str(path))
-            data = stream.read(limit + 1)
-    except FileNotFoundError:
-        raise
-    if len(data) > limit:
-        raise ValueError('input exceeds the ' + str(limit) + '-byte limit: ' + str(path))
-    return data
 
 
-def read_json(path, *, max_bytes=None):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError('duplicate JSON key: ' + key)
-            result[key] = value
-        return result
-    def invalid_constant(value):
-        raise ValueError('nonfinite JSON number: ' + value)
-    if max_bytes is None:
-        data = safe_path(path).read_bytes()
-    else:
-        data = read_bounded(path, max_bytes)
-    return json.loads(data.decode('utf-8'), object_pairs_hook=unique,
-                      parse_constant=invalid_constant)
 
 
-def atomic_write(path, data, *, staging_path=None):
-    """Replace one validated path atomically, using an exclusive local staging file."""
-    path = safe_path(path)
-    staging = safe_path(staging_path) if staging_path is not None else path.parent / (
-        '.' + path.name + '.' + uuid.uuid4().hex + '.tmp')
-    if staging.parent != path.parent or staging == path:
-        raise ValueError('atomic staging file must be a sibling of its destination')
-    created = False
-    failure = None
-    try:
-        with staging.open('xb') as stream:
-            created = True
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        safe_path(path)
-        os.replace(staging, path)
-    except BaseException as exc:
-        failure = exc
-        raise
-    finally:
-        if created:
-            try:
-                staging.unlink(missing_ok=True)
-            except OSError as cleanup_error:
-                detail = 'atomic write staging remains at ' + str(staging) + ': ' + str(cleanup_error)
-                if failure is None:
-                    raise OSError(detail) from cleanup_error
-                failure.args = (str(failure) + '; ' + detail,)
 
 
-def _git(repo, *args, optional=False):
-    structural = {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
-                  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE',
-                  'GIT_IMPLICIT_WORK_TREE', 'GIT_PREFIX', 'GIT_GRAFT_FILE', 'GIT_SHALLOW_FILE',
-                  'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_REPLACE_REF_BASE'}
-    environment = {key: value for key, value in os.environ.items() if key.upper() not in structural
-                   and not key.upper().startswith(('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'))}
-    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0', GIT_NO_REPLACE_OBJECTS='1')
-    process = subprocess.run(['git', '-c', 'safe.directory=' + str(repo), *args], cwd=repo,
-                             env=environment, capture_output=True, text=True,
-                             encoding='utf-8', errors='replace', check=False)
-    if process.returncode:
-        if optional:
-            return None
-        raise ValueError('repository cannot be resolved by Git')
-    return process.stdout.strip()
 
 
-def repository_identity(repo):
-    """Use normalized origin, or shared common directory for absent/relative origins."""
-    repo = safe_path(repo)
-    common = _git(repo, 'rev-parse', '--git-common-dir')
-    common_path = Path(common)
-    if not common_path.is_absolute():
-        common_path = repo / common_path
-    common_identity = 'common-dir:' + os.path.normcase(str(common_path.resolve()))
-    remote = _git(repo, 'remote', 'get-url', 'origin', optional=True)
-    if remote:
-        if '://' in remote:
-            parsed = urlsplit(remote)
-            if parsed.hostname:
-                host = parsed.hostname.lower()
-                if parsed.port and parsed.port not in (22, 80, 443):
-                    host += ':' + str(parsed.port)
-                identity = host + '/' + parsed.path.strip('/')
-            else:
-                identity = str(Path(parsed.path).resolve())
-        elif re.match(r'^(?:[^/@:]+@)?[^/:]+:', remote) and not re.match(r'^[A-Za-z]:[\\/]', remote):
-            host, name = remote.split(':', 1)
-            identity = host.rsplit('@', 1)[-1].lower() + '/' + name.strip('/')
-        else:
-            # Shared relative configuration is interpreted against different
-            # checkout paths by Git; group this repository by its common directory.
-            if not Path(remote).is_absolute():
-                return common_identity
-            identity = os.path.normcase(str(Path(remote).resolve()))
-        identity = identity.rstrip('/')
-        if identity.endswith('.git'):
-            identity = identity[:-4]
-        return 'origin:' + identity
-    return common_identity
 
 
 def select_output_root(repo, output_root=None):
@@ -556,7 +429,7 @@ def select_output_root(repo, output_root=None):
         raise ValueError('CCR_ARTIFACTS_DIR is empty; specify a durable absolute root')
     root = safe_path(selected)
     if not explicit:
-        checkouts = [safe_path(repo), Path(__file__).resolve().parents[1]]
+        checkouts = [safe_path(repo), skill_root()]
         listing = _git(repo, 'worktree', 'list', '--porcelain')
         checkouts.extend(safe_path(line[9:]) for line in listing.splitlines() if line.startswith('worktree '))
         if any(_contains(parent, root) for parent in checkouts):
@@ -564,14 +437,6 @@ def select_output_root(repo, output_root=None):
     return root
 
 
-def _scope(scope):
-    if not isinstance(scope, dict) or set(scope) != SCOPE_FIELDS:
-        raise ValueError('scope must contain exactly the pinned scope fields')
-    errors = review_contract.validate({'schema_version': 1, 'stage': 'discovery',
-                                      'scope': scope, 'findings': [], 'checks': [],
-                                      'coverage': {'flows': [], 'limitations': []}})
-    if errors:
-        raise ValueError('; '.join(errors))
 
 
 def _slug(value):
@@ -3267,7 +3132,7 @@ def _prepare_from_restart_intent(intent_path):
     has_adoption = bool(selected) and not is_transferring
     adoption_context = _restart_adoption_context(request) if has_adoption else None
     current_scope = request['current_inputs']['scope']
-    version_path = Path(__file__).resolve().parents[1] / 'SKILL.md'
+    version_path = resource_path('SKILL.md')
     try:
         skill_text = version_path.read_text(encoding='utf-8')
         version_match = re.search(r'(?m)^\s+version:\s*["\']?([0-9]+\.[0-9]+\.[0-9]+)', skill_text)

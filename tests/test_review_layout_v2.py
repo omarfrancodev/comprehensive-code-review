@@ -6,7 +6,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-import review_layout
+from ccr.archive import layout as review_layout
 
 
 def mr(head="abc1234567890", base="def9876543210", reference="https://git.example/acme/api/merge_requests/1010"):

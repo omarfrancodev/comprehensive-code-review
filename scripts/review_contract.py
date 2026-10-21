@@ -4,6 +4,7 @@
 Python 3.10+, standard library only. Structural checks never establish finding truth.
 """
 import argparse
+from ccr.contracts.scope import validate_scope
 from review_execution import validate_execution
 from review_check_provenance import validate_check_execution
 from review_profiles import validate_profile_execution
@@ -148,15 +149,9 @@ def validate(record, *, reference_index=None, reference_sources=None,
     if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
         error('schema_version', 'unsupported version')
     enum(stage, {'discovery', 'verification', 'final'}, 'stage')
-    scope = fields(record.get('scope'), {'repository', 'mode', 'base', 'head', 'snapshot', 'target', 'reference'}, 'scope')
-    text(scope.get('repository'), 'scope.repository')
-    enum(scope.get('mode'), MODES, 'scope.mode')
-    for key in ('base', 'head', 'snapshot', 'target', 'reference'):
-        text(scope.get(key), f'scope.{key}', nullable=True)
-    if not scope.get('head') and not scope.get('snapshot'):
-        error('scope', 'head or snapshot identity required')
-    if isinstance(scope.get('mode'), str) and scope['mode'] in {'staged', 'unstaged', 'working'} and not scope.get('snapshot'):
-        error('scope.snapshot', 'local edits require captured snapshot identity')
+    scope = record.get('scope')
+    errors.extend(validate_scope(scope))
+    scope = scope if isinstance(scope, dict) else {}
     versions = {v for key in ('head', 'base', 'snapshot') if isinstance(v := scope.get(key), str)}
 
     prior_reviews = []

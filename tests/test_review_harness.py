@@ -1,26 +1,23 @@
 """Canonical harness identity is declared once, never inferred from model/provider."""
 import copy
-import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
+from unittest.mock import patch
+from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
 
 import test_review_artifacts as fixtures
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-spec = importlib.util.spec_from_file_location('review_harness', SCRIPTS / 'review_harness.py') if (SCRIPTS / 'review_harness.py').exists() else None
-harness = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(harness)
+sys.path.insert(0, str(SCRIPTS))
+from ccr.execution import harness
 
 
 class HarnessTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(harness, 'canonical harness resolver is missing')
+        self.assertTrue(harness.CATALOG.is_file(), 'canonical harness catalog is missing')
 
     def resolve(self, name, **kwargs):
         return harness.resolve(name, environ=kwargs.pop('environ', {}), **kwargs)

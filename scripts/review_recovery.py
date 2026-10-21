@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 import review_inputs
+from ccr.workflow.inputs import candidate_inputs as _candidate_inputs, validate_current_inputs
 import review_layout
 
 
@@ -22,30 +23,6 @@ def _artifacts():
     return review_artifacts
 
 
-def validate_current_inputs(current_inputs, manifest, *, require_same_scope=True, compare_sources=True,
-                            require_applicable=False):
-    """Validate common caller inputs and optionally require unchanged captured identities."""
-    normalized = review_inputs.normalize_inputs(current_inputs)
-    if require_same_scope and normalized['scope'] != manifest.get('scope'):
-        raise ValueError('current scope differs from the pinned review scope; restart is required')
-    # Callers that resume the exact pinned scope may omit this newer field. The
-    # archive's normalized selector is authoritative in that case; changed
-    # scopes still need an explicit selector identity and remain unknown.
-    if (normalized['scope'] == manifest.get('scope')
-            and 'logical_scope_identity' not in normalized):
-        logical = manifest.get('logical_scope')
-        if isinstance(logical, dict) and isinstance(logical.get('identity'), str):
-            normalized['logical_scope_identity'] = logical['identity']
-    retained = _candidate_inputs(manifest)
-    if not compare_sources and retained is not None:
-        retained = copy.deepcopy(retained)
-        retained['sources'] = copy.deepcopy(normalized['sources'])
-        retained['source_set_complete'] = normalized.get('source_set_complete')
-    appraisal = review_inputs.compare_inputs(retained, normalized)
-    if require_applicable and appraisal['applicability'] != 'applicable':
-        raise ValueError('current review inputs are ' + appraisal['applicability']
-                         + '; resume requires applicable inputs, use restart when they changed or are unknown')
-    return normalized
 
 
 def _action(name, reason):
@@ -277,18 +254,6 @@ def _read_candidate_record(path, expected):
         return None
 
 
-def _candidate_inputs(manifest, record=None):
-    captured = manifest.get('review_inputs')
-    retained = (copy.deepcopy(captured) if isinstance(captured, dict) else
-                {'scope': copy.deepcopy(manifest.get('scope')), 'sources': {},
-                 'source_set_complete': False})
-    retained.setdefault('scope', manifest.get('scope'))
-    history = manifest.get('profile_history')
-    if isinstance(history, list) and history and isinstance(history[-1], dict):
-        retained['profile'] = history[-1].get('profile')
-    elif isinstance(record, dict) and isinstance(record.get('profile'), str):
-        retained['profile'] = record['profile']
-    return retained
 
 
 def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_inputs, logical):
