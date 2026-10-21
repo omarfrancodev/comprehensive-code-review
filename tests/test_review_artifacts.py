@@ -87,7 +87,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_trace_without_final_result_cannot_pass_complete_gate(self):
         run = self.prepare()
-        artifacts.record_event(run, self.write('event.json', dict(kind='discovery', status='completed', summary='Static review completed')))
+        artifacts.record_event(run, self.write('event.json', dict(kind='check', status='completed', summary='Static check completed')))
         before = self.snapshot(run)
         with self.assertRaises(ValueError):
             artifacts.validate(run, require_complete=True)
@@ -251,7 +251,8 @@ class ArchiveTests(unittest.TestCase):
                 artifacts.record_event(run, self.write(f'event-result-{index}.json', {
                     'kind': 'discovery' if role == 'discovery' else 'grouped-verification',
                     'status': 'completed', 'summary': 'Synthetic assignment completed',
-                    'actor': {'kind': 'agent', **identity}, 'evidence': [result['reference']]}))
+                    'actor': {'kind': 'agent', **identity},
+                    'evidence': [assignment['reference'], result['reference']]}))
         if 'unavailable_reason' not in kwargs and not kwargs.get('measurement_inputs'):
             kwargs['unavailable_reason'] = 'Provider exposes no counters'
         return artifacts.retain(run, self.write('final-current.json', final),
@@ -760,7 +761,7 @@ class Archive7Tests(unittest.TestCase):
 
     def profile_input(self, profile='focused', source='automatic', **updates):
         from recovery_fixtures import selection_input
-        value = selection_input(profile, source, reference='evidence/context.json#profile_history/0/profile')
+        value = selection_input(profile, source, reference='evidence/context.json#profile')
         value.update(updates)
         return value
 
@@ -875,6 +876,7 @@ class Archive7Tests(unittest.TestCase):
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
                    'execution_plan': copy.deepcopy(final['coverage']['execution']['plan']),
+                   'review_inputs': manifest['review_inputs'],
                    'executors': [{'executor': 'X1', 'method': 'authorized-copy', 'workspace': str(workspace),
                        'revision': final['scope']['head'], 'snapshot': None, 'manifest': None,
                        'dependencies': 'none', 'dependency_reason': 'Synthetic isolated fixture',
@@ -895,7 +897,7 @@ class Archive7Tests(unittest.TestCase):
         history = self.read(run / 'cierre.json')['profile_history']
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
-                   'executors': []}
+                   'executors': [], 'review_inputs': self.read(run / 'cierre.json')['review_inputs']}
         with self.assertRaisesRegex(ValueError, 'execution_plan'):
             artifacts.register(run, [], context_input=self.write('missing-plan.json', context))
         self.assertEqual(self.snapshot(run), before)

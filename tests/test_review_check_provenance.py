@@ -1,7 +1,11 @@
 """Schema 9 separates checks from observed isolated execution provenance."""
 import copy
+import argparse
 import importlib
+import json
 from pathlib import Path
+import shlex
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -9,6 +13,8 @@ from test_review_contract import contract
 from test_review_traceability_contract import check
 import test_review_execution_policy as policy_tests
 from test_review_delivery import delivery
+import review_check_receipts
+import review_workspace
 
 record8 = policy_tests.record8
 
@@ -102,8 +108,8 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         self.fixture = self.policy.fixture
         self.artifacts = self.policy.artifacts
 
-    def prepared(self):
-        return self.policy.prepared('focused')
+    def prepared(self, profile='focused'):
+        return self.policy.prepared(profile)
 
     def test_schema10_archive_binds_checks_before_writing(self):
         run, value, context, inputs = self.prepared()
@@ -114,6 +120,68 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         self.assertEqual(before, self.fixture.snapshot(run))
         value['checks'][0]['execution'] = dict(kind='static', executor=None)
         self.artifacts.retain(run, self.fixture.write('final.json', value), context_input=context, evidence_inputs=inputs)
+        self.assertTrue(self.artifacts.validate(run, require_retained=True)['retained'])
+
+    def test_retention_preflight_and_gate_verify_selected_receipt_bytes(self):
+        repo = self.fixture.repo
+        (repo / 'source.txt').write_text('baseline', encoding='utf-8')
+        self.artifacts._git(repo, 'add', 'source.txt')
+        self.artifacts._git(repo, '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+                            'commit', '-m', 'baseline')
+        head = self.artifacts._git(repo, 'rev-parse', 'HEAD')
+        from recovery_fixtures import record10
+        source = record10('focused')
+        source['scope'].update(head=head, base=head)
+        with patch('recovery_fixtures.record10', return_value=source):
+            run, value, context_file, evidence_inputs = self.prepared('focused')
+
+        workspace_manifest = review_workspace.prepare(argparse.Namespace(
+            repo=str(repo), mode='commit', ref=head, role=['executor'], include_untracked=[]))
+        session = Path(workspace_manifest['session_dir'])
+        evidence_dir = session / 'evidence'
+        evidence_dir.mkdir()
+        workspace = Path(workspace_manifest['workspaces'][0]['path'])
+        context = json.loads(context_file.read_text(encoding='utf-8'))
+        context['executors'] = [dict(executor='X1', method='git-worktree', workspace=str(workspace),
+            revision=head, snapshot=None, manifest=workspace_manifest['manifest'],
+            dependencies='none', dependency_reason='No dependencies')]
+        context_file = self.fixture.write('context-with-receipt-executor.json', context)
+        (evidence_dir / 'context.json').write_text(
+            json.dumps(context, ensure_ascii=False), encoding='utf-8')
+        self.artifacts.register(run, [str(session)], context_input=context_file)
+
+        output_dir = evidence_dir / 'attempt-1'
+        argv = [sys.executable, '-c', "print('verified')"]
+        receipt = review_check_receipts.capture_check(
+            check_id='C001', argv=argv, command=shlex.join(argv), cwd=str(workspace),
+            executor_workspace=str(workspace), revision=head, executor='X1',
+            output_dir=str(output_dir))
+        receipt_reference = review_check_receipts.receipt_reference('C001', output_dir)
+        value['checks'] = [dict(check(), command=shlex.join(argv), revision=head,
+            reference=receipt_reference,
+            execution=dict(kind='local', executor='X1'))]
+        final_file = self.fixture.write('receipt-final.json', value)
+        receipt_path = output_dir / Path(receipt_reference).name
+        stdout_path = output_dir / Path(receipt['stdout']['reference']).name
+        stderr_path = output_dir / Path(receipt['stderr']['reference']).name
+        selected = evidence_inputs + [receipt_path, stdout_path, stderr_path]
+
+        preflight, code = self.artifacts.preflight_run(
+            run, context_file, phase='retain', input_file=final_file, evidence_inputs=selected)
+        self.assertEqual(code, 0, preflight)
+        self.assertTrue(preflight['ready'], preflight)
+
+        before = self.fixture.snapshot(run)
+        original_stdout = stdout_path.read_bytes()
+        stdout_path.write_bytes(original_stdout + b'tampered')
+        with self.assertRaisesRegex(ValueError, 'receipt|stream|digest|byte count'):
+            self.artifacts.retain(run, final_file, context_input=context_file,
+                                  evidence_inputs=selected, temporary_paths=[str(session)])
+        self.assertEqual(before, self.fixture.snapshot(run))
+        stdout_path.write_bytes(original_stdout)
+
+        self.artifacts.retain(run, final_file, context_input=context_file,
+                              evidence_inputs=selected, temporary_paths=[str(session)])
         self.assertTrue(self.artifacts.validate(run, require_retained=True)['retained'])
 
     def test_closed_schema10_source_survives_executor_cleanup(self):

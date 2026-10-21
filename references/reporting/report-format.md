@@ -95,7 +95,7 @@ Responsibility is operational MR/PR assignment: explicit verified user mapping, 
 
 Change authors are separately collected once from actual version-bound platform commits or the selected Git range. Retain each identity source and relevant commit IDs under result-contract.md. Co-author trailers can supply declared display-name provenance; mentions require a verified platform account mapping. Git author metadata proves recorded attribution, not real-world identity or account ownership. Deduplicate only identities with supported equivalence. The MR/PR creator, assignee, committer and reviewers are not automatically authors. Uncommitted local authors stay unknown unless an explicit attribution maps them to the reviewed snapshot. Always render the schemas3–10 authors slot; unknown is No identificados. Mention only verified accounts; never derive @usernames from names/emails. Missing identity alone is not a code defect or reason to repeat discovery.
 
-Publishing uses publication.md. A draft or description correction does not authorize a remote edit.
+Publishing uses publication.md. Public validation is projected from typed check fields before rendering: it keeps IDs, source revisions, statuses, failure kinds and product evidence, while omitting local execution references. Free-text reuse/rerun reasons and evidence containing internal paths or commands need a source-bound `check-publication-context`; this is separate from historical limitation classification. A draft must be prepared and verified against the exact UTF-8 body before an already-authorized send. A draft or description correction does not authorize a remote edit.
 
 ## Execution information by audience
 

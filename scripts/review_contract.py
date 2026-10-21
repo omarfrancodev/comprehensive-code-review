@@ -7,7 +7,7 @@ import argparse
 from review_execution import validate_execution
 from review_check_provenance import validate_check_execution
 from review_profiles import validate_profile_execution
-from review_publication import public_limitations, public_reservations
+from review_publication import public_checks, public_limitations, public_reservations, public_url
 import copy
 import html
 import json
@@ -80,17 +80,19 @@ def review_id(identifier):
     return isinstance(identifier, str) and bool(re.fullmatch(r'CR-[0-9a-f]{20}', identifier))
 
 
-def public_url(value):
-    if not isinstance(value, str):
-        return False
-    try:
-        parsed = urlsplit(value)
-        return parsed.scheme in {'http', 'https'} and bool(parsed.netloc) and not parsed.username and not parsed.password
-    except ValueError:
-        return False
+def validate_reference_semantics(record, context, reference_index, sources, packets=None):
+    """Validate opt-in guided-reference semantics without changing record schemas."""
+    import review_references
+    diagnostics = review_references.validate_semantic_references(
+        record, packets or [], reference_index, sources)
+    diagnostics.extend(review_references.validate_material_inputs(
+        record, context, reference_index, sources))
+    messages = [f"{item['field']}: {item['message']}" for item in diagnostics]
+    return list(dict.fromkeys(messages))
 
 
-def validate(record):
+def validate(record, *, reference_index=None, reference_sources=None,
+             reference_context=None, packets=None):
     """Return all observable contract errors; never modify the supplied record."""
     errors = []
 
@@ -524,6 +526,10 @@ def validate(record):
         text(residual, f'resources.residuals[{i}]')
     if residuals and resources.get('cleanup') != 'pending':
         error('resources.cleanup', 'residual resources require pending cleanup')
+    if reference_index is not None:
+        errors.extend(validate_reference_semantics(
+            record, reference_context, reference_index,
+            reference_sources if isinstance(reference_sources, dict) else {}, packets))
     return errors
 
 
@@ -700,7 +706,7 @@ def confirmed_counts_text(findings):
         for priority, label in PRIORITIES.items())
 
 
-def render(record, audience='user', publication_context=None):
+def render(record, audience='user', publication_context=None, *, check_publication_context=None):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
@@ -708,6 +714,10 @@ def render(record, audience='user', publication_context=None):
         raise ValueError('audience must be user or comment')
     if publication_context is not None and audience != 'comment':
         raise ValueError('publication context is only applicable to public rendering')
+    if check_publication_context is not None and audience != 'comment':
+        raise ValueError('check publication context is only applicable to public rendering')
+    public_check_rows = (public_checks(record, check_publication_context)
+                         if audience == 'comment' else None)
     scope = record['scope']
     responsible = record['responsible']
     version = scope['snapshot'] or scope['head']
@@ -784,17 +794,20 @@ def render(record, audience='user', publication_context=None):
                    [dict(item) for item in record['coverage']['limitations']])
     lines.extend(['', '### Validación', ''])
     if record['checks']:
+        public_rows = ({row['id']: row for row in public_check_rows}
+                       if public_check_rows is not None else {})
         for check in record['checks']:
+            display = public_rows.get(check['id'], check) if audience == 'comment' else check
             lines.extend(['', '<a id="' + html.escape(check['id'], quote=True) + '"></a>', ''])
-            reuse = ' · evidencia reutilizada: ' + one_line(check['reuse_reason']) if check['reused'] else ''
-            repeat = f" · repetición: {one_line(check['rerun_reason'])}" if check['rerun_reason'] else ''
+            reuse = ' · evidencia reutilizada: ' + one_line(display['reuse_reason']) if display['reused'] else ''
+            repeat = f" · repetición: {one_line(display['rerun_reason'])}" if display['rerun_reason'] else ''
             classification = f" · fallo de {FAILURE_KINDS[check['failure_kind']]}" if check['failure_kind'] else ''
             command = f" `{one_line(check['command'])}` —" if audience == 'user' else ''
             lines.append(f"- **{check['id']}**:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
-            if check.get('evidence'):
-                lines.append('  - **Evidencia:** ' + markdown_text(check['evidence']))
-            if check.get('reference'):
-                lines.append('  - **Referencia de ejecución:** ' + reference_text(check['reference']))
+            if display.get('evidence'):
+                lines.append('  - **Evidencia:** ' + markdown_text(display['evidence']))
+            if display.get('reference'):
+                lines.append('  - **Referencia de ejecución:** ' + reference_text(display['reference']))
     else:
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
     if audience == 'user' and record['coverage']['flows']:
@@ -941,12 +954,17 @@ def main():
     parser.add_argument('--groups', help='Explicit same-cause ID groups JSON; required for deduplicate')
     parser.add_argument('--context', help='Optional explicitly collected handoff provenance JSON')
     parser.add_argument('--publication-context', help='Ephemeral source-bound historical limitation classification for render-comment')
+    parser.add_argument('--check-publication-context', help='Ephemeral source-bound public check summaries for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
     args = parser.parse_args()
     try:
         if args.publication_context and args.command != 'render-comment':
             raise ValueError('--publication-context is only applicable to render-comment')
+        if args.check_publication_context and args.command != 'render-comment':
+            raise ValueError('--check-publication-context is only applicable to render-comment')
         publication_context = json.loads(Path(args.publication_context).read_text(encoding='utf-8')) if args.publication_context else None
+        check_publication_context = (json.loads(Path(args.check_publication_context).read_text(encoding='utf-8'))
+                                     if args.check_publication_context else None)
         value = json.loads(Path(args.input).read_text(encoding='utf-8'))
         if args.command == 'validate':
             errors = validate(value)
@@ -964,8 +982,11 @@ def main():
         elif args.command == 'render-handoff':
             context = json.loads(Path(args.context).read_text(encoding='utf-8')) if args.context else None
             print(render_handoff(value, context=context), end='')
+        elif args.command == 'render-comment':
+            print(render(value, 'comment', publication_context,
+                         check_publication_context=check_publication_context), end='')
         else:
-            print(render(value, 'user' if args.command == 'render-user' else 'comment', publication_context), end='')
+            print(render(value, 'user', publication_context), end='')
         return 0
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)

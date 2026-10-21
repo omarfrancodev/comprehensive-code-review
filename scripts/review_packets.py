@@ -9,7 +9,8 @@ import sys
 import review_contract
 
 
-def validate(packet):
+def validate(packet, *, reference_index=None, reference_sources=None,
+             known_check_ids=None):
     errors = []
 
     def fail(path, message):
@@ -126,10 +127,21 @@ def validate(packet):
                 text(updates['blocking_reason'], path + '.updates.blocking_reason')
             if updates.get('blocking') is True and (entry.get('status') != 'confirmed' or not updates.get('blocking_reason')):
                 fail(path, 'blocking needs confirmed status and explicit reason')
-    return errors
+    if reference_index is not None:
+        import review_references
+        identifiers = (known_check_ids if known_check_ids is not None else check_ids)
+        semantic_record = {'checks': [{'id': identifier} for identifier in identifiers
+                                      if isinstance(identifier, str)],
+                           'coverage': {}}
+        diagnostics = review_references.validate_semantic_references(
+            semantic_record, [packet], reference_index,
+            reference_sources if isinstance(reference_sources, dict) else {})
+        errors.extend(f"{item['field']}: {item['message']}" for item in diagnostics)
+    return list(dict.fromkeys(errors))
 
 
-def merge(context, discoveries, verification=None):
+def merge(context, discoveries, verification=None, *, reference_index=None,
+          reference_sources=None):
     """Return a consolidation bundle, NOT a final/canonical record. Preserve inputs."""
     if not isinstance(context, dict) or not isinstance(context.get('context_id'), str) or not context['context_id'].strip():
         raise ValueError('context requires a nonempty context_id')
@@ -141,8 +153,12 @@ def merge(context, discoveries, verification=None):
     if not isinstance(discoveries, list) or not discoveries:
         raise ValueError('at least one discovery packet required')
     all_packets = discoveries + ([verification] if verification is not None else [])
+    known_check_ids = {item.get('id') for item in context.get('checks', [])
+                       if isinstance(item, dict) and isinstance(item.get('id'), str)}
     for index, packet in enumerate(all_packets):
-        errors = validate(packet)
+        errors = validate(packet, reference_index=reference_index,
+                           reference_sources=reference_sources,
+                           known_check_ids=known_check_ids)
         if errors:
             raise ValueError('; '.join(errors))
         expected = 'discovery' if index < len(discoveries) else 'verification'

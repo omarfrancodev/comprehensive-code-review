@@ -12,6 +12,8 @@ Prefer `occurred_at` from an observed UTC source. Helper milestones capture thei
 
 For an already-used optional runner, `record-event --execution-metadata <existing run.json>` maps started to started_at and completed/passed/failed/blocked/skipped to finished_at. Missing/null time remains null; invalid/non-UTC metadata or a conflicting supplied occurred_at fails. Equivalent UTC spellings are accepted. Metadata describes wrapper boundaries, not model activity or review validity; the adapter preserves supplied actor, executor and status. It does not create metadata, activate measurements or query counters. Other statuses have no temporal mapping. Native execution needs no runner or metadata file. Recovery reuses original pending bytes and times rather than sampling a new clock.
 
+Model activity is captured separately in the optional private `evidence/model-usage.json` ledger described in [artifacts.md](artifacts.md), not as extra trace events. Keep the harness ID, actor `provider_id`, configured model and observed model distinct. Record only model metadata already exposed by the dispatch/result/runner; `run.json.model` is configuration and does not prove the provider's effective model. An observed value needs a supplied `platform` or `adapter_observed` reference. Preserve model changes as separate activity rows; conflicting observations sharing the same source/actor/context remain visible as a conflict. Unknown remains null and does not trigger another dispatch, history lookup, API request or usage measurement. Tool/test checks have no model and use `not_applicable`.
+
 Use concise summaries and selected durable evidence/hash references. Record interruption or capability limits honestly. Native fallback follows artifacts.md with the same verifiable structure; it reports limited observations rather than inventing helper execution, missing events or execution order. Pending helper recovery preserves observed facts. `validate` is read-only; optional `--record-checkpoint` records a requested checkpoint only on an open run.
 
 A closed run is immutable. Later transfer/correction/publication is a separate linked operation with its own evidence and authorization; preserve the original review/report/trace. Trace records never grant permission or prove finding correctness.
@@ -29,12 +31,12 @@ For a static coordinator discovery, write this bounded input in the already-regi
   "executor": null,
   "provenance": {"kind": "agent", "source": null},
   "occurred_at": null,
-  "evidence": [],
+  "evidence": ["evidence/briefs.json#D1"],
   "relations": []
 }
 ```
 
-For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
+For new executions, create assignment events with `review_setup.py event` from an envelope bound to the owned session, then pass the resulting JSON to `record-event`. The builder requires the active required brief to already appear in evidence and preserves the supplied actor/provider/time. For observed dispatch use kind agent/status started, with the actual actor that performed dispatch and available executor identity. A later worker-result milestone identifies the worker actor instead. Every work milestone, including completion, carries the active brief plus any observed result reference. An existing equivalent start or a known terminal result can trigger processing; never emit a fabricated past start just for completeness. Verify exact CLI fields through helper help, without adding a probe for unavailable timing.
 
 ## Participants and explicit links
 

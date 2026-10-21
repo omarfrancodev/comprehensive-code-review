@@ -161,6 +161,22 @@ class HarnessTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 harness.validate_identity(altered)
 
+    def test_model_observations_do_not_change_harness_identity(self):
+        import review_model_usage
+        identity = self.resolve('Codex Desktop')
+        before = copy.deepcopy(identity)
+        observation = review_model_usage.observation_from_metadata(
+            {'observed_model': 'model-version-observed', 'model_source': {
+                'kind': 'platform', 'reference': 'call-17'}},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': 'ctx-1'},
+            phase='discovery', activity='coordination')
+        ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + 'a' * 20, harness_id=identity['harness_id'])
+        harness.validate_identity(identity)
+        self.assertEqual(identity, before)
+        self.assertEqual(ledger['harness_id'], identity['harness_id'])
+        self.assertNotIn('model', identity)
+
 
 class ArchiveHarnessTests(unittest.TestCase):
     setUp = fixtures.ArchiveTests.setUp
@@ -183,7 +199,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         self.assertEqual(initial['harness'], raw)
         self.assertEqual(initial['harness_id'], 'claude-code-desktop')
         with patch.dict(os.environ, {'CCR_HARNESS_ID': 'codex-cli'}):
-            fixtures.artifacts.record_event(run, self.write('event.json', dict(kind='discovery', status='started', summary='Inspected flow')))
+            fixtures.artifacts.record_event(run, self.write('event.json', dict(kind='check', status='started', summary='Harness identity persistence check')))
             self.assertEqual(fixtures.artifacts.validate(run)['state'], 'processing')
             self.retain(run)
             self.close(run)

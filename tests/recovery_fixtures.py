@@ -124,7 +124,7 @@ def source_events(record):
             'kind': 'discovery' if row['role'] == 'discovery' else 'grouped-verification',
             'status': 'completed',
             'actor': identity,
-            'evidence': [result['reference']],
+            'evidence': [row['reference'], result['reference']],
         })
     return events
 

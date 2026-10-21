@@ -1,4 +1,5 @@
 """Pure schema-9 check provenance validation; no execution or filesystem probes."""
+import review_check_receipts
 
 
 def _text(value):
@@ -34,7 +35,7 @@ def validate_check_execution(record):
     return errors
 
 
-def validate_check_sources(record, executors):
+def validate_check_sources(record, executors, *, receipt_sources=None):
     errors = validate_check_execution(record)
     if errors or record.get('schema_version') not in (9, 10):
         return errors
@@ -61,4 +62,8 @@ def validate_check_sources(record, executors):
         matches = check['revision'] == (snapshot if snapshot is not None else revision)
         if not pinned or not matches:
             errors.append(prefix + 'executor revision/snapshot differs from check and pinned scope')
+    if receipt_sources is not None:
+        receipt_issues = review_check_receipts.validate_record_receipts(
+            record, receipt_sources, executors)
+        errors.extend(issue['field'] + ': ' + issue['message'] for issue in receipt_issues)
     return errors

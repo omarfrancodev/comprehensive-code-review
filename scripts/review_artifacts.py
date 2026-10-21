@@ -31,9 +31,13 @@ import review_inputs
 import review_restart
 import review_resource_claims
 import review_layout
+import review_references
+import review_preflight
+import review_model_usage
 from review_run_lock import CoordinationError, LockConflictError, run_locks
 from review_execution import validate_execution_sources
 from review_check_provenance import validate_check_sources
+import review_check_receipts
 
 
 FILES = ('review.json', 'informe.md')
@@ -1094,7 +1098,11 @@ def _initial_selection(profile_input):
         raise ValueError('profile selection is missing required field: ' + str(exc.args[0])) from exc
     if value['phase'] != 'prepare' or value['affected_assignments']:
         raise ValueError('initial profile selection must use prepare phase and have no affected assignments')
+    reference_issues = review_references.validate_selection_reference(value, None)
+    if reference_issues:
+        raise ValueError('; '.join(issue['message'] for issue in reference_issues))
     value.update(id='S001', changed_from=None, event_id='E000002')
+    value['reference'] = review_references.INITIAL_PROFILE_HISTORY_REFERENCE
     return value
 
 
@@ -1114,7 +1122,9 @@ def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity
     if selected_profile is not None and selected_profile != profile:
         raise ValueError(label + ' profile differs from the captured profile selection')
     for reference in value['sources']:
-        if not reference.split('#', 1)[0].startswith('evidence/'):
+        path, _ = review_references.parse_reference(
+            reference, field=label + ' source', allow_alias_key=True)
+        if not path.startswith('evidence/'):
             raise ValueError(label + ' source references must identify selected evidence/ files')
     return value
 
@@ -1193,6 +1203,10 @@ def record_event(run_dir, event_file, execution_metadata=None):
         disposition = manifest.get('operation', {}).get('disposition')
         if disposition != 'open':
             raise ValueError('review operation is ' + str(disposition) + '; resume or recover before starting work')
+        assignment_issues = review_preflight.validate_assignment_event(
+            event, manifest.get('assignment_registry', []))
+        if assignment_issues:
+            raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
         if (event['kind'] in {'agent', 'discovery', 'grouped-verification'}
                 and event.get('evidence')):
             registry = manifest.get('assignment_registry')
@@ -1221,11 +1235,16 @@ def _evidence_name(name):
 
 
 def _retained_name(name):
-    if name in FILES + OPTIONAL_FILES + TRACE_FILES:
+    try:
+        path, fragment = review_references.parse_reference(name, field='retained name')
+    except ValueError:
+        return False
+    if fragment is not None:
+        return False
+    if path in FILES + OPTIONAL_FILES + TRACE_FILES:
         return True
-    return (isinstance(name, str) and name.startswith('evidence/')
-            and name.count('/') == 1 and '\\' not in name
-            and name[9:] == _evidence_name(name[9:]) and name[9:] not in {'.', '..'})
+    return (path.startswith('evidence/') and path.count('/') == 1
+            and path[9:] == _evidence_name(path[9:]) and path[9:] not in {'.', '..'})
 
 
 def _check_evidence_target(run, manifest, name):
@@ -1355,6 +1374,8 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
                 raise ValueError('modified prior checkpoint evidence: ' + name)
             source_contents['evidence/' + name.split('/', 2)[2]] = prior
             evidence_total += len(prior)
+
+    _validate_model_usage_context(context, lambda name: source_contents.get(name), manifest)
 
     diagnostics = _checkpoint_diagnostics(gate_errors)
     final = None
@@ -1619,6 +1640,11 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         logical_scope_input = copy.deepcopy(_restart_reservation['request']['logical_scope_input'])
     logical = review_layout.logical_scope(scope, logical_scope_input)
     selection = _initial_selection(profile_input)
+    selection_preflight = review_preflight.validate_preflight(
+        phase='prepare', manifest=None, logical_scope=logical, selection=selection,
+        context=None, record=None, sources={})
+    if not selection_preflight['ready']:
+        raise ValueError('; '.join(issue['message'] for issue in selection_preflight['issues']))
     captured_inputs = _capture_review_inputs(current_inputs, scope, selection['profile'], 'current review inputs',
                                              logical_scope_identity=logical['identity'])
     controller_value = _controller(controller, selection['actor'])
@@ -1863,6 +1889,12 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                           _claim_run_dir=str(run))
     if manifest['schema_version'] == 8 and context_input is not None:
         context = _input_object(context_input, 'execution context')
+        phase_preflight = review_preflight.validate_preflight(
+            phase='register', manifest=manifest, logical_scope=manifest.get('logical_scope'),
+            selection=manifest['profile_history'][-1], context=context, record=None,
+            sources={'evidence/context.json': _json_bytes(context)})
+        if not phase_preflight['ready']:
+            raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
         if (context.get('profile') != manifest['profile_history'][-1]['profile']
                 or context.get('selection_source') != manifest['profile_history'][0]['selection_source']
                 or context.get('profile_history') != manifest['profile_history']):
@@ -1891,6 +1923,11 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                 raise ValueError('execution context review_inputs cannot replace the original captured identities')
         assignment_registry = review_profiles.merge_assignment_registry(
             assignment_registry, context['execution_plan'], manifest['profile_history'], existing_trace)
+        for observed in existing_trace:
+            assignment_issues = review_preflight.validate_assignment_event(
+                observed, assignment_registry)
+            if assignment_issues:
+                raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
         references = {row['reference'] for row in assignment_registry}
         for row in existing_trace:
             if (isinstance(row, dict) and row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
@@ -3848,6 +3885,23 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('final review scope differs from the pinned scope')
     if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
+    if manifest['schema_version'] == 8:
+        context = _input_object(context_input, 'execution context') if context_input is not None else None
+        preflight_sources = ({'evidence/context.json': _json_bytes(context)} if context is not None else {})
+        for raw in evidence_inputs or []:
+            path = safe_path(raw)
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError('selected preflight evidence must be a regular file')
+            name = 'evidence/' + _evidence_name(path.name)
+            if name in preflight_sources:
+                raise ValueError('duplicate selected preflight evidence name: ' + name)
+            preflight_sources[name] = path.read_bytes()
+        phase_preflight = review_preflight.validate_preflight(
+            phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
+            selection=manifest['profile_history'][-1], context=context, record=value,
+            sources=preflight_sources)
+        if not phase_preflight['ready']:
+            raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
     if set(declared_residuals) - set(temporary):
         raise ValueError('register declared temporary residuals before retaining cleanup evidence')
@@ -3888,6 +3942,30 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     return _retain_data(run, manifest, marker, contents)
 
 
+def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_inputs=None):
+    """Read-only phase preflight over one explicit native archive and selected inputs."""
+    try:
+        run, manifest, _ = _load_run(run_dir)
+        _verify_files(run, manifest)
+        context = _input_object(context_input, 'execution context', max_bytes=PENDING_CONTEXT_LIMIT)
+        sources = {'evidence/context.json': _json_bytes(context)}
+        for raw in evidence_inputs or []:
+            path = safe_path(raw)
+            if not stat.S_ISREG(path.stat().st_mode):
+                raise ValueError('selected preflight evidence must be a regular file')
+            name = 'evidence/' + _evidence_name(path.name)
+            if name in sources:
+                raise ValueError('duplicate selected preflight evidence name: ' + name)
+            sources[name] = path.read_bytes()
+        record = read_json(input_file, max_bytes=CHECKPOINT_METADATA_LIMIT) if input_file else None
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return {'error': str(exc)}, 2
+    result = review_preflight.validate_preflight(
+        phase=phase, manifest=manifest, logical_scope=manifest.get('logical_scope'),
+        selection=None, context=context, record=record, sources=sources)
+    return result, 0 if result['ready'] else 1
+
+
 def _execution_gate(run, manifest, value, contents):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
     def source(name):
@@ -3902,10 +3980,34 @@ def _execution_gate(run, manifest, value, contents):
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')
+    _validate_model_usage_context(context, source, manifest)
     events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    index_reference = context.get('reference_index')
+    checks = value.get('checks', []) if isinstance(value.get('checks'), list) else []
+    for check in checks:
+        if not isinstance(check, dict):
+            continue
+        receipt_ref = check.get('reference')
+        if review_check_receipts.is_receipt_reference(receipt_ref, check.get('id')):
+            requested.add(receipt_ref)
+            try:
+                receipt = json.loads(source(receipt_ref).decode('utf-8'))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if isinstance(receipt, dict):
+                for stream_name in ('stdout', 'stderr'):
+                    stream = receipt.get(stream_name)
+                    if isinstance(stream, dict) and isinstance(stream.get('reference'), str):
+                        requested.add(stream['reference'])
+    if index_reference is not None:
+        if index_reference != 'evidence/reference-index.json':
+            raise ValueError('guided reference_index must use evidence/reference-index.json')
+        requested.add(index_reference)
+        requested.update(row['reference'] for row in value.get('checks', [])
+                         if isinstance(row, dict) and isinstance(row.get('reference'), str))
     captured_inputs = manifest.get('review_inputs')
     if captured_inputs is not None:
         supplied_inputs = context.get('review_inputs')
@@ -3928,41 +4030,45 @@ def _execution_gate(run, manifest, value, contents):
     history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
     if not isinstance(history, list) or any(not isinstance(row, dict) or not isinstance(row.get('reference'), str) for row in history):
         raise ValueError('execution context needs observed profile source/history')
-    requested.update(row['reference'] for row in history)
+    requested.update(review_references.INITIAL_PROFILE_HISTORY_REFERENCE
+                     if row.get('id') == 'S001'
+                     and row.get('reference') == review_references.LEGACY_INITIAL_PROFILE_REFERENCE
+                     else row['reference'] for row in history)
     references = set()
     resolved = {}
+    selected_sources = {name: raw for name, raw in contents.items()
+                        if isinstance(name, str) and name.startswith('evidence/')
+                        and isinstance(raw, bytes)}
+    reference_index = None
+    aliases = {}
+    index_bytes = None
+    if index_reference is not None:
+        try:
+            index_bytes = source(index_reference)
+            reference_index = json.loads(index_bytes.decode('utf-8'))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            raise ValueError('selected reference index is unreadable: ' + str(exc)) from exc
+        if not isinstance(reference_index, dict):
+            raise ValueError('selected reference index must be a JSON object')
+        aliases = reference_index.get('aliases', {})
+        if not isinstance(aliases, dict):
+            raise ValueError('selected reference index aliases must be an object')
+        selected_sources[index_reference] = index_bytes
     for reference in requested:
-        parsed = urlsplit(reference)
-        if parsed.scheme or parsed.netloc or parsed.query:
-            raise ValueError('execution source must resolve inside the retained run')
-        raw = source(parsed.path)
-        if not parsed.fragment:
-            resolved[reference] = raw
-        elif parsed.path.endswith('.json'):
-            document = json.loads(raw)
-            keys = parsed.fragment.lstrip('/').split('/')
-            for key in keys:
-                key = key.replace('~1', '/').replace('~0', '~')
-                try:
-                    document = document[int(key)] if isinstance(document, list) else document[key]
-                except (KeyError, IndexError, ValueError, TypeError) as exc:
-                    raise ValueError('missing execution source fragment: ' + reference) from exc
-            resolved[reference] = document
-        elif parsed.path == review_trace.NAME:
-            matching = [row for row in events if row['event_id'] == parsed.fragment]
-            if not matching:
-                raise ValueError('missing observed trace event source: ' + reference)
-            resolved[reference] = matching[0]
-        elif parsed.path.endswith('.md') and re.search(
-                r'(?:<a\s+id=["\x27]' + re.escape(parsed.fragment) + r'["\x27]|^#{1,6}\s+'
-                + re.escape(parsed.fragment) + r'(?:\s|$))', raw.decode('utf-8'), re.MULTILINE):
-            resolved[reference] = raw
-        else:
-            raise ValueError('unresolved execution source fragment: ' + reference)
+        try:
+            canonical = review_references.canonical_reference(reference, aliases)
+        except ValueError as exc:
+            raise ValueError('execution source alias is invalid: ' + str(exc)) from exc
+        path, _ = review_references.parse_reference(canonical, field='execution source')
+        raw = source(path)
+        selected_sources[path] = raw
+        resolved[reference] = review_references.resolve_reference(
+            canonical, {path: raw}, field='execution source')
         references.add(reference)
     if captured_inputs is not None:
         for reference, expected in captured_inputs['sources'].items():
-            name = urlsplit(reference).path
+            canonical = review_references.canonical_reference(reference, aliases)
+            name, _ = review_references.parse_reference(canonical, field='captured review input')
             if _digest(source(name)) != expected:
                 raise ValueError('selected external review input differs from its captured SHA-256 identity: '
                                  + reference)
@@ -3971,13 +4077,43 @@ def _execution_gate(run, manifest, value, contents):
                 and description.get('identity') != captured_inputs['description_identity']):
             raise ValueError('final review description identity differs from the initial captured input')
     for row in history:
-        if resolved.get(row['reference']) != row.get('profile'):
+        source_reference = (review_references.INITIAL_PROFILE_HISTORY_REFERENCE
+                            if row.get('id') == 'S001'
+                            and row.get('reference') == review_references.LEGACY_INITIAL_PROFILE_REFERENCE
+                            else row['reference'])
+        if resolved.get(source_reference) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
+        if source_reference != row['reference']:
+            resolved[row['reference']] = resolved[source_reference]
+            references.add(row['reference'])
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
+    if index_reference is not None:
+        packets = []
+        for group_name in ('plan', 'results'):
+            for row in execution.get(group_name, []):
+                if not isinstance(row, dict) or not isinstance(row.get('reference'), str):
+                    continue
+                try:
+                    canonical = review_references.canonical_reference(
+                        row['reference'], aliases)
+                    path, _ = review_references.parse_reference(canonical, field='selected execution packet')
+                    raw = selected_sources.get(path)
+                    if raw is not None and path.endswith('.json'):
+                        packet_value = json.loads(raw.decode('utf-8'))
+                        if isinstance(packet_value, dict) and any(
+                                key in packet_value for key in ('check_ids', 'findings', 'decisions')):
+                            packets.append(packet_value)
+                except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+                    # The reference and its source already receive a bounded diagnostic below.
+                    continue
+        errors.extend(review_contract.validate_reference_semantics(
+            value, context, reference_index, selected_sources, packets))
     if value.get('schema_version') in (9, 10):
-        errors.extend(validate_check_sources(value, context.get('executors')))
-        errors.extend(validate_check_sources(value, manifest.get('executors', [])))
+        errors.extend(validate_check_sources(value, context.get('executors'),
+                                             receipt_sources=selected_sources))
+        errors.extend(validate_check_sources(value, manifest.get('executors', []),
+                                             receipt_sources=selected_sources))
         # Both retained sources must bind each used identity to the same inputs.
         declared = context.get('executors', [])
         projected = manifest.get('executors', [])
@@ -3992,6 +4128,27 @@ def _execution_gate(run, manifest, value, contents):
                     errors.append('checks.execution.sources: retained context and closure binding differ')
     if errors:
         raise ValueError('; '.join(errors))
+
+
+def _validate_model_usage_context(context, source, manifest):
+    """Validate the optional private sidecar without mixing it into captured inputs."""
+    reference = context.get('model_usage_reference') if isinstance(context, dict) else None
+    if reference is None:
+        return
+    if reference != 'evidence/model-usage.json':
+        raise ValueError('model usage reference must identify evidence/model-usage.json')
+    try:
+        payload = source(reference)
+        if len(payload) > review_model_usage.MAX_LEDGER_BYTES:
+            raise ValueError('model usage sidecar exceeds the 256 KiB bound')
+        ledger = json.loads(payload.decode('utf-8'))
+    except (AttributeError, UnicodeDecodeError, json.JSONDecodeError, OSError, ValueError) as exc:
+        raise ValueError('selected model usage evidence is unreadable: ' + str(exc)) from exc
+    expected_review_id = ('CR-' + manifest['run_id']) if isinstance(manifest.get('run_id'), str) else None
+    issues = review_model_usage.validate_model_usage(
+        ledger, review_id=expected_review_id, harness_id=manifest.get('harness_id'))
+    if issues:
+        raise ValueError('selected model usage evidence is invalid: ' + issues[0]['message'])
 
 
 def _present_resources(registered):
@@ -4148,6 +4305,13 @@ def main():
     inspect = commands.add_parser('inspect', help='Read-only status/integrity inspection of one explicit review run')
     inspect.add_argument('--run-dir', required=True)
     inspect.add_argument('--current-inputs', help='Existing JSON {scope, sources} verified by the coordinator')
+    preflight_command = commands.add_parser('preflight', help='Read-only phase-specific contract check before work or retention')
+    preflight_command.add_argument('--run-dir', required=True)
+    preflight_command.add_argument('--context-input', required=True)
+    preflight_command.add_argument('--phase', required=True, choices=('register', 'discovery', 'retain'))
+    preflight_command.add_argument('--input', help='Optional final review candidate for retain preflight')
+    preflight_command.add_argument('--evidence-input', action='append',
+                                   help='Explicit selected evidence source; repeat for each file')
     lookup = commands.add_parser('lookup', help='Find bounded prior-run candidates for one repository and scope')
     lookup.add_argument('--repo', required=True)
     lookup.add_argument('--scope-file', required=True)
@@ -4286,6 +4450,12 @@ def main():
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
             result = review_recovery.inspect_run(args.run_dir, current_inputs=current)
+        elif args.command == 'preflight':
+            result, exit_code = preflight_run(
+                args.run_dir, args.context_input, phase=args.phase,
+                input_file=args.input, evidence_inputs=args.evidence_input)
+            print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+            return exit_code
         elif args.command == 'lookup':
             import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None

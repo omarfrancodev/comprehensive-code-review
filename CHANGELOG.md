@@ -2,6 +2,18 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## Unreleased
+
+### Added
+
+- Proyectar estado operativo y opciones seguras de continuidad en `inspect` sólo para runs nativos íntegros; reconstruir candidatos administrativos en el mismo run y mantener la historia cerrada inmutable.
+- Registrar de forma privada el modelo configurado u observado por actividad cuando el harness ya expone esa metadata, sin probes ni llamadas adicionales.
+
+### Changed
+
+- Exigir preflight de discovery antes del primer dispatch y preflight de retención para candidato/evidencia seleccionados; corregir el contexto público y volver a renderizar en vez de editar manualmente comentarios canónicos.
+- Mantener explícita la elección rerun/latest y limitar `--previous-run` a un origen nativo verificado; los paquetes históricos siguen siendo solo de consulta.
+
 ## 2.13.0 — 2026-10-19
 
 ### Added

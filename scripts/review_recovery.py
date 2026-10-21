@@ -52,6 +52,150 @@ def _action(name, reason):
     return {'action': name, 'reason': reason}
 
 
+def _native_archive(manifest):
+    return (isinstance(manifest, dict) and manifest.get('schema_version') == 8
+            and manifest.get('layout_version') == 2)
+
+
+def _decode_json_bytes(data):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate JSON key: ' + key)
+            result[key] = value
+        return result
+
+    def invalid_constant(value):
+        raise ValueError('nonfinite JSON number: ' + value)
+
+    return json.loads(data.decode('utf-8'), object_pairs_hook=unique,
+                      parse_constant=invalid_constant)
+
+
+def operational_summary(manifest: dict, events: list[dict], record: dict | None) -> dict:
+    """Project verified closure facts without inferring links or publication from prose."""
+    if not _native_archive(manifest):
+        raise ValueError('operational summary requires native archive schema 8/layout 2')
+    operation = manifest.get('operation')
+    allowed_dispositions = {'open', 'paused', 'blocked', 'superseded', 'complete'}
+    if (not isinstance(operation, dict)
+            or not isinstance(operation.get('disposition'), str)
+            or operation.get('disposition') not in allowed_dispositions):
+        raise ValueError('operational summary requires a valid durable disposition')
+    phase = operation.get('phase') or manifest.get('state')
+    if not isinstance(phase, str) or not phase:
+        raise ValueError('operational summary requires an observed phase')
+    successor = operation.get('successor')
+    if successor is not None and (not isinstance(successor, str) or not successor.strip()):
+        raise ValueError('operational summary successor must be a durable path or null')
+    cleanup = manifest.get('cleanup')
+    if not isinstance(cleanup, str) or cleanup not in {'pending', 'complete', 'not_needed'}:
+        raise ValueError('operational summary requires observed cleanup status')
+    if not isinstance(events, list):
+        raise ValueError('operational summary events must be a verified array')
+
+    publication = None
+    for event in events:
+        if not isinstance(event, dict) or event.get('kind') != 'authorized-publication':
+            continue
+        if isinstance(event.get('status'), str) and event.get('status') in {'completed', 'passed', 'failed'}:
+            publication = event
+    if publication is not None:
+        event_status = publication['status']
+        publication_status = 'published' if event_status in {'completed', 'passed'} else 'failed'
+        publication_summary = {
+            'status': publication_status,
+            'source': publication.get('event_id') if isinstance(publication.get('event_id'), str) else None,
+            'occurred_at': publication.get('occurred_at'),
+            'reason': publication.get('summary') if isinstance(publication.get('summary'), str) else None,
+        }
+    else:
+        resources = record.get('resources') if isinstance(record, dict) else None
+        snapshot_status = resources.get('publication') if isinstance(resources, dict) else None
+        if isinstance(snapshot_status, str) and snapshot_status in {
+                'not_requested', 'draft', 'published', 'failed'}:
+            publication_summary = {'status': snapshot_status, 'source': 'review.json',
+                                   'occurred_at': None, 'reason': None}
+        else:
+            publication_summary = {'status': 'unknown', 'source': None,
+                                   'occurred_at': None, 'reason': None}
+    return {
+        'disposition': operation['disposition'],
+        'phase': phase,
+        'successor': successor,
+        'cleanup': cleanup,
+        'publication': publication_summary,
+    }
+
+
+def continuation_decision(manifest: dict, *, input_appraisal: dict,
+                          pending_operation: dict | None,
+                          candidate_issues: list[dict]) -> dict:
+    """Classify the safest next path; this function never performs that action."""
+    if not _native_archive(manifest):
+        raise ValueError('continuation decision requires native archive schema 8/layout 2')
+    operation = manifest.get('operation')
+    if (not isinstance(operation, dict) or not isinstance(operation.get('disposition'), str)
+            or operation.get('disposition') not in {
+            'open', 'paused', 'blocked', 'superseded', 'complete'}):
+        raise ValueError('continuation decision requires a valid durable disposition')
+    if (not isinstance(input_appraisal, dict)
+            or not isinstance(input_appraisal.get('applicability'), str)
+            or input_appraisal.get('applicability') not in {'applicable', 'changed', 'unknown'}):
+        raise ValueError('continuation decision requires a bounded input appraisal')
+    if candidate_issues is None or not isinstance(candidate_issues, list) \
+            or any(not isinstance(issue, dict) for issue in candidate_issues):
+        raise ValueError('candidate_issues must be an array of diagnostics')
+    if pending_operation is not None and (
+            not isinstance(pending_operation, dict)
+            or not isinstance(pending_operation.get('kind'), str)
+            or type(pending_operation.get('can_complete')) is not bool):
+        raise ValueError('pending_operation requires a kind and explicit can_complete boolean')
+
+    def decision(action, reason, requires_authority=False, new_work=False):
+        return {'action': action, 'reason': reason,
+                'requires_authority': requires_authority, 'new_work': new_work}
+
+    disposition = operation['disposition']
+    if disposition in {'complete', 'superseded'} or manifest.get('state') == 'complete':
+        return decision('show_history', 'This run is immutable history; inspect it or start a linked review.')
+    if pending_operation is not None:
+        if pending_operation['can_complete']:
+            return decision('recover', 'Complete only the exact pending helper-owned operation.',
+                            new_work=False)
+        return decision('preserve', 'The pending operation cannot be verified or completed; preserve both records.')
+    if manifest.get('restart_abandonment') is not None:
+        return decision('show_history', 'This recorded restart refusal is terminal; preserve its source and receipt.')
+    if manifest.get('state') in {'retaining', 'closing'}:
+        return decision('preserve', 'Retention or closure needs its exact original input or cleanup observation.')
+    if input_appraisal['applicability'] != 'applicable':
+        return decision('restart', 'Current inputs changed or remain unknown; preserve the source and plan a linked run.',
+                        requires_authority=True, new_work=True)
+
+    if candidate_issues:
+        candidate_only = all(isinstance(issue.get('field'), str)
+                             and issue['field'].startswith('candidate.')
+                             for issue in candidate_issues)
+        if (candidate_only and manifest.get('retained') is not True
+                and disposition == 'open' and manifest.get('state') in {'prepared', 'processing'}):
+            return decision('rebuild_candidate',
+                'Regenerate the unretained candidate from the same captured inputs, then rerun preflight.',
+                new_work=False)
+        if not candidate_only:
+            return decision('restart', 'A captured identity or non-candidate gate needs a linked review plan.',
+                            requires_authority=True, new_work=True)
+        return decision('preserve', 'The candidate is retained or its lifecycle state cannot be rewritten.')
+
+    if disposition in {'paused', 'blocked'}:
+        return decision('resume', 'Resume only after the existing authority and input gates pass.',
+                        requires_authority=True, new_work=True)
+    if disposition == 'open' and manifest.get('state') in {'prepared', 'processing'}:
+        return decision('resume', 'Continue only the existing incomplete gates after preflight.',
+                        requires_authority=False, new_work=True)
+    return decision('preserve', 'The observed state does not authorize a continuation path.')
+
+
 def classify_candidate(manifest, retained_inputs, current_inputs):
     """Compare a pinned candidate to caller-supplied current identities without IO."""
     if not isinstance(manifest, dict):
@@ -615,14 +759,39 @@ def inspect_run(run_dir, *, current_inputs=None):
     activity = ('completed' if integrity_status == 'verified'
                 and (disposition == 'complete' or manifest.get('state') == 'complete') else 'unknown')
     run_id = manifest.get('run_id')
-    return {'schema_version': 1, 'run_dir': str(run), 'run_id': run_id,
-            'review_id': 'CR-' + run_id if isinstance(run_id, str) else None,
-            'integrity': {'status': integrity_status, 'errors': errors},
-            'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
-            'known_sources': known, 'missing_sources': missing, 'resources': resources,
-            'pending_transaction': pending, 'freshness': freshness, 'actions': actions,
-            'activity': activity,
-            **({'recovery': restart_exit['recovery']} if restart_exit is not None and not errors else {})}
+    result = {'schema_version': 1, 'run_dir': str(run), 'run_id': run_id,
+              'review_id': 'CR-' + run_id if isinstance(run_id, str) else None,
+              'integrity': {'status': integrity_status, 'errors': errors},
+              'phase': operation.get('phase') or manifest.get('state'), 'operation': operation,
+              'known_sources': known, 'missing_sources': missing, 'resources': resources,
+              'pending_transaction': pending, 'freshness': freshness, 'actions': actions,
+              'activity': activity,
+              **({'recovery': restart_exit['recovery']} if restart_exit is not None and not errors else {})}
+    if integrity_status == 'verified' and _native_archive(manifest) and not pending:
+        try:
+            hashes = manifest.get('hashes', {})
+            trace_name = artifacts.review_trace.NAME
+            trace_data = (run / trace_name).read_bytes()
+            if hashlib.sha256(trace_data).hexdigest() != hashes.get(trace_name):
+                raise ValueError('trace bytes changed after integrity verification')
+            artifacts.review_trace.verify(trace_data, manifest.get('trace'), manifest['run_id'])
+            verified_events = [json.loads(line) for line in trace_data.splitlines()]
+            retained_record = None
+            if 'review.json' in hashes:
+                record_data = (run / 'review.json').read_bytes()
+                if hashlib.sha256(record_data).hexdigest() != hashes['review.json']:
+                    raise ValueError('retained record bytes changed after integrity verification')
+                retained_record = _decode_json_bytes(record_data)
+            result['operational_summary'] = operational_summary(
+                manifest, verified_events, retained_record)
+        except (OSError, ValueError, TypeError, KeyError, UnicodeDecodeError,
+                json.JSONDecodeError) as exc:
+            errors.append('operational summary unavailable: ' + str(exc)[:500])
+            result['integrity'] = {'status': 'invalid', 'errors': errors}
+            result['activity'] = 'unknown'
+            result['actions'] = [_action('preserve',
+                'Operational source verification failed; do not continue or rewrite this run.')]
+    return result
 
 
 def main():

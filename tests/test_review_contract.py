@@ -13,6 +13,7 @@ sys.path.insert(0, str(MODULE_PATH.parent))
 spec = importlib.util.spec_from_file_location('review_contract', MODULE_PATH)
 contract = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(contract)
+import review_publication
 
 
 def clean_record():
@@ -240,7 +241,11 @@ class RenderingTests(unittest.TestCase):
         record['checks'] = [{'id': 'C001', 'command': 'python regression.py', 'revision': 'prior-head',
                              'status': 'passed', 'failure_kind': None, 'evidence': 'Consumer works',
                              'reused': True, 'reuse_reason': 'Only description changed', 'rerun_reason': None}]
-        output = contract.render(record, audience='comment')
+        context = {'source_sha256': review_publication.publication_digest(record),
+                   'checks': [{'id': 'C001', 'evidence': 'Consumer works',
+                               'reuse_reason': 'Only description changed',
+                               'rerun_reason': None, 'reference': None}]}
+        output = contract.render(record, audience='comment', check_publication_context=context)
         self.assertIn('prior-head', output)
         self.assertIn('Only description changed', output)
 

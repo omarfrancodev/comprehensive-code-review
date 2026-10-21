@@ -11,6 +11,8 @@ import unittest
 from test_review_execution_policy import record8, limit
 from test_review_profile_names import record7
 from test_review_contract import contract, MODULE_PATH
+from publication_fixtures import publication_record, check_classification
+import review_publication
 
 
 def classification(value, kind='validation', summary=None):
@@ -21,6 +23,62 @@ def classification(value, kind='validation', summary=None):
 
 
 class PublicationPolicyTests(unittest.TestCase):
+    def test_public_checks_do_not_publish_internal_execution_data(self):
+        value = publication_record()
+        original = copy.deepcopy(value)
+        context = check_classification(value)
+        public = contract.render(value, audience='comment', check_publication_context=context)
+        private = contract.render(value, audience='user')
+        for internal in ('evidence/', 'CS2012', '-m:1'):
+            self.assertNotIn(internal, public)
+            self.assertIn(internal, private)
+        rows = review_publication.public_checks(value, context)
+        self.assertEqual(rows[1]['status'], 'failed')
+        self.assertEqual(rows[1]['failure_kind'], 'product')
+        self.assertEqual(rows[2]['revision'], value['scope']['base'])
+        self.assertEqual(value, original)
+
+    def test_relative_local_reference_is_suppressed_without_extra_classification(self):
+        value = publication_record()
+        value['checks'] = value['checks'][:1]
+        output = contract.render(value, audience='comment')
+        self.assertNotIn('evidence/test-scheduling.log', output)
+        self.assertIn('C001', output)
+
+    def test_free_reuse_reason_requires_bound_public_summary(self):
+        value = publication_record()
+        value['checks'][0].update(reused=True, reuse_reason='Los inputs funcionales no cambiaron')
+        value['checks'][0]['execution'] = {'kind': 'reused', 'executor': None}
+        with self.assertRaisesRegex(ValueError, 'check publication context'):
+            contract.render(value, audience='comment')
+        context = check_classification(value)
+        self.assertIn('Los inputs funcionales no cambiaron', contract.render(
+            value, audience='comment', check_publication_context=context))
+
+    def test_check_classification_cannot_change_status_or_add_evidence_url(self):
+        value = publication_record()
+        context = check_classification(value)
+        for mutation in (
+                {'status': 'passed'},
+                {'reference': 'https://evil.example.test/new'},
+                {'id': 'C999'},
+                {'private_note': 'extra'}):
+            bad = copy.deepcopy(context)
+            bad['checks'][1].update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                review_publication.public_checks(value, bad)
+
+    def test_material_execution_gap_remains_public_with_check_projection(self):
+        value = publication_record()
+        value['coverage']['limitations'] = [dict(kind='execution', material=True,
+            public_summary='La validación de compatibilidad requerida sigue pendiente.',
+            detail='Runner agotó recursos al compilar el proyecto')]
+        value['verdict'] = 'insufficient_evidence'
+        output = contract.render(value, audience='comment',
+                                 check_publication_context=check_classification(value))
+        self.assertIn('La validación de compatibilidad requerida sigue pendiente.', output)
+        self.assertNotIn('Runner agotó recursos', output)
+
     def test_private_report_explicitly_discloses_degraded_profile(self):
         value = record8('deep')
         value['coverage']['execution'].update(status='degraded', results=[], fallbacks=[dict(
@@ -159,6 +217,28 @@ class PublicationPolicyTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             context.write_text(json.dumps(dict(classification(value), source_sha256='bad')), encoding='utf-8')
             result = subprocess.run(command + ['render-comment'] + args, capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, '')
+
+    def test_cli_check_context_is_separate_from_legacy_limitation_context(self):
+        value = publication_record()
+        check_context = check_classification(value)
+        with tempfile.TemporaryDirectory(prefix='ccr-check-publication-') as directory:
+            record = Path(directory) / 'review.json'
+            context = Path(directory) / 'check-classification.json'
+            record.write_text(json.dumps(value), encoding='utf-8')
+            context.write_text(json.dumps(check_context), encoding='utf-8')
+            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH)]
+            result = subprocess.run(command + ['render-comment', '--input', str(record),
+                '--check-publication-context', str(context)], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn('evidence/', result.stdout)
+            result = subprocess.run(command + ['render-comment', '--input', str(record),
+                '--publication-context', str(context)], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, '')
+            result = subprocess.run(command + ['render-user', '--input', str(record),
+                '--check-publication-context', str(context)], capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(result.stdout, '')
 

@@ -36,6 +36,16 @@ class LifecyclePolicyTests(unittest.TestCase):
         self.assertIsNone(event['executor'])
         self.assertEqual(event['relations'], [])
         run = self.prepare()
+        from recovery_fixtures import context10, record10
+        manifest = self.read(run / 'cierre.json')
+        context_record = record10('focused', 'automatic')
+        context_record['scope'] = manifest['scope']
+        context = context10(context_record)
+        context['profile_history'] = manifest['profile_history']
+        context['profile'] = manifest['profile_history'][-1]['profile']
+        context['profile_reference'] = manifest['profile_history'][-1]['reference']
+        context['review_inputs'] = manifest['review_inputs']
+        artifacts.register(run, [], context_input=self.write('context.json', context))
         artifacts.record_event(run, self.write('start.json', event))
         self.assertEqual(artifacts.validate(run)['state'], 'processing')
         self.retain(run, unavailable_reason=None)
@@ -46,5 +56,5 @@ class LifecyclePolicyTests(unittest.TestCase):
         events = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
         started = next(e for e in events if e['kind'] == 'discovery' and e['status'] == 'started')
         self.assertIsNone(started['occurred_at'])
-        self.assertEqual([e['kind'] for e in events][:3], ['prepare', 'profile', 'discovery'])
+        self.assertEqual([e['kind'] for e in events][:4], ['prepare', 'profile', 'register', 'discovery'])
         self.assertEqual([e['kind'] for e in events][-2:], ['retain', 'close'])
