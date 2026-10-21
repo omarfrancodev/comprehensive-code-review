@@ -42,7 +42,7 @@ python /absolute/skill/scripts/review_artifacts.py prepare \
   --scope-file /absolute/owned/session/evidence/scope.json \
   --current-inputs /absolute/owned/session/evidence/current-inputs.json \
   --profile-input /absolute/owned/session/evidence/profile-selection.json \
-  --skill-version 2.13.0 --harness unknown \
+  --skill-version 2.14.0 --harness unknown \
   --temporary-path /absolute/owned/session --output-root /absolute/archive
 ```
 
