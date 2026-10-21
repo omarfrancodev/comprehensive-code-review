@@ -447,7 +447,7 @@ git commit -m "refactor(archivo): publicar lectura e integridad independientes"
 - Consumes: Task 5: `load_run(run_dir: str | Path) -> tuple[Path, dict, dict]` y `verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=False, allow_resource_transfer=False, allow_pending_trace=False) -> None`; Task 2: `run_locks(run_dirs, *, coordination_root=None)`.
 - Produces: `owned_run_locks(run_dirs, *, reservation=None)` conserva context manager/revalidación. `transactions.save_manifest(run, manifest, marker) -> dict` conserva semántica actual de _save_manifest y devuelve el marker. `transactions.recover_trace(run, manifest, marker) -> dict` devuelve el marker original cuando no hay pending_trace, o el marker actualizado devuelto por save_manifest después del replay. Los mutadores prepare/select_profile/register/record_event/pause/block/resume/retain/validate/close y checkpoint mantienen sus firmas de la base y se reparten según el spec.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_archive_transactions.py`.
 
@@ -464,21 +464,21 @@ def test_trace_without_pending_returns_marker_without_writes(self):
         self.assertEqual(list(Path(directory).iterdir()), [])
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_archive_transactions.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `recover_trace(run, manifest, marker) -> dict` en `scripts/ccr/archive/transactions.py` y trasladar los mutadores ordinarios**
+- [x] **Step 3: Implementar `recover_trace(run, manifest, marker) -> dict` en `scripts/ccr/archive/transactions.py` y trasladar los mutadores ordinarios**
 
 Extraer planes de evidencia, publicación de manifest/trace, checkpoint y retención manteniendo orden de escrituras. La validación de procedencia recibe bytes seleccionados; el servicio no reemplaza fuentes desconocidas por búsquedas amplias. Conservar IDs lógicos de productor como constantes explícitas con sus valores anteriores.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_archive_transactions.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_atomic_recovery.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_checkpoints.py -v`
@@ -487,7 +487,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_traceabilit
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_preflight.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_artifacts.py tests/test_review_atomic_recovery.py tests/test_review_checkpoints.py tests/test_review_artifacts.py tests/test_review_traceability_contract.py tests/test_review_preflight.py tests/test_script_archive_transactions.py
