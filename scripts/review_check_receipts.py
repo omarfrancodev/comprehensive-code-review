@@ -37,6 +37,11 @@ def _text(value, maximum=4000):
         and not any(ord(char) < 32 for char in value)
 
 
+def _canonical_command_matches(value, argv):
+    """Accept literal command controls only when the exact argv renders to them."""
+    return isinstance(value, str) and len(value) <= 4000 and value == shlex.join(argv)
+
+
 def _workspace_identity(value):
     if not isinstance(value, str) or not value.strip():
         return None
@@ -157,8 +162,8 @@ def validate_receipt(receipt: dict, sources: dict[str, bytes], *,
             fail('check_id', None, 'receipt check ID differs from the source check', str(check.get('id')))
         if check.get('revision') != receipt.get('revision'):
             fail('revision', None, 'receipt revision differs from the source check', str(check.get('revision')))
-        if (not _text(check.get('command')) or not valid_argv
-                or check.get('command') != shlex.join(receipt['argv'])):
+        if (not valid_argv
+                or not _canonical_command_matches(check.get('command'), receipt['argv'])):
             fail('command', None, 'source check command differs from the receipt argv',
                  'the source check command matching receipt argv')
         execution = check.get('execution')
@@ -267,7 +272,7 @@ def _validate_owned_workspace(*, check_id, argv, command, cwd, executor_workspac
         raise ValueError('argv must be a bounded literal argument array')
     if not argv[0].strip():
         raise ValueError('argv[0] must name the explicit executable')
-    if not _text(command) or command != shlex.join(argv):
+    if not _canonical_command_matches(command, argv):
         raise ValueError('command must be the canonical display of the exact argv')
     if (_workspace_identity(cwd) is None
             or _workspace_identity(cwd) != _workspace_identity(executor_workspace)):

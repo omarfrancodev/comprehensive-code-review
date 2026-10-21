@@ -1098,7 +1098,11 @@ def _initial_selection(profile_input):
         raise ValueError('profile selection is missing required field: ' + str(exc.args[0])) from exc
     if value['phase'] != 'prepare' or value['affected_assignments']:
         raise ValueError('initial profile selection must use prepare phase and have no affected assignments')
+    reference_issues = review_references.validate_selection_reference(value, None)
+    if reference_issues:
+        raise ValueError('; '.join(issue['message'] for issue in reference_issues))
     value.update(id='S001', changed_from=None, event_id='E000002')
+    value['reference'] = review_references.INITIAL_PROFILE_HISTORY_REFERENCE
     return value
 
 
@@ -4026,7 +4030,10 @@ def _execution_gate(run, manifest, value, contents):
     history = context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))])
     if not isinstance(history, list) or any(not isinstance(row, dict) or not isinstance(row.get('reference'), str) for row in history):
         raise ValueError('execution context needs observed profile source/history')
-    requested.update(row['reference'] for row in history)
+    requested.update(review_references.INITIAL_PROFILE_HISTORY_REFERENCE
+                     if row.get('id') == 'S001'
+                     and row.get('reference') == review_references.LEGACY_INITIAL_PROFILE_REFERENCE
+                     else row['reference'] for row in history)
     references = set()
     resolved = {}
     selected_sources = {name: raw for name, raw in contents.items()
@@ -4070,8 +4077,15 @@ def _execution_gate(run, manifest, value, contents):
                 and description.get('identity') != captured_inputs['description_identity']):
             raise ValueError('final review description identity differs from the initial captured input')
     for row in history:
-        if resolved.get(row['reference']) != row.get('profile'):
+        source_reference = (review_references.INITIAL_PROFILE_HISTORY_REFERENCE
+                            if row.get('id') == 'S001'
+                            and row.get('reference') == review_references.LEGACY_INITIAL_PROFILE_REFERENCE
+                            else row['reference'])
+        if resolved.get(source_reference) != row.get('profile'):
             raise ValueError('profile source fragment differs from declared transition')
+        if source_reference != row['reference']:
+            resolved[row['reference']] = resolved[source_reference]
+            references.add(row['reference'])
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
     if index_reference is not None:

@@ -81,3 +81,23 @@ El 2026-10-20 se repasaron otra vez F001, F002, F003 y F004 contra el código y 
 | Regresión global | No se volvió a ejecutar; este resultado focalizado no acredita toda la suite. |
 
 Para estas pruebas se usó el intérprete Python empaquetado y TEMP/TMP dentro del worktree autorizado. Esto evitó el fallo de permisos del directorio temporal de Windows observado en el primer intento; los resultados no se extrapolan a la suite completa.
+
+## Re-revisión CCR posterior del PR #27
+
+El comentario `CR-8941793c82294bc38ed5` evaluó `24bb9e7` y confirmó que la transición todavía hacía mutable la referencia de S001. También encontró que el gate de descripción/requisitos no seguía aliases validados hasta las claves capturadas y que el filtro de texto rechazaba `command` con saltos de línea o tabuladores aunque coincidiera con `shlex.join(argv)`. Las tres reproducciones fallaban antes de corregir el código.
+
+La selección inicial nueva se almacena desde preparación como `evidence/context.json#profile_history/0/profile`. Para runs abiertos anteriores, el gate resuelve la referencia legacy `#profile` a esa fila histórica cuando el contexto ya contiene historia; conserva el valor/evento de S001 y permite validar la transición completa sin reiniciar. La pertenencia de descripción y requisitos ahora acepta una clave capturada solo cuando el índice valida su alias y su digest; una clave ajena con el mismo hash sigue siendo rechazada. La captura y la validación del recibo comparan el comando completo con `shlex.join(argv)` y conservan el límite de longitud mientras admiten controles literales permitidos por `argv`.
+
+| Verificación posterior | Resultado |
+|---|---|
+| `test_review_references.py` | 7/7, exit 0; referencia histórica estable y compatibilidad legacy de S001. |
+| `test_review_reference_index.py` | 13/13, exit 0; gate de retención con transición, aliases para descripción/requisitos y rechazo de una fuente ajena con hash coincidente. |
+| `test_review_check_receipts.py` | 13/13, exit 0; captura y validación aceptan `argv` multilínea/tabulado; mismatches anteriores de comando y workspace siguen rechazándose. |
+| `test_review_setup.py`, `test_review_preflight.py`, `test_review_profiles.py` | 8/8, 9/9 y 25/25, respectivamente, exit 0. |
+| `test_review_artifacts.py` | 54 pruebas, 2 omitidas por plataforma, exit 0 con TEMP fuera de la instalación del skill. |
+| `test_review_check_provenance.py` | 12/12, exit 0; incluye integración de recibo y retención. |
+| `test_review_delivery.DeliveryTests.test_reused_historical_check_preserves_execution_provenance` | 1/1, exit 0 con TEMP dentro del worktree después del error de limpieza observado en la batería. |
+| Batería de 11 módulos relacionados | 209 pruebas, 2 omitidas; un error de limpieza de `TemporaryDirectory` al apuntar TEMP fuera del checkout. El test afectado pasó aislado con TEMP dentro del worktree. El test de prioridad de raíz pasó aislado con TEMP fuera de la instalación del skill. |
+| `git diff --check` | Exit 0, sin errores de whitespace. |
+
+Los hallazgos anteriores F002/F003/F004 siguen cubiertos por la resolución del digest aliasado y las regresiones de binding comando/argv y cwd/workspace. Esta validación es focalizada: no repite la suite global, que anteriormente quedó atascada en una prueba de replay de reservas, ni ejecuta una revisión CCR real contra un MR.

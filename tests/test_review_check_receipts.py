@@ -111,6 +111,17 @@ class CheckReceiptTests(unittest.TestCase):
 
         self.assertTrue(any(issue['field'] == 'command' for issue in issues))
 
+    def test_receipt_accepts_canonical_command_with_literal_newline_and_tab(self):
+        receipt = valid_receipt()
+        argv = ['python', '-c', 'print(1)\nprint(2)', '\tvalue']
+        receipt['argv'] = argv
+        check, executors = valid_binding()
+        check['command'] = shlex.join(argv)
+        sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
+
+        self.assertEqual(receipts.validate_receipt(
+            receipt, sources, check=check, executors=executors), [])
+
     def test_receipt_cwd_must_match_registered_executor_workspace(self):
         receipt = valid_receipt()
         check, executors = valid_binding()
@@ -232,6 +243,34 @@ class CaptureCheckTests(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(json.loads(completed.stdout)['receipt']['exit_code'], 9)
 
+            review_workspace.cleanup(argparse.Namespace(manifest=manifest['manifest'], run_dir=None))
+
+    def test_capture_accepts_canonical_command_with_literal_newline_and_tab(self):
+        with tempfile.TemporaryDirectory(prefix='review-check-literal-', dir=str(Path.cwd())) as directory:
+            root = Path(directory).resolve()
+            _, manifest, cwd = self.make_workspace(root)
+            session = Path(manifest['session_dir'])
+            evidence = session / 'evidence'
+            evidence.mkdir()
+            (evidence / 'context.json').write_text(json.dumps({
+                'executors': [{'executor': 'X1', 'workspace': str(cwd)}]
+            }), encoding='utf-8')
+            revision = review_workspace.out(cwd, 'rev-parse', 'HEAD').decode().strip()
+            argv = [sys.executable, '-c', 'print("first")\nprint("second")', '\tvalue']
+            output_dir = evidence / 'attempt-1'
+
+            try:
+                receipt = receipts.capture_check(
+                    check_id='C001', argv=argv, command=shlex.join(argv), cwd=str(cwd),
+                    executor_workspace=str(cwd), revision=revision, executor='X1',
+                    output_dir=str(output_dir))
+            except ValueError as exc:
+                self.fail('capture rejected the canonical literal argv: ' + str(exc))
+
+            self.assertEqual(receipt['argv'], argv)
+            self.assertEqual(receipt['exit_code'], 0)
+            stdout_path = output_dir / Path(receipt['stdout']['reference']).name
+            self.assertEqual(stdout_path.read_text(encoding='utf-8'), 'first\nsecond\n')
             review_workspace.cleanup(argparse.Namespace(manifest=manifest['manifest'], run_dir=None))
 
     def test_capture_rejects_unowned_workspace_before_process(self):

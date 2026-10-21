@@ -16,6 +16,10 @@ CANONICAL_NAME = re.compile(r'[A-Za-z0-9._-]+')
 WINDOWS_DEVICE = re.compile(r'(?i)(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?')
 FIXED_FILES = {'review.json', 'informe.md', 'measurements.json',
                review_trace.NAME, 'handoff.md'}
+INITIAL_PROFILE_HISTORY_REFERENCE = 'evidence/context.json#profile_history/0/profile'
+LEGACY_INITIAL_PROFILE_REFERENCE = 'evidence/context.json#profile'
+
+
 class ReferenceIssue(TypedDict):
     code: str
     field: str
@@ -138,14 +142,22 @@ def validate_selection_reference(selection: dict,
                        'evidence/context.json#profile')]
     selection_id = selection.get('id') if isinstance(selection, dict) else None
     expected_fragment = None
-    if selection_id in (None, 'S001'):
+    legacy_initial = selection_id == 'S001' and reference == LEGACY_INITIAL_PROFILE_REFERENCE
+    if selection_id is None:
         expected_fragment = 'profile'
+    elif selection_id == 'S001':
+        expected_fragment = 'profile_history/0/profile'
     else:
         match = re.fullmatch(r'S(\d{3})', selection_id) if isinstance(selection_id, str) else None
         if match is not None and int(match.group(1)) >= 2:
             expected_fragment = f'profile_history/{int(match.group(1)) - 1}/profile'
-    expected_reference = 'evidence/context.json#' + expected_fragment if expected_fragment else None
-    if path != 'evidence/context.json' or fragment != expected_fragment:
+    allowed_fragments = {expected_fragment} if expected_fragment else set()
+    if selection_id == 'S001':
+        allowed_fragments.add('profile')
+    if path != 'evidence/context.json' or fragment not in allowed_fragments:
+        expected_reference = (INITIAL_PROFILE_HISTORY_REFERENCE if selection_id == 'S001'
+                              else 'evidence/context.json#' + expected_fragment
+                              if expected_fragment else None)
         return [_issue('invalid_reference', field, reference,
                        'profile selection must identify its canonical observed history row',
                        expected_reference or 'a valid S001 profile or S002+ history reference')]
@@ -155,7 +167,16 @@ def validate_selection_reference(selection: dict,
         return [_issue('missing_source', field, reference,
                        'profile source is not available in the selected bytes', path)]
     try:
-        observed = resolve_reference(reference, sources, field=field)
+        source_reference = reference
+        if legacy_initial:
+            try:
+                captured_context = json.loads(sources[path].decode('utf-8'))
+            except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
+                captured_context = None
+            history = captured_context.get('profile_history') if isinstance(captured_context, dict) else None
+            if isinstance(history, list) and history:
+                source_reference = INITIAL_PROFILE_HISTORY_REFERENCE
+        observed = resolve_reference(source_reference, sources, field=field)
         import review_profiles
         expected = review_profiles._canonical(selection.get('profile'))
     except (ValueError, TypeError) as exc:
@@ -564,6 +585,30 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
     captured_sources = captured.get('sources') if isinstance(captured, dict) else None
     if not isinstance(captured_sources, dict):
         captured_sources = {}
+    aliases = index.get('aliases', {}) if isinstance(index, dict) else {}
+
+    def captured_material_matches(reference, expected):
+        if not isinstance(reference, str) or not isinstance(expected, str):
+            return False
+        if captured_sources.get(reference) == expected:
+            return True
+        if not isinstance(aliases, dict):
+            return False
+        for captured_reference, digest in captured_sources.items():
+            if not isinstance(captured_reference, str) or digest != expected:
+                continue
+            try:
+                canonical = canonical_reference(captured_reference, aliases)
+                alias_path, fragment = parse_reference(
+                    captured_reference, field='captured material', allow_alias_key=True)
+            except (TypeError, ValueError):
+                continue
+            alias = aliases.get(alias_path)
+            if (fragment is None and canonical == reference and isinstance(alias, dict)
+                    and alias.get('reference') == reference and alias.get('sha256') == expected):
+                return True
+        return False
+
     reference_index = context.get('reference_index')
     if reference_index != 'evidence/reference-index.json':
         add('missing_input', 'reference_index',
@@ -617,7 +662,7 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
             entry = candidates[0]
             reference = entry.get('reference')
             expected = entry.get('sha256')
-            if not isinstance(reference, str) or captured_sources.get(reference) != expected:
+            if not captured_material_matches(reference, expected):
                 add('input_changed', 'description', reference,
                     'description source is not part of the initially captured review inputs', expected)
             actual_identity = identity_digest(description.get('identity'))
@@ -634,7 +679,7 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
                 'a purpose=requirements input or a disclosed limitation')
         elif len(requirements) == 1:
             ref = requirements[0].get('reference')
-            if not isinstance(ref, str) or captured_sources.get(ref) != requirements[0].get('sha256'):
+            if not captured_material_matches(ref, requirements[0].get('sha256')):
                 add('input_changed', 'requirements', ref,
                     'requirements source differs from the initially captured inputs',
                     str(requirements[0].get('sha256')))

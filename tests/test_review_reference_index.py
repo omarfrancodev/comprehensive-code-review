@@ -102,6 +102,49 @@ class ReferenceIndexTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'typed check reference'):
                 review_artifacts._execution_gate(Path('.'), manifest, record, contents)
 
+    def test_execution_gate_preserves_initial_profile_through_transition(self):
+        for initial_reference in (
+                'evidence/context.json#profile_history/0/profile',
+                'evidence/context.json#profile'):
+            with self.subTest(initial_reference=initial_reference):
+                record = record10('deep')
+                record['schema_version'] = 8
+                record['description'] = {'status': 'unverified', 'identity': None,
+                                         'details': 'No captured description'}
+                execution = record['coverage']['execution']
+                execution['plan'] = []
+                execution['results'] = []
+                initial = dict(execution['profile_history'][0], profile='focused',
+                               reference=initial_reference)
+                transition = dict(initial, id='S002', profile='deep',
+                                  reference='evidence/context.json#profile_history/1/profile',
+                                  phase='discovery', changed_from='focused', event_id='E000003')
+                history = [initial, transition]
+                execution['profile_history'] = history
+                record['profile'] = 'deep'
+                context = context10(record)
+                context.update(profile='deep', profile_history=history,
+                               profile_reference=transition['reference'], execution_plan=[])
+                index = {'schema_version': 1, 'aliases': {}, 'inputs': []}
+                index_bytes = encoded_index(index)
+                context['reference_index'] = 'evidence/reference-index.json'
+                context['review_inputs']['sources'] = {
+                    'evidence/reference-index.json': digest(index_bytes)}
+                contents = {
+                    'evidence/reference-index.json': index_bytes,
+                    'evidence/briefs.json': b'{}',
+                    'evidence/results.json': b'{}',
+                    'trazabilidad.jsonl': b'',
+                    'evidence/context.json': encoded_index(context),
+                }
+                manifest = {'schema_version': 8, 'review_inputs': context['review_inputs'],
+                            'scope': record['scope'], 'profile_history': history,
+                            'logical_scope': {'identity': context['review_inputs']['logical_scope_identity']},
+                            'assignment_registry': [], 'executors': [], 'hashes': {}}
+
+                with patch.object(review_artifacts, 'validate_execution_sources', return_value=[]):
+                    review_artifacts._execution_gate(Path('.'), manifest, record, contents)
+
     def test_execution_gate_hashes_captured_alias_at_its_canonical_target(self):
         record = record10()
         record['schema_version'] = 8
@@ -207,6 +250,52 @@ class ReferenceIndexTests(unittest.TestCase):
         context['review_inputs']['sources']['evidence/description.md'] = 'b' * 64
         issues = refs.validate_material_inputs(record, context, index, sources)
         self.assertTrue(issues)
+
+    def test_aligned_description_accepts_captured_source_through_validated_alias(self):
+        record = record10()
+        context = context10(record)
+        data = b'captured merge request description'
+        checksum = digest(data)
+        alias = 'evidence/producer/description.md'
+        canonical = 'evidence/description.md'
+        record['description']['status'] = 'aligned'
+        record['description']['identity'] = 'sha256:' + checksum
+        context['reference_index'] = 'evidence/reference-index.json'
+        index = {'schema_version': 1, 'aliases': {
+            alias: {'reference': canonical, 'sha256': checksum}}, 'inputs': [
+            {'reference': canonical, 'purpose': 'description', 'sha256': checksum}]}
+        index_bytes = encoded_index(index)
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': digest(index_bytes), alias: checksum}
+        sources = {'evidence/reference-index.json': index_bytes, canonical: data}
+
+        self.assertEqual(refs.validate_material_inputs(record, context, index, sources), [])
+
+        context['review_inputs']['sources'].pop(alias)
+        context['review_inputs']['sources']['evidence/unrelated.md'] = checksum
+        issues = refs.validate_material_inputs(record, context, index, sources)
+        self.assertTrue(any(issue['field'] == 'description' for issue in issues))
+
+    def test_requirements_accept_captured_source_through_validated_alias(self):
+        record = record10()
+        record['description'] = {'status': 'unverified', 'identity': None,
+                                 'details': 'No captured description'}
+        context = context10(record)
+        data = b'captured requirements'
+        checksum = digest(data)
+        alias = 'evidence/producer/requirements.md'
+        canonical = 'evidence/requirements.md'
+        context['review_inputs']['requirements_identity'] = 'sha256:' + checksum
+        context['reference_index'] = 'evidence/reference-index.json'
+        index = {'schema_version': 1, 'aliases': {
+            alias: {'reference': canonical, 'sha256': checksum}}, 'inputs': [
+            {'reference': canonical, 'purpose': 'requirements', 'sha256': checksum}]}
+        index_bytes = encoded_index(index)
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': digest(index_bytes), alias: checksum}
+        sources = {'evidence/reference-index.json': index_bytes, canonical: data}
+
+        self.assertEqual(refs.validate_material_inputs(record, context, index, sources), [])
 
 
 if __name__ == '__main__':

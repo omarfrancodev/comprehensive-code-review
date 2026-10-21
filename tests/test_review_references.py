@@ -41,6 +41,36 @@ class ReferenceTests(unittest.TestCase):
         self.assertTrue(refs.validate_selection_reference(dict(
             selected, reference='evidence/context.json#profile_history/0/profile'), sources))
 
+    def test_initial_profile_reference_stays_stable_after_profile_transition(self):
+        selected = selection_input(profile='focused', id='S001',
+            reference='evidence/context.json#profile_history/0/profile')
+        selected['id'] = 'S001'
+        context = {'profile': 'deep', 'profile_history': [
+            {'id': 'S001', 'profile': 'focused'},
+            {'id': 'S002', 'profile': 'deep'},
+        ]}
+        sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
+
+        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
+
+    def test_legacy_initial_profile_reference_uses_history_after_transition(self):
+        selected = selection_input(profile='focused', id='S001',
+            reference='evidence/context.json#profile')
+        selected['id'] = 'S001'
+        context = {'profile': 'deep', 'profile_history': [
+            {'id': 'S001', 'profile': 'focused'},
+            {'id': 'S002', 'profile': 'deep'},
+        ]}
+        sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
+
+        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
+
+    def test_prepared_initial_selection_uses_immutable_history_reference(self):
+        selected = review_artifacts._initial_selection(selection_input(profile='focused'))
+
+        self.assertEqual(selected['reference'],
+                         'evidence/context.json#profile_history/0/profile')
+
     def test_json_fragment_escapes_and_indices(self):
         data = {'evidence/a.json': b'{"a/b":[{"~key":"focused"}]}'}
         self.assertEqual(refs.resolve_reference('evidence/a.json#a~1b/0/~0key',
