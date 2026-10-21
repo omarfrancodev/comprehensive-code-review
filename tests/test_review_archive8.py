@@ -7,7 +7,7 @@ import unittest
 import test_review_artifacts as archive_tests
 from recovery_fixtures import context10, record10, selection_input, historical_prepare
 import review_recovery
-import review_inputs
+from ccr.workflow import inputs as review_inputs
 
 
 artifacts = archive_tests.artifacts

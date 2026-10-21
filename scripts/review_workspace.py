@@ -11,28 +11,18 @@ import subprocess
 import sys
 import uuid
 
+from ccr.execution import workspace_manifest as _workspace_manifest
 
-class ReviewError(Exception):
-    pass
+ReviewError = _workspace_manifest.ReviewError
+is_link = _workspace_manifest.is_link
+no_links = _workspace_manifest.no_links
 
+
+def load(path):
+    return _workspace_manifest.load(path)
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
-
-
-def is_link(path):
-    # Windows junctions/reparse points also redirect paths; is_symlink alone is insufficient.
-    return path.is_symlink() or bool(getattr(path.lstat(), "st_file_attributes", 0) & 0x400)
-
-
-def no_links(path):
-    path = Path(os.path.abspath(path))
-    for part in (path, *path.parents):
-        if part.exists() or part.is_symlink():
-            if is_link(part):
-                raise ReviewError(f"Path traverses a link/reparse point: {part}")
-    return path
-
 
 def git(repo, *args, data=None, check=True):
     structural = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
@@ -50,10 +40,8 @@ def git(repo, *args, data=None, check=True):
                           + result.stderr.decode("utf-8", errors="replace").strip())
     return result
 
-
 def out(repo, *args):
     return git(repo, *args).stdout
-
 
 def repository(path):
     repo = no_links(Path(path).absolute())
@@ -64,11 +52,9 @@ def repository(path):
         raise ReviewError("--repo must be the actual repository/worktree root")
     return repo.resolve()
 
-
 def patches(repo):
     return (out(repo, "diff", "--cached", "--binary", "--full-index", "HEAD", "--"),
             out(repo, "diff", "--binary", "--full-index", "--"))
-
 
 def tracked_fingerprint(repo):
     """Read actual bytes/types; Git diffs can hide changes through index flags."""
@@ -95,7 +81,6 @@ def tracked_fingerprint(repo):
         entries.append(value)
     return digest(json.dumps(entries, ensure_ascii=True).encode())
 
-
 def state(repo, excluded_session=None, includes=()):
     staged, unstaged = patches(repo)
     status = out(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all")
@@ -111,7 +96,6 @@ def state(repo, excluded_session=None, includes=()):
             "staged_sha256": digest(staged), "unstaged_sha256": digest(unstaged),
             "status_sha256": digest(status), "included_files": files,
             "tracked_fingerprint": tracked_fingerprint(repo)}
-
 
 def selected_files(repo, names):
     selected = {}
@@ -134,13 +118,11 @@ def selected_files(repo, names):
         selected[key] = path.read_bytes()
     return selected
 
-
 def save(manifest):
     path = Path(manifest["manifest"])
     temp = path.with_suffix(".tmp")
     temp.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     temp.replace(path)
-
 
 def registrations(repo):
     items = []
@@ -149,17 +131,14 @@ def registrations(repo):
             items.append(Path(os.fsdecode(entry[9:])).resolve())
     return items
 
-
 def view_hashes(workspace):
     staged, unstaged = patches(workspace)
     return {"staged_sha256": digest(staged), "unstaged_sha256": digest(unstaged),
             "tracked_fingerprint": tracked_fingerprint(workspace),
             "index_flags_sha256": digest(out(workspace, "ls-files", "-v", "-z"))}
 
-
 def untracked(workspace):
     return [os.fsdecode(p) for p in out(workspace, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0") if p]
-
 
 def prepare(args):
     repo = repository(args.repo)
@@ -249,48 +228,6 @@ def prepare(args):
         shutil.rmtree(session)
         raise
 
-
-def load(path):
-    path = no_links(Path(path).absolute())
-    if path.name != "manifest.json" or not path.is_file():
-        raise ReviewError("Expected an existing owned manifest.json")
-    manifest = json.loads(path.read_text(encoding="utf-8"))
-    repo = repository(manifest["repo"])
-    sid = manifest["session_id"]
-    if not re.fullmatch(r"[0-9a-f]{32}", sid):
-        raise ReviewError("Invalid session ID")
-    expected = no_links(repo / ".worktrees" / ("code-review-" + sid))
-    if path.parent != expected or Path(manifest["session_dir"]).absolute() != expected or Path(manifest["manifest"]).absolute() != path:
-        raise ReviewError("Manifest path/session does not match the owned directory")
-    marker = expected / ".owner.json"
-    no_links(marker)
-    owner = json.loads(marker.read_text(encoding="utf-8"))
-    if any(owner.get(k) != manifest.get(k) for k in ("session_id", "owner_token", "repo")):
-        raise ReviewError("Ownership marker mismatch")
-    claim_path = expected / ".review-run-owner.json"
-    if claim_path.exists():
-        no_links(claim_path)
-        claim = json.loads(claim_path.read_text(encoding="utf-8"))
-        if (not isinstance(claim, dict) or claim.get("schema_version") != 1
-                or claim.get("session_id") != sid
-                or claim.get("repo") != manifest.get("repo")
-                or claim.get("owner_token_sha256") != hashlib.sha256(owner["owner_token"].encode("utf-8")).hexdigest()
-                or claim.get("status") not in {"bootstrap", "owned"}):
-            raise ReviewError("Review run resource claim does not match the owned session")
-    entries = manifest["workspaces"]
-    roles = [e["role"] for e in entries]
-    if len(set(roles)) != len(roles) or not roles:
-        raise ReviewError("Invalid workspace entries")
-    for entry in entries:
-        role = entry["role"]
-        if not re.fullmatch(r"[a-z][a-z0-9-]{0,40}", role):
-            raise ReviewError("Unsafe role path")
-        if Path(entry["path"]).absolute() != expected / role:
-            raise ReviewError("Workspace is not a direct owned child")
-        no_links(expected / role)
-    return manifest
-
-
 def record_artifact(args):
     import review_resource_claims
     from review_run_lock import CoordinationError, LockConflictError
@@ -302,7 +239,6 @@ def record_artifact(args):
         raise ReviewError('Artifact registration lock conflict; preserve the session and retry: ' + str(exc)) from exc
     except CoordinationError as exc:
         raise ReviewError('Artifact registration failed; preserve the session: ' + str(exc)) from exc
-
 
 def _record_artifact_locked(args):
     manifest = load(args.manifest)
@@ -318,7 +254,6 @@ def _record_artifact_locked(args):
     save(manifest)
     return {"status": "recorded", "artifact": artifact, "manifest": manifest["manifest"]}
 
-
 def cleanup(args):
     import review_resource_claims
     from review_run_lock import CoordinationError, LockConflictError
@@ -330,7 +265,6 @@ def cleanup(args):
         raise ReviewError('Workspace cleanup lock conflict; preserve the session and retry: ' + str(exc)) from exc
     except CoordinationError as exc:
         raise ReviewError('Workspace cleanup failed; preserve the session: ' + str(exc)) from exc
-
 
 def _cleanup_claim_locked(args):
     from review_run_lock import CoordinationError, LockConflictError
@@ -357,7 +291,6 @@ def _cleanup_claim_locked(args):
         raise ReviewError('Review archive cleanup lock conflict; preserve the session and retry: ' + str(exc)) from exc
     except CoordinationError as exc:
         raise ReviewError('Review archive cleanup failed; preserve the session: ' + str(exc)) from exc
-
 
 def _cleanup_locked(args, *, review_artifacts=None):
     manifest = load(args.manifest)
@@ -437,7 +370,6 @@ def _cleanup_locked(args, *, review_artifacts=None):
         result['released_claims'] = [released['receipt']]
     return result
 
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -470,7 +402,6 @@ def main():
     except (ReviewError, OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
         print(json.dumps({"status": "error", "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

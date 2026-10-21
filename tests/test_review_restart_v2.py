@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import test_review_recovery as recovery_tests
 from restart_v2_fixtures import previous_v2_producer
-import review_restart
+from ccr.archive import restart_contract as review_restart
 
 artifacts = recovery_tests.artifacts
 

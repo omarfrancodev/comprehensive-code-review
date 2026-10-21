@@ -19,20 +19,18 @@ import review_references
 import review_trace
 import review_workspace
 
+from ccr.execution.workspace_manifest import owned_session as _owned_session
 
 REFERENCE_INDEX = 'evidence/reference-index.json'
 MAX_INPUT_BYTES = 131072
 SHA256 = re.compile(r'[0-9a-f]{64}')
 
-
 def _json_bytes(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True,
                       separators=(',', ':'), allow_nan=False).encode('utf-8')
 
-
 def _issues_message(result):
     return '; '.join(issue['message'] for issue in result.get('issues', []))
-
 
 def build_profile_selection(raw: dict) -> dict:
     """Return a canonical selection only when its source and authority are valid."""
@@ -41,7 +39,6 @@ def build_profile_selection(raw: dict) -> dict:
     if issues:
         raise ValueError('; '.join(issue['message'] for issue in issues))
     return value
-
 
 def build_context(manifest: dict, *, execution_plan: list[dict],
                   executors: list[dict], review_inputs: dict,
@@ -115,7 +112,6 @@ def build_context(manifest: dict, *, execution_plan: list[dict],
         raise ValueError('context does not satisfy registration preflight: ' + _issues_message(preflight))
     return result
 
-
 def build_model_usage_update(context: dict, ledger: dict | None, metadata: dict, *,
                              actor: dict, phase: str, activity: str,
                              review_id: str, harness_id: str | None,
@@ -160,7 +156,6 @@ def build_model_usage_update(context: dict, ledger: dict | None, metadata: dict,
         updated_context['model_usage_diagnostics'] = diagnostics
     return updated_context, copy.deepcopy(ledger)
 
-
 def build_assignment_event(raw: dict, assignment: dict) -> dict:
     """Validate an observed work milestone without inventing actor or timing facts."""
     if not isinstance(raw, dict) or 'actor' not in raw:
@@ -180,7 +175,6 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
         raise ValueError('; '.join(issue['message'] for issue in issues))
     return event
 
-
 def _read_input(path):
     path = Path(path)
     if path.stat().st_size > MAX_INPUT_BYTES:
@@ -195,15 +189,6 @@ def _read_input(path):
         raise ValueError('setup input session and arguments have invalid types')
     return value
 
-
-def _owned_session(raw_path):
-    path = Path(raw_path).absolute()
-    if path.is_dir():
-        path = path / 'manifest.json'
-    manifest = review_workspace.load(path)
-    return Path(manifest['session_dir']).absolute(), path.absolute(), manifest
-
-
 def _session_evidence_file(session_dir: Path, reference: str) -> Path:
     path, fragment = review_references.parse_reference(reference, field='session evidence')
     if fragment is not None or not path.startswith('evidence/'):
@@ -212,7 +197,6 @@ def _session_evidence_file(session_dir: Path, reference: str) -> Path:
     if not result.is_file():
         raise ValueError('selected session evidence is missing: ' + path)
     return result
-
 
 def _validate_session_reference_index(session_dir, descriptor, captured_inputs):
     if (not isinstance(descriptor, dict) or set(descriptor) != {'reference', 'sha256'}
@@ -246,7 +230,6 @@ def _validate_session_reference_index(session_dir, descriptor, captured_inputs):
         raise ValueError('session reference index digest is not in the captured review_inputs')
     return index
 
-
 def _write_new_json(session_dir: Path, output: str, value: dict) -> Path:
     evidence_dir = review_workspace.no_links(session_dir / 'evidence')
     target = review_workspace.no_links(Path(output).absolute())
@@ -277,7 +260,6 @@ def _write_new_json(session_dir: Path, output: str, value: dict) -> Path:
     finally:
         temporary.unlink(missing_ok=True)
 
-
 def _run_command(command, input_path, output_path):
     payload = _read_input(input_path)
     session_dir, session_manifest_path, workspace_manifest = _owned_session(payload['session'])
@@ -303,7 +285,6 @@ def _run_command(command, input_path, output_path):
     path = _write_new_json(session_dir, output_path, result)
     return {'status': 'written', 'output': str(path), 'session_id': workspace_manifest['session_id']}
 
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
@@ -319,7 +300,6 @@ def main(argv=None):
     except (OSError, ValueError, TypeError, KeyError, review_workspace.ReviewError) as exc:
         print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
-
 
 if __name__ == '__main__':
     sys.exit(main())

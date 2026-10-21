@@ -7,7 +7,7 @@ Never use this context for the reader/retry/recovery assertions under test.
 from contextlib import contextmanager
 from unittest.mock import patch
 
-import review_restart
+from ccr.archive import restart_contract as review_restart
 
 
 @contextmanager

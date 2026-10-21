@@ -17,6 +17,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 import review_workspace
+from ccr.execution import workspace_manifest
 import review_resource_claims as claims
 import review_recovery
 
@@ -454,7 +455,7 @@ class ResourceClaimTests(unittest.TestCase):
         run = self.create_run([session])
         self.register(run, session, 'claimed-context.json')
 
-        with patch.object(review_workspace, 'load',
+        with patch.object(workspace_manifest, 'load',
                           side_effect=review_workspace.ReviewError('owner marker is malformed')):
             inspected = review_recovery.inspect_run(run)
             with self.assertRaises(ValueError) as captured:

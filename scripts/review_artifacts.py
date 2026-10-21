@@ -28,7 +28,7 @@ import review_trace
 import review_harness
 import review_profiles
 import review_inputs
-import review_restart
+from ccr.archive import restart_contract as review_restart
 import review_resource_claims
 import review_layout
 import review_references
@@ -45,6 +45,21 @@ from ccr.shared.installation import resource_path, skill_root
 from ccr.shared.json_io import atomic_write, read_bounded, read_json
 from ccr.shared.paths import contains as _contains, safe_path
 
+from ccr.archive.reader import load_run as _load_run, _validate_layout
+from ccr.archive.integrity import (
+    _evidence_name, _pending_file_name, _retained_name, _trace_recovery_plan,
+    _verify_pending, verify_files as _verify_files,
+)
+from ccr.archive.intent_contracts import (
+    _validate_cleanup_metadata, _validate_restart_abandonment_value,
+    _validate_terminal_abandonment, _validate_transfer_intent, normalize_transfer_history,
+)
+from ccr.archive.restart_state import (
+    _active_restart_operation, _active_restart_paths, _assert_not_restart_abandoned,
+    _existing_restart_intent_path, _read_restart_intent, _restart_abandonment_path,
+    _restart_completion_path, _restart_intent_path, _restart_local_dir,
+    _restart_source_identity, _validate_restart_abandonment, _validate_restart_completion,
+)
 
 FILES = ('review.json', 'informe.md')
 OPTIONAL_FILES = ('measurements.json',)
@@ -63,16 +78,8 @@ MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
     'executor_invocations', 'status', 'usage_status', 'usage_error', 'unavailable_reason',
     'stdout_bytes', 'stderr_bytes', 'exit_code', 'timed_out', 'workspace', 'output_dir'}
 
-
-
-
-
-
-
-
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
-
 
 def _locked_run(function=None, *, when=None):
     """Serialize durable mutations; read-only validation stays lock-free."""
@@ -85,7 +92,6 @@ def _locked_run(function=None, *, when=None):
                 return target(run_dir, *args, **kwargs)
         return wrapped
     return decorate(function) if function is not None else decorate
-
 
 @contextmanager
 def _owned_run_locks(run_dirs, *, reservation=None):
@@ -108,194 +114,6 @@ def _owned_run_locks(run_dirs, *, reservation=None):
                 raise ValueError('a durable restart is pending; retry that exact restart or recover it first')
         yield loaded
 
-
-def _restart_local_dir(source_run, manifest):
-    source = safe_path(source_run)
-    key = manifest.get('run_id') or 'legacy-' + _digest(
-        _json_bytes({'run_dir': str(source), 'owner_id': manifest['owner_id']}))[:32]
-    directory = source.parent / '.restart-intents' / key
-    return safe_path(directory)
-
-
-def _restart_intent_path(source_run, source_manifest, request):
-    """Return a stable local path keyed by source identity and normalized request."""
-    source = safe_path(source_run)
-    digest = review_restart._sha(review_restart._request_identity(request))
-    return _restart_local_dir(source, source_manifest) / (digest + '.json')
-
-
-def _existing_restart_intent_path(source_run, source_manifest, request):
-    """Look up only the two exact v2 encodings, without scanning other intents."""
-    canonical = _restart_intent_path(source_run, source_manifest, request)
-    previous = copy.deepcopy(request)
-    previous['current_inputs'].pop('logical_scope_identity', None)
-    previous_path = _restart_intent_path(source_run, source_manifest, previous)
-    if previous_path != canonical and previous_path.exists():
-        if canonical.exists():
-            raise ValueError('multiple restart intents match this request; preserve both reservations')
-        return previous_path
-    return canonical
-
-
-def _active_restart_paths(source_run, source_manifest):
-    directory = _restart_local_dir(source_run, source_manifest)
-    return directory / 'active.json', directory / 'active.owner.json'
-
-
-def _restart_completion_path(intent_path):
-    return Path(intent_path).with_suffix('.complete.json')
-
-
-def _restart_abandonment_path(intent_path):
-    return Path(intent_path).with_suffix('.abandoned.json')
-
-
-def _validate_restart_abandonment(intent_path, intent):
-    path = _restart_abandonment_path(intent_path)
-    if not path.exists():
-        return None
-    receipt = read_json(path)
-    return _validate_restart_abandonment_value(receipt, intent)
-
-
-def _validate_restart_abandonment_value(receipt, intent):
-    fields = {'schema_version', 'operation_id', 'source_run', 'source_owner_id', 'intent_sha256',
-              'successor_run_dir', 'authority', 'controller', 'reason', 'recorded_at', 'receipt_sha256'}
-    if not isinstance(receipt, dict) or set(receipt) != fields:
-        raise ValueError('restart abandonment receipt has an invalid shape')
-    unsigned = {key: value for key, value in receipt.items() if key != 'receipt_sha256'}
-    if (receipt['schema_version'] != 1 or receipt['receipt_sha256'] != _digest(_json_bytes(unsigned))
-            or receipt['operation_id'] != intent['operation_id']
-            or receipt['source_run'] != intent['source']['run_dir']
-            or receipt['source_owner_id'] != intent['source']['owner_id']
-            or receipt['intent_sha256'] != intent['intent_sha256']
-            or receipt['successor_run_dir'] != intent['successor']['run_dir']):
-        raise ValueError('restart abandonment receipt differs from its exact intent')
-    review_resource_claims._authority(receipt['authority'])
-    _controller(receipt['controller'], intent['request']['controller']['identity'])
-    review_restart._bounded_text(receipt['reason'], 'abandonment reason')
-    return receipt
-
-
-def _assert_not_restart_abandoned(manifest):
-    receipt = manifest.get('restart_abandonment')
-    if receipt is not None:
-        raise ValueError('restart successor was explicitly abandoned; inspect its source: ' + receipt['source_run'])
-
-
-def _validate_terminal_abandonment(run, manifest):
-    receipt = manifest.get('restart_abandonment')
-    if receipt is None:
-        return
-    operation = manifest.get('restart_operation')
-    if not isinstance(operation, dict):
-        raise ValueError('abandoned successor has no reserved restart identity')
-    bound_intent = {'operation_id': operation['operation_id'], 'intent_sha256': operation['intent_sha256'],
-        'source': {'run_dir': operation['source_run'], 'owner_id': operation['source_owner_id']},
-        'successor': {'run_dir': str(run)}, 'request': {'controller': manifest['controller']}}
-    _validate_restart_abandonment_value(receipt, bound_intent)
-    if (manifest.get('state') != 'prepared' or manifest.get('retained') is not False
-            or manifest['operation'] != {'disposition': 'blocked', 'reason': receipt['reason'],
-                'source': 'abandon-restart', 'phase': 'prepare', 'successor': None}
-            or len(manifest['profile_history']) != 1
-            or set(manifest.get('hashes', {})) != {review_trace.NAME}
-            or any(manifest.get(key) for key in ('resource_claims', 'resource_transfers', 'resource_transfer',
-                'resource_cleanup', 'cleanup_receipts', 'executors', 'assignment_registry', 'checkpoint',
-                'checkpoint_transaction', 'pending_hashes', 'planned_hashes'))):
-        raise ValueError('abandoned successor contains work or resource ownership')
-
-
-def _restart_source_identity(run, manifest):
-    return {key: manifest.get(key) if key != 'run_dir' else str(run)
-            for key in review_restart.SOURCE_FIELDS}
-
-
-def _validate_restart_completion(path, intent):
-    try:
-        value = read_json(path)
-    except FileNotFoundError:
-        return None
-    fields = {'schema_version', 'operation_id', 'source_run', 'source_owner_id',
-              'intent_sha256', 'successor_run_dir', 'successor_owner_id', 'receipt_sha256'}
-    if not isinstance(value, dict) or set(value) != fields:
-        raise ValueError('restart completion receipt has an invalid shape')
-    unsigned = {key: item for key, item in value.items() if key != 'receipt_sha256'}
-    if (value['schema_version'] != 1 or value['receipt_sha256'] != _digest(_json_bytes(unsigned))
-            or value['operation_id'] != intent['operation_id']
-            or value['source_run'] != intent['source']['run_dir']
-            or value['source_owner_id'] != intent['source']['owner_id']
-            or value['intent_sha256'] != intent['intent_sha256']
-            or value['successor_run_dir'] != intent['successor']['run_dir']
-            or value['successor_owner_id'] != intent['successor']['owner_id']):
-        raise ValueError('restart completion receipt differs from its reserved operation')
-    return value
-
-
-def _read_restart_intent(path, source_run, source_manifest):
-    value = read_json(path)
-    errors = review_restart.validate_restart_intent(value)
-    if errors:
-        raise ValueError('; '.join(errors))
-    if value['source'] != _restart_source_identity(source_run, source_manifest):
-        raise ValueError('restart intent belongs to a different source owner')
-    if safe_path(path) != _restart_intent_path(source_run, source_manifest, value['request']):
-        raise ValueError('restart intent path differs from its source/request identity')
-    return value
-
-
-def _active_restart_operation(source_run, source_manifest, *, include_abandoned=False):
-    """Read the one source-bound active descriptor; never scan other reviews."""
-    active_path, owner_path = _active_restart_paths(source_run, source_manifest)
-    if not active_path.exists() and not owner_path.exists():
-        return None
-    if not owner_path.exists():
-        raise ValueError('restart active descriptor has no ownership transition record')
-    owner = read_json(owner_path)
-    fields = {'schema_version', 'source_run', 'source_owner_id', 'active_sha256',
-              'previous_active_sha256', 'active_descriptor', 'previous_descriptor'}
-    if (not isinstance(owner, dict) or set(owner) != fields or owner['schema_version'] != 1
-            or owner['source_run'] != str(safe_path(source_run))
-            or owner['source_owner_id'] != source_manifest.get('owner_id')):
-        raise ValueError('restart active descriptor ownership differs from its source')
-    descriptor = owner['active_descriptor']
-    previous = owner['previous_descriptor']
-    if not isinstance(descriptor, dict):
-        raise ValueError('restart active descriptor transition is invalid')
-    if active_path.exists():
-        raw = read_json(active_path)
-        digest = _digest(_json_bytes(raw))
-        if digest == owner['active_sha256']:
-            descriptor = raw
-        elif digest == owner.get('previous_active_sha256') and isinstance(previous, dict):
-            descriptor = raw
-        else:
-            raise ValueError('restart active descriptor bytes are outside the authorized transition')
-    if (descriptor.get('schema_version') != 1 or descriptor.get('source_run') != str(safe_path(source_run))
-            or descriptor.get('source_owner_id') != source_manifest.get('owner_id')
-            or descriptor.get('status') not in {'pending', 'complete'}):
-        raise ValueError('restart active descriptor is invalid')
-    intent = descriptor.get('intent')
-    errors = review_restart.validate_restart_intent(intent)
-    if errors:
-        raise ValueError('; '.join(errors))
-    if (descriptor.get('operation_id') != intent['operation_id']
-            or descriptor.get('intent_path') != str(_restart_intent_path(source_run, source_manifest, intent['request']))
-            or descriptor.get('intent_sha256') != intent['intent_sha256']
-            or descriptor.get('successor_run_dir') != intent['successor']['run_dir']):
-        raise ValueError('restart active descriptor differs from its intent')
-    intent_path = Path(descriptor['intent_path'])
-    if intent_path.exists():
-        stored = _read_restart_intent(intent_path, source_run, source_manifest)
-        if stored != intent:
-            raise ValueError('restart active intent differs from its immutable request file')
-    if descriptor['status'] == 'complete' or _validate_restart_completion(
-            _restart_completion_path(intent_path), intent) is not None:
-        return None
-    if _validate_restart_abandonment(intent_path, intent) is not None:
-        return descriptor if include_abandoned else None
-    return descriptor
-
-
 def _write_restart_intent(path, intent, source_run, source_manifest):
     errors = review_restart.validate_restart_intent(intent)
     if errors:
@@ -307,7 +125,6 @@ def _write_restart_intent(path, intent, source_run, source_manifest):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, _json_bytes(intent))
-
 
 def _restart_recovery_source(run, manifest):
     """Identify the exact source lock that owns a successor's pending restart."""
@@ -334,7 +151,6 @@ def _restart_recovery_source(run, manifest):
         result['resource_exit'] = resource_exit
     return result
 
-
 def _write_active_restart(source_run, source_manifest, intent_path, intent, *, status='pending'):
     active_path, owner_path = _active_restart_paths(source_run, source_manifest)
     descriptor = {'schema_version': 1, 'source_run': str(safe_path(source_run)),
@@ -358,19 +174,16 @@ def _write_active_restart(source_run, source_manifest, intent_path, intent, *, s
     final = dict(transition, previous_active_sha256=None, previous_descriptor=None)
     atomic_write(owner_path, _json_bytes(final))
 
-
 def _retire_active_restart(intent_path, intent, source_run, source_manifest):
     active_path, owner_path = _active_restart_paths(source_run, source_manifest)
     _write_active_restart(source_run, source_manifest, intent_path, intent, status='complete')
     active_path.unlink(missing_ok=True)
     owner_path.unlink(missing_ok=True)
 
-
 def _retire_completed_descriptor_if_present(intent_path, intent, source_run, source_manifest):
     active_path, owner_path = _active_restart_paths(source_run, source_manifest)
     if active_path.exists() or owner_path.exists():
         _retire_active_restart(intent_path, intent, source_run, source_manifest)
-
 
 def _record_restart_completion(intent_path, intent):
     path = _restart_completion_path(intent_path)
@@ -383,7 +196,6 @@ def _record_restart_completion(intent_path, intent):
         _validate_restart_completion(path, intent)
         return
     atomic_write(path, _json_bytes(value))
-
 
 @contextmanager
 def _restart_lock(source_path, *, timeout=30.0):
@@ -409,17 +221,6 @@ def _restart_lock(source_path, *, timeout=30.0):
     finally:
         lock.__exit__(None, None, None)
 
-
-
-
-
-
-
-
-
-
-
-
 def select_output_root(repo, output_root=None):
     explicit = output_root is not None
     selected = output_root if explicit else os.environ.get('CCR_ARTIFACTS_DIR')
@@ -436,15 +237,11 @@ def select_output_root(repo, output_root=None):
             raise ValueError('the default/global archive root must be outside repository worktrees and skill installation')
     return root
 
-
-
-
 def _slug(value):
     label = re.sub(r'[^a-zA-Z0-9_-]+', '-', str(value)).strip('-_')[:36] or 'review'
     if re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])', label):
         label = 'review-' + label
     return label
-
 
 def _repository_group(identity):
     if (not isinstance(identity, str) or not identity.startswith(('origin:', 'common-dir:'))
@@ -454,44 +251,8 @@ def _repository_group(identity):
     label = Path(identity_path).parent.name if identity_path.endswith('/.git') else identity_path.rsplit('/', 1)[-1]
     return _slug(label) + '-' + _digest(identity.encode('utf-8'))[:20]
 
-
 def _scope_group(scope, logical_scope_input=None):
     return review_layout.scope_group(review_layout.logical_scope(scope, logical_scope_input))
-
-
-def _validate_layout(run, manifest):
-    """Bind location to durable identities; never need the original checkout."""
-    review_layout.validate_layout(run, manifest)
-    root = safe_path(manifest['archive_root'])
-    parts = run.relative_to(root).parts
-    key = manifest.get('repository_key')
-    if len(parts) != 3 or not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{20}', key):
-        raise ValueError('invalid archive layout: expected repository/scope/run below root')
-    repository, scope, name = parts
-    label, separator, suffix = repository.rpartition('-')
-    # Historical _slug strips before truncating, so a generated label may end
-    # in '-' or '_'. Validate its shape without applying a second normalization.
-    if not separator or suffix != key or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,35}', label):
-        raise ValueError('invalid archive layout: repository name must include its stable ID')
-    if scope != _scope_group(manifest['scope'], manifest.get('logical_scope_input')):
-        raise ValueError('invalid archive layout: scope directory differs from pinned scope')
-    if manifest['schema_version'] >= 3:
-        if repository != _repository_group(manifest.get('repository_identity')):
-            raise ValueError('invalid archive layout: repository identity differs from directory')
-        run_id = manifest.get('run_id')
-        if not isinstance(run_id, str) or not re.fullmatch(r'[0-9a-f]{20}', run_id):
-            raise ValueError('invalid archive layout: unique run ID is missing')
-        try:
-            created = datetime.fromisoformat(manifest['created_at'])
-            if created.utcoffset() is None:
-                raise ValueError('timestamp needs timezone')
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError('invalid archive layout: creation timestamp is missing or invalid') from exc
-        expected = review_layout.run_name(manifest['scope'], manifest['created_at'], run_id,
-                                          manifest.get('logical_scope_input'))
-        if name != expected:
-            raise ValueError('invalid archive layout: run directory differs from stored identity')
-
 
 def _temporary_paths(paths, manifest):
     registered = list(manifest.get('temporary_paths', []))
@@ -510,7 +271,6 @@ def _temporary_paths(paths, manifest):
             registered.append(str(path))
     return registered
 
-
 def _temporary_manifests(registered, manifest):
     """Preserve conventional original manifest locations, without reading contents."""
     locations = list(manifest.get('temporary_manifests', []))
@@ -526,13 +286,11 @@ def _temporary_manifests(registered, manifest):
             locations.append(str(path))
     return locations
 
-
 def _archive_write(run, manifest, name, data):
     reservation_id = manifest.get('restart_operation', {}).get('reservation_id')
     stage = (run / ('.' + name + '.' + reservation_id + '.tmp')
              if reservation_id and (run / '.review-restart-reservation.json').exists() else None)
     atomic_write(run / name, data, **({'staging_path': stage} if stage else {}))
-
 
 def _save_manifest(run, manifest, marker):
     manifest['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -552,346 +310,6 @@ def _save_manifest(run, manifest, marker):
     _archive_write(run, manifest, MARKER, _json_bytes(marker))
     return marker
 
-
-def _load_run(run_dir):
-    run = safe_path(run_dir)
-    try:
-        marker = read_json(run / MARKER)
-        manifest = read_json(run / 'cierre.json')
-    except FileNotFoundError as exc:
-        raise ValueError('foreign or incomplete archive: ownership manifest is missing') from exc
-    if not isinstance(marker, dict) or not isinstance(manifest, dict):
-        raise ValueError('invalid ownership manifest')
-    if (marker.get('run_dir') != str(run) or marker.get('owner_id') != manifest.get('owner_id')
-            or marker.get('scope_sha256') != _digest(_json_bytes(manifest.get('scope')))
-            or marker.get('repository_key') != manifest.get('repository_key')
-            or marker.get('archive_root') != manifest.get('archive_root')
-            or _digest((run / 'cierre.json').read_bytes()) not in
-            {marker.get('manifest_sha256'), marker.get('previous_manifest_sha256')}):
-        raise ValueError('foreign run or modified ownership/scope manifest')
-    root = safe_path(marker['archive_root'])
-    if not _contains(root, run) or run == root:
-        raise ValueError('run escaped its registered archive root')
-    _scope(manifest.get('scope'))
-    if manifest.get('schema_version') != ARCHIVE_SCHEMA_VERSION or manifest.get('layout_version') != review_layout.LAYOUT_VERSION:
-        raise ValueError('unsupported_layout: this archive predates native archive schema 8/layout 2; preserve it or port a verified report for consultation')
-    if marker.get('logical_scope_sha256') != _digest(_json_bytes(manifest.get('logical_scope'))):
-        raise ValueError('foreign run or modified logical scope binding')
-    if manifest['schema_version'] in (6, 7, 8):
-        review_harness.validate_identity(manifest)
-    if manifest['schema_version'] == 8:
-        if not manifest.get('profile_history'):
-            raise ValueError('profile selection is required before review work starts')
-        errors = review_profiles.validate_history(manifest.get('profile_history'))
-        if errors:
-            raise ValueError('; '.join(errors))
-        if 'assignment_registry' in manifest:
-            try:
-                review_profiles._assignment_rows(manifest['assignment_registry'],
-                                                 manifest['profile_history'], 'assignment_registry')
-            except (TypeError, ValueError) as exc:
-                raise ValueError('invalid archive assignment registry: ' + str(exc)) from exc
-        if 'review_inputs' in manifest and manifest['review_inputs'] is not None:
-            try:
-                inputs = review_inputs.normalize_inputs(manifest['review_inputs'], caller=False)
-            except (TypeError, ValueError) as exc:
-                raise ValueError('invalid archive review_inputs: ' + str(exc)) from exc
-            if inputs.get('scope') != manifest.get('scope') or 'profile' in inputs:
-                raise ValueError('archive review_inputs must bind the pinned scope and leave profile to profile_history')
-        operation = manifest.get('operation')
-        fields = {'disposition', 'reason', 'source', 'phase', 'successor'}
-        if (not isinstance(operation, dict) or set(operation) != fields
-                or operation['disposition'] not in {'open', 'paused', 'blocked', 'superseded', 'complete'}):
-            raise ValueError('invalid archive operation disposition')
-        restart_operation = manifest.get('restart_operation')
-        if restart_operation is not None:
-            restart_fields = {'operation_id', 'request_sha256', 'intent_sha256', 'source_run',
-                              'source_owner_id', 'reservation_id'}
-            if (not isinstance(restart_operation, dict) or set(restart_operation) != restart_fields
-                    or not re.fullmatch(r'[0-9a-f]{32}', str(restart_operation['operation_id']))
-                    or not CHECKPOINT_HASH.fullmatch(str(restart_operation['request_sha256']))
-                    or not CHECKPOINT_HASH.fullmatch(str(restart_operation['intent_sha256']))
-                    or not isinstance(restart_operation['source_run'], str)
-                    or restart_operation['source_run'] != manifest.get('previous_run')
-                    or not isinstance(restart_operation['source_owner_id'], str)
-                    or not isinstance(restart_operation['reservation_id'], str)):
-                raise ValueError('invalid reserved restart identity in archive')
-        controller = manifest.get('controller')
-        if (not isinstance(controller, dict) or set(controller) != {'identity', 'source'}
-                or not isinstance(controller['identity'], dict) or not isinstance(controller['source'], str)):
-            raise ValueError('invalid archive controller identity')
-        _validate_cleanup_metadata(manifest)
-        _validate_terminal_abandonment(run, manifest)
-    states = {'prepared', 'retaining', 'closing', 'complete'}
-    if manifest['schema_version'] in (5, 6, 7, 8):
-        states.add('processing')
-    if manifest.get('state') not in states:
-        raise ValueError('invalid archive state')
-    if manifest.get('cleanup') not in {'pending', 'complete', 'not_needed'}:
-        raise ValueError('invalid closure state')
-    _validate_layout(run, manifest)
-    return run, manifest, marker
-
-
-def _pending_file_name(name):
-    if not isinstance(name, str):
-        return False
-    if name in {'pending/context.json', 'pending/review.json', 'pending/informe.md'}:
-        return True
-    return (isinstance(name, str) and name.startswith('pending/evidence/')
-            and name.count('/') == 2 and name[17:] == _evidence_name(name[17:])
-            and name[17:] not in {'.', '..'})
-
-
-def _verify_pending(run, manifest, *, allow_transaction=False):
-    if manifest.get('schema_version') != 8:
-        if any(key in manifest for key in ('pending_hashes', 'checkpoint', 'checkpoint_transaction')):
-            raise ValueError('legacy archive cannot contain provisional checkpoint metadata')
-        return
-    hashes = manifest.get('pending_hashes', {})
-    if not isinstance(hashes, dict) or len(hashes) > CHECKPOINT_EVIDENCE_COUNT_LIMIT + 3 or any(not _pending_file_name(name)
-                                           or not isinstance(value, str)
-                                           or not CHECKPOINT_HASH.fullmatch(value)
-                                           for name, value in hashes.items()):
-        raise ValueError('invalid provisional checkpoint hash inventory')
-    if len({name.casefold() for name in hashes}) != len(hashes):
-        raise ValueError('provisional checkpoint contains case-insensitive destination collisions')
-    checkpoint = manifest.get('checkpoint')
-    transaction = manifest.get('checkpoint_transaction')
-    accepted = {name: {digest} for name, digest in hashes.items()}
-    may_be_missing = set()
-    staging_paths = {}
-    if transaction is not None:
-        base_fields = {'input_signature', 'previous_hashes', 'planned_hashes', 'removed_hashes', 'checkpoint'}
-        if not isinstance(transaction, dict) or set(transaction) not in (base_fields, base_fields | {'staging'}):
-            raise ValueError('invalid checkpoint transaction intent')
-        previous, planned, removed = (transaction['previous_hashes'], transaction['planned_hashes'],
-                                       transaction['removed_hashes'])
-        if previous != hashes or not isinstance(planned, dict) or any(
-                not _pending_file_name(name) or not isinstance(value, str)
-                or not CHECKPOINT_HASH.fullmatch(value) for name, value in planned.items()):
-            raise ValueError('checkpoint transaction differs from its owned prior inventory')
-        if len({name.casefold() for name in planned}) != len(planned):
-            raise ValueError('checkpoint transaction contains case-insensitive destination collisions')
-        if (not isinstance(removed, dict) or any(
-                name not in {'pending/review.json', 'pending/informe.md'}
-                or previous.get(name) != digest or name in planned
-                or not isinstance(digest, str) or not CHECKPOINT_HASH.fullmatch(digest)
-                for name, digest in removed.items())):
-            raise ValueError('checkpoint transaction has an invalid owned removal intent')
-        if not isinstance(transaction['input_signature'], str) or not CHECKPOINT_HASH.fullmatch(transaction['input_signature']):
-            raise ValueError('invalid checkpoint input signature')
-        if 'staging' in transaction:
-            staging = transaction['staging']
-            if not isinstance(staging, dict) or set(staging) - set(planned):
-                raise ValueError('invalid checkpoint staging inventory')
-            occupied = {name.casefold() for name in set(previous) | set(planned)}
-            for destination, row in staging.items():
-                if (not isinstance(row, dict) or set(row) != {'name', 'sha256'}
-                        or not isinstance(row['name'], str) or not isinstance(row['sha256'], str)
-                        or row['sha256'] != planned[destination]
-                        or not CHECKPOINT_HASH.fullmatch(row['sha256'])):
-                    raise ValueError('invalid checkpoint staging row')
-                stage = PurePosixPath(row['name'])
-                target = PurePosixPath(destination)
-                if (str(stage) != row['name'] or stage.is_absolute() or '\\' in row['name']
-                        or any(part in {'', '.', '..'} for part in stage.parts)
-                        or stage.parent != target.parent or row['name'].casefold() in occupied):
-                    raise ValueError('checkpoint staging path is not an owned sibling')
-                if row['name'].casefold() in {item.casefold() for item in staging_paths.values()}:
-                    raise ValueError('duplicate checkpoint staging path')
-                staging_paths[destination] = row['name']
-        accepted = {name: {digest} for name, digest in previous.items()}
-        for name, digest in planned.items():
-            accepted.setdefault(name, set()).add(digest)
-            if name not in previous:
-                may_be_missing.add(name)
-        may_be_missing.update(removed)
-        if not allow_transaction:
-            if manifest.get('operation', {}).get('disposition') == 'superseded':
-                raise ValueError('source review was superseded; inspect its recorded successor: '
-                                 + str(manifest['operation']['successor']))
-            raise ValueError('checkpoint transaction is pending; retry the checkpoint with its selected inputs')
-        checkpoint = transaction['checkpoint']
-    elif hashes and not isinstance(checkpoint, dict):
-        raise ValueError('checkpoint hash inventory has no checkpoint record')
-
-    if checkpoint is not None:
-        if (not isinstance(checkpoint, dict) or set(checkpoint) != {
-                'id', 'phase', 'recorded_at', 'input_signature', 'inventory', 'gate_errors'}
-                or not isinstance(checkpoint['id'], str) or not re.fullmatch(r'K[0-9]{3,}', checkpoint['id'])
-                or not isinstance(checkpoint['phase'], str)
-                or checkpoint['phase'] not in review_profiles.PHASES - {'prepare'}
-                or not isinstance(checkpoint['recorded_at'], str)
-                or not isinstance(checkpoint['input_signature'], str)
-                or not CHECKPOINT_HASH.fullmatch(checkpoint['input_signature'])
-                or not isinstance(checkpoint['inventory'], list)
-                or not isinstance(checkpoint['gate_errors'], list)):
-            raise ValueError('invalid checkpoint metadata')
-        try:
-            recorded_at = datetime.fromisoformat(checkpoint['recorded_at'].replace('Z', '+00:00'))
-            if recorded_at.utcoffset() is None:
-                raise ValueError('timezone required')
-        except (TypeError, ValueError) as exc:
-            raise ValueError('invalid checkpoint recording time') from exc
-        if len(checkpoint['inventory']) > CHECKPOINT_EVIDENCE_COUNT_LIMIT + 3:
-            raise ValueError('checkpoint inventory exceeds its entry limit')
-        inventory = {}
-        for row in checkpoint['inventory']:
-            if (not isinstance(row, dict) or set(row) != {'name', 'size', 'sha256'}
-                    or not _pending_file_name(row['name']) or type(row['size']) is not int or row['size'] < 0
-                    or not isinstance(row['sha256'], str) or not CHECKPOINT_HASH.fullmatch(row['sha256'])
-                    or row['name'] in inventory or row['name'].casefold() in {key.casefold() for key in inventory}):
-                raise ValueError('invalid checkpoint inventory row')
-            inventory[row['name']] = row['sha256']
-        inventory_hashes = transaction['planned_hashes'] if transaction is not None else hashes
-        if inventory != inventory_hashes:
-            raise ValueError('checkpoint inventory differs from provisional hashes')
-        evidence_size = sum(row['size'] for row in checkpoint['inventory']
-                            if row['name'].startswith('pending/evidence/'))
-        metadata_size = sum(row['size'] for row in checkpoint['inventory']
-                            if row['name'].lower().endswith(('.json', '.md')))
-        context_row = next((row for row in checkpoint['inventory'] if row['name'] == 'pending/context.json'), None)
-        if (evidence_size > CHECKPOINT_EVIDENCE_LIMIT or metadata_size > CHECKPOINT_METADATA_LIMIT
-                or context_row is None or context_row['size'] > PENDING_CONTEXT_LIMIT):
-            raise ValueError('checkpoint inventory exceeds its declared size bounds')
-        if (len(checkpoint['gate_errors']) > 64 or any(not isinstance(item, str) or not item.strip()
-                or len(item) > 2000 for item in checkpoint['gate_errors'])):
-            raise ValueError('checkpoint gate diagnostics are invalid or unbounded')
-    elif hashes or transaction is not None:
-        raise ValueError('checkpoint metadata is incomplete')
-
-    root = run / 'pending'
-    if root.exists():
-        if not root.is_dir() or root.is_symlink():
-            raise ValueError('pending checkpoint root is not a regular directory')
-        observed = set()
-        for path in root.rglob('*'):
-            safe_path(path)
-            if path.is_dir():
-                continue
-            name = path.relative_to(run).as_posix()
-            staging_owner = next((destination for destination, staged_name in staging_paths.items()
-                                  if staged_name == name), None)
-            if staging_owner is not None:
-                info = path.lstat()
-                if not stat.S_ISREG(info.st_mode) or info.st_size > (
-                        CHECKPOINT_EVIDENCE_LIMIT if staging_owner.startswith('pending/evidence/')
-                        else CHECKPOINT_METADATA_LIMIT):
-                    raise ValueError('checkpoint staging is not a bounded regular file: ' + name)
-                observed.add(name)
-                continue
-            if not _pending_file_name(name):
-                raise ValueError('foreign file in pending checkpoint: ' + name)
-            observed.add(name)
-        if observed - set(accepted) - set(staging_paths.values()):
-            raise ValueError('foreign pending checkpoint files are present')
-    elif accepted and any(name not in may_be_missing for name in accepted):
-        raise ValueError('pending checkpoint inventory is missing its directory')
-
-    evidence_size_read = 0
-    metadata_size_read = 0
-    for name, allowed_digests in accepted.items():
-        path = safe_path(run / name)
-        try:
-            if name.startswith('pending/evidence/'):
-                limit = CHECKPOINT_EVIDENCE_LIMIT - evidence_size_read
-            elif name == 'pending/context.json':
-                limit = PENDING_CONTEXT_LIMIT
-            else:
-                limit = CHECKPOINT_METADATA_LIMIT - metadata_size_read
-            data = read_bounded(path, limit)
-        except FileNotFoundError:
-            if name in may_be_missing:
-                continue
-            raise ValueError('pending checkpoint file is missing: ' + name)
-        if _digest(data) not in allowed_digests:
-            raise ValueError('modified pending checkpoint file: ' + name)
-        if name.startswith('pending/evidence/'):
-            evidence_size_read += len(data)
-        else:
-            metadata_size_read += len(data)
-        if transaction is None:
-            expected_size = next(row['size'] for row in checkpoint['inventory'] if row['name'] == name)
-            if len(data) != expected_size:
-                raise ValueError('pending checkpoint file size differs from its inventory: ' + name)
-        elif name in transaction['planned_hashes'] and _digest(data) == transaction['planned_hashes'][name]:
-            planned_size = next(row['size'] for row in checkpoint['inventory'] if row['name'] == name)
-            if len(data) != planned_size:
-                raise ValueError('pending checkpoint file size differs from its transaction: ' + name)
-
-
-def _verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=False,
-                  allow_resource_transfer=False, allow_pending_trace=False):
-    trace_plan = None
-    if manifest.get('pending_trace') is not None:
-        if not allow_pending_trace:
-            raise ValueError('trace recording is pending; retry a helper mutation to recover the preserved event')
-        trace_plan = _trace_recovery_plan(run, manifest)
-    transfers = normalize_transfer_history(manifest)
-    if any(row['status'] != 'complete' for row in transfers) and not allow_resource_transfer:
-        pending = next(row for row in transfers if row['status'] != 'complete')
-        operation = manifest.get('restart_operation')
-        incoming_restart = (isinstance(operation, dict) and operation['source_run'] == pending['source_run']
-                            and str(run) == pending['successor_run'])
-        identity = ('restart operation ' + operation['operation_id']) if incoming_restart else ('transfer ' + pending['transfer_id'])
-        detail = '; recover its source ' + pending['source_run'] + ' for ' + identity
-        raise ValueError('resource transfer is pending' + detail)
-    _verify_pending(run, manifest, allow_transaction=allow_checkpoint_transaction)
-    hashes = manifest.get('hashes')
-    if not isinstance(hashes, dict) or any(not _retained_name(name) for name in hashes):
-        raise ValueError('invalid retained file manifest')
-    planned = manifest.get('planned_hashes', {}) if manifest['state'] == 'retaining' else {}
-    required_files = set(FILES) | (set(OPTIONAL_FILES) if manifest['schema_version'] == 1 else set())
-    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and review_trace.NAME not in hashes and trace_plan is None:
-        raise ValueError('mandatory archive trace is missing from closure')
-    if required and (not required_files.issubset(hashes) or manifest['state'] == 'retaining'):
-        raise ValueError('retained evidence is absent or interrupted')
-    if not isinstance(planned, dict) or any(not _retained_name(name) for name in planned):
-        raise ValueError('invalid planned evidence paths')
-    for name in set(FILES) | set(OPTIONAL_FILES) | (set(TRACE_FILES) if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS else set()) | set(hashes) | set(planned):
-        if name == review_trace.NAME and trace_plan is not None:
-            continue  # Both possible byte states and the planned events were verified, without writing.
-        path = safe_path(run / name)
-        try:
-            data = path.read_bytes()
-        except FileNotFoundError:
-            if (required and name in required_files | set(hashes)) or (name in hashes and manifest['state'] != 'retaining'):
-                raise ValueError('retained evidence missing: ' + name)
-            continue
-        if _digest(data) not in {hashes.get(name), planned.get(name)}:
-            raise ValueError('refusing to clobber modified archived file: ' + name)
-    if manifest['schema_version'] in TRACE_ARCHIVE_SCHEMAS and trace_plan is None:
-        review_trace.verify(safe_path(run / review_trace.NAME).read_bytes(), manifest.get('trace'), manifest['run_id'])
-
-
-def _trace_recovery_plan(run, manifest):
-    """Verify an owned pending append without changing any bytes."""
-    pending = manifest.get('pending_trace')
-    if manifest['schema_version'] not in TRACE_ARCHIVE_SCHEMAS or not isinstance(pending, dict):
-        raise ValueError('invalid pending trace transition')
-    path = safe_path(run / review_trace.NAME)
-    try:
-        current = path.read_bytes()
-    except FileNotFoundError:
-        if pending['previous_sha256'] is not None:
-            raise ValueError('pending trace history is missing')
-        current = b''
-    if _digest(current) == pending['sha256']:
-        planned = current
-    elif (pending['previous_sha256'] is None and not current) or _digest(current) == pending['previous_sha256']:
-        events = pending['events']
-        if not isinstance(events, list) or not events or len(events) > 2:
-            raise ValueError('invalid pending trace milestone group')
-        planned = current + b''.join(review_trace.encoded(event) + b'\n' for event in events)
-    else:
-        raise ValueError('modified trace cannot be recovered')
-    if _digest(planned) != pending['sha256']:
-        raise ValueError('pending trace intent integrity mismatch')
-    review_trace.verify(planned, pending['trace'], manifest['run_id'])
-    return current, planned
-
-
 def _recover_trace(run, manifest, marker):
     """Finish only an owned, hash-bound pending append; never adopt unknown bytes."""
     pending = manifest.get('pending_trace')
@@ -905,10 +323,8 @@ def _recover_trace(run, manifest, marker):
     manifest.pop('pending_trace')
     return _save_manifest(run, manifest, marker)
 
-
 def _append_trace(run, manifest, marker, event, *, helper=True):
     return _append_trace_events(run, manifest, marker, [event], helper=helper)
-
 
 def _append_trace_events(run, manifest, marker, events, *, helper=True):
     """Bind one mutation and its bounded milestones in one owned transition."""
@@ -931,24 +347,20 @@ def _append_trace_events(run, manifest, marker, events, *, helper=True):
     marker = _save_manifest(run, manifest, marker)
     return _recover_trace(run, manifest, marker)
 
-
 def _milestone(kind, summary, *, status='completed', evidence=None):
     return {'kind': kind, 'status': status, 'summary': summary, 'evidence': evidence or [],
             'occurred_at': datetime.now(timezone.utc).isoformat(),
             'provenance': {'kind': 'helper', 'source': 'review_artifacts:' + kind}}
 
-
 def _starts_processing(event):
     return (event['kind'] in {'agent', 'discovery', 'check', 'grouped-verification'}
             and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
-
 
 def _input_object(value, label, *, max_bytes=None):
     result = read_json(value, max_bytes=max_bytes) if isinstance(value, (str, os.PathLike)) else copy.deepcopy(value)
     if not isinstance(result, dict):
         raise ValueError(label + ' must be a JSON object')
     return result
-
 
 def _initial_selection(profile_input):
     if profile_input is None:
@@ -969,7 +381,6 @@ def _initial_selection(profile_input):
     value.update(id='S001', changed_from=None, event_id='E000002')
     value['reference'] = review_references.INITIAL_PROFILE_HISTORY_REFERENCE
     return value
-
 
 def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity=None):
     """Capture external inputs before work while keeping profile history authoritative."""
@@ -993,14 +404,12 @@ def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity
             raise ValueError(label + ' source references must identify selected evidence/ files')
     return value
 
-
 def _profile_event(selection):
     return {'kind': 'profile', 'status': 'selected',
             'summary': 'Profile selected: ' + selection['profile'],
             'actor': selection['actor'], 'authority': selection['authority'],
             'provenance': {'kind': 'helper', 'source': 'review_artifacts:profile-selection'},
             'evidence': [selection['reference']]}
-
 
 def _controller(value, fallback):
     if value is None:
@@ -1021,7 +430,6 @@ def _controller(value, fallback):
         raise ValueError('controller requires a trace identity and nonempty source')
     return {'identity': copy.deepcopy(identity), 'source': source}
 
-
 def _remove_unowned_prepare_directory(run, marker):
     """Remove only an empty run dir or its own marker when no closure exists."""
     try:
@@ -1038,7 +446,6 @@ def _remove_unowned_prepare_directory(run, marker):
         run.rmdir()
     except (OSError, ValueError, TypeError):
         return
-
 
 @_locked_run
 def record_event(run_dir, event_file, execution_metadata=None):
@@ -1091,32 +498,10 @@ def record_event(run_dir, event_file, execution_metadata=None):
     return {'run_id': manifest['run_id'], 'event_id': 'E' + str(manifest['trace']['events']).zfill(6),
             'sequence': manifest['trace']['events']}
 
-
-def _evidence_name(name):
-    label = re.sub(r'[^a-zA-Z0-9._-]', '-', name).strip(' .')[:80] or 'evidence'
-    if re.fullmatch(r'(?i)(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?', label):
-        label = 'evidence-' + label[:70]
-    return label
-
-
-def _retained_name(name):
-    try:
-        path, fragment = review_references.parse_reference(name, field='retained name')
-    except ValueError:
-        return False
-    if fragment is not None:
-        return False
-    if path in FILES + OPTIONAL_FILES + TRACE_FILES:
-        return True
-    return (path.startswith('evidence/') and path.count('/') == 1
-            and path[9:] == _evidence_name(path[9:]) and path[9:] not in {'.', '..'})
-
-
 def _check_evidence_target(run, manifest, name):
     target = safe_path(run / name)
     if target.exists() and name not in manifest['hashes'] and name not in manifest.get('planned_hashes', {}):
         raise ValueError('refusing to clobber foreign evidence: ' + name)
-
 
 def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_context=False,
                        context_input=None):
@@ -1154,7 +539,6 @@ def _evidence_contents(run, manifest, inputs, *, create_directory=True, reserve_
         safe_path(run / 'evidence').mkdir(exist_ok=True)
     return contents
 
-
 def _checkpoint_diagnostics(values):
     if values is None:
         return []
@@ -1169,7 +553,6 @@ def _checkpoint_diagnostics(values):
     if sum(len(value.encode('utf-8')) for value in result) > 131072:
         raise ValueError('checkpoint gate errors exceed the metadata limit')
     return result
-
 
 def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input_record,
                             phase, gate_errors, max_evidence_bytes):
@@ -1306,7 +689,6 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
                                      'gate_errors': diagnostics}))
     return combined, diagnostics, signature, selected_names
 
-
 def _checkpoint_commit(run, manifest, marker, transaction, payloads):
     planned = transaction['planned_hashes']
     staging = transaction.get('staging', {})
@@ -1372,7 +754,6 @@ def _checkpoint_commit(run, manifest, marker, transaction, payloads):
     manifest.pop('checkpoint_transaction', None)
     _save_manifest(run, manifest, marker)
     return manifest
-
 
 @_locked_run
 def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=None, phase,
@@ -1442,7 +823,6 @@ def checkpoint(run_dir, *, context_input, evidence_inputs=None, input_record=Non
     manifest = _checkpoint_commit(run, manifest, marker, transaction, payloads)
     return manifest['checkpoint']
 
-
 def _measurements(inputs, unavailable_reason):
     if unavailable_reason is not None and (not isinstance(unavailable_reason, str) or not unavailable_reason.strip()):
         raise ValueError('unavailable reason must be nonempty text')
@@ -1491,7 +871,6 @@ def _measurements(inputs, unavailable_reason):
             'unavailable_reason': unavailable_reason,
             'disjoint_inputs_asserted': bool(inputs),
             'overlap_detection': 'Duplicate paths and explicit execution IDs only; semantic overlap is not detectable.'}
-
 
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
             *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None,
@@ -1684,7 +1063,6 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
     (run / reservation_file).unlink(missing_ok=True)
     return str(run)
 
-
 @_locked_run
 def select_profile(run_dir, selection_input):
     """Capture a profile transition and its trace event as one idempotent mutation."""
@@ -1724,14 +1102,12 @@ def select_profile(run_dir, selection_input):
     _append_trace(run, manifest, marker, _profile_event(candidate))
     return manifest
 
-
 @_locked_run
 def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     _, manifest, _ = _load_run(run_dir)
     temporary = _temporary_paths(temporary_paths, manifest)
     with review_resource_claims.session_claim_locks(temporary):
         return _register_locked(run_dir, temporary, context_input=context_input, authority=authority)
-
 
 def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=None):
     """Register coordinator-verified owned resources before discovery/execution."""
@@ -1833,165 +1209,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
-
 TRANSFER_HISTORY_LIMIT = 64
 CLEANUP_RECEIPT_LIMIT = 64
-
-
-def _validate_cleanup_metadata(manifest):
-    """Validate native cleanup intent and its bounded receipt inventory."""
-    if ('cleanup_receipts' in manifest) != ('resource_cleanup' in manifest):
-        raise ValueError('resource cleanup metadata fields must be introduced together')
-    receipts = manifest.get('cleanup_receipts', [])
-    if not isinstance(receipts, list) or len(receipts) > CLEANUP_RECEIPT_LIMIT:
-        raise ValueError('invalid or oversized resource cleanup receipt history')
-    by_id = {}
-    for receipt in receipts:
-        if (not isinstance(receipt, dict)
-                or set(receipt) != {'session_id', 'run_id', 'claim_id', 'claim_sha256'}
-                or not all(isinstance(receipt.get(key), str) and receipt[key] for key in receipt)
-                or receipt['run_id'] != manifest.get('run_id')
-                or not re.fullmatch(r'RC-[0-9a-f]{32}', receipt['claim_id'])
-                or not CHECKPOINT_HASH.fullmatch(receipt['claim_sha256'])
-                or receipt['claim_id'] in by_id):
-            raise ValueError('invalid or duplicate resource cleanup receipt')
-        by_id[receipt['claim_id']] = receipt
-    claim_rows = [row for row in manifest.get('resource_claims', [])
-                  if isinstance(row, dict) and isinstance(row.get('claim_id'), str)]
-    claims = {row['claim_id']: row for row in claim_rows}
-    if len(claims) != len(claim_rows):
-        raise ValueError('duplicate resource claim IDs block cleanup verification')
-    for claim_id, receipt in by_id.items():
-        row = claims.get(claim_id)
-        if (row is None or row.get('status') != 'released'
-                or any(row.get(key) != receipt[key]
-                       for key in ('session_id', 'claim_sha256'))
-                or row.get('release_claim_sha256') != receipt['claim_sha256']):
-            raise ValueError('resource cleanup receipt does not match a released claim')
-    if 'cleanup_receipts' in manifest:
-        for claim_id, row in claims.items():
-            if row.get('status') == 'released' and claim_id not in by_id:
-                raise ValueError('released resource claim has no durable cleanup receipt')
-
-    intent = manifest.get('resource_cleanup')
-    if intent is None:
-        if any(row.get('status') == 'releasing' for row in manifest.get('resource_claims', [])
-               if isinstance(row, dict)):
-            raise ValueError('resource claim is releasing without a durable cleanup intent')
-        return
-    fields = {'schema_version', 'operation_id', 'status', 'run_id', 'session_id', 'claim_id',
-              'claim_sha256', 'session_dir', 'repository_path', 'worktrees', 'started_at',
-              'completed_at', 'completion_source'}
-    if (not isinstance(intent, dict) or set(intent) != fields or intent.get('schema_version') != 1
-            or intent.get('status') not in {'pending', 'complete'}
-            or not isinstance(intent.get('operation_id'), str)
-            or not re.fullmatch(r'CL-[0-9a-f]{32}', intent['operation_id'])
-            or intent.get('run_id') != manifest.get('run_id')
-            or intent.get('repository_path') != manifest.get('repository_path')
-            or not isinstance(intent.get('session_id'), str) or not intent['session_id']
-            or not isinstance(intent.get('claim_id'), str)
-            or not re.fullmatch(r'RC-[0-9a-f]{32}', intent['claim_id'])
-            or not isinstance(intent.get('claim_sha256'), str)
-            or not CHECKPOINT_HASH.fullmatch(intent['claim_sha256'])
-            or not isinstance(intent.get('session_dir'), str)
-            or not isinstance(intent.get('repository_path'), str)
-            or not isinstance(intent.get('worktrees'), list) or len(intent['worktrees']) > 32
-            or any(not isinstance(path, str) for path in intent['worktrees'])
-            or len(set(intent['worktrees'])) != len(intent['worktrees'])):
-        raise ValueError('invalid durable resource cleanup intent')
-    safe_path(intent['session_dir'])
-    safe_path(intent['repository_path'])
-    for path in intent['worktrees']:
-        safe_path(path)
-    for key in ('started_at', 'completed_at'):
-        value = intent.get(key)
-        if value is not None:
-            try:
-                parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
-                if parsed.utcoffset() is None:
-                    raise ValueError('timezone required')
-            except (AttributeError, TypeError, ValueError) as exc:
-                raise ValueError('invalid resource cleanup timestamp') from exc
-    row = claims.get(intent['claim_id'])
-    if (row is None or any(row.get(key) != intent[key]
-                           for key in ('session_id', 'session_dir', 'claim_sha256'))):
-        raise ValueError('resource cleanup intent does not match its claimed session')
-    if intent['status'] == 'pending':
-        if (row.get('status') != 'releasing' or intent.get('completed_at') is not None
-                or intent.get('completion_source') is not None
-                or intent['claim_id'] in by_id):
-            raise ValueError('pending resource cleanup intent conflicts with claim state')
-    elif (row.get('status') != 'released' or intent.get('completed_at') is None
-          or intent.get('completion_source') not in {'review_workspace.cleanup', 'review_artifacts.recovery'}
-          or row.get('released_by') != intent.get('completion_source')
-          or row.get('release_claim_sha256') != intent.get('claim_sha256')
-          or by_id.get(intent['claim_id']) != {key: intent[key] for key in
-              ('session_id', 'run_id', 'claim_id', 'claim_sha256')}):
-        raise ValueError('completed resource cleanup intent has no exact release receipt')
-
-    close_observation = manifest.get('close_observation')
-    if close_observation is not None:
-        observed_receipts = close_observation.get('released_claims') if isinstance(close_observation, dict) else None
-        receipts_match = (observed_receipts == receipts if isinstance(close_observation, dict)
-                          and close_observation.get('cleanup') != 'pending'
-                          else isinstance(observed_receipts, list)
-                          and receipts[:len(observed_receipts)] == observed_receipts)
-        if ('cleanup_receipts' not in manifest or 'resource_cleanup' not in manifest
-                or not isinstance(close_observation, dict)
-                or set(close_observation) != {'cleanup', 'residuals', 'released_claims'}
-                or close_observation.get('cleanup') not in {'complete', 'not_needed', 'pending'}
-                or not isinstance(close_observation.get('residuals'), list)
-                or not isinstance(close_observation.get('released_claims'), list)
-                or not receipts_match):
-            raise ValueError('invalid or detached durable close observation')
-        residuals = [safe_path(raw) for raw in close_observation['residuals']
-                     if isinstance(raw, str)]
-        registered_paths = {safe_path(raw) for raw in manifest.get('temporary_paths', [])}
-        if (len(residuals) != len(close_observation['residuals'])
-                or len(set(residuals)) != len(residuals)
-                or set(residuals) - registered_paths
-                or close_observation['cleanup'] in {'complete', 'not_needed'} and residuals
-                or close_observation['cleanup'] == 'not_needed' and manifest.get('temporary_paths')):
-            raise ValueError('durable close observation has invalid residual resources')
-        if manifest.get('state') == 'complete' and (
-                close_observation['cleanup'] != manifest.get('cleanup')
-                or [str(path) for path in residuals] != manifest.get('residuals', [])):
-            raise ValueError('completed archive differs from its durable close observation')
-
-
-def normalize_transfer_history(manifest):
-    """Read both the current transfer list and the prior singular archive-7 slot."""
-    history = manifest.get('resource_transfers')
-    legacy = manifest.get('resource_transfer')
-    if history is None:
-        rows = [] if legacy is None else [copy.deepcopy(legacy)]
-    elif isinstance(history, list):
-        rows = copy.deepcopy(history)
-        if legacy is not None:
-            _validate_transfer_intent(legacy)
-            matches = [row for row in rows if isinstance(row, dict)
-                       and row.get('transfer_id') == legacy.get('transfer_id')]
-            if matches and matches[0] != legacy:
-                raise ValueError('legacy and current resource transfer records conflict')
-            if not matches:
-                rows.append(copy.deepcopy(legacy))
-    else:
-        raise ValueError('resource transfer history must be a list')
-    if len(rows) > TRANSFER_HISTORY_LIMIT:
-        raise ValueError('resource transfer history exceeds the 64-entry limit')
-    identifiers = set()
-    pending = 0
-    for row in rows:
-        _validate_transfer_intent(row)
-        identifier = row['transfer_id']
-        if identifier in identifiers:
-            raise ValueError('duplicate transfer_id in resource transfer history')
-        identifiers.add(identifier)
-        pending += row['status'] == 'pending'
-    if pending > 1:
-        raise ValueError('resource transfer history contains more than one pending transfer')
-    return rows
-
 
 def _store_transfer(manifest, intent):
     rows = normalize_transfer_history(manifest)
@@ -2017,7 +1236,6 @@ def _store_transfer(manifest, intent):
     manifest.pop('resource_transfer', None)
     manifest['resource_transfers'] = rows
     return rows
-
 
 def transfer_resources(source_run, successor_run, paths, *, authority, controller,
                        _restart_operation_id=None):
@@ -2258,60 +1476,6 @@ def transfer_resources(source_run, successor_run, paths, *, authority, controlle
                 'source_run': str(source), 'successor_run': str(successor),
                 'resources': sorted(moved_paths)}
 
-
-def _validate_transfer_intent(value):
-    if not isinstance(value, dict):
-        raise ValueError('invalid resource transfer intent')
-    fields = {'schema_version', 'transfer_id', 'status', 'source_run', 'successor_run',
-              'source_run_id', 'successor_run_id', 'source_owner_id', 'successor_owner_id',
-              'repository_key', 'authority', 'controller', 'items'}
-    if set(value) == fields | {'completed_at'}:
-        fields = fields | {'completed_at'}
-    if (not isinstance(value, dict) or set(value) != fields
-            or value.get('schema_version') != 1
-            or not isinstance(value.get('transfer_id'), str) or not re.fullmatch(r'RT-[0-9a-f]{32}', value['transfer_id'])
-            or value.get('status') not in {'pending', 'complete'}
-            or not all(isinstance(value.get(key), str) and value[key] for key in
-                       ('source_run', 'successor_run', 'source_run_id', 'successor_run_id',
-                        'source_owner_id', 'successor_owner_id', 'repository_key', 'authority'))
-            or not isinstance(value.get('controller'), dict)
-            or not isinstance(value.get('items'), list) or not value['items']):
-        raise ValueError('invalid resource transfer intent')
-    if (not re.fullmatch(r'[0-9a-f]{20}', value['source_run_id'])
-            or not re.fullmatch(r'[0-9a-f]{20}', value['successor_run_id'])
-            or not re.fullmatch(r'[0-9a-f]{32}', value['source_owner_id'])
-            or not re.fullmatch(r'[0-9a-f]{32}', value['successor_owner_id'])
-            or not re.fullmatch(r'[0-9a-f]{20}', value['repository_key'])):
-        raise ValueError('resource transfer identities are invalid')
-    safe_path(value['source_run'])
-    safe_path(value['successor_run'])
-    if value['status'] == 'complete':
-        completed = value.get('completed_at')
-        try:
-            if not isinstance(completed, str) or datetime.fromisoformat(completed.replace('Z', '+00:00')).utcoffset() is None:
-                raise ValueError
-        except ValueError as exc:
-            raise ValueError('completed resource transfer needs an observed timestamp') from exc
-    seen_paths = set()
-    for item in value['items']:
-        if (not isinstance(item, dict) or set(item) != {
-                'session_dir', 'claim_id', 'old_claim_sha256', 'new_claim', 'new_claim_sha256'}
-                or not isinstance(item['session_dir'], str)
-                or not isinstance(item['claim_id'], str)
-                or not re.fullmatch(r'RC-[0-9a-f]{32}', item['claim_id'])
-                or not isinstance(item['old_claim_sha256'], str)
-                or not CHECKPOINT_HASH.fullmatch(item['old_claim_sha256'])
-                or not isinstance(item['new_claim_sha256'], str)
-                or not CHECKPOINT_HASH.fullmatch(item['new_claim_sha256'])
-                or not isinstance(item['new_claim'], dict)
-                or _digest(review_resource_claims._encoded(item['new_claim'])) != item['new_claim_sha256']):
-            raise ValueError('invalid resource transfer claim plan')
-        safe_path(item['session_dir'])
-        if item['session_dir'] in seen_paths or item['new_claim'].get('claim_id') != item['claim_id']:
-            raise ValueError('resource transfer paths and claims must be unique and bound')
-        seen_paths.add(item['session_dir'])
-
-
 def _recovery_event(manifest, summary, *, status='completed', authority=None, source=None, relation=None):
     event = {'kind': 'interruption', 'status': status, 'summary': summary,
              'actor': copy.deepcopy(manifest.get('controller', {}).get('identity',
@@ -2323,7 +1487,6 @@ def _recovery_event(manifest, summary, *, status='completed', authority=None, so
     if relation is not None:
         event['relations'] = [relation]
     return event
-
 
 def _takeover_controller(run, manifest, marker, controller, authority):
     """Persist an authorized controller change once, shared by resume and recover."""
@@ -2347,15 +1510,12 @@ def _takeover_controller(run, manifest, marker, controller, authority):
             + str(manifest.get('trace', {}).get('events', 0)).zfill(6)}))
     return normalized, marker
 
-
 def _cleanup_identity(intent):
     return {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
-
 
 def _cleanup_rows(manifest, claim_id):
     return [row for row in manifest.get('resource_claims', [])
             if isinstance(row, dict) and row.get('claim_id') == claim_id]
-
 
 def _cleanup_resources_remain(intent):
     import review_workspace
@@ -2366,7 +1526,6 @@ def _cleanup_resources_remain(intent):
         if str(path) in registered or path.exists():
             return True
     return safe_path(intent['session_dir']).exists()
-
 
 @_locked_run
 def begin_resource_cleanup(run_dir, session_dir):
@@ -2437,7 +1596,6 @@ def begin_resource_cleanup(run_dir, session_dir):
                   evidence=['cierre.json#resource_cleanup']))
     return copy.deepcopy(intent)
 
-
 def _finish_resource_cleanup_locked(run, manifest, marker, observation, *, completion_source):
     intent = manifest.get('resource_cleanup')
     if not isinstance(intent, dict):
@@ -2478,7 +1636,6 @@ def _finish_resource_cleanup_locked(run, manifest, marker, observation, *, compl
                   evidence=['cierre.json#cleanup_receipts']))
     return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
 
-
 @_locked_run
 def finish_resource_cleanup(run_dir, observation):
     """Record a receipt only after the exact session and its worktrees are absent."""
@@ -2490,7 +1647,6 @@ def finish_resource_cleanup(run_dir, observation):
         raise ValueError('durable resource cleanup requires archive schema 8')
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
                                            completion_source='review_workspace.cleanup')
-
 
 @_locked_run
 def recover_resource_cleanup(run_dir):
@@ -2524,7 +1680,6 @@ def recover_resource_cleanup(run_dir):
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
                                            completion_source='review_artifacts.recovery')
 
-
 @_locked_run
 def pause(run_dir, *, authority, reason, phase):
     """Record an explicit user-directed pause without discarding the open run."""
@@ -2548,7 +1703,6 @@ def pause(run_dir, *, authority, reason, phase):
     _append_trace(run, manifest, marker, _recovery_event(
         manifest, 'Review paused by explicit request: ' + reason.strip(), status='blocked', authority=authority))
     return manifest
-
 
 @_locked_run
 def block(run_dir, *, source, reason, phase):
@@ -2576,7 +1730,6 @@ def block(run_dir, *, source, reason, phase):
         manifest, 'Observed review blocker: ' + reason.strip(), status='blocked', source=source.strip()))
     return manifest
 
-
 def _resource_availability(run, manifest, *, verify_owned=True):
     """One classifier for inspection and mutation gates; absence is not release."""
     claims = {row['session_dir']: row for row in manifest.get('resource_claims', [])}
@@ -2599,7 +1752,6 @@ def _resource_availability(run, manifest, *, verify_owned=True):
             availability = 'available' if present else 'missing_unclaimed'
         resources.append({'path': raw, 'present': present, 'claim_status': status, 'availability': availability})
     return resources
-
 
 @_locked_run
 def resume(run_dir, *, controller, authority, current_inputs):
@@ -2638,7 +1790,6 @@ def resume(run_dir, *, controller, authority, current_inputs):
             str(manifest['trace']['events']).zfill(6)}))
     return manifest
 
-
 def recover(run_dir, *, controller, authority, current_inputs):
     """Recover only exact helper-owned transactions; return a plan for external work."""
     import review_recovery
@@ -2672,7 +1823,6 @@ def recover(run_dir, *, controller, authority, current_inputs):
                 'actions': [review_recovery._recover_source_action(recovery_source)]}
     return _recover_run_transactions(run_path, normalized_controller, authority, current_inputs, input_appraisal)
 
-
 class _RestartCancellationUnavailable(ValueError):
     """Verified state which the conservative cancellation protocol cannot unwind."""
 
@@ -2684,7 +1834,6 @@ class _RestartCancellationUnavailable(ValueError):
         return {'decision': 'refused', 'phase': self.phase, 'reason': str(self),
                 'transaction_pending': True, 'resource_obligations_preserved': True}
 
-
 def _restart_transfer_denial(intent, manifests):
     pair = [row for manifest in manifests for row in normalize_transfer_history(manifest)
             if row['source_run'] == intent['source']['run_dir']
@@ -2695,7 +1844,6 @@ def _restart_transfer_denial(intent, manifests):
     return _RestartCancellationUnavailable(
         'A durable resource transfer prevents cancellation; preserve its ownership obligations even if the successor is absent.',
         phase=phase)
-
 
 def _restart_resource_manifests(run, manifest, intent):
     """Read the same verified source/successor pair for every refusal route.
@@ -2715,7 +1863,6 @@ def _restart_resource_manifests(run, manifest, intent):
         manifests.append(next_manifest)
     return manifests
 
-
 def _independent_review_action(run, reason, operation_id=None):
     result = {'action': 'new_independent_review', 'run_dir': str(run), 'previous_run': None,
               'use_fresh_resources': True, 'requires_explicit_authority': True,
@@ -2725,7 +1872,6 @@ def _independent_review_action(run, reason, operation_id=None):
     if operation_id is not None:
         result['operation_id'] = operation_id
     return result
-
 
 def _unavailable_transfer_source_exit(run, manifest):
     for transfer in normalize_transfer_history(manifest):
@@ -2761,14 +1907,12 @@ def _unavailable_transfer_source_exit(run, manifest):
             raise ValueError('incoming transfer source identity differs from its recorded intent')
     return None
 
-
 def _diagnostic_recovery_route(run, manifest, *, active_restart=None, recovery_source=None):
     if active_restart is not None:
         return _restart_resource_exit(run, manifest, active_restart)
     if recovery_source is not None and recovery_source.get('resource_exit') is not None:
         return recovery_source['resource_exit']
     return _unavailable_transfer_source_exit(run, manifest)
-
 
 def _restart_resource_exit(run, manifest, active_restart):
     """Read-only guidance; the mutator must recheck eligibility under its locks."""
@@ -2876,7 +2020,6 @@ def _restart_resource_exit(run, manifest, active_restart):
                 **({'cancellation_denial': denial.diagnostic()} if denial is not None else {})},
             'actions': actions}
 
-
 def _recover_pending_restart(run_path, manifest, active_restart, authority, current_inputs):
     """Caller holds the source restart lock and reread the active descriptor."""
     intent = active_restart['intent']
@@ -2921,7 +2064,6 @@ def _recover_pending_restart(run_path, manifest, active_restart, authority, curr
     return {'status': 'restarted', 'run_dir': str(run_path), 'run_id': manifest.get('run_id'),
             'successor_run_dir': successor, 'input_appraisal': restart_appraisal, 'replay_inputs_match': True,
             'actions': [{'action': 'inspect_successor', 'reason': 'The exact reserved restart completed; no review work was dispatched.'}]}
-
 
 def _recover_run_transactions(run_path, normalized_controller, authority, current_inputs, input_appraisal):
     import review_recovery
@@ -3044,7 +2186,6 @@ def _recover_run_transactions(run_path, normalized_controller, authority, curren
                 'actions': [{'action': 'continue', 'reason': 'Recovery did not dispatch agents, run checks or alter prior worker identity.'}]},
                                   input_appraisal)
 
-
 def _recovery_outcome(result, appraisal):
     result['input_appraisal'] = appraisal
     if appraisal['applicability'] != 'applicable':
@@ -3055,7 +2196,6 @@ def _recovery_outcome(result, appraisal):
             'reason': 'Recovery may restore exact helper-owned bytes, but current inputs are '
                       + appraisal['applicability'] + '; do not continue this review.'})
     return result
-
 
 def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=(), preserve_claims=False):
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
@@ -3090,13 +2230,11 @@ def _link_restart(source_run, successor_run, *, authority, controller, moved_pat
             'authority': authority, 'evidence': ['cierre.json'],
             'relations': [{'relation': 'supersedes', 'target': str(successor)}]})
 
-
 def _restart_operation_row(intent):
     return {'operation_id': intent['operation_id'], 'request_sha256': intent['request_sha256'],
             'intent_sha256': intent['intent_sha256'], 'source_run': intent['source']['run_dir'],
             'source_owner_id': intent['source']['owner_id'],
             'reservation_id': intent['successor']['reservation_id']}
-
 
 def _restart_adoption_context(request):
     selection = _initial_selection(request['profile_input'])
@@ -3107,7 +2245,6 @@ def _restart_adoption_context(request):
     if errors or not isinstance(context['execution_plan'], list) or not isinstance(context['executors'], list):
         raise ValueError('restart adoption context is invalid: ' + '; '.join(errors))
     return _input_object(context, 'restart adoption context')
-
 
 def _prepare_from_restart_intent(intent_path):
     """Create or resume only the exact destination reserved by the intent."""
@@ -3163,7 +2300,6 @@ def _prepare_from_restart_intent(intent_path):
                       preserve_claims=preserve_claims)
     return str(successor)
 
-
 def _complete_restart_intent(intent_path, source_path, source_manifest):
     intent = _read_restart_intent(intent_path, source_path, source_manifest)
     cancellation = _find_restart_abandonment(intent_path, intent)
@@ -3197,7 +2333,6 @@ def _complete_restart_intent(intent_path, source_path, source_manifest):
     _record_restart_completion(intent_path, intent)
     _retire_active_restart(intent_path, intent, source_path, source_manifest)
     return str(successor)
-
 
 def restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None,
             harness=None, logical_scope_input=None):
@@ -3321,7 +2456,6 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             _write_restart_intent(intent_path, intent, source, manifest)
         return _complete_restart_intent(intent_path, source, manifest)
 
-
 def _find_restart_abandonment(intent_path, intent):
     receipt = _validate_restart_abandonment(intent_path, intent)
     successor_path = safe_path(intent['successor']['run_dir'])
@@ -3334,7 +2468,6 @@ def _find_restart_abandonment(intent_path, intent):
                 raise ValueError('source and successor abandonment receipts differ')
             receipt = embedded
     return receipt
-
 
 def _verify_restart_successor_identity(run, manifest, intent):
     """Check the reserved identity even when work/transfer makes cancellation unavailable."""
@@ -3352,7 +2485,6 @@ def _verify_restart_successor_identity(run, manifest, intent):
             'reservation_id': reserved['reservation_id'], 'run_dir': str(run), 'owner_id': reserved['owner_id']}
         if read_json(reservation_path) != expected_reservation:
             raise ValueError('prepared successor reservation differs from its intent')
-
 
 def _empty_adoption_successor(intent, source_manifest):
     """Read-only preflight under both locks: empty successor and an unavailable resource."""
@@ -3425,13 +2557,11 @@ def _empty_adoption_successor(intent, source_manifest):
         raise _RestartCancellationUnavailable('prepared successor has observations beyond initial preparation; recover it')
     return run, manifest, marker
 
-
 def record_restart_refusal(run_dir, *, intent_path, controller, authority, reason):
     """Record an authorized refusal, without cancelling or changing resource owners."""
     import review_restart_refusal
     return review_restart_refusal.record(run_dir, intent_path=intent_path,
         controller=controller, authority=authority, reason=reason)
-
 
 def _finish_restart_abandonment(intent_path, intent, source_path, receipt):
     """Caller owns the source lock; finish only an already authorized durable decision."""
@@ -3465,7 +2595,6 @@ def _finish_restart_abandonment(intent_path, intent, source_path, receipt):
     if owner_path.exists() and read_json(owner_path)['active_descriptor'].get('operation_id') == intent['operation_id']:
         _retire_active_restart(intent_path, intent, source, source_manifest)
     return receipt
-
 
 def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
     """Cancel an unprepared restart or its exact empty, resource-blocked successor.
@@ -3521,7 +2650,6 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
                         'provenance': {'kind': 'helper', 'source': 'review_artifacts:abandon-restart'}})
         return _finish_restart_abandonment(intent_path, intent, run, receipt)
 
-
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
 def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
@@ -3569,7 +2697,6 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             'state': manifest['state'], 'retained': manifest.get('retained') is True,
             'cleanup': manifest['cleanup']}
 
-
 def _retain_data(run, manifest, marker, contents, *, record_retention=True):
     # Persist pending intent before replacing files. Old and planned digests allow a
     # safe retry after interruption, without accepting arbitrary user modifications.
@@ -3596,7 +2723,6 @@ def _retain_data(run, manifest, marker, contents, *, record_retention=True):
     else:
         _save_manifest(run, manifest, marker)
     return manifest
-
 
 def _executors(context_input, manifest, temporary):
     """Project existing neutral context facts; verify Git roots/HEAD, not check truth."""
@@ -3655,7 +2781,6 @@ def _executors(context_input, manifest, temporary):
         entries[entry['executor']] = entry
     return list(entries.values())
 
-
 def _handoff_context(input_file, value, contents, manifest):
     """Retain only requested, bounded context with references that survive cleanup."""
     context = read_json(input_file)
@@ -3693,7 +2818,6 @@ def _handoff_context(input_file, value, contents, manifest):
     # The canonical renderer validates exact entry shapes and captured identities.
     review_contract.render_handoff(value, context)
     return context
-
 
 @_locked_run
 def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason=None, temporary_paths=None, evidence_inputs=None, context_input=None, handoff=False, handoff_context_input=None, *, expected_schema=None):
@@ -3806,7 +2930,6 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     manifest['executors'] = executors
     return _retain_data(run, manifest, marker, contents)
 
-
 def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_inputs=None):
     """Read-only phase preflight over one explicit native archive and selected inputs."""
     try:
@@ -3829,7 +2952,6 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
         phase=phase, manifest=manifest, logical_scope=manifest.get('logical_scope'),
         selection=None, context=context, record=record, sources=sources)
     return result, 0 if result['ready'] else 1
-
 
 def _execution_gate(run, manifest, value, contents):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
@@ -3994,7 +3116,6 @@ def _execution_gate(run, manifest, value, contents):
     if errors:
         raise ValueError('; '.join(errors))
 
-
 def _validate_model_usage_context(context, source, manifest):
     """Validate the optional private sidecar without mixing it into captured inputs."""
     reference = context.get('model_usage_reference') if isinstance(context, dict) else None
@@ -4015,7 +3136,6 @@ def _validate_model_usage_context(context, source, manifest):
     if issues:
         raise ValueError('selected model usage evidence is invalid: ' + issues[0]['message'])
 
-
 def _present_resources(registered):
     present = []
     for raw in registered:
@@ -4026,7 +3146,6 @@ def _present_resources(registered):
             pass
         # PermissionError and other unverifiable states deliberately propagate.
     return present
-
 
 @_locked_run
 def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
@@ -4134,7 +3253,6 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     _append_trace(run, manifest, marker, _milestone('close', 'Observed resource closure: ' + cleanup,
                   status='pending' if cleanup == 'pending' else 'completed', evidence=['review.json', 'informe.md']))
     return manifest
-
 
 def main():
     for stream in (sys.stdout, sys.stderr):
@@ -4380,7 +3498,6 @@ def main():
             detail['cancellation_denial'] = exc.diagnostic()
         print(json.dumps(detail, ensure_ascii=False), file=sys.stderr)
         return 1
-
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -6,6 +6,7 @@ import sys
 import unittest
 
 import test_review_artifacts as archive_tests
+from ccr.archive.reader import load_run
 
 artifacts = archive_tests.artifacts
 
@@ -106,7 +107,7 @@ class LayoutTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 run = self.prepare()
                 self.retain(run)
-                _, manifest, marker = artifacts._load_run(run)
+                _, manifest, marker = load_run(run)
                 manifest['schema_version'] = schema
                 manifest.pop('repository_identity', None)
                 manifest.pop('run_id', None)
@@ -126,7 +127,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_schema3_rejects_repository_identity_with_wrong_key(self):
         run = self.prepare()
-        _, manifest, marker = artifacts._load_run(run)
+        _, manifest, marker = load_run(run)
         manifest['repository_identity'] = 'origin:example.test/other/repo'
         artifacts._save_manifest(run, manifest, marker)
         with self.assertRaisesRegex(ValueError, 'layout'):
@@ -170,7 +171,7 @@ class LayoutTests(unittest.TestCase):
     def test_retention_gate_rejects_final_record_from_other_scope_even_with_matching_hash(self):
         run = self.prepare()
         self.retain(run)
-        _, manifest, marker = artifacts._load_run(run)
+        _, manifest, marker = load_run(run)
         value = self.read(run / 'review.json')
         value['scope']['head'] = 'other-revision'
         data = artifacts._json_bytes(value)

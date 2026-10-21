@@ -7,11 +7,18 @@ from pathlib import Path
 import re
 import stat
 
-
 CLAIM_NAME = '.review-run-owner.json'
 CLAIM_SCHEMA = 1
 HASH = re.compile(r'[0-9a-f]{64}')
 
+from ccr.archive.reader import load_run as _load_run
+from ccr.archive.integrity import verify_files as _verify_files
+from ccr.contracts.claims import (
+    _authority, _claim_row, _digest, _encoded, _validate_sidecar,
+    validate_release_observation,
+)
+from ccr.execution import workspace_manifest as _workspace_manifest
+from ccr.shared.git import repository_identity
 
 @contextmanager
 def session_claim_locks(paths):
@@ -51,15 +58,6 @@ def session_claim_locks(paths):
                 raise CoordinationError('review workspace identity changed while acquiring its claim lock')
         yield
 
-
-def _encoded(value):
-    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
-
-
-def _digest(data):
-    return hashlib.sha256(data).hexdigest()
-
-
 def _safe_path(value):
     path = Path(value)
     if not path.is_absolute() or '..' in path.parts:
@@ -76,7 +74,6 @@ def _safe_path(value):
             raise ValueError('resource claim path traverses a link/reparse point: ' + str(current))
     return path.resolve()
 
-
 def _read_json(path):
     def unique(pairs):
         result = {}
@@ -87,7 +84,6 @@ def _read_json(path):
         return result
     return json.loads(_safe_path(path).read_text(encoding='utf-8'), object_pairs_hook=unique,
                       parse_constant=lambda value: (_ for _ in ()).throw(ValueError('invalid JSON constant')))
-
 
 def _workspace(session_dir):
     session = _safe_path(session_dir)
@@ -104,10 +100,9 @@ def _workspace(session_dir):
         markers = {'session_id', 'session_dir', 'owner_token'}
         if not isinstance(raw_manifest, dict) or not markers.intersection(raw_manifest):
             return None
-    import review_workspace
     try:
-        workspace = review_workspace.load(manifest_path)
-    except review_workspace.ReviewError as exc:
+        workspace = _workspace_manifest.load(manifest_path)
+    except _workspace_manifest.ReviewError as exc:
         raise ValueError('claimed review workspace is invalid; preserve it for inspection: ' + str(exc)) from exc
     except (OSError, KeyError, TypeError, ValueError) as exc:
         raise ValueError('claimed review workspace manifest is invalid; preserve it for inspection') from exc
@@ -122,34 +117,11 @@ def _workspace(session_dir):
         raise ValueError('review session owner token or identity is invalid')
     return session, workspace, _digest(token.encode('utf-8'))
 
-
 def _archive(run_dir):
-    import review_artifacts
-    run, manifest, marker = review_artifacts._load_run(run_dir)
+    run, manifest, marker = _load_run(run_dir)
     if manifest.get('schema_version') != 8:
         raise ValueError('resource claims require archive schema 8')
     return run, manifest, marker
-
-
-def _authority(value):
-    if not isinstance(value, str) or not value.strip() or len(value) > 1000 or any(ord(char) < 32 for char in value):
-        raise ValueError('resource adoption/transfer requires explicit bounded authority')
-    return value.strip()
-
-
-def _claim_row(sidecar, *, status='owned', claim_sha256=None, **extra):
-    fields = ('claim_id', 'session_id', 'session_dir', 'owner_token_sha256', 'repo',
-              'repository_key', 'run_id', 'owner_id', 'archive_path')
-    result = {key: sidecar[key] for key in fields}
-    result.update(status=status, claim_sha256=claim_sha256 or _digest(_encoded(sidecar)))
-    result.update(adopted=sidecar['adopted'], authority=sidecar['authority'],
-                  transferred_from=sidecar['transferred_from'])
-    transfer_id = extra.pop('transfer_id', None)
-    if transfer_id is not None:
-        result['transfer_id'] = transfer_id
-    result.update(extra)
-    return result
-
 
 def _preflight_unbound(session_dir, manifest, *, authority=None):
     """Check a resource before a new archive exists, without claiming it."""
@@ -190,7 +162,6 @@ def _preflight_unbound(session_dir, manifest, *, authority=None):
         return {'action': 'transfer_pending', 'session_dir': str(session)}
     raise ValueError('review session is already claimed by another review run; use transfer-resources with explicit authority')
 
-
 def plan_resource_registration(paths, manifest, *, authority=None):
     """Preflight a complete resource set before the caller mutates any sidecar."""
     if manifest.get('schema_version') != 8:
@@ -215,7 +186,6 @@ def plan_resource_registration(paths, manifest, *, authority=None):
                 raise ValueError('active review workspace claim is missing or no longer verifiable')
     return plans
 
-
 def _sidecar_for(session, workspace, token_digest, run, manifest, *, prior=None,
                  adopted=False, authority=None, transferred_from=None):
     if prior is None:
@@ -229,7 +199,6 @@ def _sidecar_for(session, workspace, token_digest, run, manifest, *, prior=None,
             'owner_id': manifest['owner_id'], 'archive_path': str(run),
             'adopted': bool(adopted), 'authority': authority if adopted or transferred_from else None,
             'transferred_from': transferred_from}
-
 
 def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=None,
                allow_checkpoint_transaction=False):
@@ -316,36 +285,9 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
             'row': _claim_row(sidecar, transferred_from=str(source_path)),
             'expected_current_sha256': current_hash}
 
-
-def _validate_sidecar(sidecar, session, workspace, token_digest):
-    fields = {'schema_version', 'status', 'claim_id', 'session_id', 'session_dir',
-              'owner_token_sha256', 'repo', 'repository_key', 'run_id', 'owner_id',
-              'archive_path', 'adopted', 'authority', 'transferred_from'}
-    if (not isinstance(sidecar, dict) or set(sidecar) != fields
-            or sidecar.get('schema_version') != CLAIM_SCHEMA or sidecar.get('status') != 'owned'
-            or not isinstance(sidecar.get('claim_id'), str) or not re.fullmatch(r'RC-[0-9a-f]{32}', sidecar['claim_id'])
-            or sidecar.get('session_id') != workspace.get('session_id')
-            or sidecar.get('session_dir') != str(session)
-            or sidecar.get('owner_token_sha256') != token_digest
-            or sidecar.get('repo') != workspace.get('repo')
-            or not isinstance(sidecar.get('repository_key'), str)
-            or not re.fullmatch(r'[0-9a-f]{20}', sidecar['repository_key'])
-            or not isinstance(sidecar.get('run_id'), str) or not re.fullmatch(r'[0-9a-f]{20}', sidecar['run_id'])
-            or not isinstance(sidecar.get('owner_id'), str) or not re.fullmatch(r'[0-9a-f]{32}', sidecar['owner_id'])
-            or not isinstance(sidecar.get('archive_path'), str)
-            or type(sidecar.get('adopted')) is not bool
-            or (sidecar.get('authority') is not None and not isinstance(sidecar.get('authority'), str))
-            or (sidecar.get('transferred_from') is not None and not isinstance(sidecar.get('transferred_from'), str))):
-        raise ValueError('invalid or foreign resource claim sidecar')
-    _safe_path(sidecar['archive_path'])
-    if sidecar['adopted'] and not sidecar['authority']:
-        raise ValueError('adopted resource claim has no authority source')
-
-
 def verify_claim(session_dir, run_dir, *, allow_checkpoint_transaction=False):
     return _verify_claim(session_dir, run_dir, verify_integrity=True,
                          allow_checkpoint_transaction=allow_checkpoint_transaction)
-
 
 def inspect_claim_identity(session_dir, run_dir):
     """Read ownership only for abandoning an empty adoption; never authorize cleanup/work.
@@ -355,18 +297,16 @@ def inspect_claim_identity(session_dir, run_dir):
     """
     return _verify_claim(session_dir, run_dir, verify_integrity=False)
 
-
 def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_transaction=False):
     workspace_data = _workspace(session_dir)
     if workspace_data is None:
         raise ValueError('resource claim requires a valid review workspace session')
     session, workspace, token_digest = workspace_data
     run, manifest, _ = _archive(run_dir)
-    import review_artifacts
     if verify_integrity:
-        review_artifacts._verify_files(run, manifest, allow_checkpoint_transaction=
+        _verify_files(run, manifest, allow_checkpoint_transaction=
             allow_checkpoint_transaction or manifest.get('operation', {}).get('disposition') == 'superseded')
-    if review_artifacts.repository_identity(workspace['repo']) != manifest.get('repository_identity'):
+    if repository_identity(workspace['repo']) != manifest.get('repository_identity'):
         raise ValueError('claimed workspace belongs to a different repository')
     sidecar = _read_json(session / CLAIM_NAME)
     _validate_sidecar(sidecar, session, workspace, token_digest)
@@ -391,60 +331,6 @@ def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_tr
             or set(rows[0]) - (set(expected_row) | {'transfer_id'})):
         raise ValueError('archive resource claim does not match the verified workspace owner')
     return sidecar
-
-
-def validate_release_observation(manifest, present_paths, released_claims):
-    """Bind missing paths to an explicit, previously verified cleanup receipt."""
-    present = {str(_safe_path(path)) for path in present_paths}
-    if not isinstance(released_claims, list):
-        raise ValueError('release receipts must be a list')
-    by_id = {}
-    for receipt in released_claims:
-        if (not isinstance(receipt, dict) or set(receipt) != {'session_id', 'run_id', 'claim_id', 'claim_sha256'}
-                or not all(isinstance(receipt.get(key), str) and receipt[key] for key in receipt)
-                or not re.fullmatch(r'[0-9a-f]{32}', receipt['session_id'])
-                or not re.fullmatch(r'[0-9a-f]{20}', receipt['run_id'])
-                or not re.fullmatch(r'RC-[0-9a-f]{32}', receipt['claim_id'])
-                or not HASH.fullmatch(receipt['claim_sha256']) or receipt['claim_id'] in by_id):
-            raise ValueError('invalid or duplicate resource release receipt')
-        by_id[receipt['claim_id']] = receipt
-    rows = json.loads(json.dumps(manifest.get('resource_claims', [])))
-    expected_ids = set()
-    run_id = manifest.get('run_id')
-    for row in rows:
-        status = row.get('status')
-        if status not in {'owned', 'releasing', 'released'}:
-            continue
-        expected_ids.add(row['claim_id'])
-        path = str(_safe_path(row['session_dir']))
-        receipt = by_id.get(row['claim_id'])
-        if path in present:
-            if status == 'released':
-                raise ValueError('released resource path exists again; preserve and inspect it')
-            if receipt is not None:
-                raise ValueError('resource release receipt conflicts with a still-present claimed session')
-            continue
-        if (status == 'released' and receipt is None
-                and 'cleanup_receipts' not in manifest and 'resource_cleanup' not in manifest
-                and row.get('released_by') == 'review_workspace.cleanup'
-                and row.get('release_claim_sha256') == row.get('claim_sha256')):
-            # Archive-7 files written before durable cleanup receipts already
-            # recorded the release in their hash-bound claim row.
-            continue
-        if (receipt is None or receipt['session_id'] != row['session_id'] or receipt['run_id'] != run_id
-                or receipt['claim_sha256'] != row['claim_sha256']):
-            raise ValueError('missing claimed resource does not prove its own cleanup; release evidence is required')
-        if status == 'released':
-            if row.get('release_claim_sha256') != receipt['claim_sha256']:
-                raise ValueError('resource release receipt does not match the durable released claim')
-        else:
-            row['status'] = 'released'
-            row['released_by'] = 'review_workspace.cleanup'
-            row['release_claim_sha256'] = receipt['claim_sha256']
-    if set(by_id) - expected_ids:
-        raise ValueError('release receipt identifies a claim absent from this review archive')
-    return rows
-
 
 def validate_claims_for_close(run_dir, manifest):
     """Refuse close when claimed sessions are missing, transferred, or unverifiable."""
