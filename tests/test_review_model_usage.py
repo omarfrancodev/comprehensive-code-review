@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_model_usage as models
+from ccr.contracts import model_usage as models
 
 
 REVIEW_ID = 'CR-' + 'a' * 20

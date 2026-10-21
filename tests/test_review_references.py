@@ -6,7 +6,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_references as refs
+from ccr.contracts.references import parse_reference, resolve_reference
+from ccr.contracts.reference_index import validate_selection_reference
 import review_artifacts
 
 from recovery_fixtures import record10, selection_input
@@ -14,17 +15,17 @@ from recovery_fixtures import record10, selection_input
 
 class ReferenceTests(unittest.TestCase):
     def test_references_and_profile(self):
-        self.assertEqual(refs.parse_reference('evidence/context.json#profile',
+        self.assertEqual(parse_reference('evidence/context.json#profile',
             field='reference'), ('evidence/context.json', 'profile'))
         for bad in ('https://example.test/pr/1', 'evidence/a/b.cs',
                     'evidence/../x', 'evidence/CON', 'evidence/a%2Fb'):
             with self.subTest(reference=bad), self.assertRaises(ValueError):
-                refs.parse_reference(bad, field='reference')
+                parse_reference(bad, field='reference')
         selected = selection_input()
-        self.assertEqual(refs.validate_selection_reference(selected, None), [])
-        self.assertEqual(refs.validate_selection_reference(selected, {
+        self.assertEqual(validate_selection_reference(selected, None), [])
+        self.assertEqual(validate_selection_reference(selected, {
             'evidence/context.json': b'{"profile":"focused"}'}), [])
-        self.assertTrue(refs.validate_selection_reference(
+        self.assertTrue(validate_selection_reference(
             dict(selected, reference='evidence/scope.json'), None))
 
     def test_profile_transition_reference_resolves_its_stable_history_row(self):
@@ -37,8 +38,8 @@ class ReferenceTests(unittest.TestCase):
         ]}
         sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
 
-        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
-        self.assertTrue(refs.validate_selection_reference(dict(
+        self.assertEqual(validate_selection_reference(selected, sources), [])
+        self.assertTrue(validate_selection_reference(dict(
             selected, reference='evidence/context.json#profile_history/0/profile'), sources))
 
     def test_initial_profile_reference_stays_stable_after_profile_transition(self):
@@ -51,7 +52,7 @@ class ReferenceTests(unittest.TestCase):
         ]}
         sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
 
-        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
+        self.assertEqual(validate_selection_reference(selected, sources), [])
 
     def test_legacy_initial_profile_reference_uses_history_after_transition(self):
         selected = selection_input(profile='focused', id='S001',
@@ -63,7 +64,7 @@ class ReferenceTests(unittest.TestCase):
         ]}
         sources = {'evidence/context.json': json.dumps(context).encode('utf-8')}
 
-        self.assertEqual(refs.validate_selection_reference(selected, sources), [])
+        self.assertEqual(validate_selection_reference(selected, sources), [])
 
     def test_prepared_initial_selection_uses_immutable_history_reference(self):
         selected = review_artifacts._initial_selection(selection_input(profile='focused'))
@@ -73,10 +74,10 @@ class ReferenceTests(unittest.TestCase):
 
     def test_json_fragment_escapes_and_indices(self):
         data = {'evidence/a.json': b'{"a/b":[{"~key":"focused"}]}'}
-        self.assertEqual(refs.resolve_reference('evidence/a.json#a~1b/0/~0key',
+        self.assertEqual(resolve_reference('evidence/a.json#a~1b/0/~0key',
             data, field='reference'), 'focused')
         markdown = {'evidence/guide.md': b'# Heading?\n'}
-        self.assertEqual(refs.resolve_reference(
+        self.assertEqual(resolve_reference(
             'evidence/guide.md#Heading?', markdown, field='reference'),
             b'# Heading?\n')
 

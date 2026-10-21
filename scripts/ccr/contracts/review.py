@@ -16,11 +16,10 @@ from ccr.reporting.projections import public_url
 
 def validate_reference_semantics(record, context, reference_index, sources, packets=None):
     """Validate opt-in guided-reference semantics without changing record schemas."""
-    import review_references
-    diagnostics = review_references.validate_semantic_references(
-        record, packets or [], reference_index, sources)
-    diagnostics.extend(review_references.validate_material_inputs(
-        record, context, reference_index, sources))
+    from ccr.contracts.material_inputs import validate_material_inputs
+    from ccr.contracts.semantic_references import validate_semantic_references
+    diagnostics = validate_semantic_references(record, packets or [], reference_index, sources)
+    diagnostics.extend(validate_material_inputs(record, context, reference_index, sources))
     messages = [f"{item['field']}: {item['message']}" for item in diagnostics]
     return list(dict.fromkeys(messages))
 

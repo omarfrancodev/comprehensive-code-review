@@ -15,6 +15,7 @@ import test_review_execution_policy as policy_tests
 from test_review_delivery import delivery
 import review_check_receipts
 import review_workspace
+from ccr.contracts import provenance as check_provenance
 
 record8 = policy_tests.record8
 
@@ -27,7 +28,7 @@ def record9(profile='focused', selection='explicit'):
 
 class CheckProvenanceTests(unittest.TestCase):
     def setUp(self):
-        self.provenance = importlib.import_module('review_check_provenance')
+        self.provenance = check_provenance
 
     def test_local_completed_check_requires_executor(self):
         for status in ('passed', 'failed'):

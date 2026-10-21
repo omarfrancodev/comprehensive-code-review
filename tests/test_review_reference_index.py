@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_references as refs
+from ccr.contracts.reference_index import canonical_reference, validate_reference_index
+from ccr.contracts.semantic_references import validate_semantic_references
+from ccr.contracts.material_inputs import validate_material_inputs
 import review_contract
 import review_packets
 import review_artifacts
@@ -29,11 +31,11 @@ class ReferenceIndexTests(unittest.TestCase):
     def test_current_c004_is_required_but_external_example_is_not(self):
         record = record10()
         record['coverage']['areas'][0]['details'] = 'Comprobado por C004'
-        issues = refs.validate_semantic_references(record, [], None, {})
+        issues = validate_semantic_references(record, [], None, {})
         self.assertIn('unknown_check', {i['code'] for i in issues})
 
         record['coverage']['areas'][0]['details'] = 'Inspección estática'
-        issues = refs.validate_semantic_references(record, [], None,
+        issues = validate_semantic_references(record, [], None,
             {'evidence/example.py': b'# Example C004'})
         self.assertNotIn('unknown_check', {i['code'] for i in issues})
 
@@ -43,7 +45,7 @@ class ReferenceIndexTests(unittest.TestCase):
         record['checks'][0].update({'evidence': 'ok'})
         packet = {'check_ids': ['C001', 'C004'], 'findings': [],
                   'decisions': [{'evidence': [{'kind': 'executed', 'check_id': 'C009'}]}]}
-        issues = refs.validate_semantic_references(record, [packet], None, {})
+        issues = validate_semantic_references(record, [packet], None, {})
         self.assertIn('unknown_check', {i['code'] for i in issues})
         self.assertTrue(any(issue['reference'] in {'C004', 'C009'} for issue in issues))
 
@@ -190,21 +192,21 @@ class ReferenceIndexTests(unittest.TestCase):
             'evidence/results.json': b'{"D1":{"status":"completed"},"V1":{}}',
         }
         self.assertFalse(any(issue['code'] == 'missing_source' for issue in
-                             refs.validate_semantic_references(record, [], None, sources)))
+                             validate_semantic_references(record, [], None, sources)))
         sources['evidence/briefs.json'] = b'{"D1":{"detail":"See [the result](missing.json#D1)"}}'
         self.assertIn('missing_source', {issue['code'] for issue in
-                                         refs.validate_semantic_references(record, [], None, sources)})
+                                         validate_semantic_references(record, [], None, sources)})
 
     def test_renamed_source_requires_matching_original_digest(self):
         data = b'original producer bytes'
         aliases = {'evidence/producer/handler.cs': {
             'reference': 'evidence/producer-handler.cs', 'sha256': digest(data)}}
         index = {'schema_version': 1, 'aliases': aliases, 'inputs': []}
-        self.assertEqual(refs.validate_reference_index(index,
+        self.assertEqual(validate_reference_index(index,
             {'evidence/producer-handler.cs': data}), [])
-        self.assertEqual(refs.canonical_reference(
+        self.assertEqual(canonical_reference(
             'evidence/producer/handler.cs', aliases), 'evidence/producer-handler.cs')
-        self.assertTrue(refs.validate_reference_index(index,
+        self.assertTrue(validate_reference_index(index,
             {'evidence/producer-handler.cs': b'changed'}))
 
     def test_alias_chains_and_cycles_fail_even_when_digests_match(self):
@@ -216,7 +218,7 @@ class ReferenceIndexTests(unittest.TestCase):
                 {'evidence/a': {'reference': 'evidence/b', 'sha256': checksum},
                  'evidence/b': {'reference': 'evidence/a', 'sha256': checksum}}):
             index = {'schema_version': 1, 'aliases': aliases, 'inputs': []}
-            issues = refs.validate_reference_index(index, sources)
+            issues = validate_reference_index(index, sources)
             self.assertTrue(issues)
 
     def test_aligned_description_requires_selected_content(self):
@@ -225,7 +227,7 @@ class ReferenceIndexTests(unittest.TestCase):
         record['description']['status'] = 'aligned'
         record['description']['identity'] = 'sha256:' + 'a' * 64
         index = {'schema_version': 1, 'aliases': {}, 'inputs': []}
-        issues = refs.validate_material_inputs(record, context, index, {})
+        issues = validate_material_inputs(record, context, index, {})
         self.assertIn('missing_input', {i['code'] for i in issues})
 
     def test_aligned_description_must_match_selected_content_and_context_identity(self):
@@ -245,10 +247,10 @@ class ReferenceIndexTests(unittest.TestCase):
             'evidence/description.md': checksum}
         sources = {'evidence/reference-index.json': index_bytes,
                    'evidence/description.md': data}
-        self.assertEqual(refs.validate_material_inputs(record, context, index, sources), [])
+        self.assertEqual(validate_material_inputs(record, context, index, sources), [])
 
         context['review_inputs']['sources']['evidence/description.md'] = 'b' * 64
-        issues = refs.validate_material_inputs(record, context, index, sources)
+        issues = validate_material_inputs(record, context, index, sources)
         self.assertTrue(issues)
 
     def test_aligned_description_accepts_captured_source_through_validated_alias(self):
@@ -269,11 +271,11 @@ class ReferenceIndexTests(unittest.TestCase):
             'evidence/reference-index.json': digest(index_bytes), alias: checksum}
         sources = {'evidence/reference-index.json': index_bytes, canonical: data}
 
-        self.assertEqual(refs.validate_material_inputs(record, context, index, sources), [])
+        self.assertEqual(validate_material_inputs(record, context, index, sources), [])
 
         context['review_inputs']['sources'].pop(alias)
         context['review_inputs']['sources']['evidence/unrelated.md'] = checksum
-        issues = refs.validate_material_inputs(record, context, index, sources)
+        issues = validate_material_inputs(record, context, index, sources)
         self.assertTrue(any(issue['field'] == 'description' for issue in issues))
 
     def test_requirements_accept_captured_source_through_validated_alias(self):
@@ -295,7 +297,7 @@ class ReferenceIndexTests(unittest.TestCase):
             'evidence/reference-index.json': digest(index_bytes), alias: checksum}
         sources = {'evidence/reference-index.json': index_bytes, canonical: data}
 
-        self.assertEqual(refs.validate_material_inputs(record, context, index, sources), [])
+        self.assertEqual(validate_material_inputs(record, context, index, sources), [])
 
 
 if __name__ == '__main__':

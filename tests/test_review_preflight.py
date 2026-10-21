@@ -8,7 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_preflight as preflight
+from ccr.contracts import preflight
 import review_artifacts
 import review_trace
 

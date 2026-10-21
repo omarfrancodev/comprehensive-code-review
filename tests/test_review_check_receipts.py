@@ -17,7 +17,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 OWNED_WORKSPACE = str(Path(__file__).resolve().parents[1] / '.owned-executor')
 sys.path.insert(0, str(SCRIPTS))
 import review_check_receipts as receipts
-import review_preflight
+from ccr.contracts import preflight as review_preflight
+from ccr.contracts import receipts as receipt_contracts
 import review_workspace
 from recovery_fixtures import context10, record10
 from test_review_traceability_contract import check as base_check
@@ -84,20 +85,20 @@ class CheckReceiptTests(unittest.TestCase):
         receipt_bytes = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode('utf-8')
         sources = {receipt_reference: receipt_bytes,
                    receipt['stdout']['reference']: b'', receipt['stderr']['reference']: b''}
-        self.assertEqual(receipts.validate_record_receipts(record, sources, executors), [])
+        self.assertEqual(receipt_contracts.validate_record_receipts(record, sources, executors), [])
         del sources[receipt['stderr']['reference']]
         self.assertIn('invalid_receipt', {issue['code'] for issue in
-                                          receipts.validate_record_receipts(record, sources, executors)})
+                                          receipt_contracts.validate_record_receipts(record, sources, executors)})
 
     def test_empty_streams_need_observed_exit(self):
         receipt = valid_receipt()
         check, executors = valid_binding()
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
-        self.assertEqual(receipts.validate_receipt(
+        self.assertEqual(receipt_contracts.validate_receipt(
             receipt, sources, check=check, executors=executors), [])
 
         incomplete = dict(receipt, exit_code=None, finished_at=None)
-        issues = receipts.validate_receipt(
+        issues = receipt_contracts.validate_receipt(
             incomplete, sources, check=check, executors=executors)
         self.assertIn('invalid_receipt', {issue['code'] for issue in issues})
 
@@ -107,7 +108,7 @@ class CheckReceiptTests(unittest.TestCase):
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
         check['command'] = 'pytest -q'
 
-        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+        issues = receipt_contracts.validate_receipt(receipt, sources, check=check, executors=executors)
 
         self.assertTrue(any(issue['field'] == 'command' for issue in issues))
 
@@ -119,7 +120,7 @@ class CheckReceiptTests(unittest.TestCase):
         check['command'] = shlex.join(argv)
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
 
-        self.assertEqual(receipts.validate_receipt(
+        self.assertEqual(receipt_contracts.validate_receipt(
             receipt, sources, check=check, executors=executors), [])
 
     def test_receipt_cwd_must_match_registered_executor_workspace(self):
@@ -128,7 +129,7 @@ class CheckReceiptTests(unittest.TestCase):
         executors[0]['workspace'] = str(Path(OWNED_WORKSPACE).with_name('different-executor'))
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
 
-        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+        issues = receipt_contracts.validate_receipt(receipt, sources, check=check, executors=executors)
 
         self.assertTrue(any(issue['field'] == 'cwd' for issue in issues))
 
@@ -137,17 +138,17 @@ class CheckReceiptTests(unittest.TestCase):
         check, executors = valid_binding()
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
         altered = dict(sources, **{'evidence/C001-out.log': b'changed'})
-        self.assertIn('invalid_receipt', {issue['code'] for issue in receipts.validate_receipt(
+        self.assertIn('invalid_receipt', {issue['code'] for issue in receipt_contracts.validate_receipt(
             receipt, altered, check=check, executors=executors)})
-        self.assertTrue(receipts.validate_receipt(
+        self.assertTrue(receipt_contracts.validate_receipt(
             receipt, sources, check=dict(check, revision='other-head'), executors=executors))
-        self.assertTrue(receipts.validate_receipt(
+        self.assertTrue(receipt_contracts.validate_receipt(
             receipt, sources, check=check,
             executors=[dict(executors[0], executor='X2')]))
 
     def test_validation_never_starts_a_process(self):
         with patch('review_check_receipts.subprocess.run') as run:
-            receipts.validate_receipt(valid_receipt(), {
+            receipt_contracts.validate_receipt(valid_receipt(), {
                 'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''},
                 check=valid_binding()[0], executors=valid_binding()[1])
             run.assert_not_called()

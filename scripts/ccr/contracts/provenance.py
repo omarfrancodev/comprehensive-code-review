@@ -1,5 +1,5 @@
 """Pure validation of check execution provenance."""
-import review_check_receipts
+from ccr.contracts.receipts import validate_record_receipts
 
 """Pure schema-9 check provenance validation; no execution or filesystem probes."""
 
@@ -62,7 +62,7 @@ def validate_check_sources(record, executors, *, receipt_sources=None):
         if not pinned or not matches:
             errors.append(prefix + 'executor revision/snapshot differs from check and pinned scope')
     if receipt_sources is not None:
-        receipt_issues = review_check_receipts.validate_record_receipts(
+        receipt_issues = validate_record_receipts(
             record, receipt_sources, executors)
         errors.extend(issue['field'] + ': ' + issue['message'] for issue in receipt_issues)
     return errors

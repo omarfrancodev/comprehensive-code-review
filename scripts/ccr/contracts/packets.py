@@ -124,12 +124,12 @@ def validate(packet, *, reference_index=None, reference_sources=None,
             if updates.get('blocking') is True and (entry.get('status') != 'confirmed' or not updates.get('blocking_reason')):
                 fail(path, 'blocking needs confirmed status and explicit reason')
     if reference_index is not None:
-        import review_references
+        from ccr.contracts.semantic_references import validate_semantic_references
         identifiers = (known_check_ids if known_check_ids is not None else check_ids)
         semantic_record = {'checks': [{'id': identifier} for identifier in identifiers
                                       if isinstance(identifier, str)],
                            'coverage': {}}
-        diagnostics = review_references.validate_semantic_references(
+        diagnostics = validate_semantic_references(
             semantic_record, [packet], reference_index,
             reference_sources if isinstance(reference_sources, dict) else {})
         errors.extend(f"{item['field']}: {item['message']}" for item in diagnostics)
