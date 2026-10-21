@@ -271,13 +271,16 @@ class RecoveryReservationTests(unittest.TestCase):
                 self.output = self.root / ('archive-' + case)
                 source, successor, session, foreign, _, kwargs = self.adoption_conflict()
                 if case == 'started':
+                    # A check can start without adopting the foreign-claimed session.
                     artifacts.record_event(successor, self.write('work-started.json',
-                        {'kind': 'discovery', 'status': 'started', 'summary': 'Observed actual discovery start'}))
+                        {'kind': 'check', 'status': 'started', 'summary': 'Observed validation check start'}))
+                    self.assertEqual(self.read(successor / 'cierre.json')['state'], 'processing')
                 else:
                     (successor / 'evidence').mkdir()
                     (successor / 'evidence' / 'worker.md').write_text('Preserve actual work', encoding='utf-8')
                 before = tuple(self.snapshot(run) for run in (source, successor, foreign, session))
-                with self.assertRaises(ValueError):
+                expected = 'with work or claims' if case == 'started' else 'contains evidence'
+                with self.assertRaisesRegex(ValueError, expected):
                     artifacts.abandon_restart(source, **kwargs)
                 self.assertEqual(tuple(self.snapshot(run) for run in (source, successor, foreign, session)), before)
                 self.assertEqual(claims.verify_claim(session, foreign)['run_id'], self.read(foreign / 'cierre.json')['run_id'])

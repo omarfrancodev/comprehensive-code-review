@@ -19,7 +19,7 @@ from recovery_fixtures import record10
 
 class HistoryTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve())
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'archive'
         self.identity = 'origin:https://git.example/acme/service.git'

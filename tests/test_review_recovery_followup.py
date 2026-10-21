@@ -370,7 +370,7 @@ a.restart(source, **request)
         source, session, context = self.registered_session()
         candidate = selection_input('standard', 'explicit', phase='discovery', affected_assignments=['D2'],
             reason='Only one independent flow remains in the verified scope',
-            reference='evidence/context.json#profile')
+            reference='evidence/context.json#profile_history/1/profile')
         manifest = artifacts.select_profile(source, candidate)
         context['profile'] = 'standard'
         context['profile_history'] = manifest['profile_history']
