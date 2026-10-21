@@ -2,17 +2,42 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## Unreleased
+## 2.14.0 — 2026-10-21
 
 ### Added
 
-- Proyectar estado operativo y opciones seguras de continuidad en `inspect` sólo para runs nativos íntegros; reconstruir candidatos administrativos en el mismo run y mantener la historia cerrada inmutable.
-- Registrar de forma privada el modelo configurado u observado por actividad cuando el harness ya expone esa metadata, sin probes ni llamadas adicionales.
+#### Ciclo de vida y recuperación
+
+- Proyectar en `inspect` el estado operativo verificado y las opciones de recuperación exacta, reconstrucción del candidato, continuación, reinicio enlazado, historia y preservación.
+
+#### Artefactos y contratos
+
+- Capturar un índice privado de referencias e insumos materiales, con aliases explícitos y digests verificados para descripción, requisitos y evidencia seleccionada.
+- Vincular los recibos de checks al argv literal, comando canónico, revisión, workspace del executor y hashes de logs; admitir argumentos con saltos de línea y tabuladores cuando coinciden con `shlex.join(argv)`.
+
+#### Harness e integraciones
+
+- Registrar de forma privada el modelo configurado y el observado por actividad cuando el harness expone esa metadata, conservando su ausencia como desconocida y sin probes adicionales.
 
 ### Changed
 
-- Exigir preflight de discovery antes del primer dispatch y preflight de retención para candidato/evidencia seleccionados; corregir el contexto público y volver a renderizar en vez de editar manualmente comentarios canónicos.
-- Mantener explícita la elección rerun/latest y limitar `--previous-run` a un origen nativo verificado; los paquetes históricos siguen siendo solo de consulta.
+#### Perfiles y ejecución
+
+- Exigir preflight de registro, discovery y retención para validar perfiles, asignaciones, planes y entradas antes del trabajo correspondiente.
+
+#### Ciclo de vida y recuperación
+
+- Orientar la reconstrucción de candidatos no retenidos en el mismo run cuando sus entradas siguen vigentes; conservar la historia cerrada inmutable y limitar `--previous-run` a un origen nativo verificado.
+
+#### Reportes y entregas
+
+- Separar los resúmenes públicos de la evidencia privada y verificar el comentario publicado contra el borrador canónico; corregir el contexto y volver a renderizar cuando haga falta ajustar el contenido.
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Conservar el valor histórico de la selección inicial al cambiar de perfil, con referencias estables para S001/S002 y compatibilidad con referencias legacy de runs abiertos.
 
 ## 2.13.0 — 2026-10-19
 
