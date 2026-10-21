@@ -51,8 +51,8 @@ def normalize_inputs(raw: dict, *, caller: bool = True) -> dict:
             continue
         value = raw[field]
         if field == 'profile' and value is not None:
-            import review_profiles
-            value = review_profiles._canonical(value)
+            from ccr.workflow.profiles import canonical_profile
+            value = canonical_profile(value)
         elif field == 'logical_scope_identity' and value is not None and (
                 not isinstance(value, str) or not re.fullmatch(r'[0-9a-f]{64}', value)):
             raise ValueError('logical_scope_identity must be lowercase SHA-256 or null')
