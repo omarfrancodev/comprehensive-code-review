@@ -29,7 +29,7 @@ import review_harness
 import review_profiles
 import review_inputs
 from ccr.archive import restart_contract as review_restart
-import review_resource_claims
+from ccr.execution import claims as resource_claims
 import review_layout
 import review_references
 import review_preflight
@@ -68,6 +68,11 @@ from ccr.archive.lifecycle import (
 from ccr.archive.retention import (
     _executors, _execution_gate, _handoff_context, _present_resources, _retain_data,
     _measurements, _validate_model_usage_context, retain,
+)
+from ccr.archive.resources import (
+    _cleanup_identity, _cleanup_resources_remain, _cleanup_rows,
+    _finish_resource_cleanup_locked, begin_resource_cleanup, finish_resource_cleanup,
+    recover_resource_cleanup, transfer_resources,
 )
 
 
@@ -258,272 +263,8 @@ def _record_restart_completion(intent_path, intent):
 
 
 
-TRANSFER_HISTORY_LIMIT = 64
-CLEANUP_RECEIPT_LIMIT = 64
 
-def _store_transfer(manifest, intent):
-    rows = normalize_transfer_history(manifest)
-    matches = [index for index, row in enumerate(rows) if row['transfer_id'] == intent['transfer_id']]
-    if len(matches) > 1:
-        raise ValueError('duplicate transfer_id in resource transfer history')
-    if matches:
-        prior = rows[matches[0]]
-        before, after = dict(prior), dict(intent)
-        before.pop('status', None)
-        before.pop('completed_at', None)
-        after.pop('status', None)
-        after.pop('completed_at', None)
-        if before != after or prior['status'] == 'complete' and intent['status'] != 'complete':
-            raise ValueError('resource transfer retry differs from its preserved intent')
-        rows[matches[0]] = copy.deepcopy(intent)
-    else:
-        if len(rows) >= TRANSFER_HISTORY_LIMIT:
-            raise ValueError('resource transfer history reached the 64-entry limit')
-        if any(row['status'] == 'pending' for row in rows):
-            raise ValueError('another resource transfer is already pending for this run')
-        rows.append(copy.deepcopy(intent))
-    manifest.pop('resource_transfer', None)
-    manifest['resource_transfers'] = rows
-    return rows
 
-def transfer_resources(source_run, successor_run, paths, *, authority, controller,
-                       _restart_operation_id=None):
-    """Transfer explicitly selected claimed workspaces under both run locks."""
-    source_path, successor_path = safe_path(source_run), safe_path(successor_run)
-    selected_raw_paths = [str(safe_path(path)) for path in paths]
-    if not selected_raw_paths or len({os.path.normcase(path) for path in selected_raw_paths}) != len(paths):
-        raise ValueError('resource transfer requires a nonempty unique explicit path list')
-    selected_paths = sorted(selected_raw_paths, key=os.path.normcase)
-    authority = review_resource_claims._authority(authority)
-    _assert_not_restart_abandoned(_load_run(source_path)[1])
-    _assert_not_restart_abandoned(_load_run(successor_path)[1])
-    with run_locks([source_path, successor_path]), review_resource_claims.session_claim_locks(selected_paths):
-        source, source_manifest, source_marker = _load_run(source_path)
-        successor, next_manifest, next_marker = _load_run(successor_path)
-        _assert_not_restart_abandoned(source_manifest)
-        _assert_not_restart_abandoned(next_manifest)
-        active_restart = _active_restart_operation(source, source_manifest)
-        if (active_restart is not None
-                and active_restart['operation_id'] != _restart_operation_id):
-            raise ValueError('a durable restart is pending; recover source ' + str(source)
-                             + ' for restart operation ' + active_restart['operation_id'])
-        source_marker = _recover_trace(source, source_manifest, source_marker)
-        next_marker = _recover_trace(successor, next_manifest, next_marker)
-        restarting_checkpoint = active_restart is not None and _restart_operation_id == active_restart['operation_id']
-        _verify_files(source, source_manifest, allow_resource_transfer=True,
-                      allow_checkpoint_transaction=restarting_checkpoint)
-        _verify_files(successor, next_manifest, allow_resource_transfer=True)
-        if source == successor:
-            raise ValueError('source and successor review runs must differ')
-        if (source_manifest.get('schema_version') != 8 or next_manifest.get('schema_version') != 8
-                or source_manifest.get('repository_key') != next_manifest.get('repository_key')
-                or source_manifest.get('repository_path') != next_manifest.get('repository_path')
-                or source_manifest.get('scope') != next_manifest.get('scope')):
-            raise ValueError('resource transfer requires archive-8 runs for the same repository and scope')
-        for label, value in (('source', source_manifest), ('successor', next_manifest)):
-            if value.get('state') not in {'prepared', 'processing'}:
-                raise ValueError(label + ' run must be prepared or processing; retaining/closing runs cannot transfer')
-        normalized_controller = _controller(controller, next_manifest['controller']['identity'])
-        source_history = normalize_transfer_history(source_manifest)
-        next_history = normalize_transfer_history(next_manifest)
-        pair = [row for row in source_history + next_history
-                if row['source_run'] == str(source) and row['successor_run'] == str(successor)]
-        by_id = {}
-        for row in pair:
-            prior = by_id.get(row['transfer_id'])
-            if prior is not None:
-                left, right = dict(prior), dict(row)
-                left.pop('status', None); left.pop('completed_at', None)
-                right.pop('status', None); right.pop('completed_at', None)
-                if left != right:
-                    raise ValueError('source and successor transfer histories conflict')
-            else:
-                by_id[row['transfer_id']] = row
-        if len(by_id) > 1:
-            raise ValueError('multiple transfers exist for the same source and successor runs')
-        intent = next(iter(by_id.values()), None)
-        current_transfer_id = intent['transfer_id'] if intent else None
-        for history in (source_history, next_history):
-            if any(row['status'] == 'pending' and row['transfer_id'] != current_transfer_id for row in history):
-                raise ValueError('another resource transfer is already pending for this run')
-
-        if intent is not None:
-            _validate_transfer_intent(intent)
-            expected = {'source_run': str(source), 'successor_run': str(successor),
-                        'source_run_id': source_manifest['run_id'],
-                        'successor_run_id': next_manifest['run_id'],
-                        'source_owner_id': source_manifest['owner_id'],
-                        'successor_owner_id': next_manifest['owner_id'],
-                        'repository_key': source_manifest['repository_key'],
-                        'authority': authority, 'controller': normalized_controller}
-            if any(intent.get(key) != value for key, value in expected.items()) or \
-                    {item['session_dir'] for item in intent['items']} != set(selected_paths):
-                raise ValueError('completed or pending transfer request differs from its preserved inputs')
-            source_matches = [row for row in source_history if row['transfer_id'] == intent['transfer_id']]
-            next_matches = [row for row in next_history if row['transfer_id'] == intent['transfer_id']]
-            if (source_matches and next_matches and source_matches[0]['status'] == 'complete'
-                    and next_matches[0]['status'] == 'complete'):
-                for item in intent['items']:
-                    review_resource_claims.verify_claim(item['session_dir'], successor)
-                return {'status': 'transferred', 'transfer_id': intent['transfer_id'],
-                        'source_run': str(source), 'successor_run': str(successor),
-                        'resources': [item['session_dir'] for item in intent['items']]}
-            # A partially persisted completion is replayed using its original bytes.
-        else:
-            if source_manifest.get('state') in {'retaining', 'closing', 'complete'} or \
-                    next_manifest.get('state') in {'retaining', 'closing', 'complete'}:
-                raise ValueError('retaining, closing or complete review runs cannot transfer resources')
-            if source_manifest.get('operation', {}).get('disposition') not in {'open', 'paused', 'blocked'}:
-                raise ValueError('source review is already superseded or complete')
-            if next_manifest.get('operation', {}).get('disposition') != 'open':
-                raise ValueError('successor review must be open before claiming resources')
-            previous = next_manifest.get('previous_run')
-            lineage = next_manifest.get('lineage')
-            if previous not in (None, str(source)):
-                raise ValueError('successor previous_run conflicts with the requested transfer source')
-            if not isinstance(lineage, dict) or lineage.get('source_run') not in (None, str(source)):
-                raise ValueError('successor lineage conflicts with the requested transfer source')
-            if previous == str(source) and (lineage.get('kind') != 'restart' or lineage.get('source_run') != str(source)):
-                raise ValueError('successor previous_run and lineage identify different restart sources')
-
-            source_rows = list(source_manifest.get('resource_claims', []))
-            in_flight_rows = [row for row in source_rows if row.get('status') == 'releasing']
-            if in_flight_rows:
-                raise ValueError('resource cleanup is already in progress; recover it before transfer')
-            active_rows = [row for row in source_rows if row.get('status') == 'owned']
-            active_paths = {os.path.normcase(str(safe_path(row['session_dir']))) for row in active_rows}
-            selected_path_keys = {os.path.normcase(str(safe_path(path))) for path in selected_paths}
-            if selected_path_keys != active_paths:
-                raise ValueError('transfer must include every active resource claim; partial transfer is refused '
-                                 '(selected=' + str(len(selected_paths)) + ', active=' + str(len(active_paths)) + ')')
-            if len(source_history) >= TRANSFER_HISTORY_LIMIT or len(next_history) >= TRANSFER_HISTORY_LIMIT:
-                raise ValueError('resource transfer history reached the 64-entry limit')
-            items = []
-            registered_source_paths = {os.path.normcase(str(safe_path(path)))
-                                       for path in source_manifest.get('temporary_paths', [])}
-            for raw in selected_paths:
-                if os.path.normcase(str(safe_path(raw))) not in registered_source_paths:
-                    raise ValueError('every transferred session must be registered to the source run')
-                if not safe_path(raw).is_dir():
-                    raise ValueError('every active resource claim must be present before transfer')
-                old_sidecar = review_resource_claims.verify_claim(raw, source,
-                    allow_checkpoint_transaction=restarting_checkpoint)
-                plan = review_resource_claims.plan_claim(
-                    raw, successor, next_manifest, source_run=source,
-                    authority=authority, allow_checkpoint_transaction=restarting_checkpoint)
-                if plan['action'] != 'transfer' or old_sidecar['claim_id'] != plan['sidecar']['claim_id']:
-                    raise ValueError('resource transfer plan does not match the verified source claim')
-                source_rows = [row for row in source_manifest.get('resource_claims', [])
-                               if row.get('claim_id') == old_sidecar['claim_id']]
-                if len(source_rows) != 1 or source_rows[0].get('status') != 'owned':
-                    raise ValueError('source archive does not have one active claim for the session')
-                items.append({'session_dir': raw, 'claim_id': old_sidecar['claim_id'],
-                              'old_claim_sha256': plan['expected_current_sha256'],
-                              'new_claim': plan['sidecar'], 'new_claim_sha256': _digest(plan['bytes'])})
-            intent = {'schema_version': 1, 'transfer_id': 'RT-' + uuid.uuid4().hex,
-                      'status': 'pending', 'source_run': str(source), 'successor_run': str(successor),
-                      'source_run_id': source_manifest['run_id'], 'successor_run_id': next_manifest['run_id'],
-                      'source_owner_id': source_manifest['owner_id'],
-                      'successor_owner_id': next_manifest['owner_id'],
-                      'repository_key': source_manifest['repository_key'], 'authority': authority,
-                      'controller': normalized_controller, 'items': items}
-
-        if intent['status'] == 'pending':
-            _store_transfer(source_manifest, intent)
-            source_marker = _save_manifest(source, source_manifest, source_marker)
-            _store_transfer(next_manifest, intent)
-            next_marker = _save_manifest(successor, next_manifest, next_marker)
-
-        _validate_transfer_intent(intent)
-        for item in intent['items']:
-            sidecar_path = safe_path(Path(item['session_dir']) / review_resource_claims.CLAIM_NAME)
-            try:
-                current_bytes = sidecar_path.read_bytes()
-            except FileNotFoundError as exc:
-                raise ValueError('claimed session disappeared during resource transfer') from exc
-            current_hash = _digest(current_bytes)
-            new_bytes = review_resource_claims._encoded(item['new_claim'])
-            if current_hash == item['new_claim_sha256']:
-                continue
-            if current_hash != item['old_claim_sha256']:
-                raise ValueError('resource claim changed after transfer intent; preserve the session')
-            atomic_write(sidecar_path, new_bytes)
-
-        transfer_id = intent['transfer_id']
-        moved_paths = {item['session_dir'] for item in intent['items']}
-        moved_keys = {os.path.normcase(path) for path in moved_paths}
-        source_rows = list(source_manifest.get('resource_claims', []))
-        next_rows = list(next_manifest.get('resource_claims', []))
-        for item in intent['items']:
-            old_rows = [row for row in source_rows if row.get('claim_id') == item['claim_id']]
-            if len(old_rows) != 1 or old_rows[0].get('session_dir') != item['session_dir']:
-                raise ValueError('source archive claim changed during transfer')
-            if old_rows[0].get('status') == 'owned':
-                old_rows[0].update(status='transferred', transfer_id=transfer_id,
-                                   successor_run_id=next_manifest['run_id'])
-            elif not (old_rows[0].get('status') == 'transferred'
-                      and old_rows[0].get('transfer_id') == transfer_id):
-                raise ValueError('source archive claim is not transferable')
-            new_row = review_resource_claims._claim_row(
-                item['new_claim'], claim_sha256=item['new_claim_sha256'],
-                adopted=item['new_claim']['adopted'], authority=item['new_claim']['authority'],
-                transferred_from=str(source), transfer_id=transfer_id)
-            if not any(row.get('claim_id') == item['claim_id'] for row in next_rows):
-                next_rows.append(new_row)
-            elif not any(row == new_row for row in next_rows if row.get('claim_id') == item['claim_id']):
-                raise ValueError('successor archive already has a different claim for this session')
-
-        source_manifest['resource_claims'] = source_rows
-        source_manifest['temporary_paths'] = [path for path in source_manifest.get('temporary_paths', [])
-                                              if os.path.normcase(path) not in moved_keys]
-        source_manifest['temporary_manifests'] = _temporary_manifests(
-            source_manifest['temporary_paths'], source_manifest)
-        source_manifest['operation'].update(disposition='superseded', reason=authority,
-                                            source='transfer-resources', phase='restart',
-                                            successor=str(successor))
-        next_manifest['resource_claims'] = next_rows
-        combined_paths = list(next_manifest.get('temporary_paths', [])) + sorted(moved_paths)
-        unique_paths = {}
-        for path in combined_paths:
-            unique_paths.setdefault(os.path.normcase(path), path)
-        next_manifest['temporary_paths'] = list(unique_paths.values())
-        next_manifest['temporary_manifests'] = _temporary_manifests(
-            next_manifest['temporary_paths'], next_manifest)
-        next_manifest['previous_run'] = next_manifest.get('previous_run') or str(source)
-        next_manifest['lineage'] = {'kind': 'restart', 'source_run': str(source)}
-        source_marker = _save_manifest(source, source_manifest, source_marker)
-        next_marker = _save_manifest(successor, next_manifest, next_marker)
-
-        for run, manifest, marker, other in ((source, source_manifest, source_marker, successor),
-                                             (successor, next_manifest, next_marker, source)):
-            summary = 'Resource transfer ' + transfer_id + ' to ' + str(successor)
-            if run == source:
-                summary = 'Resource transfer ' + transfer_id + ' from ' + str(source)
-            trace = [json.loads(line) for line in safe_path(run / review_trace.NAME).read_text(
-                encoding='utf-8').splitlines()]
-            if not any(event.get('kind') == 'handoff' and event.get('summary') == summary for event in trace):
-                relation_target = str(other)
-                event = {'kind': 'handoff', 'status': 'completed', 'summary': summary,
-                         'authority': authority, 'provenance': {'kind': 'helper', 'source': 'review_artifacts:transfer-resources'},
-                         'evidence': ['cierre.json'],
-                         'relations': [{'relation': 'supersedes', 'target': relation_target}]}
-                marker = _append_trace(run, manifest, marker, event)
-            if run == source:
-                source_marker = marker
-            else:
-                next_marker = marker
-
-        completed = copy.deepcopy(intent)
-        if completed['status'] != 'complete':
-            completed['status'] = 'complete'
-            completed['completed_at'] = datetime.now(timezone.utc).isoformat()
-        _store_transfer(source_manifest, completed)
-        _store_transfer(next_manifest, completed)
-        _save_manifest(source, source_manifest, source_marker)
-        _save_manifest(successor, next_manifest, next_marker)
-        return {'status': 'transferred', 'transfer_id': transfer_id,
-                'source_run': str(source), 'successor_run': str(successor),
-                'resources': sorted(moved_paths)}
 
 def _recovery_event(manifest, summary, *, status='completed', authority=None, source=None, relation=None):
     event = {'kind': 'interruption', 'status': status, 'summary': summary,
@@ -549,7 +290,7 @@ def _takeover_controller(run, manifest, marker, controller, authority):
         return previous, marker
     if authority is None:
         raise ValueError('controller takeover requires explicit user authority')
-    authority = review_resource_claims._authority(authority)
+    authority = resource_claims.normalize_authority(authority)
     prior = previous.get('identity', {}).get('name', 'unknown') if isinstance(previous, dict) else 'unknown'
     manifest['controller'] = normalized
     marker = _append_trace(run, manifest, marker, _recovery_event(
@@ -559,175 +300,12 @@ def _takeover_controller(run, manifest, marker, controller, authority):
             + str(manifest.get('trace', {}).get('events', 0)).zfill(6)}))
     return normalized, marker
 
-def _cleanup_identity(intent):
-    return {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
 
-def _cleanup_rows(manifest, claim_id):
-    return [row for row in manifest.get('resource_claims', [])
-            if isinstance(row, dict) and row.get('claim_id') == claim_id]
 
-def _cleanup_resources_remain(intent):
-    import review_workspace
-    repo = safe_path(intent['repository_path'])
-    registered = {str(path.resolve()) for path in review_workspace.registrations(repo)}
-    for raw in intent['worktrees']:
-        path = safe_path(raw)
-        if str(path) in registered or path.exists():
-            return True
-    return safe_path(intent['session_dir']).exists()
 
-@_locked_run
-def begin_resource_cleanup(run_dir, session_dir):
-    """Persist a cleanup intent and mark the exact workspace claim as releasing."""
-    run, manifest, marker = _load_run(run_dir)
-    marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest, allow_checkpoint_transaction=
-                  manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 8')
-    if manifest.get('state') in {'retaining', 'complete'}:
-        raise ValueError('resource cleanup cannot begin during retention or after closure')
-    if manifest.get('operation', {}).get('disposition') == 'complete':
-        raise ValueError('completed review cannot begin resource cleanup')
-    session = safe_path(session_dir)
-    if not session.exists() or not session.is_dir():
-        raise ValueError('cleanup requires the existing claimed session directory')
-    sidecar = review_resource_claims.verify_claim(session, run)
-    rows = _cleanup_rows(manifest, sidecar['claim_id'])
-    if len(rows) != 1:
-        raise ValueError('cleanup requires one exact durable resource claim')
-    row = rows[0]
-    if row.get('status') not in {'owned', 'releasing'}:
-        raise ValueError('resource claim is not active for cleanup')
-    intent = manifest.get('resource_cleanup')
-    if isinstance(intent, dict) and intent.get('status') == 'pending':
-        if (_cleanup_identity(intent) == {
-                'session_id': sidecar['session_id'], 'run_id': manifest['run_id'],
-                'claim_id': sidecar['claim_id'], 'claim_sha256': review_resource_claims._digest(
-                    review_resource_claims._encoded(sidecar))}
-                and intent.get('session_dir') == str(session)):
-            return copy.deepcopy(intent)
-        raise ValueError('another resource cleanup is pending; recover it before starting cleanup')
-    receipts = manifest.get('cleanup_receipts', [])
-    if len(receipts) >= CLEANUP_RECEIPT_LIMIT:
-        raise ValueError('resource cleanup receipt history reached the 64-entry limit')
-    if any(receipt.get('claim_id') == sidecar['claim_id'] for receipt in receipts):
-        raise ValueError('resource claim already has a durable cleanup receipt')
-    if row.get('status') != 'owned':
-        raise ValueError('releasing resource claim has no matching pending cleanup intent')
 
-    workspace_data = review_resource_claims._workspace(session)
-    if workspace_data is None:
-        raise ValueError('cleanup requires a valid owned workspace session')
-    workspace = workspace_data[1]
-    import review_workspace
-    registered = {str(path.resolve()) for path in review_workspace.registrations(safe_path(workspace['repo']))}
-    worktrees = []
-    for entry in workspace['workspaces']:
-        path = safe_path(entry['path'])
-        if path.exists() and str(path) not in registered:
-            raise ValueError('workspace is no longer registered; preserve and inspect it: ' + str(path))
-        if str(path) in registered:
-            worktrees.append(str(path))
-    if len(worktrees) > 32:
-        raise ValueError('cleanup worktree inventory exceeds the 32-entry limit')
-    claim_hash = review_resource_claims._digest(review_resource_claims._encoded(sidecar))
-    intent = {'schema_version': 1, 'operation_id': 'CL-' + uuid.uuid4().hex,
-              'status': 'pending', 'run_id': manifest['run_id'], 'session_id': sidecar['session_id'],
-              'claim_id': sidecar['claim_id'], 'claim_sha256': claim_hash,
-              'session_dir': str(session), 'repository_path': str(safe_path(workspace['repo'])),
-              'worktrees': worktrees, 'started_at': datetime.now(timezone.utc).isoformat(),
-              'completed_at': None, 'completion_source': None}
-    row['status'] = 'releasing'
-    manifest['resource_cleanup'] = intent
-    _append_trace(run, manifest, marker, _milestone('cleanup',
-                  'Cleanup started for a verified claimed review workspace', status='started',
-                  evidence=['cierre.json#resource_cleanup']))
-    return copy.deepcopy(intent)
 
-def _finish_resource_cleanup_locked(run, manifest, marker, observation, *, completion_source):
-    intent = manifest.get('resource_cleanup')
-    if not isinstance(intent, dict):
-        raise ValueError('no durable resource cleanup intent exists')
-    fields = {'operation_id', 'run_id', 'session_id', 'claim_id', 'claim_sha256'}
-    if not isinstance(observation, dict) or set(observation) != fields:
-        raise ValueError('cleanup completion must identify its exact durable operation and claim')
-    expected = {'operation_id': intent['operation_id'], **_cleanup_identity(intent)}
-    if observation != expected:
-        raise ValueError('cleanup completion differs from the durable cleanup intent')
-    if intent['status'] == 'complete':
-        receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
-        if receipt not in manifest.get('cleanup_receipts', []):
-            raise ValueError('completed cleanup has no durable matching receipt')
-        return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
-    if intent['status'] != 'pending':
-        raise ValueError('unknown resource cleanup state')
-    if _cleanup_resources_remain(intent):
-        raise ValueError('cleanup cannot be completed while its session or registered worktrees remain')
-    rows = _cleanup_rows(manifest, intent['claim_id'])
-    if len(rows) != 1 or rows[0].get('status') != 'releasing':
-        raise ValueError('cleanup intent no longer matches one releasing resource claim')
-    receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
-    receipts = manifest.setdefault('cleanup_receipts', [])
-    existing = [row for row in receipts if row.get('claim_id') == intent['claim_id']]
-    if existing and existing != [receipt]:
-        raise ValueError('resource cleanup retry conflicts with a different durable receipt')
-    if not existing:
-        if len(receipts) >= CLEANUP_RECEIPT_LIMIT:
-            raise ValueError('resource cleanup receipt history reached the 64-entry limit')
-        receipts.append(receipt)
-    rows[0].update(status='released', released_by=completion_source,
-                   release_claim_sha256=intent['claim_sha256'])
-    intent.update(status='complete', completed_at=datetime.now(timezone.utc).isoformat(),
-                   completion_source=completion_source)
-    _append_trace(run, manifest, marker, _milestone('cleanup',
-                  'Verified workspace cleanup and recorded its release receipt', status='completed',
-                  evidence=['cierre.json#cleanup_receipts']))
-    return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
 
-@_locked_run
-def finish_resource_cleanup(run_dir, observation):
-    """Record a receipt only after the exact session and its worktrees are absent."""
-    run, manifest, marker = _load_run(run_dir)
-    marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest, allow_checkpoint_transaction=
-                  manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 8')
-    return _finish_resource_cleanup_locked(run, manifest, marker, observation,
-                                           completion_source='review_workspace.cleanup')
-
-@_locked_run
-def recover_resource_cleanup(run_dir):
-    """Finish a pending cleanup record only when its exact resources are already absent."""
-    run, manifest, marker = _load_run(run_dir)
-    marker = _recover_trace(run, manifest, marker)
-    _verify_files(run, manifest, allow_checkpoint_transaction=
-                  manifest.get('operation', {}).get('disposition') == 'superseded')
-    if manifest.get('schema_version') != 8:
-        raise ValueError('durable resource cleanup requires archive schema 8')
-    intent = manifest.get('resource_cleanup')
-    if intent is None:
-        return {'status': 'none', 'run_id': manifest['run_id']}
-    if intent['status'] == 'complete':
-        receipt = {key: intent[key] for key in ('session_id', 'run_id', 'claim_id', 'claim_sha256')}
-        return {'status': 'released', 'receipt': receipt, 'operation_id': intent['operation_id']}
-    if intent['status'] != 'pending':
-        raise ValueError('unknown durable resource cleanup status')
-    session = safe_path(intent['session_dir'])
-    if session.exists():
-        sidecar = review_resource_claims.verify_claim(session, run)
-        if (sidecar.get('session_id') != intent['session_id']
-                or sidecar.get('claim_id') != intent['claim_id']
-                or review_resource_claims._digest(review_resource_claims._encoded(sidecar))
-                != intent['claim_sha256']):
-            raise ValueError('pending cleanup session differs from the exact verified cleanup intent')
-    if _cleanup_resources_remain(intent):
-        return {'status': 'pending', 'operation_id': intent['operation_id'],
-                'reason': 'The recorded session or one of its worktrees still exists; retry workspace cleanup.'}
-    observation = {'operation_id': intent['operation_id'], **_cleanup_identity(intent)}
-    return _finish_resource_cleanup_locked(run, manifest, marker, observation,
-                                           completion_source='review_artifacts.recovery')
 
 
 
@@ -745,7 +323,7 @@ def recover(run_dir, *, controller, authority, current_inputs):
     normalized_inputs = review_recovery.validate_current_inputs(
         current_inputs, manifest, require_same_scope=False)
     input_appraisal = review_inputs.compare_inputs(review_recovery._candidate_inputs(manifest), normalized_inputs)
-    authority = review_resource_claims._authority(authority) if authority is not None else None
+    authority = resource_claims.normalize_authority(authority) if authority is not None else None
     fallback = manifest.get('controller', {}).get('identity',
         {'kind': 'coordinator', 'name': 'legacy review coordinator', 'provider_id': None})
     normalized_controller = _controller(controller, fallback)
@@ -874,14 +452,14 @@ def _restart_resource_exit(run, manifest, active_restart):
         if not session.exists():
             missing.append(raw)
             continue
-        sidecar_path = safe_path(session / review_resource_claims.CLAIM_NAME)
+        sidecar_path = safe_path(session / resource_claims.CLAIM_NAME)
         if not sidecar_path.exists():
             continue
         sidecar = read_json(sidecar_path)
         if isinstance(sidecar, dict) and sidecar.get('status') == 'owned':
             owner = safe_path(sidecar.get('archive_path', ''))
             if os.path.normcase(str(owner)) not in own_archives:
-                review_resource_claims.inspect_claim_identity(session, owner)
+                resource_claims.inspect_claim_identity(session, owner)
                 foreign.append(raw)
             else:
                 own_sidecars.append((session, owner))
@@ -907,7 +485,7 @@ def _restart_resource_exit(run, manifest, active_restart):
             and row['source_run'] == str(run) and row['successor_run'] == str(successor)
             for item in row['items'] if os.path.normcase(item['session_dir']) == os.path.normcase(str(session))
             for key in ('old_claim_sha256', 'new_claim_sha256')}
-        if _digest((session / review_resource_claims.CLAIM_NAME).read_bytes()) in permitted:
+        if _digest((session / resource_claims.CLAIM_NAME).read_bytes()) in permitted:
             continue
         if (prepared and owner == successor
                 and not any(row['source_run'] == str(run) and row['successor_run'] == str(successor)
@@ -916,11 +494,11 @@ def _restart_resource_exit(run, manifest, active_restart):
                             for row in next_manifest.get('resource_claims', []))):
             # register can stop after claiming an adopted session but before its
             # row is saved. Reuse its pure preflight, without performing replay.
-            plan = review_resource_claims.plan_claim(session, owner, next_manifest)
+            plan = resource_claims.plan_claim(session, owner, next_manifest)
             if plan['action'] != 'recover':
                 raise ValueError('pending adoption does not match its reserved successor')
         else:
-            review_resource_claims.inspect_claim_identity(session, owner)
+            resource_claims.inspect_claim_identity(session, owner)
     blocked_by = []
     denial = _restart_transfer_denial(intent, manifests)
     if denial is not None or any(row['status'] != 'complete' for row in transfers):
@@ -1146,7 +724,7 @@ def _recovery_outcome(result, appraisal):
 
 def _link_restart(source_run, successor_run, *, authority, controller, moved_paths=(), preserve_claims=False):
     source_path, successor_path = safe_path(source_run), safe_path(successor_run)
-    authority = review_resource_claims._authority(authority)
+    authority = resource_claims.normalize_authority(authority)
     _load_run(source_path)
     _load_run(successor_path)
     with run_locks([source_path, successor_path]):
@@ -1361,7 +939,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
             for row in source_claims:
                 session = Path(row['session_dir'])
                 if session.exists():
-                    review_resource_claims.verify_claim(session, source, allow_checkpoint_transaction=True)
+                    resource_claims.verify_claim(session, source, allow_checkpoint_transaction=True)
                     active_present.append(row['session_dir'])
                 else:
                     active_missing.append(row['session_dir'])
@@ -1382,7 +960,7 @@ def restart(source_run, *, profile_input, controller, authority, current_inputs,
                                    'repository_identity': identity,
                                    'repository_key': manifest['repository_key'], 'archive_root': manifest['archive_root'],
                                    'temporary_paths': []}
-                    plans = review_resource_claims.plan_resource_registration(
+                    plans = resource_claims.plan_resource_registration(
                         selected_paths, from_claims, authority=request['authority'])
                     if any(plan.get('action') not in {'adopt_pending', 'claim_pending'} for plan in plans):
                         raise ValueError('only verified review workspace sessions can be adopted during restart')
@@ -1470,17 +1048,17 @@ def _empty_adoption_successor(intent, source_manifest):
         if not safe_path(raw).exists():
             unavailable_resource = True
             continue  # Preserve the source claim as missing_unknown; never synthesize release evidence.
-        workspace = review_resource_claims._workspace(raw)
+        workspace = resource_claims.inspect_workspace(raw)
         if workspace is None:
             raise ValueError('adoption session is not a verifiable review workspace')
         session, workspace_manifest, token = workspace
-        sidecar_path = session / review_resource_claims.CLAIM_NAME
+        sidecar_path = session / resource_claims.CLAIM_NAME
         if not sidecar_path.exists():
             continue
         sidecar = read_json(sidecar_path)
         if sidecar.get('status') == 'bootstrap':
             continue  # load() already bound this bootstrap to its session/token.
-        review_resource_claims._validate_sidecar(sidecar, session, workspace_manifest, token)
+        resource_claims.validate_sidecar(sidecar, session, workspace_manifest, token)
         if (sidecar['archive_path'] == str(run) or sidecar['run_id'] == manifest['run_id']
                 or sidecar['owner_id'] == manifest['owner_id']):
             raise _RestartCancellationUnavailable('prepared successor already owns an adoption sidecar; recover it',
@@ -1488,7 +1066,7 @@ def _empty_adoption_successor(intent, source_manifest):
         if sidecar['archive_path'] == intent['source']['run_dir']:
             raise _RestartCancellationUnavailable('adoption session belongs to the restart source; recover its claim',
                                                 phase='source_claims_present')
-        review_resource_claims.inspect_claim_identity(session, sidecar['archive_path'])
+        resource_claims.inspect_claim_identity(session, sidecar['archive_path'])
         unavailable_resource = True
     if not unavailable_resource:
         raise _RestartCancellationUnavailable('a prepared successor must be recovered unless a resource is absent or foreign-claimed',
@@ -1548,7 +1126,7 @@ def abandon_restart(run_dir, *, intent_path, controller, authority, reason):
 
     Never delete an archive, modify a foreign session, or discard review work.
     """
-    authority = review_resource_claims._authority(authority)
+    authority = resource_claims.normalize_authority(authority)
     reason = review_restart._bounded_text(reason, 'abandonment reason')
     with _restart_lock(run_dir):
         run, manifest, marker = _load_run(run_dir)

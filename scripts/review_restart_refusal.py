@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 import json
 import os
 
+from ccr.execution import claims as resource_claims
+
 PREFIX = 'Restart cancellation refusal: '
 
 
@@ -31,7 +33,7 @@ def _receipt(event, run):
 
 def _sessions(artifacts, paths, manifests):
     """A durable claim cannot be downgraded to unclaimed by a missing sidecar."""
-    claims = artifacts.review_resource_claims
+    claims = resource_claims
     key = lambda path: os.path.normcase(str(artifacts.safe_path(path)))
     committed = {key(row['session_dir']) for manifest in manifests
                  for row in manifest.get('resource_claims', [])
@@ -45,7 +47,7 @@ def _sessions(artifacts, paths, manifests):
         present = session.exists()
         sidecar = artifacts.safe_path(session / claims.CLAIM_NAME)
         if present:
-            workspace = claims._workspace(session)
+            workspace = claims.inspect_workspace(session)
             if workspace is None:
                 raise ValueError('selected session ownership is unverifiable; preserve it before recording a refusal')
             current = artifacts.read_json(sidecar) if sidecar.exists() else None
@@ -53,9 +55,9 @@ def _sessions(artifacts, paths, manifests):
                 if key(session) in committed:
                     raise ValueError('committed session ownership sidecar is missing or downgraded; preserve it before recording a refusal')
                 if current is not None:
-                    claims._preflight_unbound(session, manifests[0])  # Validate the actual bootstrap identity.
+                    claims.preflight_unbound(session, manifests[0])  # Validate the actual bootstrap identity.
             else:
-                claims._validate_sidecar(current, *workspace)
+                claims.validate_sidecar(current, *workspace)
         result.append({'session_dir': str(session), 'present': present,
                        'claim_sha256': artifacts._digest(sidecar.read_bytes()) if sidecar.exists() else None})
     return result
@@ -63,8 +65,8 @@ def _sessions(artifacts, paths, manifests):
 
 def record(run_dir, *, intent_path, controller, authority, reason):
     import review_artifacts as artifacts
-    claims = artifacts.review_resource_claims
-    authority = claims._authority(authority)
+    claims = resource_claims
+    authority = claims.normalize_authority(authority)
     reason = artifacts.review_restart._bounded_text(reason, 'refusal reason')
     with artifacts._restart_lock(run_dir):
         run, manifest, marker = artifacts._load_run(run_dir)

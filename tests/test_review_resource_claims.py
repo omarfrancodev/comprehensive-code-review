@@ -18,6 +18,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import review_workspace
 from ccr.execution import workspace_manifest
+from ccr.archive import resources as archive_resources
 import review_resource_claims as claims
 import review_recovery
 
@@ -317,7 +318,7 @@ class ResourceClaimTests(unittest.TestCase):
         self.assertNotIn('review_inputs', manifest)
 
     def test_transfer_crash_boundaries_are_recoverable(self):
-        original = artifacts.atomic_write
+        original = archive_resources.atomic_write
         for timing in ('before', 'after'):
             with self.subTest(timing=timing):
                 session = self.workspace_session()
@@ -339,7 +340,7 @@ class ResourceClaimTests(unittest.TestCase):
                 args = (source, successor, [str(session)])
                 kwargs = {'authority': 'User authorized transfer after stopping the source run',
                           'controller': self.controller()}
-                with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                with patch.object(archive_resources, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
                     artifacts.transfer_resources(*args, **kwargs)
                 result = artifacts.transfer_resources(*args, **kwargs)
                 self.assertEqual(result['status'], 'transferred')

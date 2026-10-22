@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch
 
 import test_review_recovery_followup as followup
+from ccr.archive import checkpoints as checkpoint_ops, resources as resource_ops
 import review_recovery as recovery
 import review_resource_claims as claims
 import review_workspace
@@ -215,7 +216,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(data)
             raise KeyboardInterrupt('interrupted checkpoint commit')
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=interrupted):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=context, phase='discovery')
         successor = Path(artifacts.restart(source, **self.restart_request(source)))
@@ -271,7 +272,7 @@ class RestartResourceReplayTests(unittest.TestCase):
 
     def test_superseded_checkpoint_keeps_remaining_claim_cleanup_usable(self):
         source, session, context = self.registered_session()
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=self.write('pending-claimed-context.json', context),
                                      phase='discovery')
@@ -281,7 +282,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         for result in (recovery.inspect_run(source), artifacts.recover(source,
                 controller=self.controller(), authority='Inspect historical source', current_inputs=self.current(source))):
             self.assertIn('cleanup', [row['action'] for row in result['actions']])
-        with patch('review_artifacts._finish_resource_cleanup_locked', side_effect=KeyboardInterrupt('after removal')):
+        with patch.object(resource_ops, '_finish_resource_cleanup_locked', side_effect=KeyboardInterrupt('after removal')):
             with self.assertRaises(KeyboardInterrupt):
                 review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(source)))
         self.assertFalse(session.exists())
@@ -294,7 +295,7 @@ class RestartResourceReplayTests(unittest.TestCase):
 
     def test_pending_checkpoint_workspace_transfer_recovers_without_promoting_inputs(self):
         source, session, context = self.registered_session()
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=self.write('pending-transfer-context.json', context),
                                      phase='discovery')

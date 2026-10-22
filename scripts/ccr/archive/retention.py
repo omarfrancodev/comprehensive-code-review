@@ -32,7 +32,7 @@ from ccr.archive import trace as review_trace
 from ccr.archive import layout as review_layout
 from ccr.reporting import projections as review_publication
 from ccr.contracts.receipts import is_receipt_reference
-import review_resource_claims
+from ccr.execution import claims as resource_claims
 from ccr.contracts.execution import validate_execution_sources
 from ccr.contracts.provenance import validate_check_sources
 from ccr.contracts.references import parse_reference, resolve_reference
@@ -457,7 +457,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if manifest['schema_version'] == 8:
         claim_manifest = copy.deepcopy(manifest)
         claim_manifest.update(_claim_run_dir=str(run), temporary_paths=temporary)
-        resource_plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest)
+        resource_plans = resource_claims.plan_resource_registration(temporary, claim_manifest)
         if any(plan['action'] not in {'not_workspace', 'existing'} for plan in resource_plans):
             raise ValueError('register and verify every review workspace before retention')
     if input_file is None:

@@ -56,7 +56,7 @@ from ccr.contracts import model_usage as review_model_usage
 from ccr.maintenance import metrics as review_metrics
 from ccr.reporting.render import render as render_review, render_handoff
 from ccr.archive import restart_contract as review_restart
-import review_resource_claims
+from ccr.execution import claims as resource_claims
 
 CLEANUP_RECEIPT_LIMIT = 64
 CHECKPOINT_HASH = re.compile(r'[0-9a-f]{64}')
@@ -358,11 +358,11 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 if (not isinstance(partial, dict) or any(partial.get(key) != value
                         for key, value in expected_marker.items())):
                     raise ValueError('partially prepared successor ownership differs from its reservation')
-            review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
+            resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
             for name in stage_names:
                 safe_path(run / name).unlink(missing_ok=True)
         else:
-            review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
+            resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
             safe_path(scoped).mkdir(parents=True, exist_ok=True)
             run.mkdir()
         # The immutable source intent authorizes this exact allocation, including
@@ -370,7 +370,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
         atomic_write(reservation_path, _json_bytes(reservation), staging_path=run / (
             '.' + reservation_file + '.' + reserved['reservation_id'] + '.tmp'))
     else:
-        review_resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
+        resource_claims.plan_resource_registration(manifest['temporary_paths'], manifest)
         safe_path(scoped).mkdir(parents=True, exist_ok=True)
         # Exclusive mkdir is the collision/ownership boundary; never adopt an existing run.
         for _ in range(8):
@@ -450,7 +450,7 @@ def select_profile(run_dir, selection_input):
 def register(run_dir, temporary_paths, *, context_input=None, authority=None):
     _, manifest, _ = _load_run(run_dir)
     temporary = _temporary_paths(temporary_paths, manifest)
-    with review_resource_claims.session_claim_locks(temporary):
+    with resource_claims.session_claim_locks(temporary):
         return _register_locked(run_dir, temporary, context_input=context_input, authority=authority)
 
 def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=None):
@@ -522,7 +522,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         if context['execution_plan'] != assignment_registry:
             raise ValueError('context.execution_plan must preserve the complete durable assignment registry')
     rows = list(manifest.get('resource_claims', []))
-    plans = review_resource_claims.plan_resource_registration(temporary, claim_manifest, authority=authority)
+    plans = resource_claims.plan_resource_registration(temporary, claim_manifest, authority=authority)
     pending_writes = []
     if manifest['schema_version'] == 8:
         for raw, plan in zip(temporary, plans):
@@ -530,7 +530,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                 continue
             if plan['action'] == 'transfer':
                 raise ValueError('resource belongs to another review; use transfer-resources with explicit authority')
-            path = safe_path(Path(raw) / review_resource_claims.CLAIM_NAME)
+            path = safe_path(Path(raw) / resource_claims.CLAIM_NAME)
             if plan['action'] in {'claim', 'adopt'}:
                 try:
                     current_digest = _digest(path.read_bytes())
@@ -561,7 +561,7 @@ def pause(run_dir, *, authority, reason, phase):
     _verify_files(run, manifest)
     if manifest['schema_version'] != 8:
         raise ValueError('new pause transitions require archive 8; preserve legacy history and start a linked run')
-    authority = review_resource_claims._authority(authority)
+    authority = resource_claims.normalize_authority(authority)
     if not isinstance(reason, str) or not reason.strip() or len(reason) > 1000 or any(ord(c) < 32 for c in reason):
         raise ValueError('pause reason must be bounded nonempty text')
     if phase not in review_profiles.PHASES:
@@ -613,7 +613,7 @@ def _resource_availability(run, manifest, *, verify_owned=True):
         row = claims.get(raw, {})
         present, status = path.exists(), row.get('status')
         if status in {'owned', 'releasing'} and present and verify_owned:
-            review_resource_claims.verify_claim(path, run)
+            resource_claims.verify_claim(path, run)
         if status == 'transferred':
             availability = 'transferred'
         elif status == 'released':
@@ -650,7 +650,7 @@ def resume(run_dir, *, controller, authority, current_inputs):
     if operation['disposition'] in {'paused', 'blocked'} and authority is None:
         raise ValueError('continuing a paused or blocked review requires explicit user authority')
     if authority is not None:
-        authority = review_resource_claims._authority(authority)
+        authority = resource_claims.normalize_authority(authority)
     if operation['disposition'] == 'open' and not changed_controller:
         return manifest
     normalized_controller, marker = _takeover_controller(
@@ -764,9 +764,9 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
             raise ValueError('supplied release receipts differ from the durable cleanup receipt history')
         if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
             raise ValueError('resource cleanup intent is pending; recover or retry cleanup before closing the review')
-        manifest['resource_claims'] = review_resource_claims.validate_release_observation(
+        manifest['resource_claims'] = resource_claims.validate_release_observation(
             manifest, present, durable_receipts if has_durable_cleanup else (supplied_receipts or []))
-        review_resource_claims.validate_claims_for_close(run, manifest)
+        resource_claims.validate_claims_for_close(run, manifest)
     cleanup = observed['cleanup']
     if (cleanup in {'complete', 'not_needed'} and residuals) or (cleanup == 'not_needed' and registered):
         raise ValueError('cleanup conflicts with registered resources or residuals')
