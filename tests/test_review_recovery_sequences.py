@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 import test_review_recovery as recovery_tests
+from ccr.archive import checkpoints as checkpoint_ops
 from recovery_fixtures import context10, current_inputs, record10, selection_input, source_events
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
@@ -158,7 +159,7 @@ class ReviewRecoverySequenceTests(_RecoveryFixture, unittest.TestCase):
         artifacts.register(source, [str(session)], context_input=self.empty_context(source))
         source_before = self.read(source / 'cierre.json')
         context_path = self.empty_context(source)
-        with patch.object(artifacts, '_checkpoint_commit',
+        with patch.object(checkpoint_ops, '_checkpoint_commit',
                           side_effect=OSError('checkpoint commit interrupted')):
             with self.assertRaisesRegex(OSError, 'checkpoint commit interrupted'):
                 artifacts.checkpoint(source, context_input=context_path, phase='discovery')

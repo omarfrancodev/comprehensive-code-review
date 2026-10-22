@@ -428,7 +428,7 @@ def finish_resource_cleanup(run_dir, observation):
     if manifest.get('schema_version') != 8:
         raise ValueError('durable resource cleanup requires archive schema 8')
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
-                                           completion_source='workspace_ops.cleanup')
+                                           completion_source='review_workspace.cleanup')
 
 def recover_resource_cleanup(run_dir):
     """Finish a pending cleanup record only when its exact resources are already absent."""

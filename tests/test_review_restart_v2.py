@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import test_review_recovery as recovery_tests
 from restart_v2_fixtures import previous_v2_producer
+from ccr.archive import restart as restart_ops
 from ccr.archive import restart_contract as review_restart
 
 artifacts = recovery_tests.artifacts
@@ -28,7 +29,7 @@ class PreviousV2RestartTests(unittest.TestCase):
         source = self.prepare7()
         scope = dict(self.read(source / 'cierre.json')['scope'], head='another-reviewed-head')
         request = self.restart_request(source, scope=scope)
-        with previous_v2_producer(artifacts), patch.object(artifacts, boundary, side_effect=OSError('interrupted')):
+        with previous_v2_producer(restart_ops), patch.object(restart_ops, boundary, side_effect=OSError('interrupted')):
             with self.assertRaisesRegex(OSError, 'interrupted'):
                 artifacts.restart(source, **request)
         active_path, _ = artifacts._active_restart_paths(source, self.read(source / 'cierre.json'))

@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import test_review_restart_refusals as refusals
 
+from ccr.archive import resources as resource_ops
+
 artifacts = refusals.artifacts
 recovery = refusals.recovery
 
@@ -31,7 +33,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
 
     def transfer_commit_cut(self, after_successor=False):
         source, session, request = self.resource_fixture(True)
-        save = artifacts._save_manifest
+        save = resource_ops._save_manifest
         def interrupted(run, manifest, marker):
             result = save(run, manifest, marker)
             target = Path(run)
@@ -40,7 +42,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                     and (target != source if after_successor else target == source)):
                 raise KeyboardInterrupt('durable transfer completion interrupted')
             return result
-        with patch.object(artifacts, '_save_manifest', side_effect=interrupted):
+        with patch.object(resource_ops, '_save_manifest', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))

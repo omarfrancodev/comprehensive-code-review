@@ -626,6 +626,43 @@ def _resource_availability(run, manifest, *, verify_owned=True):
         resources.append({'path': raw, 'present': present, 'claim_status': status, 'availability': availability})
     return resources
 
+def recovery_event(manifest, summary, *, status='completed', authority=None, source=None, relation=None):
+    event = {'kind': 'interruption', 'status': status, 'summary': summary,
+             'actor': copy.deepcopy(manifest.get('controller', {}).get('identity',
+                 {'kind': 'coordinator', 'name': 'review coordinator', 'provider_id': None})),
+             'provenance': {'kind': 'tool' if source else 'helper',
+                            'source': source or 'review_artifacts:recovery'},
+             'evidence': ['cierre.json'], 'authority': authority,
+             'occurred_at': datetime.now(timezone.utc).isoformat()}
+    if relation is not None:
+        event['relations'] = [relation]
+    return event
+
+def takeover_controller(run, manifest, marker, controller, authority):
+    """Persist an authorized controller change once, shared by resume and recovery."""
+    normalized = _controller(controller, manifest.get('controller', {}).get('identity',
+        {'kind': 'coordinator', 'name': 'review coordinator', 'provider_id': None}))
+    previous = manifest.get('controller')
+    if normalized == previous:
+        return normalized, marker
+    operation = manifest.get('operation', {})
+    if manifest.get('state') == 'complete' or operation.get('disposition') in {'complete', 'superseded'}:
+        return previous, marker
+    if authority is None:
+        raise ValueError('controller takeover requires explicit user authority')
+    authority = resource_claims.normalize_authority(authority)
+    prior = previous.get('identity', {}).get('name', 'unknown') if isinstance(previous, dict) else 'unknown'
+    manifest['controller'] = normalized
+    marker = _append_trace(run, manifest, marker, recovery_event(
+        manifest, 'Controller takeover by ' + normalized['identity']['name']
+        + '; prior controller recorded as ' + prior,
+        authority=authority, relation={'relation': 'follows', 'target': 'E'
+            + str(manifest.get('trace', {}).get('events', 0)).zfill(6)}))
+    return normalized, marker
+
+_recovery_event = recovery_event
+_takeover_controller = takeover_controller
+
 @_locked_run
 def resume(run_dir, *, controller, authority, current_inputs):
     """Reopen an unchanged archive after explicit continuation/takeover authority."""
@@ -653,7 +690,7 @@ def resume(run_dir, *, controller, authority, current_inputs):
         authority = resource_claims.normalize_authority(authority)
     if operation['disposition'] == 'open' and not changed_controller:
         return manifest
-    normalized_controller, marker = _takeover_controller(
+    normalized_controller, marker = takeover_controller(
         run, manifest, marker, normalized_controller, authority)
     manifest['operation'].update(disposition='open', reason=None, source='resume', successor=None)
     manifest['operation']['phase'] = manifest['operation']['phase'] or 'discovery'
