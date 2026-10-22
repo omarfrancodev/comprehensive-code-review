@@ -14,6 +14,7 @@ from unittest.mock import patch
 from test_review_artifacts import artifacts, record as legacy_record
 from test_review_contract import finding
 from test_review_traceability_contract import record6, check
+from ccr.reporting import delivery as delivery_ops
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 spec = importlib.util.spec_from_file_location('review_delivery', SCRIPTS / 'review_delivery.py') if (SCRIPTS / 'review_delivery.py').exists() else None
@@ -530,11 +531,11 @@ class DeliveryTests(unittest.TestCase):
         root.mkdir()
         keep = root / 'keep.txt'
         keep.write_text('user file', encoding='utf-8')
-        original = delivery._write_file
+        original = delivery_ops._write_file
         def partial_failure(path, data, owned_files):
             original(path, data[:5], owned_files)
             raise OSError('fixture disk failure after partial write')
-        with patch.object(delivery, '_write_file', side_effect=partial_failure):
+        with patch.object(delivery_ops, '_write_file', side_effect=partial_failure):
             with self.assertRaises(OSError):
                 delivery.deliver(run, 'full', self.repo, root)
         self.assertEqual(list(root.iterdir()), [keep])
