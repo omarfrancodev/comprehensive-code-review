@@ -762,15 +762,14 @@ git commit -m "refactor(ejecucion): separar candidatos y captura de comandos"
 **Files:**
 - Create: `scripts/ccr/reporting/delivery.py`, `scripts/ccr/reporting/comment.py`
 - Modify: `scripts/review_delivery.py`, `scripts/review_comment.py`, `tests/test_review_delivery.py`
-- Modify: `tests/test_review_comment.py`, `tests/test_review_publication_policy.py`, `tests/test_review_presentation.py`
-- Modify: `tests/publication_fixtures.py`
 - Test: `tests/test_script_reporting_boundaries.py`
+- Regression: `tests/test_review_comment.py`, `tests/test_review_publication_policy.py`, `tests/test_review_presentation.py`, `tests/test_script_characterization.py`
 
 **Interfaces:**
 - Consumes: Task 3: `render(record, audience='user', publication_context=None, *, check_publication_context=None) -> str`; Task 9: lectura verificada; Task 10: `write_new_json(session_dir: Path, output: str, value: dict) -> Path`.
 - Produces: delivery conserva `deliver(run_dir, delivery, project_root, output_root=None, context=None) -> Path`. comment conserva `prepare_public_comment(record: dict, *, publication_context: dict | None = None, check_publication_context: dict | None = None) -> dict` y `verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False) -> dict`. Render permanece puro y no importa delivery. Los handlers usan candidates para guardar en sesión propia, sin acoplar comment a workflow.setup.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_reporting_boundaries.py`.
 
@@ -785,21 +784,21 @@ def test_edited_public_body_is_not_canonical(self):
         verify_public_comment(record, draft, draft['body'] + 'edited')
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_reporting_boundaries.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False) -> dict` en `scripts/ccr/reporting/comment.py`**
+- [x] **Step 3: Implementar `verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False) -> dict` en `scripts/ccr/reporting/comment.py`**
 
 Mover proyecciones locales de delivery a su propietario sólo si son compartidas; conservar formatos de entrega y salida. Sustituir _git/_contains y utilidades de setup por APIs compartidas/candidates, sin ampliar fuentes o efectos.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_reporting_boundaries.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_delivery.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_comment.py -v`
@@ -807,7 +806,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_publication
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_presentation.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_delivery.py scripts/review_comment.py tests/test_review_delivery.py tests/test_review_comment.py tests/test_review_publication_policy.py tests/test_review_presentation.py tests/publication_fixtures.py tests/test_script_reporting_boundaries.py
