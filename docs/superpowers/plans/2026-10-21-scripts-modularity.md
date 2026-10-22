@@ -623,16 +623,18 @@ git commit -m "refactor(reinicio): aislar operaciones durables y replay"
 ### Task 9: Separar inspección, búsqueda, continuidad e historia
 
 **Files:**
-- Create: `scripts/ccr/archive/inspection.py`, `scripts/ccr/archive/lookup.py`, `scripts/ccr/archive/history.py`
-- Modify: `scripts/review_recovery.py`, `scripts/review_history.py`, `tests/test_review_latest.py`
-- Modify: `tests/test_review_history.py`, `tests/test_review_operational_summary.py`
+- Create: `scripts/ccr/archive/inspection.py`, `scripts/ccr/archive/lookup.py`, `scripts/ccr/archive/history.py`, `scripts/ccr/archive/restart_observations.py`
+- Modify: `scripts/ccr/archive/lifecycle.py`, `scripts/ccr/archive/reader.py`, `scripts/ccr/archive/restart.py`, `scripts/ccr/archive/resources.py`, `scripts/ccr/workflow/profiles.py`
+- Modify: `scripts/review_recovery.py`, `scripts/review_history.py`
+- Modify: `tests/test_review_latest.py`, `tests/test_review_history.py`, `tests/test_review_operational_summary.py`
+- Modify: recovery/restart tests to inject failures through their owning modules: `tests/test_review_recovery.py`, `tests/test_review_recovery_diagnostics.py`, `tests/test_review_recovery_exit_guidance.py`, `tests/test_review_recovery_followup.py`, `tests/test_review_recovery_route_consistency.py`, `tests/test_review_restart_resources.py`
 - Test: `tests/test_script_read_only_flows.py`
 
 **Interfaces:**
 - Consumes: Task 5: load_run/verify_files y lectores de restart_state; Task 2: `candidate_inputs(manifest: dict, record: dict | None = None) -> dict` y validate_current_inputs. No consume mutadores de Tasks 6–8.
 - Produces: inspection conserva `inspect_run(run_dir, *, current_inputs=None)`, `operational_summary(manifest: dict, events: list[dict], record: dict | None)` y `continuation_decision(manifest: dict, *, input_appraisal: dict, pending_operation: dict | None, candidate_issues: list[dict])`. lookup conserva find_candidates y select_latest con sus parámetros/defaults actuales; history conserva inspect_source, verify_history, port_review y show_history. Portar historia es IO explícito y queda separado de inspeccionar/mostrar.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_read_only_flows.py`.
 
@@ -649,21 +651,21 @@ def test_lookup_and_inspection_do_not_import_mutators(self):
             self.assertFalse(module_dependencies(name) & forbidden)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_read_only_flows.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `inspect_run(run_dir, *, current_inputs=None)` en `scripts/ccr/archive/inspection.py` y sus flujos de lectura**
+- [x] **Step 3: Implementar `inspect_run(run_dir, *, current_inputs=None)` en `scripts/ccr/archive/inspection.py` y sus flujos de lectura**
 
 Sustituir _artifacts() y accesos privados por reader/integrity/restart_state; separar paginación, clasificación y selección. Mantener límites/cursors, estados desconocidos, paquetes históricos y layout no operable. Las sugerencias nuevas usan el prefijo CLI acordado; no se alteran comandos históricos guardados.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_read_only_flows.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_latest.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_history.py -v`
@@ -673,7 +675,7 @@ Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una s
 
 Preservar los casos `test_same_timestamp_is_ambiguous`, `test_scan_limit_does_not_return_partial_selection` y `test_port_contains_only_three_files_and_preserves_source_bytes` en sus suites existentes. El inventario estructural no sustituye esas comprobaciones funcionales.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_recovery.py scripts/review_history.py tests/test_review_latest.py tests/test_review_history.py tests/test_review_operational_summary.py tests/test_script_read_only_flows.py
