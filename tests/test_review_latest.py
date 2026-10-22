@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import test_review_archive8 as archive8
 import review_recovery
+from ccr.archive import history as history_ops, lookup as lookup_ops
 from recovery_fixtures import selection_input
 
 
@@ -56,7 +57,7 @@ class LatestSelectionTests(unittest.TestCase):
                 'operation': {'disposition': 'complete'}, 'created_at': '2026-10-18T15:00:00Z',
                 'run_dir': 'a', 'review_id': 'CR-a'}
         second = dict(base, run_dir='b', review_id='CR-b')
-        with patch.object(review_recovery, 'find_candidates', return_value={
+        with patch.object(lookup_ops, 'find_candidates', return_value={
                 'candidates': [base, second], 'truncated': False, 'next_cursor': None}):
             with patch.object(review_recovery.review_layout, 'logical_scope', return_value={'identity': 'same'}):
                 result = review_recovery.select_latest('repo', {'mode': 'mr'}, current_inputs={'scope': {'mode': 'mr'}})
@@ -80,10 +81,12 @@ class LatestSelectionTests(unittest.TestCase):
             '_load_run': staticmethod(lambda run: (Path(run), {'logical_scope': logical}, {})),
         })
         inputs = {'scope': scope, 'sources': {}, 'source_set_complete': True}
-        with patch.object(review_recovery, 'find_candidates', return_value={
+        with patch.object(lookup_ops, 'find_candidates', return_value={
                 'candidates': [old, new], 'truncated': False, 'next_cursor': None}), \
-             patch.object(review_recovery, '_artifacts', return_value=fake_artifacts), \
-             patch.object(review_recovery, '_candidate', side_effect=lambda run, *args: new if str(run) == 'a-second' else old):
+             patch.object(lookup_ops, 'repository_identity', return_value='synthetic-repository'),\
+             patch.object(lookup_ops, 'select_output_root', side_effect=lambda repo, root: Path(root)),\
+             patch.object(lookup_ops, '_load_run', side_effect=lambda run: (Path(run), {'logical_scope': logical}, {})), \
+             patch.object(lookup_ops, '_candidate', side_effect=lambda run, *args: new if str(run) == 'a-second' else old):
             result = review_recovery.select_latest('repo', scope, archive_root='archive', current_inputs=inputs)
         self.assertEqual(result['status'], 'selected')
         self.assertEqual(result['selected']['run_dir'], 'a-second')
@@ -92,7 +95,7 @@ class LatestSelectionTests(unittest.TestCase):
         row = {'kind': 'native', 'integrity': 'report_verified', 'scope': {},
                'logical_scope': {'identity': 'same'}, 'state': 'complete',
                'operation': {'disposition': 'complete'}}
-        with patch.object(review_recovery, 'find_candidates', return_value={
+        with patch.object(lookup_ops, 'find_candidates', return_value={
                 'candidates': [row], 'truncated': True, 'next_cursor': 'next'}):
             with patch.object(review_recovery.review_layout, 'logical_scope', return_value={'identity': 'same'}):
                 result = review_recovery.select_latest('repo', {'mode': 'mr'},
@@ -140,8 +143,8 @@ class LatestSelectionTests(unittest.TestCase):
         inputs = {'scope': scope, 'sources': {}, 'source_set_complete': True}
         page = review_recovery.find_candidates(self.repo, scope, archive_root=self.output,
                                                 current_inputs=inputs)
-        with patch.object(review_recovery, 'find_candidates', return_value=page), \
-             patch.object(review_recovery._artifacts(), '_load_run', side_effect=ValueError('selected source disappeared')):
+        with patch.object(lookup_ops, 'find_candidates', return_value=page), \
+             patch.object(lookup_ops, '_load_run', side_effect=ValueError('selected source disappeared')):
             result = review_recovery.select_latest(self.repo, scope, archive_root=self.output, current_inputs=inputs)
         self.assertEqual(result['status'], 'incomplete_search')
         self.assertIsNone(result['selected'])
@@ -158,7 +161,7 @@ class LatestSelectionTests(unittest.TestCase):
         package = {'status': 'verified_package', 'port_id': 'HP-example',
                    'consultation': {'scope': scope}}
         inputs = {'scope': scope, 'sources': {}, 'source_set_complete': True}
-        with patch('review_history.verify_history', return_value=package):
+        with patch.object(history_ops, 'verify_history', return_value=package):
             omitted = review_recovery.find_candidates(self.repo, scope, archive_root=self.output)
             included = review_recovery.find_candidates(self.repo, scope, archive_root=self.output,
                                                        include_history=True)

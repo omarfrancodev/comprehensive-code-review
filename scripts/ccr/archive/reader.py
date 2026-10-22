@@ -1,5 +1,6 @@
 """Read and validate an owned archive without importing mutating services."""
 from datetime import datetime
+import os
 import hashlib
 from pathlib import Path
 import re
@@ -11,6 +12,8 @@ from ccr.contracts.scope import require_scope as _scope
 from ccr.execution import harness as review_harness
 from ccr.shared.encoding import archive_bytes as _json_bytes
 from ccr.shared.json_io import read_json
+from ccr.shared.git import git as _git
+from ccr.shared.installation import skill_root
 from ccr.shared.paths import contains as _contains, safe_path
 from ccr.workflow import inputs as review_inputs
 from ccr.workflow import profiles as review_profiles
@@ -71,6 +74,23 @@ def _validate_layout(run, manifest):
                                           manifest.get('logical_scope_input'))
         if name != expected:
             raise ValueError('invalid archive layout: run directory differs from stored identity')
+
+
+def select_output_root(repo, output_root=None):
+    explicit = output_root is not None
+    selected = output_root if explicit else os.environ.get('CCR_ARTIFACTS_DIR')
+    if selected is None:
+        selected = Path.home() / '.comprehensive-code-review' / 'reviews'
+    if not selected:
+        raise ValueError('CCR_ARTIFACTS_DIR is empty; specify a durable absolute root')
+    root = safe_path(selected)
+    if not explicit:
+        checkouts = [safe_path(repo), skill_root()]
+        listing = _git(repo, 'worktree', 'list', '--porcelain')
+        checkouts.extend(safe_path(line[9:]) for line in listing.splitlines() if line.startswith('worktree '))
+        if any(_contains(parent, root) for parent in checkouts):
+            raise ValueError('the default/global archive root must be outside repository worktrees and skill installation')
+    return root
 
 def load_run(run_dir):
     run = safe_path(run_dir)

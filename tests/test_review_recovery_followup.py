@@ -20,6 +20,7 @@ import review_recovery as recovery
 import review_workspace
 
 artifacts = archive.artifacts
+from ccr.archive import lifecycle as lifecycle_ops, restart as restart_ops, transactions as transactions_ops
 
 
 class RecoveryFollowupTests(unittest.TestCase):
@@ -136,12 +137,14 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 source = self.prepare7()
                 request = self.restart_request(source)
-                original = artifacts.atomic_write
+                owner_ops = (lifecycle_ops if boundary == '.review-restart-reservation.json'
+                             else transactions_ops)
+                original = owner_ops.atomic_write
                 def interrupt(path, data, **kwargs):
                     if Path(path).name == boundary and Path(path).parent != source:
                         raise KeyboardInterrupt('simulated process exit')
                     return original(path, data, **kwargs)
-                with patch.object(artifacts, 'atomic_write', side_effect=interrupt):
+                with patch.object(owner_ops, 'atomic_write', side_effect=interrupt):
                     with self.assertRaises(KeyboardInterrupt):
                         artifacts.restart(source, **request)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -154,7 +157,7 @@ class RecoveryFollowupTests(unittest.TestCase):
     def test_recover_pending_restart_takes_source_lock_before_prepare(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         original_lock = artifacts._restart_lock
@@ -172,8 +175,8 @@ class RecoveryFollowupTests(unittest.TestCase):
         def assert_locked(path):
             self.assertTrue(held, 'recover prepared the reserved run outside the source lock')
             return original_prepare(path)
-        with patch.object(artifacts, '_restart_lock', side_effect=observed_lock), \
-                patch.object(artifacts, '_prepare_from_restart_intent', side_effect=assert_locked):
+        with patch.object(restart_ops, '_restart_lock', side_effect=observed_lock), \
+                patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=assert_locked):
             result = artifacts.recover(source, controller=self.controller(), authority=request['authority'],
                                        current_inputs=request['current_inputs'])
         self.assertEqual(result['status'], 'restarted')
@@ -263,7 +266,7 @@ a.restart(source, **request)
     def test_abandon_unprepared_restart_is_authorized_durable_and_idempotent(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -285,7 +288,7 @@ a.restart(source, **request)
 
     def test_abandon_cannot_orphan_prepared_successor(self):
         source = self.prepare7()
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('after prepare')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('after prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **self.restart_request(source))
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -298,7 +301,7 @@ a.restart(source, **request)
     def test_pending_restart_is_visible_in_inspect_and_lookup(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         inspected = recovery.inspect_run(source, current_inputs=self.current(source))

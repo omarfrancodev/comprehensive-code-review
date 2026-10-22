@@ -13,6 +13,7 @@ import review_resource_claims as claims
 import review_workspace
 
 artifacts = followup.artifacts
+from ccr.archive import resources as resource_ops, restart as restart_ops
 
 
 class RestartResourceReplayTests(unittest.TestCase):
@@ -94,7 +95,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         sidecar = session / claims.CLAIM_NAME
         sidecar_before = sidecar.read_bytes() if sidecar.exists() else None
         helper_name = 'transfer_resources' if claimed else 'register'
-        helper = getattr(artifacts, helper_name)
+        helper = getattr(resource_ops, helper_name)
         replace = artifacts.os.replace
         writes = []
         enabled = False
@@ -112,7 +113,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                 writes.append(Path(target).name)
             return replace(stage, target)
 
-        with patch.object(artifacts, helper_name, side_effect=wrapped), \
+        with patch.object(resource_ops, helper_name, side_effect=wrapped), \
                 patch.object(artifacts.os, 'replace', side_effect=observed):
             artifacts.restart(source, **request)
         self.assertIn(claims.CLAIM_NAME, writes)
@@ -143,7 +144,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                                 raise KeyboardInterrupt('after durable replacement')
                             return result
 
-                        with patch.object(artifacts, helper_name, side_effect=wrapped), \
+                        with patch.object(resource_ops, helper_name, side_effect=wrapped), \
                                 patch.object(artifacts.os, 'replace', side_effect=interrupted):
                             with self.assertRaises(KeyboardInterrupt):
                                 artifacts.restart(source, **request)
@@ -173,7 +174,7 @@ class RestartResourceReplayTests(unittest.TestCase):
             if enabled and Path(target).name == 'trazabilidad.jsonl' and Path(target).parent != source:
                 raise KeyboardInterrupt('successor trace not committed to closure yet')
             return result
-        with patch.object(artifacts, 'transfer_resources', side_effect=wrapped), \
+        with patch.object(restart_ops, 'transfer_resources', side_effect=wrapped), \
                 patch.object(artifacts.os, 'replace', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)

@@ -14,6 +14,7 @@ sys.path.insert(0, str(SCRIPTS))
 import review_artifacts as artifacts
 import review_contract
 import review_history
+from ccr.archive import history as history_ops
 from recovery_fixtures import record10
 
 
@@ -196,7 +197,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(set(self.snapshot(destination)), {'informe.md', 'consulta.json', '.ccr-history.json'})
 
     def test_source_change_between_reads_blocks_publication(self):
-        original = review_history._source_snapshot
+        original = history_ops._source_snapshot
         calls = 0
         def change_after_first(path):
             nonlocal calls
@@ -205,7 +206,7 @@ class HistoryTests(unittest.TestCase):
             if calls == 1:
                 (self.run / 'informe.md').write_bytes(b'concurrent change')
             return value
-        with patch.object(review_history, '_source_snapshot', side_effect=change_after_first):
+        with patch.object(history_ops, '_source_snapshot', side_effect=change_after_first):
             with self.assertRaisesRegex(ValueError, 'hash'):
                 review_history.port_review(self.run, Path(self.temp.name) / 'history')
         self.assertFalse((Path(self.temp.name) / 'history').exists())
@@ -227,12 +228,12 @@ class HistoryTests(unittest.TestCase):
     def test_show_rejects_report_changed_after_package_verification(self):
         result = review_history.port_review(self.run, Path(self.temp.name) / 'history')
         directory = Path(result['history_dir'])
-        original = review_history.verify_history
+        original = history_ops.verify_history
         def changed_after_verification(path):
             value = original(path)
             (directory / 'informe.md').write_bytes(b'concurrently changed report')
             return value
-        with patch.object(review_history, 'verify_history', changed_after_verification):
+        with patch.object(history_ops, 'verify_history', changed_after_verification):
             with self.assertRaisesRegex(ValueError, 'changed|modified'):
                 review_history.show_history(directory)
 

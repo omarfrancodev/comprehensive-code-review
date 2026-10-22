@@ -11,6 +11,7 @@ from unittest.mock import patch
 import test_review_recovery_diagnostics as diagnostics
 
 artifacts = diagnostics.artifacts
+from ccr.archive import restart as restart_ops
 recovery = diagnostics.recovery
 claims = diagnostics.claims
 
@@ -115,7 +116,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
 
     def test_missing_unclaimed_session_still_completes_the_exact_restart(self):
         source, session, request = self.resource_fixture(False)
-        with patch.object(artifacts, 'register', side_effect=KeyboardInterrupt('before any adoption claim')):
+        with patch.object(restart_ops, 'register', side_effect=KeyboardInterrupt('before any adoption claim')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         self.assertTrue(session.is_relative_to(self.root))
@@ -130,7 +131,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
     def test_missing_claim_with_case_alias_still_offers_abandonment(self):
         source, session, request = self.resource_fixture(True)
         request['transfer_paths'] = [str(session).upper()]
-        with patch.object(artifacts, 'transfer_resources', side_effect=KeyboardInterrupt('prepared alias before transfer')):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=KeyboardInterrupt('prepared alias before transfer')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         self.assertTrue(session.is_relative_to(self.root))

@@ -25,7 +25,8 @@ from ccr.archive.integrity import (
     verify_files as _verify_files,
 )
 from ccr.archive.intent_contracts import _validate_cleanup_metadata, normalize_transfer_history
-from ccr.archive.reader import MARKER, load_run as _load_run, _validate_layout
+from ccr.archive.reader import MARKER, load_run as _load_run, select_output_root, _validate_layout
+from ccr.archive.restart_observations import resource_availability as _resource_availability
 from ccr.archive.restart_state import (
     _active_restart_operation, _assert_not_restart_abandoned,
     _existing_restart_intent_path, _restart_source_identity,
@@ -48,6 +49,7 @@ from ccr.shared.json_io import atomic_write, read_bounded, read_json
 from ccr.shared.paths import contains as _contains, safe_path
 from ccr.workflow import inputs as review_inputs
 from ccr.workflow import profiles as review_profiles
+from ccr.workflow.profiles import initial_selection as _initial_selection
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import review as review_contract
 from ccr.contracts.reference_index import validate_selection_reference
@@ -65,21 +67,6 @@ CHECKPOINT_HASH = re.compile(r'[0-9a-f]{64}')
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
 
-def select_output_root(repo, output_root=None):
-    explicit = output_root is not None
-    selected = output_root if explicit else os.environ.get('CCR_ARTIFACTS_DIR')
-    if selected is None:
-        selected = Path.home() / '.comprehensive-code-review' / 'reviews'
-    if not selected:
-        raise ValueError('CCR_ARTIFACTS_DIR is empty; specify a durable absolute root')
-    root = safe_path(selected)
-    if not explicit:
-        checkouts = [safe_path(repo), skill_root()]
-        listing = _git(repo, 'worktree', 'list', '--porcelain')
-        checkouts.extend(safe_path(line[9:]) for line in listing.splitlines() if line.startswith('worktree '))
-        if any(_contains(parent, root) for parent in checkouts):
-            raise ValueError('the default/global archive root must be outside repository worktrees and skill installation')
-    return root
 
 def _slug(value):
     label = re.sub(r'[^a-zA-Z0-9_-]+', '-', str(value)).strip('-_')[:36] or 'review'
@@ -102,25 +89,6 @@ def _starts_processing(event):
     return (event['kind'] in {'agent', 'discovery', 'check', 'grouped-verification'}
             and event['status'] in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'})
 
-def _initial_selection(profile_input):
-    if profile_input is None:
-        raise ValueError('profile selection is required before preparing a new archive')
-    raw = _input_object(profile_input, 'profile selection')
-    if set(raw) != review_profiles.INPUT_FIELDS:
-        raise ValueError('initial profile selection must contain exactly the required decision fields')
-    try:
-        value = review_profiles.validate_selection(
-            {key: raw[key] for key in review_profiles.INPUT_FIELDS})
-    except KeyError as exc:
-        raise ValueError('profile selection is missing required field: ' + str(exc.args[0])) from exc
-    if value['phase'] != 'prepare' or value['affected_assignments']:
-        raise ValueError('initial profile selection must use prepare phase and have no affected assignments')
-    reference_issues = validate_selection_reference(value, None)
-    if reference_issues:
-        raise ValueError('; '.join(issue['message'] for issue in reference_issues))
-    value.update(id='S001', changed_from=None, event_id='E000002')
-    value['reference'] = INITIAL_PROFILE_HISTORY_REFERENCE
-    return value
 
 def _profile_event(selection):
     return {'kind': 'profile', 'status': 'selected',
@@ -603,28 +571,6 @@ def block(run_dir, *, source, reason, phase):
         manifest, 'Observed review blocker: ' + reason.strip(), status='blocked', source=source.strip()))
     return manifest
 
-def _resource_availability(run, manifest, *, verify_owned=True):
-    """One classifier for inspection and mutation gates; absence is not release."""
-    claims = {row['session_dir']: row for row in manifest.get('resource_claims', [])}
-    receipts = {row['claim_id'] for row in manifest.get('cleanup_receipts', [])}
-    resources = []
-    for raw in manifest.get('temporary_paths', []):
-        path = safe_path(raw)
-        row = claims.get(raw, {})
-        present, status = path.exists(), row.get('status')
-        if status in {'owned', 'releasing'} and present and verify_owned:
-            resource_claims.verify_claim(path, run)
-        if status == 'transferred':
-            availability = 'transferred'
-        elif status == 'released':
-            availability = 'unexpected_present' if present else 'released'
-        elif status in {'owned', 'releasing'}:
-            availability = ('cleanup_pending' if status == 'releasing' else 'available') if present else (
-                'released' if row.get('claim_id') in receipts else 'missing_unknown')
-        else:
-            availability = 'available' if present else 'missing_unclaimed'
-        resources.append({'path': raw, 'present': present, 'claim_status': status, 'availability': availability})
-    return resources
 
 def recovery_event(manifest, summary, *, status='completed', authority=None, source=None, relation=None):
     event = {'kind': 'interruption', 'status': status, 'summary': summary,
