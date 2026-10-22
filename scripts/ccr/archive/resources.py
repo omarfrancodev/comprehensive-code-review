@@ -430,9 +430,14 @@ def finish_resource_cleanup(run_dir, observation):
     return _finish_resource_cleanup_locked(run, manifest, marker, observation,
                                            completion_source='review_workspace.cleanup')
 
+@_locked_run
 def recover_resource_cleanup(run_dir):
-    """Finish a pending cleanup record only when its exact resources are already absent."""
+    """Finish cleanup only when its exact resources are absent and no restart owns the run."""
     run, manifest, marker = _load_run(run_dir)
+    active_restart = _active_restart_operation(run, manifest)
+    if active_restart is not None:
+        raise ValueError('a durable restart is pending; recover source ' + str(run)
+                         + ' for restart operation ' + active_restart['operation_id'])
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest, allow_checkpoint_transaction=
                   manifest.get('operation', {}).get('disposition') == 'superseded')
