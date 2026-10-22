@@ -8,7 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ccr.contracts.references import parse_reference, resolve_reference
 from ccr.contracts.reference_index import validate_selection_reference
-import review_artifacts
+from script_test_support import archive_api
+review_artifacts = archive_api()
 
 from recovery_fixtures import record10, selection_input
 

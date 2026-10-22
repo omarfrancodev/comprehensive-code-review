@@ -7,8 +7,8 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
-import review_restart
-import review_layout
+from ccr.archive import restart_contract as review_restart
+from ccr.archive import layout as review_layout
 from recovery_fixtures import selection_input
 
 

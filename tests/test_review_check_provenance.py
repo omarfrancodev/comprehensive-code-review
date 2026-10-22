@@ -13,8 +13,9 @@ from test_review_contract import contract
 from test_review_traceability_contract import check
 import test_review_execution_policy as policy_tests
 from test_review_delivery import delivery
-import review_check_receipts
-import review_workspace
+from ccr.execution import checks as review_check_receipts
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 from ccr.contracts import provenance as check_provenance
 
 record8 = policy_tests.record8

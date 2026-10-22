@@ -103,19 +103,4 @@ def run_command(command, input_path, output_path):
     path = write_new_json(session_dir, output_path, result)
     return {'status': 'written', 'output': str(path), 'session_id': workspace_manifest['session_id']}
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest='command', required=True)
-    for command in ('profile', 'context', 'event'):
-        item = sub.add_parser(command)
-        item.add_argument('--input', required=True)
-        item.add_argument('--output', required=True)
-    args = parser.parse_args(argv)
-    try:
-        result = run_command(args.command, args.input, args.output)
-        print(json.dumps(result, ensure_ascii=False, allow_nan=False))
-        return 0
-    except (OSError, ValueError, TypeError, KeyError, workspace_ops.ReviewError) as exc:
-        print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 1
 _run_command = run_command

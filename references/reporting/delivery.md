@@ -28,13 +28,13 @@ Omit absent sections rather than fabricating sources, assessments or filler. Pre
 
 ## Export and preservation
 
-Use scripts/review_delivery.py with --help when executable. It validates the retained source read-only, requires an explicit mode and persistent project checkout, and creates a distinct delivery directory. It never modifies a closed run or copies evidence. Existing destinations and unsafe paths are refused rather than overwritten; a changed delivery requires a distinct explicit destination.
+Use scripts delivery with --help when executable. It validates the retained source read-only, requires an explicit mode and persistent project checkout, and creates a distinct delivery directory. It never modifies a closed run or copies evidence. Existing destinations and unsafe paths are refused rather than overwritten; a changed delivery requires a distinct explicit destination.
 
 Invoke the helper through its absolute path; these are executable helper arguments, unlike the agent request conventions:
 
 ```text
-python <skill-path>/scripts/review_delivery.py --run-dir <retained-run-dir> --delivery full --project-root <persistent-checkout>
-python <skill-path>/scripts/review_delivery.py --run-dir <retained-run-dir> --delivery brief --project-root <persistent-checkout> --output-root docs/team-review
+python <skill-path>/scripts delivery --run-dir <retained-run-dir> --delivery full --project-root <persistent-checkout>
+python <skill-path>/scripts delivery --run-dir <retained-run-dir> --delivery brief --project-root <persistent-checkout> --output-root docs/team-review
 ```
 
 For collected additional context, supply `--context <context.json>`. Omit empty sections; observations in assumptions, decisions, implementation_state and pending use text, references and version. Sources require their actually analyzed sections and known identity:

@@ -2,6 +2,12 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## Pendiente de publicación — sin versión asignada
+
+### Changed
+
+- Unificar el acceso a los helpers como `python <ruta-de-la-skill>/scripts <área> ...` y retirar los 27 archivos `scripts/review_*.py`. Los imports Python con esos nombres también dejan de estar soportados; consulta la [guía de migración](docs/script-migration.md). Los datos de archivo y resultados conservan sus esquemas.
+
 ## 2.14.0 — 2026-10-21
 
 ### Added

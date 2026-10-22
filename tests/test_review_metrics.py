@@ -61,7 +61,7 @@ class RunnerCaptureTests(unittest.TestCase):
                                                                      '{output_dir}', '{prompt_file}', '{workspace}']}), encoding='utf-8')
         prompt = root / 'prompt.md'
         prompt.write_text('Bounded verification', encoding='utf-8')
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_runner.py'),
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'runner',
                                  '--config', str(config), '--prompt-file', str(prompt), '--workspace', str(root),
                                  '--output-dir', str(root / 'out'), '--role', 'verifier', '--phase', 'verification'],
                                 capture_output=True, text=True, encoding='utf-8')

@@ -16,7 +16,7 @@ Choose the internal archive root once: explicitly requested internal archive loc
 
 Mandatory layout: `<root>/<repository-group>/<logical-scope-group>/<UTC-created>--<version-hint>--<20-hex-run-id>/`. An internal-archive location override selects the root, not a different layout. Use exactly the `run_dir` returned by `prepare`; never rebuild, shorten or rename its components. Historical folders are not precedent for new runs. Multiple versions of one MR/PR share a visible logical group and each remains a separate run; re-review creates another run referencing the earlier one, never overwrites it. History persists until explicitly deleted; do not add automated retention or load past context as a cache.
 
-The repository ID is the first 20 hex characters of SHA-256 of the normalized remote identity, or resolved Git common-directory identity for absent/relative local remotes. Logical scope folders are derived from a normalized selector; MR/PR scope groups use the visible request number and runs still bind the full selector identity. Run names use UTC `YYYYMMDDTHHMMSSZ`, a safe version hint (including the reviewed head when available) and a unique 20-hex run ID. `review_artifacts.py` defines canonical JSON bytes and Windows-safe slug derivation. Archive 8 binds the directory to stored `repository_identity`, `repository_key`, exact `scope`, `logical_scope`, `created_at` and `run_id`, so validation does not require the original checkout or an unchanged remote. Preserve nonconforming historical archives; a failed gate is a reported compatibility limitation, not permission to rename/rewrite history.
+The repository ID is the first 20 hex characters of SHA-256 of the normalized remote identity, or resolved Git common-directory identity for absent/relative local remotes. Logical scope folders are derived from a normalized selector; MR/PR scope groups use the visible request number and runs still bind the full selector identity. Run names use UTC `YYYYMMDDTHHMMSSZ`, a safe version hint (including the reviewed head when available) and a unique 20-hex run ID. `ccr.shared.encoding` owns canonical JSON bytes and `ccr.archive.layout` owns Windows-safe slug derivation. Archive 8 binds the directory to stored `repository_identity`, `repository_key`, exact `scope`, `logical_scope`, `created_at` and `run_id`, so validation does not require the original checkout or an unchanged remote. Preserve nonconforming historical archives; a failed gate is a reported compatibility limitation, not permission to rename/rewrite history.
 
 If this repository/scope may have a prior or interrupted review, perform the read-only bounded lookup in [recovery.md](recovery.md) before preparing a second run. Lookup never chooses an archive; inspect/continue/restart the exact selected run.
 
@@ -52,24 +52,24 @@ When existing dispatch or runner metadata exposes model information, record it i
 
 ## Lifecycle and helper
 
-When the interpreter/script is executable within permissions, use the helper for durable preparation, registration, retention and closure, plus its validation gates. Native preparation is not an alternative because it seems simpler or older runs used it. If the helper cannot execute, record that limitation and use native operations only when they implement and verify the same layout, ownership/closure records, exact scope, atomic writes, hashes and lifecycle. Read the contract in `scripts/review_artifacts.py`; disclose native validation rather than claiming helper execution. If guarantees cannot be verified, preserve evidence and report persistence incomplete. A helper validation failure is not unavailability and must not be bypassed with native writes.
+When Python and the complete skill copy are executable within permissions, use `python <skill-path>/scripts artifacts` for durable preparation, registration, retention and closure, plus its validation gates. Native preparation is not an alternative because it seems simpler or older runs used it. If the helper cannot execute, record that limitation and use native operations only when they implement and verify the same layout, ownership/closure records, exact scope, atomic writes, hashes and lifecycle. Consult this reference for the contract; disclose native validation rather than claiming helper execution. If guarantees cannot be verified, preserve evidence and report persistence incomplete. A helper validation failure is not unavailability and must not be bypassed with native writes.
 
 The coordinator is the sole durable writer. Run mutations sequentially for that run. Use metadata.version from the loaded SKILL.md for --skill-version, not an older example or latest published release. Invoke through an absolute interpreter/script path and consult --help:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.12.0 --harness actual-harness --profile-input /absolute/owned/session/evidence/profile-selection.json --temporary-path /absolute/owned/session
-python /absolute/skill/scripts/review_artifacts.py preflight --run-dir /absolute/returned/run --context-input /absolute/owned/session/evidence/context.json --phase register
-python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run
-python /absolute/skill/scripts/review_artifacts.py register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR --context-input /absolute/owned/session/evidence/context.json
-python /absolute/skill/scripts/review_artifacts.py retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --expected-schema 10 --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
-python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run --require-retained
-python /absolute/skill/scripts/review_artifacts.py close --run-dir /absolute/returned/run --cleanup complete
-python /absolute/skill/scripts/review_artifacts.py validate --run-dir /absolute/returned/run --require-complete
+python /absolute/skill/scripts artifacts prepare --repo /absolute/project --scope-file /absolute/owned/session/evidence/scope.json --skill-version 2.12.0 --harness actual-harness --profile-input /absolute/owned/session/evidence/profile-selection.json --temporary-path /absolute/owned/session
+python /absolute/skill/scripts artifacts preflight --run-dir /absolute/returned/run --context-input /absolute/owned/session/evidence/context.json --phase register
+python /absolute/skill/scripts artifacts validate --run-dir /absolute/returned/run
+python /absolute/skill/scripts artifacts register --run-dir /absolute/returned/run --temporary-path /absolute/project/.worktrees/code-review-EXECUTOR --context-input /absolute/owned/session/evidence/context.json
+python /absolute/skill/scripts artifacts retain --run-dir /absolute/returned/run --input /absolute/owned/session/evidence/final-review.json --expected-schema 10 --context-input /absolute/owned/session/evidence/context.json --evidence-input /absolute/owned/worktree/tests/reproduction.cs
+python /absolute/skill/scripts artifacts validate --run-dir /absolute/returned/run --require-retained
+python /absolute/skill/scripts artifacts close --run-dir /absolute/returned/run --cleanup complete
+python /absolute/skill/scripts artifacts validate --run-dir /absolute/returned/run --require-complete
 ```
 
 ### Preparation builders
 
-`review_setup.py profile|context|event --input <envelope.json> --output <new-evidence.json>` builds candidates only; it does not prepare/register a run, append trace events or dispatch work. The input envelope has exactly `{session, arguments}`. `session` points to an owned `review_workspace.py` manifest that passes its owner/path checks. The output is a new direct child of that session's `evidence/`; collisions, links and paths outside the session fail without changing existing bytes.
+`python <skill-path>/scripts setup profile|context|event --input <envelope.json> --output <new-evidence.json>` builds candidates only; it does not prepare/register a run, append trace events or dispatch work. The input envelope has exactly `{session, arguments}`. `session` points to an owned `workspace` manifest that passes its owner/path checks. The output is a new direct child of that session's `evidence/`; collisions, links and paths outside the session fail without changing existing bytes.
 
 Use `profile` before `prepare` to validate the supplied selection and preserve explicit user authority. After prepare, use `context` with the exact returned `cierre.json`, planned assignments, executors, captured `review_inputs` and `{reference: "evidence/reference-index.json", sha256: ...}` descriptor. The helper verifies the session sidecar and its selected source hashes, checks the descriptor against the initially captured source digest, copies the exact profile history and inputs, and includes `reference_index` in context. Run `preflight --phase register` before `register`; after an active required assignment is registered, run `preflight --phase discovery` before dispatch.
 
@@ -114,14 +114,14 @@ Harness text and declaration references must be encodable as UTF-8. Invalid Unic
 Optional helper arguments (not agent request flags or npx options):
 
 ```text
-python <skill-path>/scripts/review_artifacts.py prepare <usual prepare arguments> --harness "Claude Code" --harness-id claude-code-desktop --harness-source-file <existing-source.json>
+python <skill-path>/scripts artifacts prepare <usual prepare arguments> --harness "Claude Code" --harness-id claude-code-desktop --harness-source-file <existing-source.json>
 ```
 
 The source file must contain exactly `{ "kind": "user", "reference": "User declared Desktop for this session" }`, or kind `platform` with an actual exposed source. It requires an explicit ID. Without it the source is `argument` / `--harness-id`; configuration uses `environment` / `CCR_HARNESS_ID`; name matching uses `alias` / original name; unmatched names use `unknown` / original name. References are nonempty text up to 1024 characters; declaration provenance is not independent identity proof. Malformed source/catalog is an input error before archive creation; unknown identities and conflicts are stored diagnostics.
 
 Configure CCR_HARNESS_ID only in the matching session/environment profile: global settings shared by Desktop and CLI can mislabel both. Prefer a session-specific explicit ID/declaration when that separation is unavailable; no extra process/counter/telemetry probes. Preserve the resolved fields through registration, events, recovery, retention and closure, bound by the existing manifest hash. Readers validate shape without consulting the installed catalog, retain historical ID/version and tolerate a different installed catalog. Never backfill or rewrite schemas 1–5 or completed runs. Future catalog versions do not retroactively identify unknown historical text. Harness identity does not change trace schema 1; the separate profile fulfillment contract uses final review schema 10, retaining schemas 8/9 behavior.
 
-Catalog maintenance: add a stable lowercase hyphenated ID, readable name, family, interface (null for a generic family) and only unambiguous aliases; distinguish editor-specific surfaces when both may conflict. Never add model names or generic host editors such as VS Code as harness aliases. Validate collisions and generic/specific/conflict cases in test_review_harness.py. Increment catalog_version for changes after a catalog version has shipped; the initial unpublished catalog remains version 1. Unknown/custom environments need no private catalog edit to run a review: retain their raw name with null ID, then propose a catalog addition separately if a stable identity is useful. Consumers group by stored ID/version, not a reinterpretation of historical raw text.
+Catalog maintenance: add a stable lowercase hyphenated ID, readable name, family, interface (null for a generic family) and only unambiguous aliases; distinguish editor-specific surfaces when both may conflict. Never add model names or generic host editors such as VS Code as harness aliases. Validate collisions and generic/specific/conflict cases in test_ccr.execution.harness. Increment catalog_version for changes after a catalog version has shipped; the initial unpublished catalog remains version 1. Unknown/custom environments need no private catalog edit to run a review: retain their raw name with null ID, then propose a catalog addition separately if a stable identity is useful. Consumers group by stored ID/version, not a reinterpretation of historical raw text.
 
 ## Schema 8–10 execution source gate
 
@@ -155,7 +155,7 @@ This illustrates fields, not valid empty identities: copy the **exact** `profile
 Select a later observed decision before affected work:
 
 ```sh
-python /absolute/skill/scripts/review_artifacts.py select-profile \
+python /absolute/skill/scripts artifacts select-profile \
   --run-dir /absolute/returned/run \
   --selection-input /absolute/owned/session/evidence/selection-change.json
 ```

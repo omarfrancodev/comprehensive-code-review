@@ -9,31 +9,32 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1] / 'scripts'
-LEGACY_CLI_MODULES = {
-    'artifacts': 'review_artifacts',
-    'contract': 'review_contract',
-    'delivery': 'review_delivery',
-    'history': 'review_history',
-    'metrics': 'review_metrics',
-    'packets': 'review_packets',
-    'recovery': 'review_recovery',
-    'runner': 'review_runner',
-    'workspace': 'review_workspace',
-    'setup': 'review_setup',
-    'checks': 'review_check_receipts',
-    'comment': 'review_comment',
+CLI_AREAS = {
+    'artifacts': 'ccr.cli.artifacts',
+    'contract': 'ccr.cli.contract',
+    'delivery': 'ccr.cli.delivery',
+    'history': 'ccr.cli.history',
+    'metrics': 'ccr.cli.metrics',
+    'packets': 'ccr.cli.packets',
+    'recovery': 'ccr.cli.recovery',
+    'runner': 'ccr.cli.runner',
+    'workspace': 'ccr.cli.workspace',
+    'setup': 'ccr.cli.setup',
+    'checks': 'ccr.cli.checks',
+    'comment': 'ccr.cli.comment',
 }
-LEGACY_ENCODERS = {
-    'manifest': ('review_artifacts', '_json_bytes'),
-    'layout': ('review_layout', '_canonical'),
-    'restart': ('review_restart', '_json'),
-    'trace': ('review_trace', 'encoded'),
-    'receipt': ('review_check_receipts', '_json_bytes'),
-    'setup': ('review_setup', '_json_bytes'),
+ENCODERS = {
+    'manifest': 'archive_bytes',
+    'layout': 'compact_bytes',
+    'restart': 'compact_bytes',
+    'trace': 'compact_bytes',
+    'receipt': 'receipt_bytes',
+    'setup': 'compact_bytes',
 }
 
 
@@ -46,6 +47,98 @@ def enable_package_imports() -> None:
     scripts = str(SCRIPTS_ROOT)
     if scripts not in sys.path:
         sys.path.insert(0, scripts)
+
+
+def owner_api(*module_names: str, aliases: dict[str, str] | None = None) -> SimpleNamespace:
+    """Build a test namespace from explicit domain owners, without importing a script facade."""
+    enable_package_imports()
+    namespace = SimpleNamespace()
+    modules = {name: importlib.import_module(name) for name in module_names}
+    for module in modules.values():
+        for name, value in vars(module).items():
+            if not name.startswith('__') and not hasattr(namespace, name):
+                setattr(namespace, name, value)
+    for alias, target in (aliases or {}).items():
+        setattr(namespace, alias, modules[target])
+    namespace.__file__ = str(SCRIPTS_ROOT / '__main__.py')
+    return namespace
+
+
+def archive_api() -> SimpleNamespace:
+    """Collect the archive APIs used by historical tests from their current owners."""
+    namespace = owner_api(
+        'ccr.shared.encoding', 'ccr.shared.json_io', 'ccr.shared.git', 'ccr.shared.paths',
+        'ccr.contracts.review', 'ccr.contracts.identifiers', 'ccr.contracts.validation',
+        'ccr.contracts.scope', 'ccr.contracts.preflight', 'ccr.contracts.references',
+        'ccr.contracts.execution', 'ccr.contracts.provenance', 'ccr.contracts.claims',
+        'ccr.contracts.receipts', 'ccr.contracts.model_usage', 'ccr.contracts.reference_index',
+        'ccr.contracts.semantic_references', 'ccr.archive.layout', 'ccr.archive.reader',
+        'ccr.archive.integrity', 'ccr.archive.transactions', 'ccr.archive.evidence',
+        'ccr.archive.checkpoints', 'ccr.archive.lifecycle', 'ccr.archive.retention',
+        'ccr.archive.resources', 'ccr.archive.restart_contract', 'ccr.archive.restart_state',
+        'ccr.archive.restart', 'ccr.archive.coordination', 'ccr.archive.restart_observations',
+        'ccr.archive.inspection', 'ccr.archive.lookup', 'ccr.archive.history',
+        'ccr.archive.trace', 'ccr.workflow.profiles', 'ccr.workflow.inputs',
+        'ccr.workflow.builders', 'ccr.execution.claims', 'ccr.execution.workspaces',
+        'ccr.execution.locks', 'ccr.execution.harness', 'ccr.execution.candidates',
+        'ccr.execution.workspace_manifest', 'ccr.execution.checks', 'ccr.execution.runner',
+        'ccr.reporting.markdown', 'ccr.reporting.projections', 'ccr.reporting.render',
+        'ccr.reporting.delivery', 'ccr.reporting.comment', 'ccr.maintenance.metrics',
+        aliases={
+            'review_contract': 'ccr.contracts.review',
+            'review_profiles': 'ccr.workflow.profiles',
+            'review_trace': 'ccr.archive.trace',
+            'review_layout': 'ccr.archive.layout',
+            'review_model_usage': 'ccr.contracts.model_usage',
+            'review_inputs': 'ccr.workflow.inputs',
+            'review_references': 'ccr.contracts.references',
+            'review_preflight': 'ccr.contracts.preflight',
+            'review_check_receipts': 'ccr.contracts.receipts',
+            'review_execution': 'ccr.contracts.execution',
+            'review_check_provenance': 'ccr.contracts.provenance',
+            'review_resource_claims': 'ccr.execution.claims',
+            'review_restart': 'ccr.archive.restart_contract',
+            'review_metrics': 'ccr.maintenance.metrics',
+            'review_workspace': 'ccr.execution.workspaces',
+            'review_run_lock': 'ccr.execution.locks',
+            'review_harness': 'ccr.execution.harness',
+        },
+    )
+    namespace.validate = importlib.import_module('ccr.archive.lifecycle').validate
+    namespace.prepare = importlib.import_module('ccr.archive.lifecycle').prepare
+    namespace.register = importlib.import_module('ccr.archive.lifecycle').register
+    namespace.retain = importlib.import_module('ccr.archive.retention').retain
+    namespace.close = importlib.import_module('ccr.archive.lifecycle').close
+    namespace._json_bytes = importlib.import_module('ccr.shared.encoding').archive_bytes
+    namespace.preflight_run = importlib.import_module('ccr.cli.artifacts').preflight_run
+    namespace.review_contract = owner_api(
+        'ccr.contracts.review', 'ccr.contracts.identifiers', 'ccr.reporting.render')
+    namespace.profile_execution = owner_api('ccr.workflow.profiles', 'ccr.contracts.execution')
+    return namespace
+
+
+def recovery_api() -> SimpleNamespace:
+    return owner_api('ccr.archive.inspection', 'ccr.archive.lookup', 'ccr.archive.history',
+                     'ccr.archive.layout', 'ccr.workflow.inputs',
+                     aliases={'review_layout': 'ccr.archive.layout',
+                              'review_inputs': 'ccr.workflow.inputs'})
+
+
+def workspace_api() -> SimpleNamespace:
+    namespace = owner_api('ccr.execution.workspaces', 'ccr.archive.resources')
+    namespace.record_artifact = importlib.import_module('ccr.archive.resources').record_artifact
+    namespace.workspace_ops = importlib.import_module('ccr.execution.workspaces')
+    namespace.cleanup = importlib.import_module('ccr.archive.resources').cleanup_workspace
+    return namespace
+
+
+def contract_api() -> SimpleNamespace:
+    return owner_api('ccr.contracts.review', 'ccr.contracts.identifiers', 'ccr.reporting.render')
+
+
+def setup_api() -> SimpleNamespace:
+    return owner_api('ccr.workflow.builders', 'ccr.workflow.setup',
+                     'ccr.execution.candidates')
 
 
 def _portable_value(value):
@@ -108,11 +201,9 @@ def _parser_inventory(parser: argparse.ArgumentParser) -> dict:
 
 
 def _cli_module(area: str) -> str:
-    if area not in LEGACY_CLI_MODULES:
+    if area not in CLI_AREAS:
         raise ValueError(f'unknown CLI area: {area}')
-    if (SCRIPTS_ROOT / f'{LEGACY_CLI_MODULES[area]}.py').is_file():
-        return LEGACY_CLI_MODULES[area]
-    return f'ccr.cli.{area}'
+    return CLI_AREAS[area]
 
 
 def _capture_parser(area: str) -> dict:
@@ -146,17 +237,14 @@ def _capture_parser(area: str) -> dict:
 
 def cli_inventory() -> dict:
     """Inspect each real CLI parser without executing its selected operation."""
-    return {area: _capture_parser(area) for area in LEGACY_CLI_MODULES}
+    return {area: _capture_parser(area) for area in CLI_AREAS}
 
 
 def run_cli(area: str, argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess:
-    """Run one legacy CLI directly; after Task 12 route through scripts/__main__.py."""
-    module_name = _cli_module(area)
-    if module_name.startswith('ccr.cli.'):
-        command = [sys.executable, '-B', str(SCRIPTS_ROOT), area, *argv]
-    else:
-        script = SCRIPTS_ROOT / f'{module_name}.py'
-        command = [sys.executable, '-B', str(script), *argv]
+    """Run one CLI area through the scripts package dispatcher."""
+    if area not in CLI_AREAS:
+        raise ValueError(f'unknown CLI area: {area}')
+    command = [sys.executable, '-B', str(SCRIPTS_ROOT), area, *argv]
     return subprocess.run(
         command,
         cwd=cwd,
@@ -168,24 +256,11 @@ def run_cli(area: str, argv: list[str], *, cwd: Path) -> subprocess.CompletedPro
 
 
 def encoding_inventory() -> dict:
-    """Return the original encoder bytes for one fixed JSON value as hex."""
+    """Return the owner encoder bytes for one fixed JSON value as hex."""
     value = {'x': 1, 'ñ': 'café'}
-    if (SCRIPTS_ROOT / 'review_artifacts.py').is_file():
-        encoders = {
-            role: getattr(importlib.import_module(module), name)
-            for role, (module, name) in LEGACY_ENCODERS.items()
-        }
-    else:
-        encoding = importlib.import_module('ccr.shared.encoding')
-        encoders = {
-            'manifest': encoding.archive_bytes,
-            'layout': encoding.compact_bytes,
-            'restart': encoding.compact_bytes,
-            'trace': encoding.compact_bytes,
-            'receipt': encoding.receipt_bytes,
-            'setup': encoding.compact_bytes,
-        }
-    return {role: encoders[role](value).hex() for role in LEGACY_ENCODERS}
+    encoding = importlib.import_module('ccr.shared.encoding')
+    encoders = {role: getattr(encoding, name) for role, name in ENCODERS.items()}
+    return {role: encoders[role](value).hex() for role in ENCODERS}
 
 
 def _module_path(module: str | Path) -> tuple[str, Path]:
@@ -223,6 +298,120 @@ def _local_module_exists(module_name: str) -> bool:
         return False
     path = SCRIPTS_ROOT.joinpath(*module_name.split('.'))
     return path.with_suffix('.py').is_file() or (path / '__init__.py').is_file()
+
+
+def _implementation_modules(scripts_root: Path) -> dict[str, Path]:
+    scripts_root = Path(scripts_root).resolve()
+    modules = {}
+    for path in scripts_root.rglob('*.py'):
+        relative = path.relative_to(scripts_root)
+        if path.name == '__init__.py':
+            module_name = '.'.join(relative.parent.parts)
+        else:
+            module_name = '.'.join(relative.with_suffix('').parts)
+        modules[module_name] = path
+    return modules
+
+
+def _local_imports(tree: ast.AST, module_name: str, is_package: bool,
+                   modules: dict[str, Path]) -> set[str]:
+    package_parts = module_name.split('.') if is_package else module_name.split('.')[:-1]
+    dependencies = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in modules:
+                    dependencies.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                keep = max(0, len(package_parts) - node.level + 1)
+                base_parts = package_parts[:keep]
+                if node.module:
+                    base_parts.extend(node.module.split('.'))
+                base = '.'.join(base_parts)
+            else:
+                base = node.module or ''
+            if base in modules:
+                dependencies.add(base)
+            for alias in node.names:
+                if alias.name == '*':
+                    continue
+                candidate = f'{base}.{alias.name}' if base else alias.name
+                if candidate in modules:
+                    dependencies.add(candidate)
+    dependencies.discard(module_name)
+    return dependencies
+
+
+def import_graph(scripts_root: Path) -> dict[str, set[str]]:
+    """Resolve local Python imports and the fixed CLI registry from source ASTs."""
+    modules = _implementation_modules(scripts_root)
+    graph = {}
+    for module_name, path in modules.items():
+        tree = ast.parse(path.read_text(encoding='utf-8'), filename=str(path))
+        graph[module_name] = _local_imports(
+            tree, module_name, path.name == '__init__.py', modules)
+
+    main_path = modules.get('ccr.cli.main')
+    if main_path is not None:
+        tree = ast.parse(main_path.read_text(encoding='utf-8'), filename=str(main_path))
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                if not any(isinstance(target, ast.Name) and target.id == 'AREAS'
+                           for target in targets):
+                    continue
+                try:
+                    areas = ast.literal_eval(node.value)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(areas, dict):
+                    graph['ccr.cli.main'].update(
+                        target for target in areas.values()
+                        if isinstance(target, str) and target in modules)
+                break
+    return {name: graph[name] for name in sorted(graph)}
+
+
+def cyclic_components(graph: dict[str, set[str]]) -> list[tuple[str, ...]]:
+    """Return sorted strongly connected components that contain a cycle."""
+    nodes = set(graph)
+    nodes.update(dependency for dependencies in graph.values() for dependency in dependencies)
+    next_index = 0
+    indices = {}
+    lowlinks = {}
+    stack = []
+    on_stack = set()
+    cycles = []
+
+    def visit(node: str) -> None:
+        nonlocal next_index
+        indices[node] = lowlinks[node] = next_index
+        next_index += 1
+        stack.append(node)
+        on_stack.add(node)
+        for dependency in sorted(graph.get(node, set())):
+            if dependency not in indices:
+                visit(dependency)
+                lowlinks[node] = min(lowlinks[node], lowlinks[dependency])
+            elif dependency in on_stack:
+                lowlinks[node] = min(lowlinks[node], indices[dependency])
+        if lowlinks[node] == indices[node]:
+            component = []
+            while True:
+                member = stack.pop()
+                on_stack.remove(member)
+                component.append(member)
+                if member == node:
+                    break
+            component = tuple(sorted(component))
+            if len(component) > 1 or node in graph.get(node, set()):
+                cycles.append(component)
+
+    for node in sorted(nodes):
+        if node not in indices:
+            visit(node)
+    return sorted(cycles)
 
 
 def module_dependencies(module: str) -> set[str]:

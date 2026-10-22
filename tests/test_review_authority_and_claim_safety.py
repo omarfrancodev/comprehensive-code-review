@@ -13,7 +13,7 @@ from recovery_fixtures import record10, selection, selection_input
 
 artifacts = resources.artifacts
 claims = resources.claims
-profiles = artifacts.review_profiles
+profiles = artifacts.profile_execution
 
 
 class ProfileAuthorityTests(unittest.TestCase):
@@ -72,10 +72,12 @@ import sys
 import time
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
-import review_artifacts as artifacts
+from script_test_support import archive_api
+from ccr.archive import lifecycle as lifecycle_ops
+artifacts = archive_api()
 run, session, context, ready, release = map(Path, sys.argv[2:7])
 requested = [] if sys.argv[7] == 'existing' else [str(session)]
-original = artifacts.atomic_write
+original = lifecycle_ops.atomic_write
 def delayed_write(path, data, **kwargs):
     if Path(path) == session / '.review-run-owner.json':
         ready.write_text('digest checked', encoding='utf-8')
@@ -86,7 +88,7 @@ def delayed_write(path, data, **kwargs):
             time.sleep(0.02)
     return original(path, data, **kwargs)
 try:
-    with patch.object(artifacts, 'atomic_write', side_effect=delayed_write):
+    with patch.object(lifecycle_ops, 'atomic_write', side_effect=delayed_write):
         artifacts.register(run, requested, context_input=context)
     print(json.dumps({'status': 'registered'}), flush=True)
 except ValueError as exc:
@@ -164,7 +166,15 @@ class SessionClaimSafetyTests(unittest.TestCase):
         origin = 'https://example.invalid/ccr-concurrency-fixture.git'
         self.git('remote', 'add', 'origin', origin)
         other = self.root / 'other-clone'
-        self.git('clone', '--local', str(self.repo), str(other))
+        try:
+            self.git('clone', '--local', str(self.repo), str(other))
+        except AssertionError as exc:
+            message = str(exc)
+            if sys.platform == 'win32' and (
+                    ('NtCreateDirectoryObject' in message and '0xC0000022' in message)
+                    or 'Could not read from remote repository' in message):
+                self.skipTest('Git Bash cannot create its Win32 synchronization object in this host')
+            raise
         changed = subprocess.run(['git', 'remote', 'set-url', 'origin', origin], cwd=other,
                                  capture_output=True, text=True)
         self.assertEqual(changed.returncode, 0, changed.stderr)
@@ -177,7 +187,7 @@ class SessionClaimSafetyTests(unittest.TestCase):
 from pathlib import Path
 import sys, time
 sys.path.insert(0, sys.argv[1])
-from review_resource_claims import session_claim_locks
+from ccr.execution.claims import session_claim_locks
 with session_claim_locks([sys.argv[2]]):
     Path(sys.argv[3]).touch()
     deadline = time.monotonic() + 30

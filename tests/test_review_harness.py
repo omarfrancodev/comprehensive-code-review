@@ -159,7 +159,7 @@ class HarnessTests(unittest.TestCase):
                 harness.validate_identity(altered)
 
     def test_model_observations_do_not_change_harness_identity(self):
-        import review_model_usage
+        from ccr.contracts import model_usage as review_model_usage
         identity = self.resolve('Codex Desktop')
         before = copy.deepcopy(identity)
         observation = review_model_usage.observation_from_metadata(
@@ -233,7 +233,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         from recovery_fixtures import selection_input
         source = self.write('source.json', {'kind': 'user', 'reference': 'Desktop session declaration'})
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Claude Code', '--output-root', str(self.output), '--profile-input', str(profile),
                 '--harness-id', 'claude-code-desktop',
@@ -257,7 +257,7 @@ class ArchiveHarnessTests(unittest.TestCase):
     def test_cli_unencodable_source_is_rejected_before_creating_archive_directories(self):
         from recovery_fixtures import selection_input
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Codex', '--harness-id', 'codex-desktop', '--output-root', str(self.output),
                 '--profile-input', str(profile)]
@@ -278,7 +278,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         from recovery_fixtures import selection_input
         source = self.write('null-source.json', None)
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Codex', '--output-root', str(self.output), '--harness-source-file', str(source),
                 '--profile-input', str(profile)]

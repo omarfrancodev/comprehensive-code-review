@@ -123,7 +123,7 @@ class ReviewAreaRenderingTests(unittest.TestCase):
         record['coverage']['limitations'] = [{'detail': detail, 'material': False}]
         record['verdict'] = 'insufficient_evidence'
         snapshot = copy.deepcopy(record)
-        from review_publication import publication_digest
+        from ccr.reporting.projections import publication_digest
         output = contract.render(record, audience='comment', publication_context={
             'source_sha256': publication_digest(record),
             'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
@@ -167,7 +167,7 @@ class ReviewAreaCLITests(unittest.TestCase):
             path = Path(directory) / 'record.json'
             record = area_record()
             path.write_text(json.dumps(record), encoding='utf-8')
-            prefix = [sys.executable, '-B', str(MODULE_PATH)]
+            prefix = [sys.executable, '-B', str(MODULE_PATH), 'contract']
             for audience, present in (('render-user', True), ('render-comment', False)):
                 result = subprocess.run(prefix + [audience, '--input', str(path)],
                                         capture_output=True, text=True, encoding='utf-8')

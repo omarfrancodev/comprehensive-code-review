@@ -380,20 +380,3 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
             except (OSError, ValueError):
                 pass
         raise
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--run-dir', required=True)
-    parser.add_argument('--delivery', choices=('full', 'brief'), required=True)
-    parser.add_argument('--project-root', required=True)
-    parser.add_argument('--output-root', help='Delivery root, relative to project-root or absolute; not the final scope/review directory')
-    parser.add_argument('--context', help='Optional JSON containing only previously collected context')
-    args = parser.parse_args()
-    try:
-        context = read_json(args.context) if args.context else None
-        destination = deliver(args.run_dir, args.delivery, args.project_root, args.output_root, context)
-        print(json.dumps({'delivery_dir': str(destination)}, ensure_ascii=False))
-        return 0
-    except (OSError, ValueError, TypeError) as exc:
-        print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 1

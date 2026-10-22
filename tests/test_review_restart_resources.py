@@ -8,9 +8,11 @@ from unittest.mock import patch
 
 import test_review_recovery_followup as followup
 from ccr.archive import checkpoints as checkpoint_ops, resources as resource_ops
-import review_recovery as recovery
-import review_resource_claims as claims
-import review_workspace
+from script_test_support import recovery_api
+recovery = recovery_api()
+from ccr.execution import claims as claims
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = followup.artifacts
 from ccr.archive import resources as resource_ops, restart as restart_ops
@@ -95,7 +97,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         sidecar = session / claims.CLAIM_NAME
         sidecar_before = sidecar.read_bytes() if sidecar.exists() else None
         helper_name = 'transfer_resources' if claimed else 'register'
-        helper = getattr(resource_ops, helper_name)
+        helper = getattr(restart_ops, helper_name)
         replace = artifacts.os.replace
         writes = []
         enabled = False
@@ -113,7 +115,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                 writes.append(Path(target).name)
             return replace(stage, target)
 
-        with patch.object(resource_ops, helper_name, side_effect=wrapped), \
+        with patch.object(restart_ops, helper_name, side_effect=wrapped), \
                 patch.object(artifacts.os, 'replace', side_effect=observed):
             artifacts.restart(source, **request)
         self.assertIn(claims.CLAIM_NAME, writes)
@@ -144,7 +146,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                                 raise KeyboardInterrupt('after durable replacement')
                             return result
 
-                        with patch.object(resource_ops, helper_name, side_effect=wrapped), \
+                        with patch.object(restart_ops, helper_name, side_effect=wrapped), \
                                 patch.object(artifacts.os, 'replace', side_effect=interrupted):
                             with self.assertRaises(KeyboardInterrupt):
                                 artifacts.restart(source, **request)
@@ -191,7 +193,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         try:
             self.assertTrue(acquired.wait(5))
             before = self.snapshot(successor)
-            from review_run_lock import LockConflictError
+            from ccr.execution.locks import LockConflictError
             with self.assertRaisesRegex(LockConflictError, 'mutation lock conflict'):
                 artifacts.restart(source, **request)
             self.assertEqual(self.snapshot(successor), before)

@@ -9,7 +9,8 @@ import test_review_recovery as recovery_fixtures
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_recovery as recovery
+from script_test_support import recovery_api
+recovery = recovery_api()
 from ccr.archive import inspection as inspection_ops
 import test_review_artifacts as archive
 

@@ -15,9 +15,11 @@ import test_review_artifacts as archive
 import test_review_checkpoints as checkpoint_tests
 import test_review_recovery as recovery_tests
 from recovery_fixtures import context10, legacy_prepare, record10, selection_input
-import review_profiles
-import review_recovery as recovery
-import review_workspace
+from ccr.contracts import execution as review_execution
+from script_test_support import recovery_api
+recovery = recovery_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = archive.artifacts
 from ccr.archive import lifecycle as lifecycle_ops, restart as restart_ops, transactions as transactions_ops
@@ -79,8 +81,8 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(coverage=coverage):
                 malformed = self.write('malformed.json', {'schema_version': 10, 'coverage': coverage})
                 before = self.snapshot(run)
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__)),
-                    'retain', '--run-dir', str(run), '--input', str(malformed)],
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__).parent),
+                    'artifacts', 'retain', '--run-dir', str(run), '--input', str(malformed)],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 1)
                 self.assertIn('error', json.loads(result.stderr))
@@ -92,7 +94,7 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(identifier=identifier):
                 record = record10('extended')
                 record['coverage']['execution']['plan'][0]['id'] = identifier
-                self.assertTrue(review_profiles.validate_profile_execution(record))
+                self.assertTrue(review_execution.validate_profile_execution(record))
                 self.assertTrue(artifacts.review_contract.validate(record))
 
     def test_historical_record_cannot_supply_native_context_as_selected_evidence(self):
@@ -236,7 +238,8 @@ class RecoveryFollowupTests(unittest.TestCase):
 import json, os, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
-import review_artifacts as a
+from script_test_support import archive_api
+a = archive_api()
 source = Path(sys.argv[2])
 request = json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
 replace = os.replace
@@ -474,7 +477,7 @@ a.restart(source, **request)
         skill = Path(artifacts.__file__).resolve().parents[1]
         document = (skill / 'references/archive/recovery.md').read_text(encoding='utf-8')
         command = next(block for block in re.findall(r'```(?:text|sh)\n(.*?)\n```', document, re.S)
-                       if block.splitlines()[0].startswith('python /absolute/skill/scripts/review_artifacts.py restart ')
+                       if block.splitlines()[0].startswith('python /absolute/skill/scripts artifacts restart ')
                        and '--harness-source-input' in block)
         self.assertNotIn('\\\\\n', command)
         source = self.prepare7()

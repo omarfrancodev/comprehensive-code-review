@@ -11,9 +11,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ccr.contracts.reference_index import canonical_reference, validate_reference_index
 from ccr.contracts.semantic_references import validate_semantic_references
 from ccr.contracts.material_inputs import validate_material_inputs
-import review_contract
-import review_packets
-import review_artifacts
+from script_test_support import contract_api
+review_contract = contract_api()
+from ccr.contracts import packets as review_packets
+from script_test_support import archive_api
+review_artifacts = archive_api()
+from ccr.archive import retention as archive_retention
 
 from recovery_fixtures import context10, record10
 
@@ -98,8 +101,8 @@ class ReferenceIndexTests(unittest.TestCase):
                     'logical_scope': {'identity': identity},
                     'assignment_registry': context['execution_plan'], 'executors': [], 'hashes': {}}
 
-        with patch.object(review_artifacts, 'validate_execution_sources', return_value=[]):
-            review_artifacts._execution_gate(Path('.'), manifest, record, contents)
+        with patch.object(archive_retention, 'validate_execution_sources', return_value=[]):
+            archive_retention._execution_gate(Path('.'), manifest, record, contents)
             record['coverage']['areas'][0]['details'] = 'Coverage references C004'
             with self.assertRaisesRegex(ValueError, 'typed check reference'):
                 review_artifacts._execution_gate(Path('.'), manifest, record, contents)
@@ -144,8 +147,8 @@ class ReferenceIndexTests(unittest.TestCase):
                             'logical_scope': {'identity': context['review_inputs']['logical_scope_identity']},
                             'assignment_registry': [], 'executors': [], 'hashes': {}}
 
-                with patch.object(review_artifacts, 'validate_execution_sources', return_value=[]):
-                    review_artifacts._execution_gate(Path('.'), manifest, record, contents)
+                with patch.object(archive_retention, 'validate_execution_sources', return_value=[]):
+                    archive_retention._execution_gate(Path('.'), manifest, record, contents)
 
     def test_execution_gate_hashes_captured_alias_at_its_canonical_target(self):
         record = record10()
@@ -182,8 +185,8 @@ class ReferenceIndexTests(unittest.TestCase):
                     'logical_scope': {'identity': identity},
                     'assignment_registry': context['execution_plan'], 'executors': [], 'hashes': {}}
 
-        with patch.object(review_artifacts, 'validate_execution_sources', return_value=[]):
-            review_artifacts._execution_gate(Path('.'), manifest, record, contents)
+        with patch.object(archive_retention, 'validate_execution_sources', return_value=[]):
+            archive_retention._execution_gate(Path('.'), manifest, record, contents)
 
     def test_selected_brief_markdown_links_resolve_against_retained_sources(self):
         record = record10()

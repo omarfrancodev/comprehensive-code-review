@@ -8,9 +8,9 @@ sys.path.insert(0, str(SCRIPTS))
 
 
 class ScriptReadOnlyFlowTests(unittest.TestCase):
-    def test_initial_profile_selection_is_owned_by_profiles(self):
+    def test_initial_profile_selection_is_owned_by_builders(self):
         from recovery_fixtures import selection_input
-        from ccr.workflow.profiles import initial_selection
+        from ccr.workflow.builders import initial_selection
         selected = initial_selection(selection_input())
         self.assertEqual(selected['id'], 'S001')
         self.assertEqual(selected['phase'], 'prepare')

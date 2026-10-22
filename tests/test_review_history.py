@@ -11,9 +11,11 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_artifacts as artifacts
-import review_contract
-import review_history
+from script_test_support import archive_api
+artifacts = archive_api()
+from script_test_support import contract_api
+review_contract = contract_api()
+from ccr.archive import history as review_history
 from ccr.archive import history as history_ops
 from recovery_fixtures import record10
 
@@ -115,7 +117,7 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('→', self.report_bytes.decode('utf-8'))
         env = dict(os.environ, PYTHONIOENCODING='cp1252', PYTHONUTF8='0')
         process = subprocess.run([sys.executable, '-B', '-X', 'utf8=0',
-            str(SCRIPTS / 'review_history.py'), 'show', '--history-dir', result['history_dir']],
+            str(SCRIPTS), 'history', 'show', '--history-dir', result['history_dir']],
             capture_output=True, env=env)
         self.assertEqual(process.returncode, 0, process.stderr.decode('utf-8', errors='replace'))
         self.assertEqual(process.stdout.decode('utf-8').replace('\r\n', '\n'),

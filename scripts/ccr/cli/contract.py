@@ -1,38 +1,18 @@
-#!/usr/bin/env python3
-"""Validate review records, render Spanish reports, or group explicit duplicate candidates.
+'Validate review records, render Spanish reports, or group explicit duplicate candidates.\n\nPython 3.10+, standard library only. Structural checks never establish finding truth.\n'
 
-Python 3.10+, standard library only. Structural checks never establish finding truth.
-"""
 import argparse
 import json
 from pathlib import Path
 import sys
+from ccr.contracts.identifiers import canonicalize_ids, deduplicate
+from ccr.contracts.review import validate
+from ccr.reporting.render import render, render_handoff
 
-from ccr.contracts.identifier_types import *
-from ccr.contracts.identifiers import *
-from ccr.contracts.review import *
-from ccr.contracts.scope import *
-from ccr.contracts.validation import *
-from ccr.reporting.markdown import *
-from ccr.reporting.projections import *
-from ccr.reporting.render import *
-from ccr.workflow.profiles import canonical_profile
-
-
-def normalize_profile(value):
-    """Resolve request aliases only; never rewrite a retained historical record."""
-    if not isinstance(value, str):
-        raise ValueError('expected a supported profile name')
-    normalized = PROFILE_ALIASES.get(value, value)
-    if normalized not in CURRENT_PROFILES:
-        raise ValueError('expected focused, standard, deep or extended (economy/balanced aliases accepted)')
-    return normalized
-
-def main():
+def main(argv=None, *, prog=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     parser.add_argument('command', choices=('validate', 'render-user', 'render-comment', 'render-handoff', 'canonicalize-ids', 'deduplicate'))
     parser.add_argument('--input', required=True, help='Record JSON; for deduplicate: findings array JSON')
     parser.add_argument('--groups', help='Explicit same-cause ID groups JSON; required for deduplicate')
@@ -40,7 +20,7 @@ def main():
     parser.add_argument('--publication-context', help='Ephemeral source-bound historical limitation classification for render-comment')
     parser.add_argument('--check-publication-context', help='Ephemeral source-bound public check summaries for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.publication_context and args.command != 'render-comment':
             raise ValueError('--publication-context is only applicable to render-comment')
@@ -75,6 +55,7 @@ def main():
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1
+
 
 if __name__ == '__main__':
     raise SystemExit(main())

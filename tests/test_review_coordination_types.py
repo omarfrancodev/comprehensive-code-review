@@ -16,8 +16,10 @@ sys.path.insert(0, str(SCRIPTS))
 from ccr.archive import coordination as archive_coordination
 from ccr.archive import resources as archive_resources
 from ccr.execution import claims, locks, workspaces as workspace_ops
-import review_artifacts as artifacts
-import review_workspace as workspace
+from script_test_support import archive_api
+artifacts = archive_api()
+from script_test_support import workspace_api
+workspace = workspace_api()
 
 
 class CoordinationTypeTests(unittest.TestCase):

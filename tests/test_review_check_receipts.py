@@ -16,11 +16,12 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 OWNED_WORKSPACE = str(Path(__file__).resolve().parents[1] / '.owned-executor')
 sys.path.insert(0, str(SCRIPTS))
-import review_check_receipts as receipts
+from ccr.execution import checks as receipts
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import receipts as receipt_contracts
 from ccr.execution import checks as checks_ops, workspaces as workspace_ops
-import review_workspace
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 from recovery_fixtures import context10, record10
 from test_review_traceability_contract import check as base_check
 
@@ -239,7 +240,7 @@ class CaptureCheckTests(unittest.TestCase):
             }), encoding='utf-8')
             cli_dir = evidence / 'attempt-3'
             completed = subprocess.run([
-                sys.executable, str(SCRIPTS / 'review_check_receipts.py'), 'run',
+                sys.executable, str(SCRIPTS), 'checks', 'run',
                 '--request', str(request_path), '--output-dir', str(cli_dir)],
                 cwd=root, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(completed.returncode, 0, completed.stderr)

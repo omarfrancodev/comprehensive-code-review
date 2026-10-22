@@ -16,7 +16,7 @@ from ccr.archive.restart_state import (
 from ccr.execution import claims as resource_claims
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import safe_path
-from ccr.workflow.profiles import initial_selection as _initial_selection
+from ccr.workflow.builders import initial_selection as _initial_selection
 
 
 def _digest(data):

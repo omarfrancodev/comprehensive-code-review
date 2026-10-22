@@ -77,8 +77,8 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                 phases['abandon-api'] = getattr(caught.exception, 'phase', None)
                 actor = self.write('phase-controller.json', kwargs['controller'])
                 authority = self.write('phase-authority.json', {'authority': kwargs['authority']})
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__)),
-                    'abandon-restart', '--run-dir', str(source), '--intent-input', kwargs['intent_path'],
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__).parent),
+                    'artifacts', 'abandon-restart', '--run-dir', str(source), '--intent-input', kwargs['intent_path'],
                     '--controller-input', str(actor), '--authority-input', str(authority), '--reason', kwargs['reason']],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 1, result.stderr)
@@ -96,7 +96,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                 self.assertEqual(phases, {route: expected for route in phases})
 
     def test_abandon_observes_successor_under_its_mutation_lock(self):
-        from review_run_lock import LockConflictError
+        from ccr.execution.locks import LockConflictError
         source, successor, _, kwargs = self.transfer_commit_cut()
         acquired, release = threading.Event(), threading.Event()
         def holder():

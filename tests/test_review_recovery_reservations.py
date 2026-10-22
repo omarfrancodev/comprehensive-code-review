@@ -10,8 +10,9 @@ from unittest.mock import patch
 import test_review_restart_resources as resource_tests
 import test_review_artifacts as archive
 from recovery_fixtures import legacy_prepare, selection_input
-import review_recovery as recovery
-import review_resource_claims as claims
+from script_test_support import recovery_api
+recovery = recovery_api()
+from ccr.execution import claims as claims
 from ccr.archive import restart as restart_ops, checkpoints as checkpoint_ops
 from ccr.archive import lifecycle as lifecycle_ops
 

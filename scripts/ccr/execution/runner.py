@@ -102,21 +102,3 @@ def run(args):
                 metadata['usage_error'] = str(exc)
         (output / "run.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     return metadata
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    for field in ("config", "prompt-file", "workspace", "output-dir"):
-        parser.add_argument("--" + field, required=True)
-    parser.add_argument("--timeout", type=float, default=900)
-    parser.add_argument('--role', default='external_worker', help='Measurement label; does not configure the agent')
-    parser.add_argument('--phase', default='unknown', help='Measurement phase label')
-    parser.add_argument('--model', help='Actual model identifier, if known; does not select it')
-    parser.add_argument('--harness', help='Actual execution environment, if known')
-    args = parser.parse_args()
-    try:
-        result = run(args)
-        print(json.dumps(result))
-        return 0 if result["status"] == "completed" else 1
-    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError) as exc:
-        print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
-        return 1

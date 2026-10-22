@@ -16,7 +16,6 @@ from ccr.archive.integrity import (
 )
 from ccr.archive.reader import load_run as _load_run
 from ccr.archive.transactions import _append_trace_events, _milestone, _recover_trace, save_manifest as _save_manifest
-from ccr.contracts.claims import validate_release_observation
 from ccr.shared.encoding import archive_bytes as _json_bytes
 from ccr.shared.git import git as _git
 from ccr.shared.json_io import atomic_write, read_bounded, read_json

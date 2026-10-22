@@ -20,6 +20,8 @@ npx skills add omarfrancodev/comprehensive-code-review -a codex --copy -y
 
 Requiere Node.js/npm. Consulta la [guía de instalación y actualización](docs/installation.md) para requisitos comprobados, descarga ZIP, agentes y precauciones al actualizar copias.
 
+Los helpers opcionales usan una entrada única, `python /ruta/skill/scripts <área> ...`, desde cualquier directorio; no necesitan instalación Python. Consulta [uso y migración de scripts](docs/script-migration.md) para las doce áreas y la ruptura de imports anterior.
+
 ## Uso
 
 Invoca la skill desde un agente compatible; algunos admiten `$comprehensive-code-review`. Indica repositorio y alcance cuando no sean inequívocos:

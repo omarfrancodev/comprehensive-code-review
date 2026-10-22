@@ -8,7 +8,8 @@ import unittest
 from unittest.mock import patch
 
 import test_review_recovery_reservations as reservations
-import review_workspace
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = reservations.artifacts
 from ccr.archive import checkpoints as checkpoint_ops, restart as restart_ops, transactions as transactions_ops

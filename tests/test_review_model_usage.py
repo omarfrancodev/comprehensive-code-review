@@ -137,7 +137,8 @@ class ModelUsageTests(unittest.TestCase):
                 too_large['entries'][0].items() if key not in {'id', 'status'}})
 
     def test_sidecar_is_private_and_never_added_to_public_comment(self):
-        import review_contract
+        from script_test_support import contract_api
+        review_contract = contract_api()
         from publication_fixtures import check_classification, publication_record
         record = publication_record()
         comment = review_contract.render(record, audience='comment',

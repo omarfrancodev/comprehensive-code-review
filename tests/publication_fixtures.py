@@ -4,7 +4,7 @@ import sys
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_publication
+from ccr.reporting import projections as review_publication
 from recovery_fixtures import record10
 
 

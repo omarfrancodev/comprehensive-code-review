@@ -1,7 +1,6 @@
 """Explicit delivery projects retained reviews without changing the archive."""
 import copy
 import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -17,10 +16,7 @@ from test_review_traceability_contract import record6, check
 from ccr.reporting import delivery as delivery_ops
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-spec = importlib.util.spec_from_file_location('review_delivery', SCRIPTS / 'review_delivery.py') if (SCRIPTS / 'review_delivery.py').exists() else None
-delivery = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(delivery)
+delivery = delivery_ops
 
 
 class DeliveryTests(unittest.TestCase):
@@ -289,7 +285,7 @@ class DeliveryTests(unittest.TestCase):
         before = self.snapshot(self.root)
         with self.assertRaises(ValueError):
             delivery.deliver(run, None, self.repo)
-        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_delivery.py'),
+        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'delivery',
                                  '--run-dir', str(run), '--project-root', str(self.repo)], capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('--delivery', result.stderr)
@@ -354,7 +350,7 @@ class DeliveryTests(unittest.TestCase):
     def test_explicit_cli_custom_root_uses_scope_and_review_subdirectories(self):
         run = self.retained()
         root = self.root / 'published'
-        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_delivery.py'),
+        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'delivery',
                                  '--run-dir', str(run), '--delivery', 'brief', '--project-root', str(self.repo),
                                  '--output-root', str(root)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -369,7 +365,7 @@ class DeliveryTests(unittest.TestCase):
         relative = Path(delivery.deliver(second, 'brief', self.repo, 'docs/team-review'))
         self.assertEqual(absolute.parent, relative.parent)
         third = self.retained()
-        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_delivery.py'),
+        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'delivery',
                                  '--run-dir', str(third), '--delivery', 'brief', '--project-root', str(self.repo),
                                  '--output-root', 'docs/team-review'], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)

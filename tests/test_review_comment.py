@@ -14,9 +14,11 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_comment as comments
-import review_contract as contract
-import review_workspace
+from ccr.reporting import comment as comments
+from script_test_support import contract_api
+contract = contract_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 from publication_fixtures import publication_record, check_classification
 
 
@@ -115,8 +117,8 @@ class PublicCommentCliTests(unittest.TestCase):
             context_path = root / 'check-publication.json'
             context_path.write_text(json.dumps(context, ensure_ascii=False), encoding='utf-8')
             draft_path = evidence / 'public-comment.json'
-            helper = SCRIPTS / 'review_comment.py'
-            prepare = run([sys.executable, str(helper), 'prepare', '--input', str(record_path),
+            helper = SCRIPTS
+            prepare = run([sys.executable, str(helper), 'comment', 'prepare', '--input', str(record_path),
                            '--session', str(manifest['manifest']), '--output', str(draft_path),
                            '--check-publication-context', str(context_path)])
             self.assertEqual(prepare.returncode, 0, prepare.stderr)
@@ -125,7 +127,7 @@ class PublicCommentCliTests(unittest.TestCase):
             body_path.write_text(draft['body'], encoding='utf-8', newline='')
             before = {str(path.relative_to(session)): path.read_bytes()
                       for path in session.rglob('*') if path.is_file()}
-            verify = run([sys.executable, str(helper), 'verify', '--input', str(record_path),
+            verify = run([sys.executable, str(helper), 'comment', 'verify', '--input', str(record_path),
                           '--draft', str(draft_path), '--body', str(body_path)])
             self.assertEqual(verify.returncode, 0, verify.stderr)
             self.assertTrue(json.loads(verify.stdout)['verified'])
@@ -134,7 +136,7 @@ class PublicCommentCliTests(unittest.TestCase):
             self.assertEqual(record_path.read_bytes(), record_bytes)
 
             body_path.write_text(draft['body'] + '\nEdited', encoding='utf-8')
-            mismatch = run([sys.executable, str(helper), 'verify', '--input', str(record_path),
+            mismatch = run([sys.executable, str(helper), 'comment', 'verify', '--input', str(record_path),
                             '--draft', str(draft_path), '--body', str(body_path)])
             self.assertEqual(mismatch.returncode, 1)
             self.assertIn('body_mismatch', mismatch.stderr)

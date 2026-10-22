@@ -77,7 +77,7 @@ class LayoutTests(unittest.TestCase):
     def test_cli_validation_is_read_only_and_retention_is_an_explicit_gate(self):
         run = self.prepare()
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+            return subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                    'validate', '--run-dir', str(run), *args],
                                   capture_output=True, text=True, encoding='utf-8')
         before = {path.name: path.read_bytes() for path in run.iterdir() if path.is_file()}
@@ -144,7 +144,7 @@ class LayoutTests(unittest.TestCase):
         context_file = self.write('planned-context.json', context)
         session = self.root / 'planned-session'
         self.assertFalse(session.exists())
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'register', '--run-dir', str(run), '--temporary-path', str(session),
                                  '--context-input', str(context_file)],
                                 capture_output=True, text=True, encoding='utf-8')
@@ -204,7 +204,7 @@ class LayoutTests(unittest.TestCase):
         run = self.prepare(temporary_paths=[session])
         self.retain(run)
         session.rmdir()
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'close', '--run-dir', str(run), '--cleanup', 'complete'],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -216,7 +216,7 @@ class LayoutTests(unittest.TestCase):
         session.mkdir()
         run = self.prepare(temporary_paths=[session])
         self.retain(run)
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'close', '--run-dir', str(run), '--cleanup', 'pending', '--residual', str(session)],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)

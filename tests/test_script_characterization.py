@@ -33,7 +33,7 @@ class ScriptCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(encoding_inventory(), expected['expected_bytes_hex'])
 
-    def test_run_cli_executes_the_selected_legacy_command(self):
+    def test_run_cli_executes_the_selected_area(self):
         from script_test_support import run_cli
 
         with TemporaryDirectory() as directory:
@@ -44,6 +44,7 @@ class ScriptCharacterizationTests(unittest.TestCase):
     def test_module_dependencies_resolves_local_imports_from_ast(self):
         from script_test_support import module_dependencies
 
-        dependencies = module_dependencies('review_artifacts')
-        self.assertIn('review_contract', dependencies)
-        self.assertIn('review_run_lock', dependencies)
+        dependencies = module_dependencies('ccr.cli.artifacts')
+        self.assertIn('ccr.archive.lifecycle', dependencies)
+        self.assertIn('ccr.archive.reader', dependencies)
+        self.assertFalse(any(item.startswith('review_') for item in dependencies))

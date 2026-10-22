@@ -73,7 +73,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
             self.assertEqual(action['intent_path'], active['intent_path'])
             self.assertEqual(action['operation_id'], active['operation_id'])
             self.assertTrue(action['requires_explicit_authority'])
-        command = [sys.executable, '-B', str(Path(artifacts.__file__)), 'recover', '--run-dir', str(source),
+        command = [sys.executable, '-B', str(Path(artifacts.__file__).parent), 'artifacts', 'recover', '--run-dir', str(source),
             '--controller-input', str(self.write('controller-guidance.json', self.controller())),
             '--authority-input', str(self.write('authority-guidance.json', request['authority'])),
             '--current-inputs', str(self.write('current-guidance.json', request['current_inputs']))]

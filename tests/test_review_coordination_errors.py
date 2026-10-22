@@ -129,7 +129,8 @@ class CoordinationErrorTests(unittest.TestCase):
 import runpy, sys
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
-import review_workspace as workspace
+from script_test_support import workspace_api
+workspace = workspace_api()
 import ccr.execution.claims as claim_ops
 script, manifest, artifact = sys.argv[2:5]
 original = claim_ops._git
@@ -137,13 +138,14 @@ def failed(repo, *args):
     if args == ('rev-parse', '--git-common-dir'):
         raise ValueError('Git rev-parse failed (128): unreadable Git directory')
     return original(repo, *args)
-sys.argv = [script, 'record-artifact', '--manifest', manifest, '--path', artifact]
+sys.argv = [script, 'workspace', 'record-artifact', '--manifest', manifest, '--path', artifact]
 with patch.object(claim_ops, '_git', side_effect=failed):
     runpy.run_path(script, run_name='__main__')
 '''
         scripts = Path(workspace.__file__).parent
+        script = scripts / '__main__.py'
         result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code, str(scripts),
-            str(scripts / 'review_workspace.py'), str(session / 'manifest.json'), str(path)],
+            str(script), str(session / 'manifest.json'), str(path)],
             capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith('{'), result.stderr)

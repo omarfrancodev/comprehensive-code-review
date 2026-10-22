@@ -16,11 +16,13 @@ artifacts = archive.artifacts
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
-import review_workspace
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 from ccr.execution import workspace_manifest
 from ccr.archive import resources as archive_resources
-import review_resource_claims as claims
-import review_recovery
+from ccr.execution import claims as claims
+from script_test_support import recovery_api
+review_recovery = recovery_api()
 
 
 class ResourceClaimTests(unittest.TestCase):

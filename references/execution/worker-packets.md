@@ -29,8 +29,8 @@ Check claims/material questions against requirements, raw code, baseline and con
 Preserve raw packets; map provisional IDs consistently before verification. Supply context.json with context_id, complete scope and referenced neutral checks projection:
 
 ```text
-python /absolute/skill/scripts/review_packets.py validate --input /absolute/discovery.json
-python /absolute/skill/scripts/review_packets.py merge --context /absolute/context.json --discovery /absolute/discovery.json --verification /absolute/verification.json
+python /absolute/skill/scripts packets validate --input /absolute/discovery.json
+python /absolute/skill/scripts packets merge --context /absolute/context.json --discovery /absolute/discovery.json --verification /absolute/verification.json
 ```
 
 Merge emits a consolidation bundle, not a canonical/final record. Evidence/check revisions remain; amendments retain superseded claim fields and missing judgments stay absent. Complete final fields through actual assessment, then validate under result-contract.md; amendments stay internal. Keep raw packets. For clean scopes eligible to skip verification, omit --verification; candidates/material questions require an explicit packet. Without helpers use the same contracts in supported structured tools/chat.
@@ -39,6 +39,6 @@ Merge emits a consolidation bundle, not a canonical/final record. Evidence/check
 
 Schemas 8–10 coverage.execution belongs to the coordinator and links these existing packets/results. Workers retain packet version 1, never add required execution IDs, infer other workers, delegate or write durable trace. The coordinator records observed reviewer contexts separately from shared context_id and classifies limitation deltas when completing the final result. Schema 10 also binds assignments to the applicable profile selection; workers still do not own that history.
 
-The coordinator uses `review_setup.py profile` before prepare and `review_setup.py context` after reading the exact returned cierre.json. The context builder preserves profile history, captured inputs and the selected reference-index digest; the coordinator runs phase preflight before registration or dispatch. `review_setup.py event` builds only observed assignment milestones. Every agent/discovery/grouped-verification work event, including completion, retains the active required brief reference in `evidence`, with an observed result reference added when available. These helpers do not change packet fields or dispatch workers.
+The coordinator uses `scripts setup profile` before prepare and `scripts setup context` after reading the exact returned cierre.json. The context builder preserves profile history, captured inputs and the selected reference-index digest; the coordinator runs phase preflight before registration or dispatch. `scripts setup event` builds only observed assignment milestones. Every agent/discovery/grouped-verification work event, including completion, retains the active required brief reference in `evidence`, with an observed result reference added when available. These helpers do not change packet fields or dispatch workers.
 
 Workers keep provisional check ownership/observed execution facts in packets; the coordinator maps them to final schemas 9/10 check.execution and registered executor identities. A role or trace actor is not automatically a writing executor. No new required worker field or workspace per worker.

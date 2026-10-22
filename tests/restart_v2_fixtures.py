@@ -7,13 +7,15 @@ Never use this context for the reader/retry/recovery assertions under test.
 from contextlib import contextmanager
 from unittest.mock import patch
 
+from ccr.archive import evidence as archive_evidence
+from ccr.archive import restart as restart_ops
 from ccr.archive import restart_contract as review_restart
 
 
 @contextmanager
 def previous_v2_producer(artifacts):
     normalize = review_restart.normalize_restart_request
-    capture = artifacts._capture_review_inputs
+    capture = archive_evidence._capture_review_inputs
 
     def previous_normalize(*args, **kwargs):
         value = normalize(*args, **kwargs)
@@ -29,5 +31,5 @@ def previous_v2_producer(artifacts):
         return value
 
     with patch.object(review_restart, 'normalize_restart_request', previous_normalize), \
-            patch.object(artifacts, '_capture_review_inputs', previous_capture):
+            patch.object(restart_ops, '_capture_review_inputs', previous_capture):
         yield

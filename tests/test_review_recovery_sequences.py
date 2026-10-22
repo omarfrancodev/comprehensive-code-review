@@ -96,12 +96,12 @@ class _RecoveryFixture:
         review = self.write('final.json', final)
         return final, context_path, review, [briefs, results]
 
-    def cli(self, script, *args):
-        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(script),
+    def cli(self, area, *args):
+        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), area,
                                  *map(str, args)], cwd=self.repo, capture_output=True,
                                 text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0,
-                         f'CLI failed: {script.name} {args}\n{result.stderr}\n{result.stdout}')
+                         f'CLI failed: {area} {args}\n{result.stderr}\n{result.stdout}')
         return json.loads(result.stdout)
 
 
@@ -199,7 +199,7 @@ class ReviewRecoverySequenceTests(_RecoveryFixture, unittest.TestCase):
         self.assertEqual(inspected['resources'][0]['availability'], 'missing_unknown')
 
     def test_archive8_commands_end_to_end(self):
-        helper = SCRIPTS / 'review_artifacts.py'
+        helper = 'artifacts'
         scope = self.read(self.scope)
         record = record10('standard', 'automatic')
         inputs = current_inputs(scope, {}, source_set_complete=True,

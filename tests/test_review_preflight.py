@@ -9,8 +9,9 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ccr.contracts import preflight
-import review_artifacts
-import review_trace
+from script_test_support import archive_api
+review_artifacts = archive_api()
+from ccr.archive import trace as review_trace
 
 from recovery_fixtures import (context10, current_inputs, historical_prepare,
                                record10, selection_input)
@@ -89,8 +90,8 @@ class PreflightIntegrationTests(unittest.TestCase):
 
     def invoke_preflight(self, run, context_file, phase='register'):
         return subprocess.run([
-            sys.executable, str(Path(__file__).resolve().parents[1] /
-                                'scripts' / 'review_artifacts.py'), 'preflight',
+            sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts'),
+            'artifacts', 'preflight',
             '--run-dir', str(run), '--context-input', str(context_file),
             '--phase', phase], capture_output=True, text=True, encoding='utf-8')
 
@@ -156,7 +157,7 @@ class PreflightIntegrationTests(unittest.TestCase):
         self.assertEqual(self.snapshot(self.root), before)
 
     def test_same_mr_with_another_head_shares_group_but_changes_inputs(self):
-        import review_layout
+        from ccr.archive import layout as review_layout
 
         original = {'repository': 'https://git.example/acme/api', 'mode': 'mr',
                     'base': 'def9876543210', 'head': 'abc1234567890',

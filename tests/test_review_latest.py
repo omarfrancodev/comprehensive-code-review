@@ -4,7 +4,8 @@ import unittest
 from unittest.mock import patch
 
 import test_review_archive8 as archive8
-import review_recovery
+from script_test_support import recovery_api
+review_recovery = recovery_api()
 from ccr.archive import history as history_ops, lookup as lookup_ops
 from recovery_fixtures import selection_input
 

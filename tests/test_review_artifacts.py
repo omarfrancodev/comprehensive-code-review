@@ -1,6 +1,5 @@
 """Durable review archives preserve scope, real usage and observed closure."""
 import copy
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -15,10 +14,8 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-spec = importlib.util.spec_from_file_location('review_artifacts', SCRIPTS / 'review_artifacts.py') if (SCRIPTS / 'review_artifacts.py').exists() else None
-artifacts = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(artifacts)
+from script_test_support import archive_api
+artifacts = archive_api()
 
 from ccr.archive import checkpoints as archive_checkpoints
 from ccr.archive import lifecycle as archive_lifecycle
@@ -28,9 +25,9 @@ from ccr.archive import transactions as archive_transactions
 
 @contextmanager
 def patch_archive_atomic_write(side_effect):
-    """Inject write failures at each current owner behind the CLI facade."""
+    """Inject write failures at the archive owners used by these tests."""
     with ExitStack() as stack:
-        for module in (artifacts, archive_checkpoints, archive_lifecycle,
+        for module in (archive_checkpoints, archive_lifecycle,
                        archive_retention, archive_transactions):
             stack.enter_context(patch.object(module, 'atomic_write', side_effect=side_effect))
         yield
@@ -169,7 +166,7 @@ class ArchiveTests(unittest.TestCase):
     def test_complete_cli_and_expected_schema_cli(self):
         run = self.prepare()
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', *map(str, args)],
                                   capture_output=True, text=True, encoding='utf-8')
         refused = invoke('retain', '--run-dir', run, '--input', self.final, '--expected-schema', 9)
         self.assertEqual(refused.returncode, 1, refused.stderr)
@@ -185,7 +182,6 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['state'], 'complete')
 
     def setUp(self):
-        self.assertIsNotNone(artifacts, 'persistent archive helper is missing')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -747,7 +743,7 @@ class ArchiveTests(unittest.TestCase):
     def test_cli_prepare_retain_close_and_invalid_input_are_json(self):
         from recovery_fixtures import selection_input
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', *map(str, args)],
                                   capture_output=True, text=True, encoding='utf-8')
         profile = self.write('profile.json', selection_input())
         result = invoke('prepare', '--repo', self.repo, '--scope-file', self.scope,

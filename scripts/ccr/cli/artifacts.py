@@ -1,258 +1,26 @@
-#!/usr/bin/env python3
-"""Prepare, register, validate, retain and close durable review evidence (Python 3.10+).
+'Prepare, register, validate, retain and close durable review evidence (Python 3.10+).\n\nMeasurement inputs are an explicit caller assertion of disjoint executions. Duplicate\npaths and execution_id values are refused; semantic overlap is not detectable here.\nTemporary-path authority and ownership belong to the coordinator. This helper never\ndeletes registered resources and must not be used to infer disposal authority.\n'
 
-Measurement inputs are an explicit caller assertion of disjoint executions. Duplicate
-paths and execution_id values are refused; semantic overlap is not detectable here.
-Temporary-path authority and ownership belong to the coordinator. This helper never
-deletes registered resources and must not be used to infer disposal authority.
-"""
 import argparse
-import copy
-from contextlib import contextmanager, ExitStack
-from datetime import datetime, timezone
-from functools import wraps
-import hashlib
 import json
-import os
-from pathlib import Path, PurePosixPath
-import re
 import stat
-import subprocess
 import sys
-from urllib.parse import urlsplit
-import uuid
-
-import review_contract
-import review_metrics
-import review_trace
-import review_harness
-import review_profiles
-import review_inputs
-from ccr.archive import restart_contract as review_restart
-from ccr.execution import claims as resource_claims
-import review_layout
-import review_references
-import review_preflight
-import review_model_usage
-from review_run_lock import CoordinationError, LockConflictError, run_locks
-from review_execution import validate_execution_sources
-from review_check_provenance import validate_check_sources
-import review_check_receipts
-from ccr.contracts.scope import SCOPE_FIELDS, require_scope as _scope
+from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
+from ccr.archive.evidence import _input_object
+from ccr.archive.inspection import inspect_run
+from ccr.archive.integrity import (CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT,
+                                   _evidence_name, verify_files as _verify_files)
+from ccr.archive.lifecycle import block, close, pause, prepare, record_event, register, resume, select_profile, validate
+from ccr.archive.lookup import find_candidates, select_latest
+from ccr.archive.reader import load_run as _load_run
+from ccr.archive.resources import transfer_resources
+from ccr.archive.retention import retain
+from ccr.archive.restart import (_RestartCancellationUnavailable, abandon_restart,
+                                  record_restart_refusal, recover, restart)
 from ccr.shared.encoding import archive_bytes as _json_bytes
-from ccr.shared.git import git as _git, repository_identity
-from ccr.shared.installation import resource_path, skill_root
-from ccr.shared.json_io import atomic_write, read_bounded, read_json
-from ccr.shared.paths import contains as _contains, safe_path
-
-from ccr.archive.coordination import (
-    _locked_run, _owned_run_locks, _restart_lock, owned_run_locks,
-)
-from ccr.archive.transactions import (
-    _archive_write, _append_trace, _append_trace_events, _milestone,
-    _recover_trace, _save_manifest, recover_trace, save_manifest,
-)
-from ccr.archive.evidence import (
-    _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object,
-)
-from ccr.archive.checkpoints import (
-    _checkpoint_commit, _checkpoint_diagnostics, _checkpoint_input_files, checkpoint,
-)
-from ccr.archive.lifecycle import (
-    _controller, _initial_selection, _profile_event,
-    _remove_unowned_prepare_directory, _repository_group, _resource_availability,
-    _scope_group, _slug, _starts_processing, _temporary_manifests, _temporary_paths,
-    block, close, pause, prepare, record_event, register, resume, select_output_root,
-    select_profile, validate,
-)
-from ccr.archive.retention import (
-    _executors, _execution_gate, _handoff_context, _present_resources, _retain_data,
-    _measurements, _validate_model_usage_context, retain,
-)
-from ccr.archive.resources import (
-    _cleanup_identity, _cleanup_resources_remain, _cleanup_rows,
-    _finish_resource_cleanup_locked, begin_resource_cleanup, finish_resource_cleanup,
-    recover_resource_cleanup, transfer_resources,
-)
-
-from ccr.archive.lifecycle import recovery_event as _recovery_event, takeover_controller as _takeover_controller
-from ccr.archive.restart import (
-    _digest,
-    _RestartCancellationUnavailable, _abandoned_source_action, _action,
-    _complete_restart_intent, _diagnostic_recovery_route, _empty_adoption_successor,
-    _find_restart_abandonment, _finish_restart_abandonment, _independent_review_action,
-    _link_restart, _observation, _prepare_from_restart_intent, _receipt,
-    _record_restart_completion, _recover_pending_restart, _recover_run_transactions,
-    _recovery_outcome, _restart_adoption_context, _restart_operation_row,
-    _restart_recovery_source, _restart_resource_exit, _restart_resource_manifests,
-    _restart_transfer_denial, _retire_active_restart,
-    _retire_completed_descriptor_if_present, _sessions, _superseded_actions,
-    _unavailable_transfer_source_exit, _verify_restart_successor_identity,
-    _write_active_restart, _write_restart_intent, abandon_restart,
-    record_restart_refusal, recover, restart,
-)
-
-
-from ccr.archive.reader import load_run as _load_run, _validate_layout
-from ccr.archive.integrity import (
-    _evidence_name, _pending_file_name, _retained_name, _trace_recovery_plan,
-    _verify_pending, verify_files as _verify_files,
-)
-from ccr.archive.intent_contracts import (
-    _validate_cleanup_metadata, _validate_restart_abandonment_value,
-    _validate_terminal_abandonment, _validate_transfer_intent, normalize_transfer_history,
-)
-from ccr.archive.restart_state import (
-    _active_restart_operation, _active_restart_paths, _assert_not_restart_abandoned,
-    _existing_restart_intent_path, _read_restart_intent, _restart_abandonment_path,
-    _restart_completion_path, _restart_intent_path, _restart_local_dir,
-    _restart_source_identity, _validate_restart_abandonment, _validate_restart_completion,
-)
-
-FILES = ('review.json', 'informe.md')
-OPTIONAL_FILES = ('measurements.json',)
-TRACE_FILES = (review_trace.NAME, 'handoff.md')
-MARKER = '.review-ownership.json'
-ARCHIVE_SCHEMA_VERSION = review_layout.ARCHIVE_SCHEMA_VERSION
-TRACE_ARCHIVE_SCHEMAS = frozenset({4, 5, 6, 7, 8})
-PENDING_CONTEXT_LIMIT = 131072
-CHECKPOINT_EVIDENCE_COUNT_LIMIT = 64
-CHECKPOINT_METADATA_LIMIT = 16 * 1024 * 1024
-CHECKPOINT_EVIDENCE_LIMIT = 64 * 1024 * 1024
-CHECKPOINT_HASH = re.compile(r'[0-9a-f]{64}')
-MEASUREMENT_FIELDS = set(review_metrics.COUNTERS) | {
-    'usage', 'execution_id', 'run_id', 'input_ids', 'input_id', 'revision', 'snapshot',
-    'phase', 'role', 'model', 'harness', 'started_at', 'finished_at', 'elapsed_seconds',
-    'executor_invocations', 'status', 'usage_status', 'usage_error', 'unavailable_reason',
-    'stdout_bytes', 'stderr_bytes', 'exit_code', 'timed_out', 'workspace', 'output_dir'}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+from ccr.shared.json_io import read_json
+from ccr.shared.paths import safe_path
+from ccr.contracts import preflight as review_preflight
+from ccr.workflow import profiles as review_profiles
 
 def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_inputs=None):
     """Read-only phase preflight over one explicit native archive and selected inputs."""
@@ -277,19 +45,11 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
         selection=None, context=context, record=record, sources=sources)
     return result, 0 if result['ready'] else 1
 
-
-
-
-
-
-
-
-
-def main():
+def main(argv=None, *, prog=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     create = commands.add_parser('prepare')
     for name in ('repo', 'scope-file', 'skill-version', 'harness'):
@@ -422,7 +182,7 @@ def main():
     finish.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
     finish.add_argument('--released-claims-input',
                         help='Existing JSON list of exact durable cleanup receipts for inline close')
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         authority_input = None
         if getattr(args, 'authority_input', None):
@@ -461,9 +221,8 @@ def main():
             result = transfer_resources(args.source_run, args.successor_run, args.resource_path,
                                         authority=args.authority, controller=read_json(args.controller_input))
         elif args.command == 'inspect':
-            import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
-            result = review_recovery.inspect_run(args.run_dir, current_inputs=current)
+            result = inspect_run(args.run_dir, current_inputs=current)
         elif args.command == 'preflight':
             result, exit_code = preflight_run(
                 args.run_dir, args.context_input, phase=args.phase,
@@ -471,17 +230,16 @@ def main():
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return exit_code
         elif args.command == 'lookup':
-            import review_recovery
             current = read_json(args.current_inputs) if args.current_inputs else None
             requested_scope = read_json(args.scope_file)
             logical_input = read_json(args.logical_scope_input) if args.logical_scope_input else None
             if args.select == 'latest':
                 if current is None:
                     raise ValueError('--select latest requires --current-inputs')
-                result = review_recovery.select_latest(args.repo, requested_scope, archive_root=args.archive_root,
+                result = select_latest(args.repo, requested_scope, archive_root=args.archive_root,
                     current_inputs=current, logical_scope_input=logical_input)
             else:
-                result = review_recovery.find_candidates(args.repo, requested_scope,
+                result = find_candidates(args.repo, requested_scope,
                     archive_root=args.archive_root, limit=args.limit, cursor=args.cursor,
                     current_inputs=current, logical_scope_input=logical_input,
                     include_history=args.include_history)
@@ -530,5 +288,6 @@ def main():
         print(json.dumps(detail, ensure_ascii=False), file=sys.stderr)
         return 1
 
+
 if __name__ == '__main__':
-    sys.exit(main())
+    raise SystemExit(main())

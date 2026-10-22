@@ -16,10 +16,14 @@ from ccr.archive import checkpoints as checkpoint_ops, lifecycle as lifecycle_op
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
-import review_recovery as recovery
-import review_workspace
-import review_resource_claims
-import review_artifacts as recovery_artifacts
+from script_test_support import recovery_api
+recovery = recovery_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
+from ccr.execution import claims as review_resource_claims
+from script_test_support import archive_api
+recovery_artifacts = archive_api()
+from ccr.archive import inspection as archive_inspection, lookup as archive_lookup
 from recovery_fixtures import context10, current_inputs, legacy_prepare, record10, source_events
 
 
@@ -204,8 +208,8 @@ class ReviewRecoveryTests(unittest.TestCase):
             manifest = {'schema_version': schema, 'state': 'complete', 'hashes': {},
                         'pending_hashes': {}, 'temporary_paths': [], 'resource_claims': [],
                         'operation': {'disposition': 'complete', 'phase': 'complete'}}
-            with self.subTest(schema=schema), patch.object(recovery_artifacts, '_load_run', return_value=(run, manifest, {})), \
-                    patch.object(recovery_artifacts, '_verify_files'):
+            with self.subTest(schema=schema), patch.object(archive_inspection, '_load_run', return_value=(run, manifest, {})), \
+                    patch.object(archive_inspection, '_verify_files'):
                 inspected = recovery.inspect_run(run)
                 self.assertIsNone(inspected['review_id'])
 
@@ -258,7 +262,7 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_cli_pause_reads_structured_authority_without_shell_execution(self):
         run = self.prepare7()
         authority_file = self.write('authority.json', {'authority': 'User requested pause'})
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'pause',
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'pause',
                                  '--run-dir', str(run), '--authority-input', str(authority_file),
                                  '--reason', 'Waiting for review input', '--phase', 'discovery'],
                                 capture_output=True, text=True, encoding='utf-8')
@@ -407,11 +411,11 @@ class ReviewRecoveryTests(unittest.TestCase):
                           profile_input=self.profile_input())
 
         loaded = []
-        original = recovery_artifacts._load_run
+        original = archive_lookup._load_run
         def tracked(path):
             loaded.append(str(path))
             return original(path)
-        with patch.object(recovery_artifacts, '_load_run', side_effect=tracked):
+        with patch.object(archive_lookup, '_load_run', side_effect=tracked):
             result = recovery.find_candidates(self.repo, self.read(run / 'cierre.json')['scope'],
                 archive_root=self.output,
                 current_inputs={'scope': self.read(run / 'cierre.json')['scope'], 'sources': {},
@@ -447,7 +451,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         current_file = self.write('lookup-current.json', {
             'scope': scope, 'sources': {}, 'source_set_complete': True})
 
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'lookup',
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'lookup',
                                  '--repo', str(self.repo), '--scope-file', str(scope_file),
                                  '--archive-root', str(self.output), '--current-inputs', str(current_file),
                                  '--limit', '5'], capture_output=True, text=True, encoding='utf-8')
@@ -777,7 +781,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         current = self.write('restart-current.json', request['current_inputs'])
         harness_source = self.write('restart-harness-source.json',
                                     {'kind': 'user', 'reference': '--harness-id'})
-        command = [sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'restart',
+        command = [sys.executable, '-B', str(SCRIPTS), 'artifacts', 'restart',
                    '--run-dir', str(source), '--profile-input', str(profile),
                    '--controller-input', str(controller), '--authority-input', str(authority),
                    '--current-inputs', str(current), '--harness', 'Claude Code Desktop',
@@ -1041,7 +1045,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             artifacts.close(run, cleanup='pending')
         self.assertEqual(interrupted_snapshot, self.snapshot(run))
 
-        closed = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'close',
+        closed = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'close',
                                  '--run-dir', str(run), '--cleanup', 'complete',
                                  '--released-claims-input', str(receipts_input)],
                                 capture_output=True, text=True, encoding='utf-8')

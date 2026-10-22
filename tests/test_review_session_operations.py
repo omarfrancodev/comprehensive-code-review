@@ -103,7 +103,8 @@ from pathlib import Path
 import argparse, json, sys, time
 from unittest.mock import patch
 sys.path.insert(0, sys.argv[1])
-import review_workspace as workspace
+from script_test_support import workspace_api
+workspace = workspace_api()
 from ccr.execution import workspaces as workspace_ops
 manifest, artifact, ready, release = map(Path, sys.argv[2:6])
 original = workspace_ops.save

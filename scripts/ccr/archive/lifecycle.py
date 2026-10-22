@@ -49,7 +49,7 @@ from ccr.shared.json_io import atomic_write, read_bounded, read_json
 from ccr.shared.paths import contains as _contains, safe_path
 from ccr.workflow import inputs as review_inputs
 from ccr.workflow import profiles as review_profiles
-from ccr.workflow.profiles import initial_selection as _initial_selection
+from ccr.workflow.builders import initial_selection as _initial_selection
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import review as review_contract
 from ccr.contracts.reference_index import validate_selection_reference
@@ -612,7 +612,6 @@ _takeover_controller = takeover_controller
 @_locked_run
 def resume(run_dir, *, controller, authority, current_inputs):
     """Reopen an unchanged archive after explicit continuation/takeover authority."""
-    import review_recovery
     run, manifest, marker = _load_run(run_dir)
     marker = _recover_trace(run, manifest, marker)
     _verify_files(run, manifest)
@@ -620,7 +619,7 @@ def resume(run_dir, *, controller, authority, current_inputs):
         raise ValueError('unsupported_layout: preserve the legacy archive or port a verified report for consultation')
     if manifest['state'] in {'retaining', 'closing', 'complete'}:
         raise ValueError('retention/closure has started or completed; recover its transaction or create a new run')
-    normalized_inputs = review_recovery.validate_current_inputs(
+    normalized_inputs = review_inputs.validate_current_inputs(
         current_inputs, manifest, require_applicable=True)
     operation = manifest['operation']
     if operation['disposition'] not in {'open', 'paused', 'blocked'}:

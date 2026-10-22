@@ -32,13 +32,18 @@ UNJUSTIFIED_DOWNGRADE = re.compile(
 def _text(value, limit=4000):
     return isinstance(value, str) and bool(value.strip()) and len(value) <= limit and not any(ord(char) < 32 for char in value)
 
+def normalize_profile(value):
+    """Resolve request aliases without rewriting retained historical records."""
+    if not isinstance(value, str):
+        raise ValueError('expected a supported profile name')
+    normalized = ALIASES.get(value, value)
+    if normalized not in PROFILES:
+        raise ValueError('expected focused, standard, deep or extended (economy/balanced aliases accepted)')
+    return normalized
+
+
 def _canonical(profile):
-    if not isinstance(profile, str):
-        raise ValueError('profile must be supported text')
-    value = ALIASES.get(profile, profile)
-    if value not in PROFILES:
-        raise ValueError('profile must be focused, standard, deep or extended')
-    return value
+    return normalize_profile(profile)
 
 def _same_decision(raw, previous):
     return all(raw.get(field) == previous.get(field) for field in INPUT_FIELDS)
@@ -259,30 +264,3 @@ def merge_assignment_registry(previous: list[dict], incoming: list[dict], histor
 def canonical_profile(value):
     """Resolve supported request aliases to a current profile name."""
     return _canonical(value)
-
-def initial_selection(profile_input):
-    """Normalize the exact initial profile decision for a newly prepared archive."""
-    import os
-    from ccr.contracts.reference_index import validate_selection_reference
-    from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE
-    from ccr.shared.json_io import read_json
-
-    if profile_input is None:
-        raise ValueError('profile selection is required before preparing a new archive')
-    raw = read_json(profile_input) if isinstance(profile_input, (str, os.PathLike)) else copy.deepcopy(profile_input)
-    if not isinstance(raw, dict):
-        raise ValueError('profile selection must be a JSON object')
-    if set(raw) != INPUT_FIELDS:
-        raise ValueError('initial profile selection must contain exactly the required decision fields')
-    try:
-        value = validate_selection({key: raw[key] for key in INPUT_FIELDS})
-    except KeyError as exc:
-        raise ValueError('profile selection is missing required field: ' + str(exc.args[0])) from exc
-    if value['phase'] != 'prepare' or value['affected_assignments']:
-        raise ValueError('initial profile selection must use prepare phase and have no affected assignments')
-    reference_issues = validate_selection_reference(value, None)
-    if reference_issues:
-        raise ValueError('; '.join(issue['message'] for issue in reference_issues))
-    value.update(id='S001', changed_from=None, event_id='E000002')
-    value['reference'] = INITIAL_PROFILE_HISTORY_REFERENCE
-    return value
