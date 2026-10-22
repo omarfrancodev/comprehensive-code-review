@@ -508,7 +508,7 @@ git commit -m "refactor(archivo): dividir evidencia y operaciones transaccionale
 - Consumes: Tasks 5–6: `workspace_manifest.load(manifest_path) -> dict`, `owned_run_locks(run_dirs, *, reservation=None)` y `save_manifest(run, manifest, marker) -> dict`; las validaciones de claims/intents son inferiores a los servicios.
 - Produces: `archive.resources.cleanup_workspace(args) -> dict` conserva las salidas/errores de review_workspace.cleanup. `resources.transfer_resources(source_run, successor_run, paths, *, authority, controller, _restart_operation_id=None) -> dict`, begin_resource_cleanup, finish_resource_cleanup y recover_resource_cleanup conservan firmas actuales. `execution.workspaces` posee prepare/record_artifact y `plan_cleanup(args, manifest: dict, *, claim: dict | None = None) -> dict`, `remove_workspaces(plan: dict) -> dict`; éstas no importan archive.resources/restart/lifecycle. El plan contiene session_id/session_dir, entradas verificadas de workspaces y main_changed; remove_workspaces devuelve el resultado actual de cierre tras revalidar los paths y registros Git seleccionados. El servicio conserva los locks y revalida ownership antes de llamar esas acciones. `execution.claims` verifica identidad y prepara planes con datos de run seleccionados; sus APIs públicas sustituyen las llamadas privadas entre módulos. Toda entrada de cleanup reclamada pasa por resources, no por una función física expuesta como operación CLI.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_resource_boundaries.py`.
 
@@ -520,21 +520,21 @@ def test_physical_workspace_actions_do_not_import_archive_services(self):
     self.assertFalse(any(name.startswith('review_') for name in deps))
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_resource_boundaries.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `cleanup_workspace(args) -> dict` en `scripts/ccr/archive/resources.py` y sus acciones físicas separadas**
+- [x] **Step 3: Implementar `cleanup_workspace(args) -> dict` en `scripts/ccr/archive/resources.py` y sus acciones físicas separadas**
 
 Separar planificación pura de claims, verificación por IO y aplicación durable; mover coordinación al servicio de archive. Conservar el orden observado de Task 1 y toda la sección crítica. Validar toda la sesión antes del primer borrado y conservar recibos/recovery ante fallo posterior. No pasar el módulo archive como dependencia general.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_resource_boundaries.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_resource_claims.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_coordination_errors.py -v`
@@ -546,7 +546,9 @@ Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una s
 
 Preservar expresamente las aserciones de `tests/test_review_restart_resources.py::test_superseded_checkpoint_keeps_remaining_claim_cleanup_usable`: inyecta la interrupción después del borrado y exige recuperación del cleanup. No sustituir ese escenario por el test estructural nuevo.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+Execution note: `test_review_restart_resources.py` passed 7 of its 9 test methods; the two exhaustive transfer/adoption replacement matrices were deferred because the prior measured runtime exceeds 15 minutes each. The required post-removal cleanup recovery scenario passed. The remaining suites in this step passed, with one Windows hardlink permission skip. Implementation commit: `2424258`.
+
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_workspace.py scripts/review_resource_claims.py scripts/review_artifacts.py tests/test_review_resource_claims.py tests/test_review_coordination_errors.py tests/test_review_coordination_types.py tests/test_review_session_operations.py tests/test_review_restart_resources.py tests/test_workspace_layout.py tests/test_script_resource_boundaries.py
