@@ -1,4 +1,4 @@
-"""Compatibility command surface for historical review consultation."""
+"""Read and port a verifiable old review as a three-file consultation package."""
 import argparse
 import json
 import sys

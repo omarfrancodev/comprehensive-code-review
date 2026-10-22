@@ -1,4 +1,4 @@
-"""Compatibility command surface for archive inspection and lookup."""
+"""Read-only inspection and bounded classification for durable review runs."""
 from ccr.archive import layout as review_layout
 from ccr.archive.inspection import (
     _action, _decode_json_bytes, _native_archive, _recover_source_action,
