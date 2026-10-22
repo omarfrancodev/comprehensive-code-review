@@ -256,3 +256,46 @@ def module_dependencies(module: str) -> set[str]:
                     dependencies.add(candidate)
     dependencies.discard(module_name)
     return dependencies
+
+
+def owned_check_request(root: Path, *, exit_code: int = 0) -> dict:
+    """Create a real owned workspace and a request for one explicit check."""
+    import shlex
+    from ccr.execution import workspaces
+
+    root = Path(root).resolve()
+    repo = root / 'repo'
+    repo.mkdir(parents=True)
+    env = {key: value for key, value in os.environ.items()
+           if not key.upper().startswith('GIT_')}
+    env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_SYSTEM=os.devnull,
+               GIT_CONFIG_NOSYSTEM='1')
+
+    def git(*args):
+        result = subprocess.run(['git', *args], cwd=repo, env=env,
+                                capture_output=True, text=True, encoding='utf-8')
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or 'Git fixture setup failed')
+        return result.stdout.strip()
+
+    git('init', '-q')
+    git('config', 'user.name', 'Fixture Reviewer')
+    git('config', 'user.email', 'fixture@example.invalid')
+    (repo / 'product.py').write_text('answer = 42\n', encoding='utf-8')
+    git('add', 'product.py')
+    git('commit', '-qm', 'fixture baseline')
+    manifest = workspaces.prepare(argparse.Namespace(
+        repo=str(repo), mode='commit', ref='HEAD', role=['executor'],
+        include_untracked=[]))
+    session_dir = Path(manifest['session_dir'])
+    evidence_dir = session_dir / 'evidence'
+    evidence_dir.mkdir()
+    cwd = Path(manifest['workspaces'][0]['path'])
+    revision = workspaces.out(cwd, 'rev-parse', 'HEAD').decode('utf-8').strip()
+    (evidence_dir / 'context.json').write_text(json.dumps({
+        'executors': [{'executor': 'X1', 'workspace': str(cwd)}]
+    }), encoding='utf-8')
+    argv = [sys.executable, '-c', f'raise SystemExit({int(exit_code)})']
+    return {'check_id': 'C001', 'argv': argv, 'command': shlex.join(argv),
+            'cwd': str(cwd), 'executor_workspace': str(cwd), 'revision': revision,
+            'executor': 'X1', 'output_dir': str(evidence_dir / 'attempt-1')}

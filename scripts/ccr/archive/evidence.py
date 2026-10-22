@@ -24,26 +24,13 @@ def _input_object(value, label, *, max_bytes=None):
     return result
 
 def _capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity=None):
-    """Capture external inputs before work while keeping profile history authoritative."""
+    """Read an optional input document and validate it against captured identities."""
     if raw is None:
         return None
-    value = review_inputs.normalize_inputs(_input_object(raw, label))
-    if logical_scope_identity is not None:
-        if ('logical_scope_identity' in value
-                and value['logical_scope_identity'] != logical_scope_identity):
-            raise ValueError(label + ' logical scope differs from the pinned selector')
-        value.setdefault('logical_scope_identity', logical_scope_identity)
-    if value['scope'] != scope:
-        raise ValueError(label + ' scope differs from the pinned review scope')
-    selected_profile = value.pop('profile', None)
-    if selected_profile is not None and selected_profile != profile:
-        raise ValueError(label + ' profile differs from the captured profile selection')
-    for reference in value['sources']:
-        path, _ = parse_reference(
-            reference, field=label + ' source', allow_alias_key=True)
-        if not path.startswith('evidence/'):
-            raise ValueError(label + ' source references must identify selected evidence/ files')
-    return value
+    return review_inputs.capture_review_inputs(
+        _input_object(raw, label), scope, profile, label,
+        logical_scope_identity=logical_scope_identity)
+
 
 def _check_evidence_target(run, manifest, name):
     target = safe_path(run / name)

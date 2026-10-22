@@ -19,6 +19,7 @@ sys.path.insert(0, str(SCRIPTS))
 import review_check_receipts as receipts
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import receipts as receipt_contracts
+from ccr.execution import checks as checks_ops, workspaces as workspace_ops
 import review_workspace
 from recovery_fixtures import context10, record10
 from test_review_traceability_contract import check as base_check
@@ -147,7 +148,7 @@ class CheckReceiptTests(unittest.TestCase):
             executors=[dict(executors[0], executor='X2')]))
 
     def test_validation_never_starts_a_process(self):
-        with patch('review_check_receipts.subprocess.run') as run:
+        with patch.object(checks_ops.subprocess, 'run') as run:
             receipt_contracts.validate_receipt(valid_receipt(), {
                 'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''},
                 check=valid_binding()[0], executors=valid_binding()[1])
@@ -280,7 +281,7 @@ class CaptureCheckTests(unittest.TestCase):
             cwd = root / 'cwd'
             output_dir = root / 'evidence' / 'attempt-1'
             cwd.mkdir()
-            with patch('review_check_receipts.subprocess.run') as run:
+            with patch.object(checks_ops.subprocess, 'run') as run:
                 with self.assertRaises((ValueError, OSError)):
                     receipts.capture_check(check_id='C001', argv=[sys.executable, '-V'],
                                            command=shlex.join([sys.executable, '-V']),
@@ -338,9 +339,9 @@ class CaptureCheckTests(unittest.TestCase):
                     return b'same-head\n'
                 raise AssertionError('unexpected Git query: ' + repr(args))
 
-            with patch('review_workspace.load', return_value=manifest), \
-                    patch('review_workspace.out', side_effect=fake_git_out) as git_out, \
-                    patch('review_check_receipts.subprocess.run') as run:
+            with patch.object(workspace_ops, 'load', return_value=manifest), \
+                    patch.object(workspace_ops, 'out', side_effect=fake_git_out) as git_out, \
+                    patch.object(checks_ops.subprocess, 'run') as run:
                 run.return_value = subprocess.CompletedProcess(['python', '-V'], 0)
                 with self.assertRaisesRegex(ValueError, 'executor X1 is registered to another workspace'):
                     receipts.capture_check(

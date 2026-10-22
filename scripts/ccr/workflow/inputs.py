@@ -63,6 +63,31 @@ def normalize_inputs(raw: dict, *, caller: bool = True) -> dict:
     return result
 
 
+def capture_review_inputs(raw: dict, scope: dict, profile: dict, label: str, *,
+                          logical_scope_identity: str | None = None) -> dict | None:
+    """Validate captured review inputs against their pinned scope and profile."""
+    if raw is None:
+        return None
+    value = normalize_inputs(raw)
+    if logical_scope_identity is not None:
+        if ('logical_scope_identity' in value
+                and value['logical_scope_identity'] != logical_scope_identity):
+            raise ValueError(label + ' logical scope differs from the pinned selector')
+        value.setdefault('logical_scope_identity', logical_scope_identity)
+    if value['scope'] != scope:
+        raise ValueError(label + ' scope differs from the pinned review scope')
+    selected_profile = value.pop('profile', None)
+    if selected_profile is not None and selected_profile != profile:
+        raise ValueError(label + ' profile differs from the captured profile selection')
+    from ccr.contracts.references import parse_reference
+    for reference in value['sources']:
+        path, _ = parse_reference(
+            reference, field=label + ' source', allow_alias_key=True)
+        if not path.startswith('evidence/'):
+            raise ValueError(label + ' source references must identify selected evidence/ files')
+    return value
+
+
 def compare_inputs(retained: dict | None, current: dict) -> dict:
     """Compare known inputs; omitted or uncaptured identities remain unknown."""
     current = normalize_inputs(current)
