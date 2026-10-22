@@ -686,18 +686,17 @@ git commit -m "refactor(consulta): independizar recuperación e historial de los
 ### Task 10: Extraer setup, candidatos, captura de checks y runner
 
 **Files:**
-- Create: `scripts/ccr/workflow/builders.py`, `scripts/ccr/workflow/setup.py`, `scripts/ccr/execution/candidates.py`
-- Create: `scripts/ccr/execution/checks.py`, `scripts/ccr/execution/runner.py`
+- Create: `scripts/ccr/workflow/builders.py`, `scripts/ccr/workflow/setup.py`, `scripts/ccr/execution/candidates.py`, `scripts/ccr/execution/checks.py`, `scripts/ccr/execution/runner.py`
+- Modify: `scripts/ccr/archive/evidence.py`, `scripts/ccr/workflow/inputs.py`
 - Modify: `scripts/review_setup.py`, `scripts/review_check_receipts.py`, `scripts/review_runner.py`
-- Modify: `tests/test_review_setup.py`, `tests/test_review_check_receipts.py`, `tests/test_review_model_usage.py`
-- Modify: `tests/script_test_support.py`
+- Modify: `tests/test_review_check_receipts.py`, `tests/script_test_support.py`
 - Test: `tests/test_script_execution_boundaries.py`
 
 **Interfaces:**
 - Consumes: Task 5: `owned_session(session_path) -> tuple[Path, Path, dict]`, load_run/verify_files; Task 4: validate_preflight y contratos de recibos/modelos; Task 7: workspaces propios y verificación de sesión.
-- Produces: builders conserva build_profile_selection, build_context, build_model_usage_update y build_assignment_event con sus firmas actuales. setup expone `run_command(command: str, input_path: str, output_path: str) -> dict`, extraído de _run_command. candidates expone `write_new_json(session_dir: Path, output: str, value: dict) -> Path`. checks mantiene `capture_check(*, check_id, argv, command, cwd, executor_workspace, revision, executor, output_dir) -> dict`; runner conserva run(args) y stop(process). Helper sólo de tests `owned_check_request(root: Path, *, exit_code: int = 0) -> dict` en tests/script_test_support.py: crea repo Git sintético y sesión/workspace propios mediante execution.workspaces.prepare, usando el setup vigente de las pruebas de captura; devuelve exactamente check_id, argv, command, cwd, executor_workspace, revision, executor y output_dir. argv ejecuta sys.executable con raise SystemExit(exit_code); command representa ese argv según el contrato vigente. No mockea el gate de ownership.
+- Produces: builders conserva `build_profile_selection`, `build_context`, `build_model_usage_update` y `build_assignment_event` con sus firmas actuales. `workflow.inputs.capture_review_inputs(raw, scope, profile, label, *, logical_scope_identity=None)` valida la entrada normalizada sin IO; el lector de archive conserva su wrapper de lectura. setup expone `run_command(command: str, input_path: str, output_path: str) -> dict`, extraído de _run_command y conectado a reader/integrity públicos. candidates expone `write_new_json(session_dir: Path, output: str, value: dict) -> Path`. checks mantiene `capture_check(*, check_id, argv, command, cwd, executor_workspace, revision, executor, output_dir) -> dict`; runner conserva `run(args)` y `stop(process)`. Helper sólo de tests `owned_check_request(root: Path, *, exit_code: int = 0) -> dict` en tests/script_test_support.py: crea repo Git sintético y sesión/workspace propios mediante execution.workspaces.prepare, usando el setup vigente de las pruebas de captura; devuelve exactamente check_id, argv, command, cwd, executor_workspace, revision, executor y output_dir. argv ejecuta sys.executable con raise SystemExit(exit_code); command representa ese argv según el contrato vigente. No mockea el gate de ownership.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_execution_boundaries.py`.
 
@@ -727,30 +726,30 @@ def test_capture_keeps_the_observed_nonzero_exit(self):
         self.assertIsNotNone(receipt['finished_at'])
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_execution_boundaries.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `write_new_json(session_dir: Path, output: str, value: dict) -> Path` en `scripts/ccr/execution/candidates.py` y las APIs de ejecución**
+- [x] **Step 3: Implementar `write_new_json(session_dir: Path, output: str, value: dict) -> Path` en `scripts/ccr/execution/candidates.py` y las APIs de ejecución**
 
 Separar IO/ownership de construcción pura; cambiar setup a reader e inputs públicos. Conservar el escritor de candidatos con su formato propio, límite y rechazo de sobrescritura. Capturar argv sin shell y sin inferir éxito del comando por haber escrito un recibo.
 
 Crear también owned_check_request en tests/script_test_support.py con el contrato de Interfaces, extrayendo el setup de la suite de captura existente, sin importar su clase TestCase.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_execution_boundaries.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_setup.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_check_receipts.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_model_usage.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_setup.py scripts/review_check_receipts.py scripts/review_runner.py tests/test_review_setup.py tests/test_review_check_receipts.py tests/test_review_model_usage.py tests/script_test_support.py tests/test_script_execution_boundaries.py
