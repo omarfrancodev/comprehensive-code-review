@@ -14,8 +14,7 @@ HASH = re.compile(r'[0-9a-f]{64}')
 from ccr.archive.reader import load_run as _load_run
 from ccr.archive.integrity import verify_files as _verify_files
 from ccr.contracts.claims import (
-    _authority, _claim_row, _digest, _encoded, _validate_sidecar,
-    validate_release_observation,
+    _authority, _claim_row, _digest, _encoded,
 )
 from ccr.execution import workspace_manifest as _workspace_manifest
 from ccr.shared.git import git as _git, repository_identity
@@ -72,6 +71,83 @@ def _safe_path(value):
         if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
             raise ValueError('resource claim path traverses a link/reparse point: ' + str(current))
     return path.resolve()
+
+def _validate_sidecar(sidecar, session, workspace, token_digest):
+    """Validate a claim record and its filesystem-backed archive path."""
+    fields = {'schema_version', 'status', 'claim_id', 'session_id', 'session_dir',
+              'owner_token_sha256', 'repo', 'repository_key', 'run_id', 'owner_id',
+              'archive_path', 'adopted', 'authority', 'transferred_from'}
+    if (not isinstance(sidecar, dict) or set(sidecar) != fields
+            or sidecar.get('schema_version') != CLAIM_SCHEMA or sidecar.get('status') != 'owned'
+            or not isinstance(sidecar.get('claim_id'), str) or not re.fullmatch(r'RC-[0-9a-f]{32}', sidecar['claim_id'])
+            or sidecar.get('session_id') != workspace.get('session_id')
+            or sidecar.get('session_dir') != str(session)
+            or sidecar.get('owner_token_sha256') != token_digest
+            or sidecar.get('repo') != workspace.get('repo')
+            or not isinstance(sidecar.get('repository_key'), str)
+            or not re.fullmatch(r'[0-9a-f]{20}', sidecar['repository_key'])
+            or not isinstance(sidecar.get('run_id'), str) or not re.fullmatch(r'[0-9a-f]{20}', sidecar['run_id'])
+            or not isinstance(sidecar.get('owner_id'), str) or not re.fullmatch(r'[0-9a-f]{32}', sidecar['owner_id'])
+            or not isinstance(sidecar.get('archive_path'), str)
+            or type(sidecar.get('adopted')) is not bool
+            or (sidecar.get('authority') is not None and not isinstance(sidecar.get('authority'), str))
+            or (sidecar.get('transferred_from') is not None and not isinstance(sidecar.get('transferred_from'), str))):
+        raise ValueError('invalid or foreign resource claim sidecar')
+    _safe_path(sidecar['archive_path'])
+    if sidecar['adopted'] and not sidecar['authority']:
+        raise ValueError('adopted resource claim has no authority source')
+
+def validate_release_observation(manifest, present_paths, released_claims):
+    """Bind missing paths to an explicit, previously verified cleanup receipt."""
+    present = {str(_safe_path(path)) for path in present_paths}
+    if not isinstance(released_claims, list):
+        raise ValueError('release receipts must be a list')
+    by_id = {}
+    for receipt in released_claims:
+        if (not isinstance(receipt, dict) or set(receipt) != {'session_id', 'run_id', 'claim_id', 'claim_sha256'}
+                or not all(isinstance(receipt.get(key), str) and receipt[key] for key in receipt)
+                or not re.fullmatch(r'[0-9a-f]{32}', receipt['session_id'])
+                or not re.fullmatch(r'[0-9a-f]{20}', receipt['run_id'])
+                or not re.fullmatch(r'RC-[0-9a-f]{32}', receipt['claim_id'])
+                or not HASH.fullmatch(receipt['claim_sha256']) or receipt['claim_id'] in by_id):
+            raise ValueError('invalid or duplicate resource release receipt')
+        by_id[receipt['claim_id']] = receipt
+    rows = json.loads(json.dumps(manifest.get('resource_claims', [])))
+    expected_ids = set()
+    run_id = manifest.get('run_id')
+    for row in rows:
+        status = row.get('status')
+        if status not in {'owned', 'releasing', 'released'}:
+            continue
+        expected_ids.add(row['claim_id'])
+        path = str(_safe_path(row['session_dir']))
+        receipt = by_id.get(row['claim_id'])
+        if path in present:
+            if status == 'released':
+                raise ValueError('released resource path exists again; preserve and inspect it')
+            if receipt is not None:
+                raise ValueError('resource release receipt conflicts with a still-present claimed session')
+            continue
+        if (status == 'released' and receipt is None
+                and 'cleanup_receipts' not in manifest and 'resource_cleanup' not in manifest
+                and row.get('released_by') == 'review_workspace.cleanup'
+                and row.get('release_claim_sha256') == row.get('claim_sha256')):
+            # Archive-7 files written before durable cleanup receipts already
+            # recorded the release in their hash-bound claim row.
+            continue
+        if (receipt is None or receipt['session_id'] != row['session_id'] or receipt['run_id'] != run_id
+                or receipt['claim_sha256'] != row['claim_sha256']):
+            raise ValueError('missing claimed resource does not prove its own cleanup; release evidence is required')
+        if status == 'released':
+            if row.get('release_claim_sha256') != receipt['claim_sha256']:
+                raise ValueError('resource release receipt does not match the durable released claim')
+        else:
+            row['status'] = 'released'
+            row['released_by'] = 'review_workspace.cleanup'
+            row['release_claim_sha256'] = receipt['claim_sha256']
+    if set(by_id) - expected_ids:
+        raise ValueError('release receipt identifies a claim absent from this review archive')
+    return rows
 
 def _read_json(path):
     def unique(pairs):

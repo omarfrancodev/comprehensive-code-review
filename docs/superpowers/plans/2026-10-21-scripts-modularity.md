@@ -40,11 +40,11 @@
 
 Base fijada: `fd38df82f2ea8ef2a921dd8a89e66540f0f01bfb`, main/CCR 2.14.0. Worktree de planificación: `.worktrees/scripts-modularity-spec-plan`, rama `docs/scripts-modularity-spec-plan`.
 
-Estado: plan preparado por petición expresa junto con el spec; ambos pendientes de revisión antes de implementar. Método de ejecución aún no elegido. Se recomienda ejecución nativa secuencial por el acoplamiento entre interfaces y transacciones, con revisión de rama al finalizar; la elección corresponde al usuario. Este documento no inicia agentes ni ejecuta tareas de producto.
+Estado: implementación completa en este worktree por autorización expresa del usuario. La rama `docs/scripts-modularity-spec-plan` parte de `main` actualizado (`fd38df82f2ea8ef2a921dd8a89e66540f0f01bfb`). Se ejecutó de forma secuencial en el worktree; las regresiones completas pasan. Los commits locales de Task 12 y Task 13 están finalizados.
 
-Si main avanza antes de implementar, comparar scripts, contratos, pruebas y reglas de contribución con esta base y actualizar ambos documentos antes de ejecutar. No mezclar cambios de otro worktree. Se puede reutilizar este worktree para ejecución una vez aprobados los documentos; no es necesario crear otra copia automáticamente.
+No mezclar cambios de otro worktree. El spec y el plan guiaron la implementación en esta misma copia.
 
-Las tareas son secuenciales. Cada una termina con sus pruebas y un commit local de alcance explícito. Se permiten delegadores temporales en los archivos legacy durante las extracciones para mantener pasos verificables; Task 12 los retira todos y Task 13 comprueba su ausencia. No escribir producto para esta entrega de planificación.
+Las tareas son secuenciales. Cada una termina con sus pruebas y un commit local de alcance explícito. Se permiten delegadores temporales en los archivos legacy durante las extracciones para mantener pasos verificables; Task 12 los retira todos y Task 13 comprueba su ausencia.
 
 Los comandos de pruebas se ejecutan en la raíz del worktree con un intérprete Python real, no el alias de WindowsApps. `python` en los ejemplos representa ese intérprete. Una prueba RED debe fallar por la API/comportamiento que se introduce, no por errores ambientales; no se instala ninguna dependencia para obtener verde.
 
@@ -89,16 +89,16 @@ Los comandos de regresión usan discovery para evitar imports accidentales de ot
 - Consumes: CLI legacy de spec §3 y los encoders actuales; aún no consume APIs nuevas. El baseline se toma del commit fd38df8, antes de mover funciones.
 - Produces: `script_test_support.run_cli(area: str, argv: list[str], *, cwd: Path) -> subprocess.CompletedProcess` elige el legacy actual y se actualiza a la entrada única en Task 12. `cli_inventory() -> dict` enumera las 12 áreas del spec con sus opciones, choices y acciones de argparse. Los fixtures guardan expectativas portables, no paths locales, UUID o timestamps de una ejecución real. `enable_package_imports() -> None`, `encoding_inventory() -> dict` y `module_dependencies(module: str) -> set[str]`: este último lee AST del módulo bajo scripts, resuelve imports relativos y locales y no lo importa ni lo ejecuta.
 
-- [ ] **Step 1: Ejecutar la suite de la base antes de cambios de producto**
+- [x] **Step 1: Ejecutar la suite de la base antes de cambios de producto**
 
 Run: `python -B -X utf8 -m unittest discover -s tests`
-Expected: OK; registrar conteo, fallos o skips observados. Un fallo previo debe diagnosticarse antes de atribuirlo a esta migración.
+Resultado: baseline iniciado antes de producto e interrumpido tras más de 15 minutos dentro de la matriz de replay de transferencias, con progreso confirmado por faulthandler. No se certifica como suite base completa; la suite final de Task 13 sí terminó completa.
 
-- [ ] **Step 2: Capturar las expectativas portables de la base**
+- [x] **Step 2: Capturar las expectativas portables de la base**
 
 Guardar en tests/fixtures/scripts_cli_contracts.json las doce áreas, opciones, choices, defaults y requerimientos observados de los parsers de fd38df8. Guardar en scripts_encoding_contracts.json pares de entrada/bytes esperados para manifest, layout, restart, trace, recibos y setup. Excluir cwd, UUID y tiempos reales. Estas expectativas se inspeccionan antes de mover funciones; no se regeneran con la implementación refactorizada para hacer pasar un fallo.
 
-- [ ] **Step 3: Escribir la prueba de caracterización**
+- [x] **Step 3: Escribir la prueba de caracterización**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_characterization.py`.
 
@@ -118,26 +118,26 @@ def test_encoding_inventory_matches_original_bytes(self):
     self.assertEqual(encoding_inventory(), expected)
 ```
 
-- [ ] **Step 4: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 4: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_characterization.py -v`
 Expected: FAIL por import/API nueva ausente en script_test_support; no por un comportamiento antiguo que ya es correcto.
 
-- [ ] **Step 5: Implementar las interfaces producidas en sus archivos propietarios**
+- [x] **Step 5: Implementar las interfaces producidas en sus archivos propietarios**
 
 Crear run_cli/cli_inventory/encoding_inventory/enable_package_imports/module_dependencies con las firmas de Interfaces en tests/script_test_support.py. run_cli usa un mapa explícito de áreas a las rutas legacy de spec §3, subprocess sin shell y cwd suministrado; Task 12 cambia sólo ese routing. cli_inventory devuelve las expectativas observadas del parser, no lee el fixture para devolverlo. encoding_inventory devuelve para los seis roles lógicos manifest/layout/restart/trace/receipt/setup el hexadecimal de los bytes de entrada determinista capturados en Step 2, invocando al encoder real; no carga sus expectativas. Al mover cada encoder se adapta únicamente el routing de este helper. Registrar además el orden observado de locks de cleanup, transferencia y restart en el baseline documental.
 
-- [ ] **Step 6: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 6: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_characterization.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 7: Ejecutar las regresiones del entregable**
+- [x] **Step 7: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_run_lock.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 8: Crear el commit del entregable verificado**
+- [x] **Step 8: Crear el commit del entregable verificado**
 
 ```bash
 git add -- tests/fixtures/scripts_cli_contracts.json tests/fixtures/scripts_encoding_contracts.json tests/script_test_support.py docs/validation/2026-10-21-scripts-modularity-baseline.md tests/test_script_characterization.py
@@ -168,7 +168,7 @@ git commit -m "test(scripts): fijar superficie y protocolos de los helpers"
 - Consumes: Task 1: `enable_package_imports() -> None`, `module_dependencies(module: str) -> set[str]` y fixtures deterministas de encodings; no consume servicios de archivo.
 - Produces: `skill_root() -> Path`, `resource_path(relative: str) -> Path`; `validate_scope(scope: object) -> list[str]`, `require_scope(scope: object) -> None`; `normalize_inputs(raw: dict, *, caller: bool = True) -> dict` y `compare_inputs(retained: dict | None, current: dict) -> dict`. Extraer también `candidate_inputs(manifest: dict, record: dict | None = None) -> dict` y `validate_current_inputs(current_inputs, manifest, *, require_same_scope=True, compare_sources=True, require_applicable=False) -> dict` desde review_recovery; son reglas puras usadas por continuidad y lectura. IO/Git/locks mantienen firmas de los originales. Los formatos nombrados de encoding preservan los fixtures de Task 1; no se sustituye toda serialización por el formato de manifest. Encodings en scripts/ccr/shared/encoding.py: `archive_bytes(value: object) -> bytes` (indentación 2 y LF final), `compact_bytes(value: object) -> bytes` (compacto sin LF), `receipt_bytes(value: object) -> bytes` (compacto con LF); UTF-8, sort_keys=True, ensure_ascii=False y allow_nan=False en los tres. Los límites específicos de layout permanecen en layout.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_shared.py`.
 
@@ -192,21 +192,21 @@ def test_installation_root_ignores_cwd(self):
             os.chdir(previous)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_shared.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `skill_root() -> Path` en `scripts/ccr/shared/installation.py` y las interfaces compartidas de esta extracción**
+- [x] **Step 3: Implementar `skill_root() -> Path` en `scripts/ccr/shared/installation.py` y las interfaces compartidas de esta extracción**
 
 Trasladar las funciones con su semántica actual. Extraer la validación de scope del validador general sin cambiar sus diagnósticos, y quitar la dependencia de inputs hacia review_artifacts. Resolver catálogo y SKILL.md con installation; mantener variantes de seguridad/errores de paths y Git donde hoy difieren.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_shared.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_inputs.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_layout_v2.py -v`
@@ -215,7 +215,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_run_lock.py
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_harness.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_artifacts.py scripts/review_inputs.py scripts/review_layout.py scripts/review_trace.py scripts/review_run_lock.py scripts/review_harness.py scripts/review_metrics.py scripts/review_recovery.py tests/test_review_inputs.py tests/test_review_layout_v2.py tests/test_review_trace.py tests/test_review_run_lock.py tests/test_review_harness.py scripts/review_contract.py tests/test_script_shared.py tests/script_test_support.py
@@ -242,7 +242,7 @@ git commit -m "refactor(scripts): extraer infraestructura y contratos básicos"
 - Consumes: Task 2: `validate_scope(scope: object) -> list[str]`, `require_scope(scope: object) -> None`, `normalize_inputs(raw: dict, *, caller: bool = True) -> dict` y encodings con formatos preservados.
 - Produces: `contracts.review.validate(record) -> list[str]`; `contracts.identifiers.canonicalize_ids(record, reserved_ids=None) -> tuple[dict, dict]`, `deduplicate(findings, groups) -> list[dict]`; `reporting.render.render(record, audience='user', publication_context=None, *, check_publication_context=None) -> str`, `render_handoff(record, context=None, audience='user', publication_context=None) -> str`. Son las firmas observadas en la base, incluidos argumentos keyword-only. `workflow.profiles` conserva validate_selection, validate_history y merge_assignment_registry y expone `canonical_profile(value) -> str` para la normalización actualmente privada; cumplimiento final reside en contracts.execution/provenance.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_contract_boundaries.py`.
 
@@ -263,21 +263,21 @@ def test_profile_aliases_keep_their_meaning(self):
     self.assertEqual(canonical_profile('balanced'), 'standard')
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_contract_boundaries.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `validate(record) -> list[str]` en `scripts/ccr/contracts/review.py` y separar sus propietarios**
+- [x] **Step 3: Implementar `validate(record) -> list[str]` en `scripts/ccr/contracts/review.py` y separar sus propietarios**
 
 Extraer compositores y validadores por bloque de contrato, con validación estructural antes de accesos dependientes. Compartir escapes y bloques de Markdown. Mover canonical_id/review_id a identifier_types; review importa esas comprobaciones y nunca identifiers. canonicalize_ids en identifiers puede importar review.validate sin generar la dependencia inversa.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_contract_boundaries.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_contract.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_presentation.py -v`
@@ -288,7 +288,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_execution_p
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_publication_policy.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_contract.py scripts/review_profiles.py scripts/review_execution.py scripts/review_publication.py scripts/review_packets.py tests/test_review_contract.py tests/test_review_presentation.py tests/test_review_packets.py tests/test_review_profiles.py tests/test_review_profile_names.py tests/test_review_execution_policy.py tests/test_review_publication_policy.py tests/test_script_contract_boundaries.py
@@ -312,7 +312,7 @@ git commit -m "refactor(contratos): separar validación y presentación de resul
 - Consumes: Task 3: `canonical_profile(value) -> str` y APIs de perfiles; Task 2: `archive.trace` puro. Ningún validador consume execution.checks.
 - Produces: `ReferenceIssue` mantiene exactamente code, field, reference, message, expected. `parse_reference(reference: str, *, field: str, allow_alias_key: bool = False)` y `resolve_reference(reference: str, sources: dict[str, bytes], *, field: str) -> object`; validate_reference_index, canonical_reference, validate_semantic_references y validate_material_inputs conservan sus firmas actuales en sus módulos propietarios. `validate_preflight(*, phase, manifest, logical_scope, selection, context, record, sources) -> dict` preserva prepare/register/discovery/retain y límite de 100 issues. APIs de receipts y model_usage mantienen las firmas actuales y no capturan procesos.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_pure_validation.py`.
 
@@ -335,21 +335,21 @@ def test_reference_resolution_uses_only_supplied_bytes(self):
         parse_reference('../context.json', field='profile')
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_pure_validation.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `validate_preflight(*, phase, manifest, logical_scope, selection, context, record, sources) -> dict` en `scripts/ccr/contracts/preflight.py`**
+- [x] **Step 3: Implementar `validate_preflight(*, phase, manifest, logical_scope, selection, context, record, sources) -> dict` en `scripts/ccr/contracts/preflight.py`**
 
 Extraer tipos comunes y contratos. Cambiar preflight/provenance a contracts.receipts, eliminando imports del capturador. No mover la gramática de fuentes ni cambiar los límites para facilitar la extracción.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_pure_validation.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_references.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_reference_index.py -v`
@@ -359,7 +359,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_check_prove
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_model_usage.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_references.py scripts/review_preflight.py scripts/review_check_receipts.py scripts/review_model_usage.py scripts/review_check_provenance.py tests/test_review_references.py tests/test_review_reference_index.py tests/test_review_preflight.py tests/test_review_check_receipts.py tests/test_review_check_provenance.py tests/test_review_model_usage.py tests/test_script_pure_validation.py
@@ -382,7 +382,7 @@ git commit -m "refactor(validaciones): aislar referencias y preflight de la ejec
 - Consumes: Task 2: `read_json(path, *, max_bytes=None)`, `read_bounded(path, limit) -> bytes`, `safe_path(value) -> Path`; Task 4: tipos ReferenceIssue y validadores puros.
 - Produces: `reader.load_run(run_dir: str | Path) -> tuple[Path, dict, dict]`; `integrity.verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=False, allow_resource_transfer=False, allow_pending_trace=False) -> None`; `workspace_manifest.load(manifest_path) -> dict` y `owned_session(session_path) -> tuple[Path, Path, dict]`. `restart_contract` conserva normalize_restart_request, same_restart_request, build_restart_intent y validate_restart_intent. Los validadores de claims/intents operan sobre objetos/bytes suministrados; restart_state puede leer descriptores mediante shared IO pero no importa reader ni servicios.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_archive_reader.py`.
 
@@ -404,21 +404,21 @@ def test_reader_does_not_depend_on_mutators(self):
     self.assertFalse(module_dependencies('ccr.archive.reader') & forbidden)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_archive_reader.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `load_run(run_dir: str | Path) -> tuple[Path, dict, dict]` en `scripts/ccr/archive/reader.py`**
+- [x] **Step 3: Implementar `load_run(run_dir: str | Path) -> tuple[Path, dict, dict]` en `scripts/ccr/archive/reader.py`**
 
 Trasladar _load_run/_verify_files y los validadores que necesitan, manteniendo diferencias entre diagnóstico estructural y operación nativa soportada. Sacar formas de intents/transferencias/cleanup de los servicios para impedir dependencias inversas. Separar lectura/ownership de sesión del borrado; conservar seguridad y errores de load.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_archive_reader.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_artifact_layout.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_archive8.py -v`
@@ -426,7 +426,7 @@ Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_lock_file_s
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_authority_and_claim_safety.py -v`
 Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_artifacts.py scripts/review_resource_claims.py scripts/review_workspace.py scripts/review_restart.py scripts/review_setup.py tests/test_review_artifact_layout.py tests/test_review_archive8.py tests/test_review_lock_file_safety.py tests/test_review_authority_and_claim_safety.py tests/test_script_archive_reader.py
@@ -864,7 +864,7 @@ git commit -m "refactor(reportes): separar entrega y comentario público"
 - Consumes: Tasks 2–11: APIs propietarias de las 12 áreas según spec §3; Task 1: run_cli/cli_inventory y baseline; Task 10: `owned_check_request(root: Path, *, exit_code: int = 0) -> dict` para captura real.
 - Produces: cada área `main(argv: list[str] | None = None, *, prog: str | None = None) -> int`; raíz `main(argv: list[str] | None = None) -> int`, prog='ccr'. Registro exacto: artifacts, contract, delivery, history, metrics, packets, recovery, runner, workspace, setup, checks, comment. El root procesa sólo el primer token y pasa argv[1:] intacto al área elegida del registro fijo, con prog='ccr ' + area. __main__ propaga el exit, sin importación de áreas en ayuda raíz. `AREAS: dict[str, str]` en scripts/ccr/cli/main.py contiene las doce equivalencias del spec; importar `import_module` explícitamente desde importlib y cargar sólo AREAS[area], para poder verificar forwarding sin lanzar servicios.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_cli.py`.
 
@@ -926,46 +926,47 @@ def test_checks_cli_reports_successful_capture_of_exit_seven(self):
         self.assertEqual(json.loads(result.stdout)['receipt']['exit_code'], 7)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_cli.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `main(argv: list[str] | None = None) -> int` en `scripts/ccr/cli/main.py` y los parsers de área**
+- [x] **Step 3: Implementar `main(argv: list[str] | None = None) -> int` en `scripts/ccr/cli/main.py` y los parsers de área**
 
 Trasladar parsers/handlers, cambiando parse_args() a parse_args(argv). Preservar defaults/choices/errores y traducción específica por operación. Crear root con tabla estática y carga diferida por allowlist; no usar parse_known_args sobre toda la línea si consume opciones destinadas al área.
 
 La entrada y registro se implementan en scripts/__main__.py y scripts/ccr/cli/main.py; los doce main(argv, *, prog) pertenecen a los archivos de área listados. Importar import_module en cli.main para la carga diferida del mapa AREAS, no desde una ruta elegida por el caller.
 
-- [ ] **Step 4: Migrar los consumidores activos a sus propietarios nuevos**
+- [x] **Step 4: Migrar los consumidores activos a sus propietarios nuevos**
 
 Cambiar llamadas subprocess, imports normales/dinámicos y monkeypatch al propietario real. Verificar especialmente spec_from_file_location, código Python embebido en tests de locks, references a artifacts.__file__ y mocks de _finish_resource_cleanup_locked. No mantener aliases sys.modules ni importar la fachada retirada desde el paquete.
 
-- [ ] **Step 5: Retirar los 27 scripts legacy**
+- [x] **Step 5: Retirar los 27 scripts legacy**
 
 Eliminar exactamente los paths Remove de Files tras transferir handlers y constantes; comprobar que los tests activos ya no los importan.
 
-- [ ] **Step 6: Actualizar la documentación vigente y la guía de migración**
+- [x] **Step 6: Actualizar la documentación vigente y la guía de migración**
 
 Actualizar guía de migración con las 12 equivalencias, ruptura de imports, copia completa y nueva ayuda; incluir preflight, setup/checks/comment de 2.14.0. Actualizar instrucciones vigentes; mantener texto histórico y reparar enlaces a código retirado dirigiéndolos a la equivalencia documentada. Registrar ruptura bajo versión pendiente de CHANGELOG sin inventar release publicada.
 
-- [ ] **Step 7: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 7: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_cli.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 8: Ejecutar las regresiones del entregable**
+- [x] **Step 8: Ejecutar las regresiones del entregable**
 
-Run: `python -B -X utf8 -m unittest discover -s tests`
+Run: `python -B -X utf8 -m unittest discover -s tests -v`
 Run: `git diff --check`
-Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
+Resultado: OK; 752 pruebas en 4470.557 s, 7 skips ambientales de Windows (enlaces simbólicos/junctions/hard links y sincronización Win32 requerida por una prueba de clonación); `git diff --check` pasa. El detalle está en `docs/validation/2026-10-21-scripts-modularity.md`.
 
-- [ ] **Step 9: Crear el commit del entregable verificado**
+- [x] **Step 9: Crear el commit del entregable verificado**
 
 ```bash
-git add -- scripts tests SKILL.md README.md docs/usage.md docs/installation.md docs/script-migration.md CHANGELOG.md references
+git add -- scripts tests SKILL.md README.md docs/usage.md docs/installation.md docs/examples docs/script-migration.md CHANGELOG.md references
+git restore --staged -- scripts/ccr/contracts/claims.py scripts/ccr/execution/claims.py tests/test_script_dependencies.py tests/test_script_layout.py
 git diff --cached --check
-git commit -m "refactor(cli)!: unificar acceso a los helpers y retirar entradas anteriores"
+git commit -m "refactor(cli)!: unificar acceso y retirar fachadas legacy"
 ```
 
 ### Task 13: Registrar arquitectura y cerrar integración
@@ -979,7 +980,7 @@ git commit -m "refactor(cli)!: unificar acceso a los helpers y retirar entradas 
 - Consumes: Task 12: `ccr.cli.main.AREAS: dict[str, str]`, root main y áreas instaladas; Task 1: `module_dependencies(module: str) -> set[str]`; todas las APIs de dominio de Tasks 2–11.
 - Produces: el registro estático de cli.main es autoridad de áreas y módulos de parser. README registra los módulos reales y su responsabilidad/efectos/contrato/pruebas. La prueba de dependencias analiza AST, resuelve imports relativos/locales y carga diferida del registro fijo. No exige un número de líneas por módulo ni acceso a todos los documentos durante cada revisión. Helpers sólo de tests en tests/script_test_support.py: `import_graph(scripts_root: Path) -> dict[str, set[str]]`, `cyclic_components(graph: dict[str, set[str]]) -> list[tuple[str, ...]]`; componentes con dos o más nodos o self-loop, nodos y resultados ordenados. Resolver también las aristas fijas del registro AREAS; no ejecutar módulos para analizar el grafo.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los dos métodos de grafo siguientes a una clase unittest.TestCase en `tests/test_script_dependencies.py` y los métodos de registro a una clase en `tests/test_script_layout.py`.
 
@@ -1019,38 +1020,38 @@ def test_every_implementation_module_is_registered(self):
             self.assertIn(module.relative_to(ROOT).as_posix(), index)
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_layout.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_dependencies.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `import_graph(scripts_root: Path) -> dict[str, set[str]]` en `tests/script_test_support.py` y registrar los módulos**
+- [x] **Step 3: Implementar `import_graph(scripts_root: Path) -> dict[str, set[str]]` en `tests/script_test_support.py` y registrar los módulos**
 
 Completar el registro y corregir dependencias moviendo validación/política al propietario inferior, sin duplicarla ni resolverla con imports tardíos ocultos. Comprobar copia/ZIP completo y documentación de ruptura. Si la distribución se genera fuera del repo y no está disponible, registrar esa limitación en vez de afirmar que se validó una release externa.
 
 Implementar import_graph/cyclic_components en tests/script_test_support.py. El detector resuelve imports relativos/locales y módulos del registro estático; no ignora aristas por encontrarlas dentro de una función. En el README registrar cada módulo real con responsabilidad, efectos, contrato y pruebas.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_layout.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_dependencies.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests`
 Run: `git diff --check`
-Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una suite no ejecutada.
+Resultado: OK; 752 pruebas en 4470.557 s, 7 skips ambientales registrados; `git diff --check` pasa.
 
 Registrar resultados de integración y copia instalada en docs/validation/2026-10-21-scripts-modularity.md. Comprobar además los diez criterios de aceptación de spec §9 contra evidencia concreta; documentar distribución externa no disponible en vez de certificar una release.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
-git add -- scripts/README.md docs/validation/2026-10-21-scripts-modularity.md tests/script_test_support.py docs/usage.md tests/test_script_layout.py tests/test_script_dependencies.py
+git add -- docs/validation/2026-10-21-scripts-modularity.md docs/superpowers/plans/2026-10-21-scripts-modularity.md scripts/ccr/contracts/claims.py scripts/ccr/execution/claims.py tests/test_script_layout.py tests/test_script_dependencies.py
 git diff --cached --check
-git commit -m "docs(scripts): registrar arquitectura y validación de la migración"
+git commit -m "refactor(scripts): fijar límites y documentar arquitectura"
 ```
 
 ## Self-Review
@@ -1063,4 +1064,4 @@ git commit -m "docs(scripts): registrar arquitectura y validación de la migraci
 
 ## Execution Handoff
 
-Spec y plan pendientes de revisión; checks sin marcar porque no se ha iniciado implementación. Recomendada ejecución nativa secuencial: las tareas comparten contratos de lectura, locks e intents y requieren mantener esos límites entre extracciones. La alternativa con subagentes debe conservar el mismo orden y sus gates de revisión. Elegir el método después de revisar ambos documentos; no crear PR, publicar release ni fusionar por haber preparado este plan.
+Implementación y validación completas en la rama de worktree. Los commits locales de Task 12 y Task 13 dejan registrados el retiro de fachadas y la arquitectura, respectivamente. El baseline previo a cambios fue interrumpido tras más de 15 minutos en la matriz de replay; la suite final sí pasó completa. El artefacto ZIP/release externa no se verificó porque su generador no está disponible en este repositorio. La rama queda lista para que el usuario elija cómo integrarla; no publicar ni fusionar automáticamente.
