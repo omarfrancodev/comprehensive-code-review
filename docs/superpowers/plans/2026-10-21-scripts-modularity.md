@@ -569,7 +569,7 @@ git commit -m "refactor(recursos): separar ownership y coordinación de limpieza
 - Consumes: Task 7: `transfer_resources(source_run, successor_run, paths, *, authority, controller, _restart_operation_id=None) -> dict`; Tasks 5–6: contrato de restart, restart_state y publicación transaccional.
 - Produces: `restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None, harness=None, logical_scope_input=None)`, `recover(run_dir, *, controller, authority, current_inputs)`, `record_restart_refusal(run_dir, *, intent_path, controller, authority, reason)` y `abandon_restart(run_dir, *, intent_path, controller, authority, reason)` conservan las firmas actuales y sus resultados. restart_state no importa estas funciones; la inspección las describe mediante hechos observados y contratos inferiores.
 
-- [ ] **Step 1: Escribir las pruebas del límite extraído**
+- [x] **Step 1: Escribir las pruebas del límite extraído**
 
 Añadir los siguientes métodos a una clase unittest.TestCase en `tests/test_script_restart_boundaries.py`.
 
@@ -586,21 +586,21 @@ def test_restart_state_is_independent_of_reader_and_mutators(self):
     self.assertFalse(any(name.startswith('review_') for name in deps))
 ```
 
-- [ ] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
+- [x] **Step 2: Ejecutar la prueba antes de implementar las APIs nuevas**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_restart_boundaries.py -v`
 Expected: FAIL por import/API nueva ausente o por el límite de dependencia todavía incumplido. El fallo debe corresponder a la extracción de esta tarea.
 
-- [ ] **Step 3: Implementar `restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None, harness=None, logical_scope_input=None)` en `scripts/ccr/archive/restart.py`**
+- [x] **Step 3: Implementar `restart(source_run, *, profile_input, controller, authority, current_inputs, transfer_paths=None, harness=None, logical_scope_input=None)` en `scripts/ccr/archive/restart.py`**
 
 Mover intent/completion/abandonment y recuperación de restart, reutilizando recursos y transacciones sin cambiar reservas o construir un segundo motor de estados. Extraer clasificadores compartidos a contratos/estado; el servicio no importa inspection para resolver reglas que inspection también necesite.
 
-- [ ] **Step 4: Ejecutar las pruebas para comprobar GREEN**
+- [x] **Step 4: Ejecutar las pruebas para comprobar GREEN**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_script_restart_boundaries.py -v`
 Expected: OK; todos los asserts anteriores pasan. Esto no acredita todavía el resto de flujos.
 
-- [ ] **Step 5: Ejecutar las regresiones del entregable**
+- [x] **Step 5: Ejecutar las regresiones del entregable**
 
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_restart.py -v`
 Run: `python -B -X utf8 -m unittest discover -s tests -p test_review_restart_v2.py -v`
@@ -612,7 +612,7 @@ Expected: OK; registrar cualquier skip ambiental y no afirmar cobertura de una s
 
 Preservar `tests/test_review_restart_v2.py::test_previous_v2_recover_preserves_reservation_before_and_after_prepare` y `test_previous_v2_retry_preserves_reservation_and_reconstructs_only_missing_file`: las aserciones de bytes originales, sucesor único y retry idempotente son parte del entregable.
 
-- [ ] **Step 6: Crear el commit del entregable verificado**
+- [x] **Step 6: Crear el commit del entregable verificado**
 
 ```bash
 git add -- scripts/ccr scripts/review_restart_refusal.py scripts/review_artifacts.py tests/test_review_restart.py tests/test_review_restart_v2.py tests/test_review_restart_refusals.py tests/test_review_restart_phase_consistency.py tests/test_review_recovery_reservations.py tests/test_review_recovery_sequences.py tests/test_script_restart_boundaries.py
