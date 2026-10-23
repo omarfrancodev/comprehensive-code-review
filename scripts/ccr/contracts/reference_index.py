@@ -221,6 +221,51 @@ def validate_reference_index(index: dict, sources: dict[str, bytes]) -> list[Ref
                   'selected material input differs from the reference index digest', value['sha256'])
     return _ordered_issues(issues)
 
+
+def reference_source_paths(index: dict) -> list[str]:
+    """List only canonical material and alias-target files selected by an index."""
+    if not isinstance(index, dict) or set(index) != {'schema_version', 'aliases', 'inputs'}:
+        raise ValueError('reference index must contain exactly schema_version, aliases and inputs')
+    if index.get('schema_version') != 1:
+        raise ValueError('reference index schema_version must be 1')
+    aliases = index.get('aliases')
+    inputs = index.get('inputs')
+    if not isinstance(aliases, dict) or not isinstance(inputs, list):
+        raise ValueError('reference index aliases and inputs have invalid types')
+
+    selected = set()
+    for alias, row in aliases.items():
+        try:
+            alias_path, fragment = parse_reference(
+                alias, field='reference_index.aliases', allow_alias_key=True)
+            if fragment is not None or alias_path != alias:
+                raise ValueError('alias key must be a local evidence file without a fragment')
+            target = canonical_reference(alias, aliases)
+            target_path, target_fragment = parse_reference(
+                target, field='reference_index.aliases target')
+            if target_fragment is not None or not target_path.startswith('evidence/'):
+                raise ValueError('alias destination must be a flat evidence file without a fragment')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid reference index alias ' + str(alias) + ': ' + str(exc)) from exc
+        if not isinstance(row, dict) or set(row) != {'reference', 'sha256'}:
+            raise ValueError('alias must contain exactly reference and sha256: ' + str(alias))
+        selected.add(target_path)
+
+    for number, row in enumerate(inputs):
+        if not isinstance(row, dict) or set(row) != {'reference', 'purpose', 'sha256'}:
+            raise ValueError(f'reference index input {number} has an invalid shape')
+        try:
+            path, fragment = parse_reference(row.get('reference'),
+                                             field=f'reference_index.inputs[{number}]')
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'invalid reference index input {number}: {exc}') from exc
+        if fragment is not None or not path.startswith('evidence/'):
+            raise ValueError(f'reference index input {number} must be a flat evidence file')
+        if path == 'evidence/reference-index.json':
+            raise ValueError('reference index cannot include itself in inputs')
+        selected.add(path)
+    return sorted(selected)
+
 def canonical_reference(reference: str, aliases: dict[str, dict[str, str]]) -> str:
     """Canonicalize a retained reference through at most one validated alias."""
     field = 'reference'
