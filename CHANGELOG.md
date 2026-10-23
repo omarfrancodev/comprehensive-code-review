@@ -2,11 +2,20 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## Pendiente de publicación — sin versión asignada
+## 3.0.0 — 2026-10-23
 
 ### Changed
 
 - Unificar el acceso a los helpers como `python <ruta-de-la-skill>/scripts <área> ...` y retirar los 27 archivos `scripts/review_*.py`. Los imports Python con esos nombres también dejan de estar soportados; consulta la [guía de migración](docs/script-migration.md). Los datos de archivo y resultados conservan sus esquemas.
+- Organizar los helpers en 73 módulos de `scripts/ccr`, con doce áreas de CLI, carga diferida y límites explícitos entre contratos, ejecución, archivo y reportes.
+
+### Fixed
+
+- Resolver explícitamente las rutas de scripts y fixtures en los procesos hijos de las pruebas de concurrencia, coordinación CLI y recuperación tras salida abrupta, sin depender de `PYTHONPATH`.
+
+### Compatibilidad
+
+- Esta versión mayor requiere migrar comandos e imports legacy. Se conservan archive 8/layout 2, final review schema 10, trace schema 1 y packet version 1; no se reescriben los archivos históricos.
 
 ## 2.14.0 — 2026-10-21
 
