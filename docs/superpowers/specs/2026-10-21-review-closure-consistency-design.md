@@ -1,6 +1,6 @@
 # Consistencia de fuentes, despachos y cierre de revisiones
 
-Fecha: 2026-10-21. Estado: propuesta para revisión; implementación pendiente.
+Fecha: 2026-10-21. Revisión: 2026-10-23. Estado: propuesta para revisión; implementación pendiente.
 
 ## 1. Intención y alcance
 
@@ -8,7 +8,7 @@ Se busca que una revisión con entradas válidas llegue desde preparación hasta
 
 El usuario solicitó crear un worktree desde main y producir este spec y su plan. Esa autorización cubre ambos documentos; no constituye aprobación de la implementación. Los documentos se entregan juntos para revisión.
 
-Base: `fd38df82f2ea8ef2a921dd8a89e66540f0f01bfb`, main, CCR 2.14.0. Rama documental: `docs/review-closure-consistency`.
+Base: `9c3fd6bd7e3a21226e2fcd6dca65c42f512bceea`, main, CCR 3.0.0. Rama documental: `docs/review-closure-consistency`.
 
 ## 2. Evidencia y límites del diagnóstico
 
@@ -16,12 +16,14 @@ El caso auditado quedó retenido con `state=closing`, `retained=true` y limpieza
 
 También se observaron cuatro despachos originales sin `executor`, cuatro resultados originales y ocho eventos posteriores que repetían las parejas despacho/resultado. Los resúmenes identificaban el re-registro y el uso de los mismos paquetes. La traza demuestra re-registro; no demuestra otra ejecución de los revisores. No se inspeccionó una transcripción completa del proveedor que permita certificar la identidad real de los procesos o sus modelos.
 
-Mecanismos identificados en la base:
+El diagnóstico original se realizó sobre CCR 2.14.0 (`fd38df82`). La revisión contra main del 2026-10-23 confirma que CCR 3.0.0 ya modulariza los scripts, pero conserva los cuatro mecanismos siguientes. La modularización y la entrada CLI única no son trabajo pendiente de este spec.
 
-- `scripts/review_setup.py::_validate_session_reference_index` comprueba archivos y hashes, pero sólo exige capturar el digest del índice en `review_inputs.sources`.
-- `scripts/review_references.py::validate_material_inputs` exige captura inicial de la descripción para declarar `aligned` o `needs_update`; una descripción `unverified` no adquiere esa certificación por estar archivada después.
-- `scripts/review_artifacts.py::_execution_gate` recibe los bytes seleccionados durante retain. Al ser llamado con `contents={}` desde validate/close, reconstruye las referencias solicitadas sin incorporar todas las entradas del índice. Por ello retain y la validación posterior pueden resolver conjuntos diferentes.
-- `scripts/review_preflight.py::validate_assignment_event` exige el brief, pero admite un despacho independiente sin identidad de ejecutor. La falta se descubre en `review_execution.py::validate_execution_sources`, que exige un despacho con el mismo contexto/proveedor y secuencia anterior al resultado.
+Mecanismos que permanecen en la base actual:
+
+- `scripts/ccr/workflow/setup.py::_validate_session_reference_index` comprueba archivos y hashes, pero sólo exige capturar el digest del índice en `review_inputs.sources`.
+- `scripts/ccr/contracts/material_inputs.py::validate_material_inputs` exige captura inicial de la descripción para declarar `aligned` o `needs_update`; una descripción `unverified` no adquiere esa certificación por estar archivada después.
+- `scripts/ccr/archive/retention.py::_execution_gate` recibe los bytes seleccionados durante retain. Al ser llamado con `contents={}` desde validate/close, reconstruye las referencias solicitadas sin incorporar todas las entradas del índice. Por ello retain y la validación posterior pueden resolver conjuntos diferentes.
+- `scripts/ccr/contracts/preflight.py::validate_assignment_event` exige el brief, pero admite un despacho independiente sin identidad de ejecutor. La falta se descubre en `scripts/ccr/contracts/execution.py::validate_execution_sources`, que exige un despacho con el mismo contexto/proveedor y secuencia anterior al resultado.
 
 La decisión de conservar workspaces cuando falla el gate de retención fue correcta. Este trabajo no cambia ese comportamiento.
 
@@ -34,6 +36,8 @@ La decisión de conservar workspaces cuando falla el gate de retención fue corr
 ## 4. Restricciones globales
 
 - Python 3.10+ y biblioteca estándar; no añadir dependencias de ejecución.
+- Respetar el paquete `scripts/ccr`, las 12 áreas CLI existentes y la entrada `python <skill>/scripts AREA SUBCOMMAND`; no restaurar scripts `review_*.py` ni facades agregadas.
+- Mantener contratos puros sin IO, sin imports de `ccr.cli` desde módulos de implementación y sin ciclos; `archive.resources` coordina cleanup y `execution.workspaces` las operaciones físicas. Documentar cada módulo nuevo en `scripts/README.md`.
 - Mantener archive schema 8/layout 2, final schema 10 y trace schema 1; no migrar ni reescribir historia.
 - Los runs completos son inmutables; ningún cambio de este trabajo modifica sus bytes.
 - No inferir identidades, timestamps, modelos, independencia ni resultados a partir de nombres de archivos, briefs o resúmenes.
@@ -47,7 +51,7 @@ La decisión de conservar workspaces cuando falla el gate de retención fue corr
 
 ### 5.1 Una selección acotada para todas las fases
 
-`review_references.py` será la autoridad pura para enumerar las rutas de `reference-index.inputs` y los destinos canónicos de sus aliases. Reutilizará la gramática existente; no abrirá archivos. El índice no podrá referenciarse a sí mismo como input ni introducir chains, traversal o rutas externas.
+`ccr.contracts.reference_index` será la autoridad pura para enumerar las rutas de `reference-index.inputs` y los destinos canónicos de sus aliases. Reutilizará la gramática existente; no abrirá archivos. El índice no podrá referenciarse a sí mismo como input ni introducir chains, traversal o rutas externas.
 
 La selección incluye el índice, cada input material y cada destino de alias requerido para validar el índice. Los aliases de resultados no se convierten por eso en inputs iniciales: sólo `inputs` representa fuentes materiales que deben fijarse antes del trabajo.
 
@@ -59,13 +63,15 @@ Los diagnósticos preservan `ReferenceIssue` (`code`, `field`, `reference`, `mes
 
 ### 5.2 Construir la captura antes de prepare
 
-Añadir `review_setup.py inputs --input <envelope> --output <new-evidence.json>`. Usa el mismo envelope `{session, arguments}`, sesión propia, salida directa en `evidence/`, rechazo de colisiones y política de links de los builders existentes.
+Añadir `python <skill>/scripts setup inputs --input <envelope> --output <new-evidence.json>`. Usa el mismo envelope `{session, arguments}`, sesión propia, salida directa en `evidence/`, rechazo de colisiones y política de links de los builders existentes.
 
 `arguments` contiene exactamente `scope`, `reference_index`, `source_set_complete` e `identities`. `reference_index` es `{reference: "evidence/reference-index.json", sha256: <digest>}`; `identities` admite sólo los campos de identidad opcionales ya definidos por `review_inputs`, sin `scope`, `sources`, `profile` ni `logical_scope_identity`. `source_set_complete` es booleano o null; null omite la declaración, sin convertir desconocimiento en completitud.
 
-El builder verifica el digest del índice y sus archivos materiales, genera `sources` con el índice y todos los inputs, conserva las identidades explícitas sin inventarlas y normaliza mediante `review_inputs.normalize_inputs`. Si una identidad de contenido suministrada con formato SHA-256 contradice su input único correspondiente, falla; las identidades opacas conservan la normalización existente sin atribuirles un digest. El caller sigue siendo responsable de declarar si el conjunto externo está completo: el builder sólo conoce los inputs que recibió.
+El builder verifica el digest del índice y sus archivos materiales, genera `sources` con el índice y todos los inputs, conserva las identidades explícitas sin inventarlas y normaliza mediante `ccr.workflow.inputs.normalize_inputs`. Si una identidad de contenido suministrada con formato SHA-256 contradice su input único correspondiente, falla; las identidades opacas conservan la normalización existente sin atribuirles un digest. El caller sigue siendo responsable de declarar si el conjunto externo está completo: el builder sólo conoce los inputs que recibió.
 
-La salida se pasa a prepare como `--current-inputs`. El builder de contexto y preflight de register/discovery, mientras el run siga `prepared`, rechazan una entrada del índice ausente o con hash distinto en el mapa capturado. `source_set_complete=true` nunca sustituye esta comprobación. El fallo ocurre antes de dispatch y no modifica entradas inmutables ni crea un sucesor automáticamente.
+La salida se pasa a prepare como `--current-inputs`. El adaptador de contexto y preflight de register/discovery, mientras el run siga `prepared`, rechazan una entrada del índice ausente o con hash distinto en el mapa capturado. `source_set_complete=true` nunca sustituye esta comprobación. El fallo ocurre antes de dispatch y no modifica entradas inmutables ni crea un sucesor automáticamente.
+
+La implementación separa responsabilidades: `workflow.builders` construye inputs sin IO; `workflow.setup.run_command` carga únicamente fuentes de la sesión propia y delega escritura nueva a `execution.candidates.write_new_json`; `cli.setup` sólo expone el comando. `contracts.material_inputs` conserva la validación de captura y `contracts.preflight` la consume. El adaptador `cli.artifacts.preflight_run` suministra bytes explícitos a los contratos, sin convertirse en dependencia de archivo o workflow.
 
 ### 5.3 Compatibilidad de runs ya iniciados
 
@@ -104,7 +110,7 @@ No aceptar destinos inexistentes, futuros, de asignaciones no independientes, de
 
 La proyección de ejecución completa sólo la identidad del despacho original en memoria y conserva su `sequence`, actor, evidencia y `occurred_at`. Así puede emparejarlo con el resultado original, aunque la anotación se haya registrado después. No se modifica la línea original ni se añade otro resultado. La anotación no cambia perfil, assignments, inputs, timestamps ni estado de cleanup.
 
-Se usa `record-event` bajo sus guards existentes. No se aceptan anotaciones sobre runs completos ni se eluden transacciones pendientes. Los consumidores antiguos seguirán leyendo JSON schema 1, pero necesitan el helper actualizado para reconocer la anotación como procedencia de un resultado independiente.
+El nuevo módulo puro `ccr.contracts.dispatch` valida y proyecta estas anotaciones; se registra en el índice de módulos de `scripts/README.md`. Se usa `python <skill>/scripts artifacts record-event` mediante `archive.lifecycle.record_event` bajo sus guards existentes. No se aceptan anotaciones sobre runs completos ni se eluden transacciones pendientes. Los consumidores antiguos seguirán leyendo JSON schema 1, pero necesitan el helper actualizado para reconocer la anotación como procedencia de un resultado independiente.
 
 ## 7. Workflow y comunicación
 
@@ -115,6 +121,8 @@ Un rechazo de candidato o proyección no dispara discovery, verificación ni res
 Los checks del coordinador con recibo observado se registran como `check` con referencia al recibo y relación `records` a C###. Los checks contenidos en un paquete de worker ya registrado pueden quedar bajo ese resultado compacto; no se duplican nueve eventos por obligación retrospectiva. El recibo mantiene tiempos y resultado; desconocido sigue null. La ausencia de modelo no se convierte en fallo ni se confunde `harness_id` con modelo.
 
 El informe distingue juicio de código, retención verificada y cleanup/cierre. Un error de archivo no degrada arbitrariamente un hallazgo de producto; una descripción sin captura inicial permanece sin certificación.
+
+El ciclo completo usa `execution.workspaces.prepare` y `archive.resources.cleanup_workspace`; `archive.lifecycle` conserva validate/close y `archive.retention` conserva el gate común. No trasladar la coordinación de recursos a execution ni importar adaptadores CLI desde esos módulos.
 
 ## 8. Aceptación y validación
 
@@ -133,7 +141,9 @@ El informe distingue juicio de código, retención verificada y cleanup/cierre. 
 
 Pruebas con unittest y fixtures sintéticos: validadores puros de fuentes/dispatch, CLI inputs/context/preflight, integración retain/validate/close, replay e inmutabilidad. No usar el archivo auditado ni un MR real como fixture. Las pruebas de guard de links conservan los skips de privilegios Windows que ya use el proyecto y los declaran explícitamente.
 
-Base comprobada para esta planificación: 8 pruebas de setup, 13 de reference index y 9 de preflight aprobadas. Los primeros intentos de setup/preflight fallaron por permisos del TEMP del sandbox; se repitieron fuera de él y pasaron. No se ejecutó la suite completa ni se validó una implementación nueva.
+Validación histórica del 2026-10-21 sobre CCR 2.14.0 (no representa una ejecución sobre CCR 3.0.0): 8 pruebas de setup, 13 de reference index y 9 de preflight aprobadas. Los primeros intentos de setup/preflight fallaron por permisos del TEMP del sandbox; se repitieron fuera de él y pasaron. No se ejecutó la suite completa ni se validó una implementación nueva.
+
+Revalidación del 2026-10-23 sobre main `9c3fd6b` (CCR 3.0.0): 40 pruebas aprobadas, sin skips, en 16.127 s. Comando: `python -B -m unittest discover -s tests -p <patrón>`, agrupado con unittest para `test_review_setup.py`, `test_review_reference_index.py`, `test_review_preflight.py`, `test_script_dependencies.py`, `test_script_layout.py`, `test_script_pure_validation.py` y `test_script_resource_boundaries.py`. Se usó el Python del runtime con acceso al TEMP. Esta batería comprueba la base y sus límites de arquitectura; no demuestra las mejoras propuestas ni sustituye la suite completa.
 
 ## 9. Fuera de alcance
 
