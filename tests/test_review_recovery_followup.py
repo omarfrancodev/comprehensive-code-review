@@ -15,11 +15,14 @@ import test_review_artifacts as archive
 import test_review_checkpoints as checkpoint_tests
 import test_review_recovery as recovery_tests
 from recovery_fixtures import context10, legacy_prepare, record10, selection_input
-import review_profiles
-import review_recovery as recovery
-import review_workspace
+from ccr.contracts import execution as review_execution
+from script_test_support import recovery_api
+recovery = recovery_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = archive.artifacts
+from ccr.archive import lifecycle as lifecycle_ops, restart as restart_ops, transactions as transactions_ops
 
 
 class RecoveryFollowupTests(unittest.TestCase):
@@ -78,8 +81,8 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(coverage=coverage):
                 malformed = self.write('malformed.json', {'schema_version': 10, 'coverage': coverage})
                 before = self.snapshot(run)
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__)),
-                    'retain', '--run-dir', str(run), '--input', str(malformed)],
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__).parent),
+                    'artifacts', 'retain', '--run-dir', str(run), '--input', str(malformed)],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 1)
                 self.assertIn('error', json.loads(result.stderr))
@@ -91,7 +94,7 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(identifier=identifier):
                 record = record10('extended')
                 record['coverage']['execution']['plan'][0]['id'] = identifier
-                self.assertTrue(review_profiles.validate_profile_execution(record))
+                self.assertTrue(review_execution.validate_profile_execution(record))
                 self.assertTrue(artifacts.review_contract.validate(record))
 
     def test_historical_record_cannot_supply_native_context_as_selected_evidence(self):
@@ -136,12 +139,14 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 source = self.prepare7()
                 request = self.restart_request(source)
-                original = artifacts.atomic_write
+                owner_ops = (lifecycle_ops if boundary == '.review-restart-reservation.json'
+                             else transactions_ops)
+                original = owner_ops.atomic_write
                 def interrupt(path, data, **kwargs):
                     if Path(path).name == boundary and Path(path).parent != source:
                         raise KeyboardInterrupt('simulated process exit')
                     return original(path, data, **kwargs)
-                with patch.object(artifacts, 'atomic_write', side_effect=interrupt):
+                with patch.object(owner_ops, 'atomic_write', side_effect=interrupt):
                     with self.assertRaises(KeyboardInterrupt):
                         artifacts.restart(source, **request)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -154,7 +159,7 @@ class RecoveryFollowupTests(unittest.TestCase):
     def test_recover_pending_restart_takes_source_lock_before_prepare(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         original_lock = artifacts._restart_lock
@@ -172,8 +177,8 @@ class RecoveryFollowupTests(unittest.TestCase):
         def assert_locked(path):
             self.assertTrue(held, 'recover prepared the reserved run outside the source lock')
             return original_prepare(path)
-        with patch.object(artifacts, '_restart_lock', side_effect=observed_lock), \
-                patch.object(artifacts, '_prepare_from_restart_intent', side_effect=assert_locked):
+        with patch.object(restart_ops, '_restart_lock', side_effect=observed_lock), \
+                patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=assert_locked):
             result = artifacts.recover(source, controller=self.controller(), authority=request['authority'],
                                        current_inputs=request['current_inputs'])
         self.assertEqual(result['status'], 'restarted')
@@ -232,13 +237,14 @@ class RecoveryFollowupTests(unittest.TestCase):
         code = '''
 import json, os, sys
 from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-import review_artifacts as a
-source = Path(sys.argv[2])
-request = json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
+sys.path[:0] = sys.argv[1:3]
+from script_test_support import archive_api
+a = archive_api()
+source = Path(sys.argv[3])
+request = json.loads(Path(sys.argv[4]).read_text(encoding='utf-8'))
 replace = os.replace
 def interrupted(stage, target):
-    if Path(target).name == sys.argv[4] and Path(target).parent != source:
+    if Path(target).name == sys.argv[5] and Path(target).parent != source:
         os._exit(73)
     return replace(stage, target)
 os.replace = interrupted
@@ -250,7 +256,8 @@ a.restart(source, **request)
                 request = self.restart_request(source)
                 request_path = self.write('hard-exit-request.json', request)
                 process = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code,
-                    str(Path(artifacts.__file__).parent), str(source), str(request_path), boundary],
+                    str(Path(artifacts.__file__).parent), str(Path(__file__).resolve().parent),
+                    str(source), str(request_path), boundary],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(process.returncode, 73, process.stderr)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -263,7 +270,7 @@ a.restart(source, **request)
     def test_abandon_unprepared_restart_is_authorized_durable_and_idempotent(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -285,7 +292,7 @@ a.restart(source, **request)
 
     def test_abandon_cannot_orphan_prepared_successor(self):
         source = self.prepare7()
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('after prepare')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('after prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **self.restart_request(source))
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -298,7 +305,7 @@ a.restart(source, **request)
     def test_pending_restart_is_visible_in_inspect_and_lookup(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         inspected = recovery.inspect_run(source, current_inputs=self.current(source))
@@ -471,7 +478,7 @@ a.restart(source, **request)
         skill = Path(artifacts.__file__).resolve().parents[1]
         document = (skill / 'references/archive/recovery.md').read_text(encoding='utf-8')
         command = next(block for block in re.findall(r'```(?:text|sh)\n(.*?)\n```', document, re.S)
-                       if block.splitlines()[0].startswith('python /absolute/skill/scripts/review_artifacts.py restart ')
+                       if block.splitlines()[0].startswith('python /absolute/skill/scripts artifacts restart ')
                        and '--harness-source-input' in block)
         self.assertNotIn('\\\\\n', command)
         source = self.prepare7()

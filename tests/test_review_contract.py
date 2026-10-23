@@ -1,5 +1,4 @@
 import copy
-import importlib.util
 from pathlib import Path
 import unittest
 import json
@@ -8,12 +7,11 @@ import sys
 import tempfile
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts' / 'review_contract.py'
-sys.path.insert(0, str(MODULE_PATH.parent))
-spec = importlib.util.spec_from_file_location('review_contract', MODULE_PATH)
-contract = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(contract)
-import review_publication
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts'
+from script_test_support import contract_api
+contract = contract_api()
+from ccr.reporting import projections as review_publication
 
 
 def clean_record():
@@ -295,7 +293,7 @@ class RenderingTests(unittest.TestCase):
         record['findings'] = [finding(status='unresolved')]
         record['coverage']['limitations'] = [{'detail': 'Consumer requirement unknown', 'material': True}]
         record['verdict'] = 'insufficient_evidence'
-        from review_publication import publication_digest
+        from ccr.reporting.projections import publication_digest
         output = contract.render(record, audience='comment', publication_context={
             'source_sha256': publication_digest(record),
             'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
@@ -336,7 +334,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='review-contract-') as directory:
             path = Path(directory) / 'record.json'
             path.write_text(json.dumps(clean_record()), encoding='utf-8')
-            command = [sys.executable, '-B', str(MODULE_PATH), 'validate', '--input', str(path)]
+            command = [sys.executable, '-B', str(MODULE_PATH), 'contract', 'validate', '--input', str(path)]
             result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(result.stdout)['valid'])
@@ -344,7 +342,7 @@ class CLITests(unittest.TestCase):
             record = clean_record()
             record['findings'] = [item]
             path.write_text(json.dumps(record), encoding='utf-8')
-            command[3] = 'render-comment'
+            command[4] = 'render-comment'
             result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('🟡 P2', result.stdout)
@@ -355,7 +353,7 @@ class CLITests(unittest.TestCase):
             record = clean_record()
             record['findings'] = [finding(blocking=True)]
             path.write_text(json.dumps(record), encoding='utf-8')
-            result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'render-comment',
+            result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'contract', 'render-comment',
                                      '--input', str(path)], capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stdout, '')

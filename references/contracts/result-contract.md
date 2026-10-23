@@ -60,7 +60,7 @@ The durable run/skill version, file inventory and closure belong in cierre.json 
 
 ## Mechanical tools
 
-Run python /absolute/skill/scripts/review_contract.py validate --input /absolute/record.json. render-user/render-comment produce Spanish Markdown; read errors and repair the record, not product code. Without Python/filesystem, enforce the same contract through supported structured tools or an in-chat record; honor no-create instructions.
+Run python /absolute/skill/scripts contract validate --input /absolute/record.json. render-user/render-comment produce Spanish Markdown; read errors and repair the record, not product code. Without Python/filesystem, enforce the same contract through supported structured tools or an in-chat record; honor no-create instructions.
 
 Optional deduplicate consumes a findings array plus --groups containing explicitly selected same-cause ID arrays. It preserves all scenarios. Coordinator/verifier decides equivalence; matching titles do not.
 

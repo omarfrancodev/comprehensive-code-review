@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 import test_review_restart_refusals as refusals
 
+from ccr.archive import resources as resource_ops
+
 artifacts = refusals.artifacts
 recovery = refusals.recovery
 
@@ -31,7 +33,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
 
     def transfer_commit_cut(self, after_successor=False):
         source, session, request = self.resource_fixture(True)
-        save = artifacts._save_manifest
+        save = resource_ops._save_manifest
         def interrupted(run, manifest, marker):
             result = save(run, manifest, marker)
             target = Path(run)
@@ -40,7 +42,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                     and (target != source if after_successor else target == source)):
                 raise KeyboardInterrupt('durable transfer completion interrupted')
             return result
-        with patch.object(artifacts, '_save_manifest', side_effect=interrupted):
+        with patch.object(resource_ops, '_save_manifest', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -75,8 +77,8 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                 phases['abandon-api'] = getattr(caught.exception, 'phase', None)
                 actor = self.write('phase-controller.json', kwargs['controller'])
                 authority = self.write('phase-authority.json', {'authority': kwargs['authority']})
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__)),
-                    'abandon-restart', '--run-dir', str(source), '--intent-input', kwargs['intent_path'],
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__).parent),
+                    'artifacts', 'abandon-restart', '--run-dir', str(source), '--intent-input', kwargs['intent_path'],
                     '--controller-input', str(actor), '--authority-input', str(authority), '--reason', kwargs['reason']],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 1, result.stderr)
@@ -94,7 +96,7 @@ class RestartPhaseConsistencyTests(unittest.TestCase):
                 self.assertEqual(phases, {route: expected for route in phases})
 
     def test_abandon_observes_successor_under_its_mutation_lock(self):
-        from review_run_lock import LockConflictError
+        from ccr.execution.locks import LockConflictError
         source, successor, _, kwargs = self.transfer_commit_cut()
         acquired, release = threading.Event(), threading.Event()
         def holder():

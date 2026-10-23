@@ -13,7 +13,7 @@ artifacts = archive.artifacts
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
-from review_run_lock import run_locks
+from ccr.execution.locks import run_locks
 
 
 class AtomicRecoveryTests(unittest.TestCase):
@@ -52,7 +52,7 @@ class AtomicRecoveryTests(unittest.TestCase):
             alias = Path(buffer.value)
             code = (
                 'import sys;sys.path.insert(0,' + repr(str(SCRIPTS)) + ');'
-                'from pathlib import Path;from review_run_lock import run_locks;'
+                'from pathlib import Path;from ccr.execution.locks import run_locks;'
                 'run=Path(' + repr(str(alias)) + ');'
                 '\ntry:\n with run_locks([run]): print("acquired")\n'
                 'except ValueError as exc:\n print("conflict" if "conflict" in str(exc) else str(exc))'
@@ -99,7 +99,7 @@ class AtomicRecoveryTests(unittest.TestCase):
                 raise OSError('simulated process interruption')
             return original(path, data, **kwargs)
 
-        with patch.object(artifacts, 'atomic_write', side_effect=leave_partial_stage):
+        with archive.patch_archive_atomic_write(leave_partial_stage):
             with self.assertRaisesRegex(OSError, 'simulated process interruption'):
                 artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                      phase='discovery')

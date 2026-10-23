@@ -12,13 +12,18 @@ import argparse
 import test_review_artifacts as archive
 
 artifacts = archive.artifacts
+from ccr.archive import checkpoints as checkpoint_ops, lifecycle as lifecycle_ops, restart as restart_ops, transactions as transactions_ops, retention as retention_ops
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
-import review_recovery as recovery
-import review_workspace
-import review_resource_claims
-import review_artifacts as recovery_artifacts
+from script_test_support import recovery_api
+recovery = recovery_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
+from ccr.execution import claims as review_resource_claims
+from script_test_support import archive_api
+recovery_artifacts = archive_api()
+from ccr.archive import inspection as archive_inspection, lookup as archive_lookup
 from recovery_fixtures import context10, current_inputs, legacy_prepare, record10, source_events
 
 
@@ -203,8 +208,8 @@ class ReviewRecoveryTests(unittest.TestCase):
             manifest = {'schema_version': schema, 'state': 'complete', 'hashes': {},
                         'pending_hashes': {}, 'temporary_paths': [], 'resource_claims': [],
                         'operation': {'disposition': 'complete', 'phase': 'complete'}}
-            with self.subTest(schema=schema), patch.object(recovery_artifacts, '_load_run', return_value=(run, manifest, {})), \
-                    patch.object(recovery_artifacts, '_verify_files'):
+            with self.subTest(schema=schema), patch.object(archive_inspection, '_load_run', return_value=(run, manifest, {})), \
+                    patch.object(archive_inspection, '_verify_files'):
                 inspected = recovery.inspect_run(run)
                 self.assertIsNone(inspected['review_id'])
 
@@ -257,7 +262,7 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_cli_pause_reads_structured_authority_without_shell_execution(self):
         run = self.prepare7()
         authority_file = self.write('authority.json', {'authority': 'User requested pause'})
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'pause',
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'pause',
                                  '--run-dir', str(run), '--authority-input', str(authority_file),
                                  '--reason', 'Waiting for review input', '--phase', 'discovery'],
                                 capture_output=True, text=True, encoding='utf-8')
@@ -406,11 +411,11 @@ class ReviewRecoveryTests(unittest.TestCase):
                           profile_input=self.profile_input())
 
         loaded = []
-        original = recovery_artifacts._load_run
+        original = archive_lookup._load_run
         def tracked(path):
             loaded.append(str(path))
             return original(path)
-        with patch.object(recovery_artifacts, '_load_run', side_effect=tracked):
+        with patch.object(archive_lookup, '_load_run', side_effect=tracked):
             result = recovery.find_candidates(self.repo, self.read(run / 'cierre.json')['scope'],
                 archive_root=self.output,
                 current_inputs={'scope': self.read(run / 'cierre.json')['scope'], 'sources': {},
@@ -446,7 +451,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         current_file = self.write('lookup-current.json', {
             'scope': scope, 'sources': {}, 'source_set_complete': True})
 
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'lookup',
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'lookup',
                                  '--repo', str(self.repo), '--scope-file', str(scope_file),
                                  '--archive-root', str(self.output), '--current-inputs', str(current_file),
                                  '--limit', '5'], capture_output=True, text=True, encoding='utf-8')
@@ -511,7 +516,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         final = record10('standard', 'automatic')
         final['scope'] = self.read(run / 'cierre.json')['scope']
         context = self.write('recovery-context.json', context10(final))
-        original = artifacts.atomic_write
+        original = checkpoint_ops.atomic_write
         interrupted = False
 
         def fail_after_selected_bytes(path, data, **kwargs):
@@ -522,7 +527,7 @@ class ReviewRecoveryTests(unittest.TestCase):
                 raise OSError('simulated crash after checkpoint context write')
             original(path, data, **kwargs)
 
-        with patch.object(artifacts, 'atomic_write', side_effect=fail_after_selected_bytes), self.assertRaises(OSError):
+        with patch.object(checkpoint_ops, 'atomic_write', side_effect=fail_after_selected_bytes), self.assertRaises(OSError):
             artifacts.checkpoint(run, context_input=context, phase='discovery')
         pending = self.read(run / 'cierre.json')['checkpoint_transaction']['checkpoint']
         recorded_at = pending['recorded_at']
@@ -644,7 +649,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             original_transfer(*args, **kwargs)
             raise OSError('transfer committed before restart interruption')
 
-        with patch.object(artifacts, 'transfer_resources', side_effect=interrupt_after_transfer):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=interrupt_after_transfer):
             with self.assertRaisesRegex(OSError, 'transfer committed'):
                 artifacts.restart(source, **request)
 
@@ -660,7 +665,7 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_restart_link_failure_retry_reuses_reserved_successor(self):
         source = self.prepare7('standard')
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('link interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('link interrupted')):
             with self.assertRaisesRegex(OSError, 'link interrupted'):
                 artifacts.restart(source, **request)
 
@@ -701,7 +706,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         source = self.prepare7('standard')
         transfer_target = self.prepare7('standard')
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('link interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('link interrupted')):
             with self.assertRaisesRegex(OSError, 'link interrupted'):
                 artifacts.restart(source, **request)
         before = self.snapshot(source)
@@ -776,7 +781,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         current = self.write('restart-current.json', request['current_inputs'])
         harness_source = self.write('restart-harness-source.json',
                                     {'kind': 'user', 'reference': '--harness-id'})
-        command = [sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'restart',
+        command = [sys.executable, '-B', str(SCRIPTS), 'artifacts', 'restart',
                    '--run-dir', str(source), '--profile-input', str(profile),
                    '--controller-input', str(controller), '--authority-input', str(authority),
                    '--current-inputs', str(current), '--harness', 'Claude Code Desktop',
@@ -797,12 +802,12 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_restart_each_reservation_boundary_reuses_the_same_destination(self):
         source = self.prepare7('standard')
         request = self.restart_request(source)
-        with patch.object(artifacts, '_write_active_restart', side_effect=OSError('intent boundary')):
+        with patch.object(restart_ops, '_write_active_restart', side_effect=OSError('intent boundary')):
             with self.assertRaisesRegex(OSError, 'intent boundary'):
                 artifacts.restart(source, **request)
         self.assertFalse(any(self.read(path).get('previous_run') == str(source)
                              for path in self.output.rglob('cierre.json')))
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('reservation boundary')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('reservation boundary')):
             with self.assertRaisesRegex(OSError, 'reservation boundary'):
                 artifacts.restart(source, **request)
 
@@ -815,7 +820,7 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_active_descriptor_retry_after_commit_and_retirement(self):
         source = self.prepare7('standard')
         request = self.restart_request(source)
-        with patch.object(artifacts, '_retire_active_restart', side_effect=OSError('retirement interrupted')):
+        with patch.object(restart_ops, '_retire_active_restart', side_effect=OSError('retirement interrupted')):
             with self.assertRaisesRegex(OSError, 'retirement interrupted'):
                 artifacts.restart(source, **request)
 
@@ -829,7 +834,7 @@ class ReviewRecoveryTests(unittest.TestCase):
     def test_recover_completes_the_exact_pending_restart(self):
         source = self.prepare7('standard')
         request = self.restart_request(source)
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('restart interrupted')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('restart interrupted')):
             with self.assertRaisesRegex(OSError, 'restart interrupted'):
                 artifacts.restart(source, **request)
 
@@ -846,7 +851,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         scope = dict(self.read(source / 'cierre.json')['scope'], head='new-reviewed-head')
         request = self.restart_request(source, scope=scope)
         self.assertNotIn('logical_scope_identity', request['current_inputs'])
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
             with self.assertRaisesRegex(OSError, 'interrupted'):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -890,7 +895,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             artifacts.restart(source, **invalid)
         self.assertEqual(self.snapshot(source), before)
         self.assertFalse((source.parent / '.restart-intents').exists())
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('interrupted')):
             with self.assertRaisesRegex(OSError, 'interrupted'):
                 artifacts.restart(source, **request)
         outcome = artifacts.recover(source, controller=request['controller'],
@@ -930,7 +935,7 @@ class ReviewRecoveryTests(unittest.TestCase):
                    'profile_reference': selection['reference'], 'profile_history': [selection],
                    'execution_plan': [], 'executors': [], 'review_inputs': manifest['review_inputs']}
         context_path = self.write('pending-restart-context.json', context)
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
             with self.assertRaisesRegex(OSError, 'checkpoint commit interrupted'):
                 artifacts.checkpoint(source, context_input=context_path, phase='discovery')
         pending_before = self.read(source / 'cierre.json')
@@ -953,7 +958,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             'profile': selection['profile'], 'selection_source': selection['selection_source'],
             'profile_reference': selection['reference'], 'profile_history': [selection],
             'execution_plan': [], 'executors': [], 'review_inputs': manifest['review_inputs']})
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=OSError('checkpoint commit interrupted')):
             with self.assertRaisesRegex(OSError, 'checkpoint commit interrupted'):
                 artifacts.checkpoint(source, context_input=context_path, phase='discovery')
         changed_scope = copy.deepcopy(manifest['scope'])
@@ -979,7 +984,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             (target / 'foreign.txt').write_text('foreign bytes', encoding='utf-8')
             raise OSError('simulated stop after destination collision')
 
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=occupy):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=occupy):
             with self.assertRaisesRegex(OSError, 'destination collision'):
                 artifacts.restart(source, **request)
         operation_files = list((source.parent / '.restart-intents').rglob('*.json'))
@@ -1021,7 +1026,7 @@ class ReviewRecoveryTests(unittest.TestCase):
         self.assertEqual(len(receipts), 1)
 
         receipts_input = self.write('released-claims.json', receipts)
-        original = artifacts.atomic_write
+        original = retention_ops.atomic_write
         interrupted = False
 
         def fail_report_once(path, data):
@@ -1031,7 +1036,7 @@ class ReviewRecoveryTests(unittest.TestCase):
                 raise OSError('simulated close interruption after review.json')
             original(path, data)
 
-        with patch.object(artifacts, 'atomic_write', side_effect=fail_report_once), self.assertRaisesRegex(
+        with patch.object(retention_ops, 'atomic_write', side_effect=fail_report_once), self.assertRaisesRegex(
                 OSError, 'simulated close interruption'):
             artifacts.close(run, cleanup='complete', released_claims=receipts)
 
@@ -1040,7 +1045,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             artifacts.close(run, cleanup='pending')
         self.assertEqual(interrupted_snapshot, self.snapshot(run))
 
-        closed = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), 'close',
+        closed = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', 'close',
                                  '--run-dir', str(run), '--cleanup', 'complete',
                                  '--released-claims-input', str(receipts_input)],
                                 capture_output=True, text=True, encoding='utf-8')
@@ -1076,7 +1081,7 @@ class ReviewRecoveryTests(unittest.TestCase):
             if Path(path) == session:
                 raise OSError('simulated stop after session deletion')
 
-        with patch.object(review_workspace.shutil, 'rmtree', side_effect=delete_then_interrupt):
+        with patch.object(review_workspace.workspace_ops.shutil, 'rmtree', side_effect=delete_then_interrupt):
             with self.assertRaisesRegex(OSError, 'simulated stop'):
                 review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'),
                                                               run_dir=str(run)))

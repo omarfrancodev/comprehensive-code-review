@@ -1,6 +1,5 @@
 """Compact records must preserve evidence and reject unbound or missing decisions."""
 import copy
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -10,13 +9,10 @@ import unittest
 
 from test_review_contract import clean_record
 
+SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 
-SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'review_packets.py'
-sys.path.insert(0, str(SCRIPT.parent))
-spec = importlib.util.spec_from_file_location('review_packets', SCRIPT) if SCRIPT.exists() else None
-packets = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(packets)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+from ccr.contracts import packets
 
 
 def inputs():
@@ -147,7 +143,7 @@ class PacketTests(unittest.TestCase):
             root = Path(directory)
             for name, value in [('context', context), ('discovery', discovery), ('verification', verification)]:
                 (root / f'{name}.json').write_text(json.dumps(value), encoding='utf-8')
-            result = subprocess.run([sys.executable, '-B', str(SCRIPT), 'merge',
+            result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'packets', 'merge',
                                      '--context', str(root / 'context.json'), '--discovery', str(root / 'discovery.json'),
                                      '--verification', str(root / 'verification.json')], capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)

@@ -12,7 +12,7 @@ from test_review_execution_policy import record8, limit
 from test_review_profile_names import record7
 from test_review_contract import contract, MODULE_PATH
 from publication_fixtures import publication_record, check_classification
-import review_publication
+from ccr.reporting import projections as review_publication
 
 
 def classification(value, kind='validation', summary=None):
@@ -208,7 +208,7 @@ class PublicationPolicyTests(unittest.TestCase):
             context = Path(directory) / 'classification.json'
             record.write_text(json.dumps(value), encoding='utf-8')
             context.write_text(json.dumps(classification(value, 'execution')), encoding='utf-8')
-            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH)]
+            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract']
             args = ['--input', str(record), '--publication-context', str(context)]
             result = subprocess.run(command + ['render-comment'] + args, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -228,7 +228,7 @@ class PublicationPolicyTests(unittest.TestCase):
             context = Path(directory) / 'check-classification.json'
             record.write_text(json.dumps(value), encoding='utf-8')
             context.write_text(json.dumps(check_context), encoding='utf-8')
-            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH)]
+            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract']
             result = subprocess.run(command + ['render-comment', '--input', str(record),
                 '--check-publication-context', str(context)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)

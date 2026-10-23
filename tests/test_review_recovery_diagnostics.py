@@ -8,9 +8,11 @@ import unittest
 from unittest.mock import patch
 
 import test_review_recovery_reservations as reservations
-import review_workspace
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = reservations.artifacts
+from ccr.archive import checkpoints as checkpoint_ops, restart as restart_ops, transactions as transactions_ops
 claims = reservations.claims
 recovery = reservations.recovery
 
@@ -65,7 +67,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
 
     def pending_source_trace(self, source):
         run, manifest, marker = artifacts._load_run(source)
-        with patch.object(artifacts, '_recover_trace', side_effect=KeyboardInterrupt('pending helper event')):
+        with patch.object(transactions_ops, 'recover_trace', side_effect=KeyboardInterrupt('pending helper event')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts._append_trace(run, manifest, marker,
                     artifacts._milestone('interruption', 'Owned pending event before cancellation'))
@@ -114,7 +116,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
             if Path(run) != source and manifest.get('pending_trace'):
                 raise KeyboardInterrupt('initial successor trace not written')
             return recover_trace(run, manifest, marker)
-        with patch.object(artifacts, '_recover_trace', side_effect=interrupted):
+        with patch.object(transactions_ops, 'recover_trace', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -131,7 +133,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
 
     def missing_session_restart(self):
         source, session, request = self.resource_fixture(True)
-        with patch.object(artifacts, 'transfer_resources', side_effect=KeyboardInterrupt('prepared, not transferred')):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=KeyboardInterrupt('prepared, not transferred')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -163,7 +165,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
     def test_missing_workspace_cancellation_recovers_durable_decision(self):
         source, successor, _, request, kwargs = self.missing_session_restart()
         source_claims = copy.deepcopy(self.read(source / 'cierre.json')['resource_claims'])
-        with patch.object(artifacts, '_finish_restart_abandonment', side_effect=KeyboardInterrupt('terminal successor committed')):
+        with patch.object(restart_ops, '_finish_restart_abandonment', side_effect=KeyboardInterrupt('terminal successor committed')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.abandon_restart(source, **kwargs)
         receipt = self.read(successor / 'cierre.json')['restart_abandonment']
@@ -179,7 +181,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
 
     def test_present_source_claim_prevents_empty_successor_cancellation(self):
         source, session, request = self.resource_fixture(True)
-        with patch.object(artifacts, 'transfer_resources', side_effect=KeyboardInterrupt('before transfer')):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=KeyboardInterrupt('before transfer')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -195,7 +197,7 @@ class RecoveryDiagnosticTests(unittest.TestCase):
         successor = Path(artifacts.restart(source, **request))
         self.assertTrue(source.is_relative_to(self.root))
         source.rename(source.with_name(source.name + '-unavailable'))
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('checkpoint intent persisted')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('checkpoint intent persisted')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(successor, context_input=self.write('pending-context.json', self.context(successor)), phase='discovery')
         before = self.snapshot(successor)

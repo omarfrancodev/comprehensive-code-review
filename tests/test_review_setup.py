@@ -13,7 +13,8 @@ import unittest
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import review_setup as setup
+from script_test_support import setup_api
+setup = setup_api()
 
 from recovery_fixtures import context10, record10, selection_input
 
@@ -178,8 +179,8 @@ class SetupCliTests(unittest.TestCase):
                 result = run(command, cwd=repo)
                 self.assertEqual(result.returncode, 0, result.stderr)
 
-            workspace_helper = SCRIPTS / 'review_workspace.py'
-            result = run([sys.executable, str(workspace_helper), 'prepare', '--repo', str(repo), '--role', 'review'])
+            workspace_helper = SCRIPTS
+            result = run([sys.executable, str(workspace_helper), 'workspace', 'prepare', '--repo', str(repo), '--role', 'review'])
             self.assertEqual(result.returncode, 0, result.stderr)
             manifest = json.loads(result.stdout)
             session = Path(manifest['session_dir'])
@@ -188,7 +189,7 @@ class SetupCliTests(unittest.TestCase):
             input_file = root / 'input.json'
             input_file.write_text(json.dumps({'session': manifest['manifest'],
                                               'arguments': selection_input()}), encoding='utf-8')
-            helper = SCRIPTS / 'review_setup.py'
+            helper = SCRIPTS
             existing = evidence / 'profile-selection.json'
             existing.write_bytes(b'previous bytes')
             outside = root / 'outside.json'
@@ -199,24 +200,24 @@ class SetupCliTests(unittest.TestCase):
 
             try:
                 before = snapshot()
-                collision = run([sys.executable, str(helper), 'profile', '--input', str(input_file),
+                collision = run([sys.executable, str(helper), 'setup', 'profile', '--input', str(input_file),
                                  '--output', str(existing)])
                 self.assertNotEqual(collision.returncode, 0)
                 self.assertEqual(snapshot(), before)
 
-                escape = run([sys.executable, str(helper), 'profile', '--input', str(input_file),
+                escape = run([sys.executable, str(helper), 'setup', 'profile', '--input', str(input_file),
                               '--output', str(outside)])
                 self.assertNotEqual(escape.returncode, 0)
                 self.assertFalse(outside.exists())
                 self.assertEqual(snapshot(), before)
 
                 output = evidence / 'profile.json'
-                success = run([sys.executable, str(helper), 'profile', '--input', str(input_file),
+                success = run([sys.executable, str(helper), 'setup', 'profile', '--input', str(input_file),
                                '--output', str(output)])
                 self.assertEqual(success.returncode, 0, success.stderr)
                 self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['profile'], 'focused')
             finally:
-                cleanup = run([sys.executable, str(workspace_helper), 'cleanup',
+                cleanup = run([sys.executable, str(workspace_helper), 'workspace', 'cleanup',
                                '--manifest', manifest['manifest']])
                 self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
 

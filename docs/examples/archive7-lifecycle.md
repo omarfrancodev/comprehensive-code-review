@@ -4,7 +4,7 @@ These commands use a coordinator-owned native evidence session without writing e
 
 ```sh
 # ccr-example: prepare
-python /absolute/skill/scripts/review_artifacts.py prepare \
+python /absolute/skill/scripts artifacts prepare \
   --repo /absolute/project \
   --scope-file /absolute/owned/session/evidence/scope.json \
   --profile-input /absolute/owned/session/evidence/profile-selection.json \
@@ -16,7 +16,7 @@ Use the returned run directory for every subsequent command. Build `context.json
 
 ```sh
 # ccr-example: register
-python /absolute/skill/scripts/review_artifacts.py register \
+python /absolute/skill/scripts artifacts register \
   --run-dir /absolute/returned/run \
   --temporary-path /absolute/owned/session \
   --context-input /absolute/owned/session/evidence/context.json
@@ -26,14 +26,14 @@ Only when another decision is observed, record it before affected work; `selecti
 
 ```sh
 # ccr-example: select-profile
-python /absolute/skill/scripts/review_artifacts.py select-profile \
+python /absolute/skill/scripts artifacts select-profile \
   --run-dir /absolute/returned/run \
   --selection-input /absolute/owned/session/evidence/selection-change.json
 ```
 
 ```sh
 # ccr-example: register-updated
-python /absolute/skill/scripts/review_artifacts.py register \
+python /absolute/skill/scripts artifacts register \
   --run-dir /absolute/returned/run \
   --temporary-path /absolute/owned/session \
   --context-input /absolute/owned/session/evidence/context.json
@@ -43,7 +43,7 @@ For each meaningful observed dispatch/result, provide its real actor/provider, b
 
 ```sh
 # ccr-example: record-event
-python /absolute/skill/scripts/review_artifacts.py record-event \
+python /absolute/skill/scripts artifacts record-event \
   --run-dir /absolute/returned/run \
   --event-file /absolute/owned/session/evidence/event.json
 ```
@@ -52,7 +52,7 @@ Checkpoint the selected context/packets and structurally final record when avail
 
 ```sh
 # ccr-example: checkpoint
-python /absolute/skill/scripts/review_artifacts.py checkpoint \
+python /absolute/skill/scripts artifacts checkpoint \
   --run-dir /absolute/returned/run --phase report \
   --context-input /absolute/owned/session/evidence/context.json \
   --evidence-input /absolute/owned/session/evidence/briefs.json \
@@ -62,27 +62,27 @@ python /absolute/skill/scripts/review_artifacts.py checkpoint \
 
 ```sh
 # ccr-example: retain
-python /absolute/skill/scripts/review_artifacts.py retain \
+python /absolute/skill/scripts artifacts retain \
   --run-dir /absolute/returned/run --expected-schema 10
 ```
 
 ```sh
 # ccr-example: validate-retained
-python /absolute/skill/scripts/review_artifacts.py validate \
+python /absolute/skill/scripts artifacts validate \
   --run-dir /absolute/returned/run --require-retained
 ```
 
-After that gate, verify ownership and dispose of this exact native session through its native owner. Workspace sessions instead use `review_workspace.py cleanup --manifest <session>/manifest.json --run-dir <run>`; do not apply native deletion to a workspace session. Only after observing successful disposal:
+After that gate, verify ownership and dispose of this exact native session through its native owner. Workspace sessions instead use `scripts workspace cleanup --manifest <session>/manifest.json --run-dir <run>`; do not apply native deletion to a workspace session. Only after observing successful disposal:
 
 ```sh
 # ccr-example: close
-python /absolute/skill/scripts/review_artifacts.py close \
+python /absolute/skill/scripts artifacts close \
   --run-dir /absolute/returned/run --cleanup complete
 ```
 
 ```sh
 # ccr-example: validate-complete
-python /absolute/skill/scripts/review_artifacts.py validate \
+python /absolute/skill/scripts artifacts validate \
   --run-dir /absolute/returned/run --require-complete
 ```
 

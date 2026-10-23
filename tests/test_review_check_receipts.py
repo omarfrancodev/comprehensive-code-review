@@ -16,9 +16,12 @@ from unittest.mock import patch
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 OWNED_WORKSPACE = str(Path(__file__).resolve().parents[1] / '.owned-executor')
 sys.path.insert(0, str(SCRIPTS))
-import review_check_receipts as receipts
-import review_preflight
-import review_workspace
+from ccr.execution import checks as receipts
+from ccr.contracts import preflight as review_preflight
+from ccr.contracts import receipts as receipt_contracts
+from ccr.execution import checks as checks_ops, workspaces as workspace_ops
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 from recovery_fixtures import context10, record10
 from test_review_traceability_contract import check as base_check
 
@@ -84,20 +87,20 @@ class CheckReceiptTests(unittest.TestCase):
         receipt_bytes = json.dumps(receipt, sort_keys=True, separators=(',', ':')).encode('utf-8')
         sources = {receipt_reference: receipt_bytes,
                    receipt['stdout']['reference']: b'', receipt['stderr']['reference']: b''}
-        self.assertEqual(receipts.validate_record_receipts(record, sources, executors), [])
+        self.assertEqual(receipt_contracts.validate_record_receipts(record, sources, executors), [])
         del sources[receipt['stderr']['reference']]
         self.assertIn('invalid_receipt', {issue['code'] for issue in
-                                          receipts.validate_record_receipts(record, sources, executors)})
+                                          receipt_contracts.validate_record_receipts(record, sources, executors)})
 
     def test_empty_streams_need_observed_exit(self):
         receipt = valid_receipt()
         check, executors = valid_binding()
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
-        self.assertEqual(receipts.validate_receipt(
+        self.assertEqual(receipt_contracts.validate_receipt(
             receipt, sources, check=check, executors=executors), [])
 
         incomplete = dict(receipt, exit_code=None, finished_at=None)
-        issues = receipts.validate_receipt(
+        issues = receipt_contracts.validate_receipt(
             incomplete, sources, check=check, executors=executors)
         self.assertIn('invalid_receipt', {issue['code'] for issue in issues})
 
@@ -107,7 +110,7 @@ class CheckReceiptTests(unittest.TestCase):
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
         check['command'] = 'pytest -q'
 
-        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+        issues = receipt_contracts.validate_receipt(receipt, sources, check=check, executors=executors)
 
         self.assertTrue(any(issue['field'] == 'command' for issue in issues))
 
@@ -119,7 +122,7 @@ class CheckReceiptTests(unittest.TestCase):
         check['command'] = shlex.join(argv)
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
 
-        self.assertEqual(receipts.validate_receipt(
+        self.assertEqual(receipt_contracts.validate_receipt(
             receipt, sources, check=check, executors=executors), [])
 
     def test_receipt_cwd_must_match_registered_executor_workspace(self):
@@ -128,7 +131,7 @@ class CheckReceiptTests(unittest.TestCase):
         executors[0]['workspace'] = str(Path(OWNED_WORKSPACE).with_name('different-executor'))
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
 
-        issues = receipts.validate_receipt(receipt, sources, check=check, executors=executors)
+        issues = receipt_contracts.validate_receipt(receipt, sources, check=check, executors=executors)
 
         self.assertTrue(any(issue['field'] == 'cwd' for issue in issues))
 
@@ -137,17 +140,17 @@ class CheckReceiptTests(unittest.TestCase):
         check, executors = valid_binding()
         sources = {'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''}
         altered = dict(sources, **{'evidence/C001-out.log': b'changed'})
-        self.assertIn('invalid_receipt', {issue['code'] for issue in receipts.validate_receipt(
+        self.assertIn('invalid_receipt', {issue['code'] for issue in receipt_contracts.validate_receipt(
             receipt, altered, check=check, executors=executors)})
-        self.assertTrue(receipts.validate_receipt(
+        self.assertTrue(receipt_contracts.validate_receipt(
             receipt, sources, check=dict(check, revision='other-head'), executors=executors))
-        self.assertTrue(receipts.validate_receipt(
+        self.assertTrue(receipt_contracts.validate_receipt(
             receipt, sources, check=check,
             executors=[dict(executors[0], executor='X2')]))
 
     def test_validation_never_starts_a_process(self):
-        with patch('review_check_receipts.subprocess.run') as run:
-            receipts.validate_receipt(valid_receipt(), {
+        with patch.object(checks_ops.subprocess, 'run') as run:
+            receipt_contracts.validate_receipt(valid_receipt(), {
                 'evidence/C001-out.log': b'', 'evidence/C001-err.log': b''},
                 check=valid_binding()[0], executors=valid_binding()[1])
             run.assert_not_called()
@@ -237,7 +240,7 @@ class CaptureCheckTests(unittest.TestCase):
             }), encoding='utf-8')
             cli_dir = evidence / 'attempt-3'
             completed = subprocess.run([
-                sys.executable, str(SCRIPTS / 'review_check_receipts.py'), 'run',
+                sys.executable, str(SCRIPTS), 'checks', 'run',
                 '--request', str(request_path), '--output-dir', str(cli_dir)],
                 cwd=root, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -279,7 +282,7 @@ class CaptureCheckTests(unittest.TestCase):
             cwd = root / 'cwd'
             output_dir = root / 'evidence' / 'attempt-1'
             cwd.mkdir()
-            with patch('review_check_receipts.subprocess.run') as run:
+            with patch.object(checks_ops.subprocess, 'run') as run:
                 with self.assertRaises((ValueError, OSError)):
                     receipts.capture_check(check_id='C001', argv=[sys.executable, '-V'],
                                            command=shlex.join([sys.executable, '-V']),
@@ -337,9 +340,9 @@ class CaptureCheckTests(unittest.TestCase):
                     return b'same-head\n'
                 raise AssertionError('unexpected Git query: ' + repr(args))
 
-            with patch('review_workspace.load', return_value=manifest), \
-                    patch('review_workspace.out', side_effect=fake_git_out) as git_out, \
-                    patch('review_check_receipts.subprocess.run') as run:
+            with patch.object(workspace_ops, 'load', return_value=manifest), \
+                    patch.object(workspace_ops, 'out', side_effect=fake_git_out) as git_out, \
+                    patch.object(checks_ops.subprocess, 'run') as run:
                 run.return_value = subprocess.CompletedProcess(['python', '-V'], 0)
                 with self.assertRaisesRegex(ValueError, 'executor X1 is registered to another workspace'):
                     receipts.capture_check(

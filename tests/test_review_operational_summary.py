@@ -9,7 +9,9 @@ import test_review_recovery as recovery_fixtures
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_recovery as recovery
+from script_test_support import recovery_api
+recovery = recovery_api()
+from ccr.archive import inspection as inspection_ops
 import test_review_artifacts as archive
 
 
@@ -150,7 +152,7 @@ class OperationalSummaryTests(unittest.TestCase):
             recovery_fixtures.argparse.Namespace(manifest=str(session / 'manifest.json'),
                                                  run_dir=str(run)))
         archive.artifacts.close(run, cleanup='complete')
-        with patch.object(recovery, 'operational_summary', side_effect=ValueError('synthetic mismatch')):
+        with patch.object(inspection_ops, 'operational_summary', side_effect=ValueError('synthetic mismatch')):
             inspected = recovery.inspect_run(run)
         self.assertEqual(inspected['integrity']['status'], 'invalid')
         self.assertEqual(inspected['activity'], 'unknown')
@@ -158,10 +160,9 @@ class OperationalSummaryTests(unittest.TestCase):
 
     def test_trace_changed_after_integrity_check_cannot_feed_summary(self):
         run = self.prepare7()
-        artifact_module = recovery._artifacts()
-        trace_path = run / artifact_module.review_trace.NAME
+        trace_path = run / inspection_ops.review_trace.NAME
         original = trace_path.read_bytes()
-        verify_files = artifact_module._verify_files
+        verify_files = inspection_ops._verify_files
 
         def verify_then_change(run_path, manifest, **kwargs):
             result = verify_files(run_path, manifest, **kwargs)
@@ -169,7 +170,7 @@ class OperationalSummaryTests(unittest.TestCase):
             return result
 
         try:
-            with patch.object(artifact_module, '_verify_files', side_effect=verify_then_change):
+            with patch.object(inspection_ops, '_verify_files', side_effect=verify_then_change):
                 inspected = recovery.inspect_run(run)
             self.assertEqual(inspected['integrity']['status'], 'invalid')
             self.assertEqual(inspected['activity'], 'unknown')
