@@ -264,6 +264,8 @@ def reference_source_paths(index: dict) -> list[str]:
         if path == 'evidence/reference-index.json':
             raise ValueError('reference index cannot include itself in inputs')
         selected.add(path)
+    if len(selected) + 1 > 64:
+        raise ValueError('reference index selects at most 64 evidence files')
     return sorted(selected)
 
 def canonical_reference(reference: str, aliases: dict[str, dict[str, str]]) -> str:

@@ -79,6 +79,12 @@ Use `event` for an observed assignment milestone with its active brief and obser
 
 prepare accepts optional --output-root and --previous-run. Supply canonical scope. `register` adds resources while state is prepared or processing; `retain --temporary-path` remains compatible but does not replace registration before use. Register only exact review-owned temporary directories after checking ownership; never the user checkout, another task's workspace or the persistent archive. Registration observes paths/manifests but does not create resources, delete them or prove ownership.
 
+### One retained source selection
+
+For guided archives, retention selects the reference index, each material input and every canonical alias target. It reads only candidate bytes explicitly supplied to `retain` or entries in the exact run's verified hash inventory. `validate --require-retained` and `close` rebuild that same bounded selection from the inventory, so successful retention remains verifiable after the candidate inputs have been consumed. A missing hash entry or changed byte blocks validation and leaves cleanup pending. Existing runs whose initial source map omitted a material input may verify retained bytes while keeping an unverified description and the original input map unchanged.
+
+The `setup context` adapter verifies the complete material capture while a run is prepared. The read-only `artifacts preflight` command performs the same check when its selected index and material files are supplied with `--evidence-input`; it does not scan a session or run to fill gaps.
+
 ### Phase preflight
 
 New preparation validates the profile selection reference before allocating a run. For an existing native schema-8/layout-2 archive, `preflight --run-dir <run> --context-input <context> --phase register|discovery|retain` checks only supplied phase inputs and selected bytes. Register/discovery preflight rejects incomplete material capture while the archive is `prepared`; retention preflight checks every explicitly selected indexed input against its digest. Neither phase scans the session or archive to fill missing evidence. Repeat `--evidence-input <file>` for each explicitly selected source and pass `--input <final-review.json>` when checking retention. A plan may remain empty during registration; discovery requires at least one active required assignment, and discovery/retention require the context plan to match the durable assignment registry. Retention preflight without a final candidate reports incomplete readiness.

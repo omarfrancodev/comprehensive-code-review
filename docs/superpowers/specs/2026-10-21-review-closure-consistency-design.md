@@ -55,7 +55,7 @@ La decisión de conservar workspaces cuando falla el gate de retención fue corr
 
 La selección incluye el índice, cada input material y cada destino de alias requerido para validar el índice. Los aliases de resultados no se convierten por eso en inputs iniciales: sólo `inputs` representa fuentes materiales que deben fijarse antes del trabajo.
 
-El adaptador de archivo cargará cada ruta enumerada únicamente desde los bytes candidatos explícitos o desde una entrada hash-verificada de `cierre.hashes`. La existencia de un archivo sin entrada de inventario no autoriza su lectura como evidencia seleccionada. No se importarán todos los archivos del directorio para ocultar una referencia ausente.
+El adaptador de archivo cargará cada ruta enumerada únicamente desde los bytes candidatos explícitos o desde una entrada hash-verificada de `cierre.hashes`. La existencia de un archivo sin entrada de inventario no autoriza su lectura como evidencia seleccionada. La captura inicial limita índice más fuentes seleccionadas a 64 archivos y 64 MiB agregados. No se importarán todos los archivos del directorio para ocultar una referencia ausente.
 
 Preflight de retención, retain, validate y close usarán esa misma selección y los validadores semánticos existentes. Para un mismo snapshot e inventario válido debe cumplirse: retain exitoso implica validate --require-retained exitoso. Esto no implica limpieza completa ni garantiza el resultado de un posterior --require-complete.
 

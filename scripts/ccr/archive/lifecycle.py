@@ -445,7 +445,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         phase_preflight = review_preflight.validate_preflight(
             phase='register', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=None,
-            sources={'evidence/context.json': _json_bytes(context)})
+            sources={'evidence/context.json': _json_bytes(context)},
+            check_material_sources=False)
         if not phase_preflight['ready']:
             raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
         if (context.get('profile') != manifest['profile_history'][-1]['profile']

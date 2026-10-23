@@ -35,7 +35,7 @@ from ccr.execution import claims as resource_claims
 from ccr.contracts.execution import validate_execution_sources
 from ccr.contracts.provenance import validate_check_sources
 from ccr.contracts.references import parse_reference, resolve_reference
-from ccr.contracts.reference_index import canonical_reference
+from ccr.contracts.reference_index import canonical_reference, reference_source_paths
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE, LEGACY_INITIAL_PROFILE_REFERENCE
 
 def _temporary_paths(paths, manifest):
@@ -247,6 +247,10 @@ def _execution_gate(run, manifest, value, contents):
         aliases = reference_index.get('aliases', {})
         if not isinstance(aliases, dict):
             raise ValueError('selected reference index aliases must be an object')
+        try:
+            requested.update(reference_source_paths(reference_index))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('selected reference index source selection is invalid: ' + str(exc)) from exc
         selected_sources[index_reference] = index_bytes
     for reference in requested:
         try:

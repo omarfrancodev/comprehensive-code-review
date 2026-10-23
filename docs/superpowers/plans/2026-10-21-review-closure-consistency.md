@@ -36,7 +36,7 @@
 
 ## Base, alcance y mapa de archivos
 
-Base de planificación: `9c3fd6bd7e3a21226e2fcd6dca65c42f512bceea`, main, CCR 3.0.0. Este plan es una propuesta pendiente de revisión; no autoriza implementación ni asigna un método de ejecución.
+Base de planificación: `9c3fd6bd7e3a21226e2fcd6dca65c42f512bceea`, main, CCR 3.0.0. Implementación autorizada por el usuario el 2026-10-23; ejecución secuencial en el worktree `docs/review-closure-consistency`.
 
 Se recomiendan tareas secuenciales: comparten resolución de fuentes, validación del archivo y proyección de trazas. Antes de implementar, comparar HEAD/main con esta base y ajustar anclas si cambiaron sus contratos. La revalidación documental del 2026-10-23 aprobó 40 pruebas focalizadas sobre esta base (detalle en spec §8); las pruebas y los resultados esperados de las Tasks siguen pendientes de implementación. No volver a ejecutar la revisión del MR para validar los helpers.
 
@@ -71,7 +71,7 @@ Los comandos se ejecutan en la raíz del worktree con un Python 3.10+ real. `pyt
 - Produces: `ccr.workflow.builders.capture_input_sources(index_bytes: bytes, sources: dict[str, bytes]) -> dict[str, str]`: valida bytes y devuelve hashes del índice y sus inputs materiales; los destinos de alias que sólo son outputs no se capturan como inputs. Errores producen ValueError con el diagnóstico de referencia concreto.
 - Produces: `ccr.contracts.material_inputs.validate_captured_material_sources(captured_inputs: dict, index: dict, sources: dict[str, bytes]) -> list[ReferenceIssue]`: exige que cada input material esté capturado directamente o mediante alias validado con el mismo hash. Extraer/reutilizar la comparación de `validate_material_inputs`, sin debilitar esa función.
 
-- [ ] **Step 1: Escribir las pruebas unitarias de selección y captura**
+- [x] **Step 1: Escribir las pruebas unitarias de selección y captura**
 
 Importar `reference_index as refs` y `material_inputs as material` desde `ccr.contracts`, y `builders` desde `ccr.workflow`. En `SourceSelectionTests`, definir `test_capture_includes_material_inputs_not_output_aliases`, `test_missing_or_changed_input_is_rejected` y `test_captured_material_accepts_only_hash_matching_one_hop_alias`. Crear el índice y bytes en cada método; el caso principal usa:
 
@@ -98,17 +98,17 @@ assert material.validate_captured_material_sources({'sources': {'evidence/refere
 
 En el segundo test quitar notes y luego cambiar sus bytes: assertRaisesRegex con `notes.json` y el diagnóstico de hash respectivamente. En el tercero capturar descripción mediante alias de un salto y assertEqual de issues a []; cambiar su digest, introducir chain y traversal por separado y assertTrue de issues/rechazo. Conservar el test existente que impide certificar descripción no capturada.
 
-- [ ] **Step 2: Comprobar RED**
+- [x] **Step 2: Comprobar RED**
 
 Run: `python -B -m unittest discover -s tests -p test_review_source_selection.py -v`
 
 Expected: FAIL por ausencia de las funciones nuevas, no por error de import del entorno.
 
-- [ ] **Step 3: Implementar las interfaces en sus tres módulos propietarios**
+- [x] **Step 3: Implementar las interfaces en sus tres módulos propietarios**
 
 Reutilizar la gramática y validadores, no hacer scans de texto ni lecturas de filesystem. Hash SHA-256 lowercase sobre bytes exactos. Mantener `validate_material_inputs` compatible para runs iniciados y sus estados unverified.
 
-- [ ] **Step 4: Comprobar GREEN y regresiones de referencias**
+- [x] **Step 4: Comprobar GREEN y regresiones de referencias**
 
 Run: `python -B -m unittest discover -s tests -p test_review_source_selection.py -v`
 
@@ -116,7 +116,7 @@ Run: `python -B -m unittest discover -s tests -p test_review_reference_index.py 
 
 Expected: OK en ambos; aliases válidos e identities de contenido siguen verificados.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ccr/contracts/reference_index.py scripts/ccr/contracts/material_inputs.py scripts/ccr/workflow/builders.py tests/test_review_source_selection.py tests/test_review_reference_index.py
@@ -142,7 +142,7 @@ git commit -m "refactor(fuentes): compartir selección y captura del índice"
 - Produces: CLI `python -B scripts setup inputs --input <envelope> --output <new-evidence.json>` con `{session, arguments}`. `arguments` contiene exactamente `scope`, `reference_index`, `source_set_complete`, `identities`; identities sólo admite `description_identity`, `requirements_identity`, `plan_identity`, `configuration_identity`.
 - Maintains: firma y forma de retorno de `validate_preflight`; los issues siguen ordenados y `ready` sólo es true sin errores.
 
-- [ ] **Step 1: Escribir pruebas del builder y barrera**
+- [x] **Step 1: Escribir pruebas del builder y barrera**
 
 Importar `builders` desde `ccr.workflow` y `reference_index as refs` desde `ccr.contracts` directamente en los tests nuevos. Añadir a `SetupTests`:
 
@@ -165,7 +165,7 @@ En `SetupCliTests` extender la sesión sintética existente: inputs escribe un n
 
 En `PreflightIntegrationTests`, añadir `test_prepared_material_capture_fails_before_dispatch` y `test_retain_preflight_reports_index_source_errors`: snapshots antes/después iguales, `ready=False`, referencia a notes.json al omitirla o cambiarla. Usar --evidence-input explícitos y el índice seleccionado; no recorrer la sesión para completar fuentes faltantes.
 
-- [ ] **Step 2: Comprobar RED**
+- [x] **Step 2: Comprobar RED**
 
 Run: `python -B -m unittest discover -s tests -p test_review_setup.py -v`
 
@@ -173,23 +173,23 @@ Run: `python -B -m unittest discover -s tests -p test_review_preflight.py -v`
 
 Expected: fallan las nuevas pruebas por builder ausente/captura parcial aceptada.
 
-- [ ] **Step 3: Implementar builder y gates**
+- [x] **Step 3: Implementar builder y gates**
 
 Construir sources mediante Task 1, normalizar con `ccr.workflow.inputs.normalize_inputs`, omitir completeness cuando es null y conservar identities. Comparar identidades con forma SHA-256 (con o sin prefijo `sha256:`) cuando haya un input único del propósito correspondiente; no transformar identidades opacas en hashes inventados.
 
 El adaptador inputs resuelve sólo los archivos enumerados dentro de la sesión propia con los guards existentes, verifica el descriptor y escribe un candidato nuevo. No prepara un run ni modifica el manifest.
 
-En el adaptador context (no en build_context puro) y preflight register/discovery exigir captura material completa cuando manifest.state sea prepared. En otras fases verificar selección/hashes sin completar inputs inmutables retrospectivamente. Retain preflight usa el índice y fuentes explícitas para validar referencias materiales y semántica del candidato, además de recibos; no requiere una traza futura ni crea eventos. Un contexto sin reference_index conserva el contrato no guiado existente.
+En el adaptador context (no en build_context puro) y preflight CLI register/discovery exigir captura material completa cuando manifest.state sea prepared. El preflight interno de archive.lifecycle.register recibe sólo context JSON y conserva sus validaciones de fase; el flujo soportado verifica antes con setup context, que tiene acceso a los bytes de la sesión. En otras fases verificar selección/hashes sin completar inputs inmutables retrospectivamente. Retain preflight usa el índice y fuentes explícitas para validar referencias materiales y semántica del candidato, además de recibos; no requiere una traza futura ni crea eventos. Un contexto sin reference_index conserva el contrato no guiado existente.
 
 Documentar inputs antes de prepare y que un gate fallido no autoriza restart/dispatch. Conservar los códigos de salida 0/1/2 existentes del CLI y actualizar sólo las entradas setup afectadas de los snapshots de ayuda/contratos. Mantener escritura en `execution.candidates.write_new_json`. Importar `validate_captured_material_sources` directamente en `contracts.preflight` para que los tests históricos puedan sustituir únicamente esa nueva regla.
 
-- [ ] **Step 4: Comprobar GREEN**
+- [x] **Step 4: Comprobar GREEN**
 
 Run: los dos comandos de Step 2; `python -B -m unittest discover -s tests -p test_script_cli.py -v` y `python -B -m unittest discover -s tests -p test_script_characterization.py -v`.
 
 Expected: OK; el CLI inputs crea sólo la salida permitida y preflight permanece de sólo lectura.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ccr/workflow/builders.py scripts/ccr/workflow/setup.py scripts/ccr/cli/setup.py scripts/ccr/contracts/preflight.py tests/fixtures/scripts_cli_contracts.json tests/test_review_setup.py tests/test_review_preflight.py references/archive/artifacts.md
@@ -200,17 +200,19 @@ git commit -m "fix(preparacion): fijar fuentes materiales antes del despacho"
 
 **Files:**
 - Modify: `scripts/ccr/archive/retention.py` — `_execution_gate` y retain.
-- Test: `scripts/ccr/archive/lifecycle.py` — consumidores validate/close del mismo gate.
+- Modify: `scripts/ccr/archive/lifecycle.py` — validate/close comparten gate; el registro valida bytes en el adaptador de sesión que puede leerlos.
+- Modify: `scripts/ccr/contracts/reference_index.py` — hacer cumplir el límite de 64 fuentes al reconstruir selección.
 - Create: `tests/test_review_closure_consistency.py` — `ClosureConsistencyTests`.
 - Modify: `tests/test_review_reference_index.py`.
 - Modify: `references/archive/artifacts.md` — selección y compatibilidad de runs iniciados.
+- Modify: este spec/plan — registrar el límite de captura y la frontera de bytes entre adaptadores.
 
 **Interfaces:**
 - Consumes: `reference_source_paths` de Task 1 y gates puros de Task 2.
 - Maintains: `_execution_gate(run, manifest, value, contents)` y los CLI existentes; retorna/eleva como ahora. `contents` candidato y `manifest.hashes` son las únicas autoridades para leer fuentes.
 - Produces (sólo tests): `ClosureConsistencyTests.make_guided_run(*, complete_capture: bool) -> dict`, con `run: Path`, `record: Path` (JSON candidato), `context: Path`, `evidence_inputs: list[Path]`, `index: dict`, `description: bytes` y `notes: bytes`.
 
-- [ ] **Step 1: Escribir regresiones de retención y reconstrucción**
+- [x] **Step 1: Escribir regresiones de retención y reconstrucción**
 
 La clase usa TemporaryDirectory y un repositorio Git mínimo con identidad local de fixture. `make_guided_run` crea un record10 focused con description unverified, scope/head real del repo, sesión sintética sin ejecutores de comandos, índice con description/notes, briefs/results de `context10` y los eventos genuinos sintéticos requeridos mediante los helpers. Prepara/registra las asignaciones antes de los eventos. Con complete_capture=false, para representar un archivo anterior, parchear sólo el nuevo `ccr.contracts.preflight.validate_captured_material_sources` a devolver [] durante el bootstrap preparado de esa fixture; retirar el parche al empezar processing y antes de retain/validate. Los guards originales de ownership, hashes y transacciones se ejecutan realmente. No añadir este bypass a código de producción ni modificar archivos reales.
 
@@ -229,25 +231,25 @@ self.assertEqual(self.snapshot(case['run']), before)
 
 Importar `retention` y `lifecycle` desde `ccr.archive` para las llamadas del ejemplo. En la variante histórica comprobar `review_inputs` y `description.status` idénticos después de validar y que aligned/needs_update sin fuente capturada siguen rechazados. En pruebas de negativos usar fixtures separadas: falta hash de inventory con archivo presente (pasar una copia del manifest sin esa entrada a _execution_gate, sin alterar metadata durable); bytes distintos con entrada original; alias target ausente; link y ruta insegura. Tomar el snapshot después de configurar el defecto y antes del gate. AssertRaises y snapshots inmutables; cleanup sigue pending.
 
-- [ ] **Step 2: Comprobar RED**
+- [x] **Step 2: Comprobar RED**
 
 Run: `python -B -m unittest discover -s tests -p test_review_closure_consistency.py -v`
 
 Expected: el caso con índice no vacío reproduce el rechazo posterior a retain; las pruebas de compatibilidad no deben fallar por una fixture con schema/layout inválido.
 
-- [ ] **Step 3: Reconstruir la misma selección en cada gate**
+- [x] **Step 3: Reconstruir la misma selección en cada gate**
 
-En `_execution_gate`, parsear el índice seleccionado, enumerar sus rutas mediante Task 1 e incluirlas en requested antes de formar selected_sources. Resolverlas por source(name), que sólo acepta contents o manifest.hashes, conservando verificación y límites existentes. No usar rglob ni leer un archivo sólo porque exista.
+En `_execution_gate`, parsear el índice seleccionado, enumerar sus rutas mediante Task 1 e incluirlas en requested antes de formar selected_sources. Resolverlas por source(name), que sólo acepta contents o manifest.hashes, conservando verificación y límites existentes. Aplicar el límite de 64 a la selección reconstruida. No usar rglob ni leer un archivo sólo porque exista.
 
-Mantener la validación inicial de descripción y requirements; no añadir captura directa a runs processing/closing. Verificar que close usa la misma selección incluso en replay y que validate no escribe checkpoint por defecto. Documentar que conservar evidencia permite verificarla, pero no certificar retroactivamente su captura inicial.
+Mantener la validación inicial de descripción y requirements; no añadir captura directa a runs processing/closing. Verificar que close usa la misma selección incluso en replay y que validate no escribe checkpoint por defecto. Documentar que conservar evidencia permite verificarla, pero no certificar retroactivamente su captura inicial. El preflight interno de `archive.lifecycle.register` sólo dispone del contexto serializado; por eso no suplanta la comprobación de bytes. El flujo soportado ejecuta antes `setup context`, adaptador que tiene los bytes de la sesión y exige la captura material en estado prepared. El CLI preflight también exige los bytes explícitos. No presentar la llamada directa al mutador con un contexto fabricado como captura probada.
 
-- [ ] **Step 4: Comprobar GREEN y regresiones del índice**
+- [x] **Step 4: Comprobar GREEN y regresiones del índice**
 
-Run: el comando de Step 2 y `python -B -m unittest discover -s tests -p test_review_reference_index.py -v`.
+Run: el comando de Step 2, `python -B -m unittest discover -s tests -p test_review_reference_index.py -v`, `python -B -m unittest discover -s tests -p test_review_artifacts.py -v`, `python -B -m unittest discover -s tests -p test_review_preflight.py -v` y `python -B -m unittest discover -s tests -p test_review_setup.py -v`.
 
 Expected: OK; retain exitoso se revalida sin volver a pasar fuentes externas. --require-complete todavía exige cleanup auténtico.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ccr/archive/retention.py tests/test_review_closure_consistency.py tests/test_review_reference_index.py references/archive/artifacts.md
@@ -402,4 +404,4 @@ git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 | A9 | 5: annotation_and_sources_survive_real_owned_cleanup |
 | A10 | 2 y 5: ejemplos operativos, checks/modelos y gates de cierre |
 
-Para ejecutar, leer este plan y el spec juntos. Se recomienda ejecución **Native** secuencial: las cinco tareas comparten interfaces pequeñas y un mismo contrato de archivo; una revisión independiente al final debe comprobar selección de fuentes, anotaciones e inmutabilidad. El usuario todavía no ha elegido método ni aprobado implementar. No crear PR, release, publicar en el MR o modificar el run real como parte de la ejecución de este plan.
+Para ejecutar, leer este plan y el spec juntos. Las cinco tareas comparten interfaces pequeñas y un mismo contrato de archivo, por lo que esta implementación las ejecuta de forma secuencial en el mismo worktree. No crear PR, release, publicar en el MR o modificar el run real como parte de este plan.
