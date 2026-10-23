@@ -237,14 +237,14 @@ class RecoveryFollowupTests(unittest.TestCase):
         code = '''
 import json, os, sys
 from pathlib import Path
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = sys.argv[1:3]
 from script_test_support import archive_api
 a = archive_api()
-source = Path(sys.argv[2])
-request = json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
+source = Path(sys.argv[3])
+request = json.loads(Path(sys.argv[4]).read_text(encoding='utf-8'))
 replace = os.replace
 def interrupted(stage, target):
-    if Path(target).name == sys.argv[4] and Path(target).parent != source:
+    if Path(target).name == sys.argv[5] and Path(target).parent != source:
         os._exit(73)
     return replace(stage, target)
 os.replace = interrupted
@@ -256,7 +256,8 @@ a.restart(source, **request)
                 request = self.restart_request(source)
                 request_path = self.write('hard-exit-request.json', request)
                 process = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code,
-                    str(Path(artifacts.__file__).parent), str(source), str(request_path), boundary],
+                    str(Path(artifacts.__file__).parent), str(Path(__file__).resolve().parent),
+                    str(source), str(request_path), boundary],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(process.returncode, 73, process.stderr)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))

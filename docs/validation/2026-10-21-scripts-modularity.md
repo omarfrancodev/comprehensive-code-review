@@ -14,7 +14,7 @@ Validación final del spec [scripts-modularity-design](../superpowers/specs/2026
 | Retención, cleanup y ownership | Cubierto por regresiones | `tests.test_review_checkpoints`, `tests.test_review_resource_claims`, `tests.test_review_restart_resources`, `tests.test_review_session_operations` y `tests.test_review_atomic_recovery` ejercitan operaciones interrumpidas y su recuperación. |
 | Contratos operativos 2.14.0 | Cubierto por regresiones | `tests.test_review_references`, `tests.test_review_reference_index`, `tests.test_review_setup`, `tests.test_review_check_receipts`, `tests.test_review_model_usage` y `tests.test_review_comment`. |
 | Enlaces y guía de migración | OK | `tests.test_reference_layout` verifica enlaces locales; `docs/script-migration.md` recoge comandos, ruptura de imports, las doce áreas y sustitutos de las rutas retiradas. `docs/usage.md` enlaza el índice. |
-| Suite completa y formato del diff | OK | `python -B -X utf8 -m unittest discover -s tests -v`: 752 pruebas en 4470.557 s, `OK (skipped=7)`. `git diff --check` pasa. |
+| Suite completa y formato del diff | OK | `python -B -X utf8 -m unittest discover -s tests -v`: 752 pruebas en 3494.885 s, `OK (skipped=7)`. `git diff --check` pasa. |
 
 Los 7 skips dependen del entorno Windows: no se pudieron crear enlaces simbólicos/junctions/hard links y una prueba de clonación requiere un objeto de sincronización Win32 no disponible en Git Bash. Las pruebas restantes, incluidas ambas matrices completas de replay de recursos, pasaron.
 
@@ -33,6 +33,14 @@ La suite del baseline previo se inició antes de modificar producto, pero se int
 | 7 | Referencias, setup, recibos, modelo y comentario mantienen sus garantías; capturar exit distinto de cero no cuenta como falla del helper si el recibo se guardó. | Suites de referencias, setup, receipts, model usage y comment; `test_checks_cli_reports_successful_capture_of_exit_seven`. |
 | 8 | Copia completa instalada resuelve catálogo/versión y raíz desde su propia ubicación y rechaza archivo bajo la instalación. | `test_installed_copy_works_from_foreign_cwd`; prueba `-c` aislada sin `PYTHONPATH`; ejecuta las doce ayudas. |
 | 9 | Índice, áreas, instrucciones actuales, guía de ruptura e historia/enlaces son coherentes. | `test_script_layout`, `test_reference_layout`, `scripts/README.md`, `docs/usage.md`, `docs/script-migration.md`; changelog mantiene el cambio como no publicado. |
-| 10 | Suite completa y `git diff --check` pasan antes de integrar y registran omisiones ambientales. | `unittest discover -s tests -v`: 752 pruebas, 4470.557 s, `OK (skipped=7)`; `git diff --check` pasa. Los siete skips ambientales están descritos arriba. |
+| 10 | Suite completa y `git diff --check` pasan antes de integrar y registran omisiones ambientales. | `unittest discover -s tests -v`: 752 pruebas, 3494.885 s, `OK (skipped=7)`; `git diff --check` pasa. Los siete skips ambientales están descritos arriba. |
 
 La comprobación cubre una copia completa del checkout y no el ZIP o artefacto de distribución externo, porque ese generador no forma parte del repositorio disponible. Por ello el reporte no certifica una release empaquetada.
+
+## Seguimiento de F001 — 2026-10-23
+
+El review encontró que tres procesos hijos de `python -c` agregaban `scripts/` a `sys.path` y después importaban `script_test_support`, que vive en `tests/`. La suite completa expuso un cuarto bloque con la misma causa en `tests/test_review_recovery_followup.py`. Los cuatro lanzadores ahora pasan ambas rutas explícitamente y ajustan los índices de argumentos del hijo.
+
+Las pruebas focalizadas pasan: `test_record_artifact_excludes_cleanup_and_preserves_both_records_after_retry`, `test_concurrent_registration_commits_only_one_session_owner`, `test_concurrent_registration_also_locks_predeclared_sessions`, `test_cli_git_coordination_error_is_json_without_a_traceback` y `test_reserved_prepare_recovers_actual_process_exit_with_staging_left`.
+
+La suite completa se repitió con `PYTHONPATH` sin definir: `python -B -X utf8 -m unittest discover -s tests -v` ejecutó 752 pruebas en 3494.885 s, `OK (skipped=7)`. Pasaron ambas matrices completas de replay de recursos. `git diff --check` también pasa.

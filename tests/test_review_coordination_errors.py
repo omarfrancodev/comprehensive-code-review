@@ -128,11 +128,11 @@ class CoordinationErrorTests(unittest.TestCase):
         code = r'''
 import runpy, sys
 from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = sys.argv[1:3]
 from script_test_support import workspace_api
 workspace = workspace_api()
 import ccr.execution.claims as claim_ops
-script, manifest, artifact = sys.argv[2:5]
+script, manifest, artifact = sys.argv[3:6]
 original = claim_ops._git
 def failed(repo, *args):
     if args == ('rev-parse', '--git-common-dir'):
@@ -145,7 +145,7 @@ with patch.object(claim_ops, '_git', side_effect=failed):
         scripts = Path(workspace.__file__).parent
         script = scripts / '__main__.py'
         result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code, str(scripts),
-            str(script), str(session / 'manifest.json'), str(path)],
+            str(Path(__file__).resolve().parent), str(script), str(session / 'manifest.json'), str(path)],
             capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith('{'), result.stderr)

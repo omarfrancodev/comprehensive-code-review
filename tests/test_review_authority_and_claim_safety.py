@@ -71,12 +71,12 @@ from pathlib import Path
 import sys
 import time
 from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = sys.argv[1:3]
 from script_test_support import archive_api
 from ccr.archive import lifecycle as lifecycle_ops
 artifacts = archive_api()
-run, session, context, ready, release = map(Path, sys.argv[2:7])
-requested = [] if sys.argv[7] == 'existing' else [str(session)]
+run, session, context, ready, release = map(Path, sys.argv[3:8])
+requested = [] if sys.argv[8] == 'existing' else [str(session)]
 original = lifecycle_ops.atomic_write
 def delayed_write(path, data, **kwargs):
     if Path(path) == session / '.review-run-owner.json':
@@ -262,7 +262,8 @@ with session_claim_locks([sys.argv[2]]):
         try:
             for index, run in enumerate((first, second)):
                 child = subprocess.Popen([sys.executable, '-B', '-X', 'utf8', '-c', CHILD_REGISTER,
-                    str(resources.SCRIPTS), str(run), str(session), str(contexts[index]),
+                    str(resources.SCRIPTS), str(Path(__file__).resolve().parent),
+                    str(run), str(session), str(contexts[index]),
                     str(ready[index]), str(release[index]), 'existing' if predeclared else 'new'],
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                     text=True, encoding='utf-8')

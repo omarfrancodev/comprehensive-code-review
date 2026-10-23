@@ -102,11 +102,11 @@ class SessionOperationTests(unittest.TestCase):
 from pathlib import Path
 import argparse, json, sys, time
 from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
+sys.path[:0] = sys.argv[1:3]
 from script_test_support import workspace_api
 workspace = workspace_api()
 from ccr.execution import workspaces as workspace_ops
-manifest, artifact, ready, release = map(Path, sys.argv[2:6])
+manifest, artifact, ready, release = map(Path, sys.argv[3:7])
 original = workspace_ops.save
 def delayed_save(value):
     ready.touch()
@@ -120,7 +120,8 @@ with patch.object(workspace_ops, 'save', side_effect=delayed_save):
     print(json.dumps(workspace.record_artifact(argparse.Namespace(manifest=str(manifest), path=str(artifact)))), flush=True)
 '''
         child = subprocess.Popen([sys.executable, '-B', '-X', 'utf8', '-c', code,
-            str(safety.resources.SCRIPTS), str(session / 'manifest.json'), str(first), str(ready), str(release)],
+            str(safety.resources.SCRIPTS), str(Path(__file__).resolve().parent),
+            str(session / 'manifest.json'), str(first), str(ready), str(release)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
         try:
             deadline = time.monotonic() + 30
