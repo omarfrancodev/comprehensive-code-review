@@ -43,6 +43,12 @@ def capture_input_sources(index_bytes: bytes,
         paths = reference_source_paths(index)
     except (TypeError, ValueError) as exc:
         raise ValueError('reference index source selection is invalid: ' + str(exc)) from exc
+    if (len(index['inputs']) + 1 > input_ops.CALLER_SOURCE_LIMIT
+            or len(paths) + 1 > input_ops.CALLER_SOURCE_LIMIT):
+        raise ValueError('review input sources must contain at most 64 entries; selected evidence is limited to 64 files')
+    selected_size = len(index_bytes) + sum(len(selected[path]) for path in paths)
+    if selected_size > 64 * 1024 * 1024:
+        raise ValueError('selected reference sources exceed the 64 MiB input limit')
     result = {REFERENCE_INDEX: hashlib.sha256(index_bytes).hexdigest()}
     for row in index['inputs']:
         reference = row['reference']
@@ -53,6 +59,39 @@ def capture_input_sources(index_bytes: bytes,
     if missing:
         raise ValueError('selected reference source is missing: ' + ', '.join(missing))
     return result
+
+def build_review_inputs(scope: dict, index_bytes: bytes, sources: dict[str, bytes], *,
+                       source_set_complete: bool | None, identities: dict) -> dict:
+    """Build a normalized initial-input candidate from explicitly selected bytes."""
+    if not isinstance(identities, dict):
+        raise ValueError('identities must be an object')
+    supported = {'description_identity', 'requirements_identity',
+                 'plan_identity', 'configuration_identity'}
+    if set(identities) - supported:
+        raise ValueError('identities contains unsupported fields')
+    captured = capture_input_sources(index_bytes, sources)
+    index = json.loads(index_bytes.decode('utf-8'))
+    purpose_fields = {'description': 'description_identity',
+                      'requirements': 'requirements_identity',
+                      'plan': 'plan_identity',
+                      'configuration': 'configuration_identity'}
+    for purpose, field in purpose_fields.items():
+        value = identities.get(field)
+        if not isinstance(value, str):
+            continue
+        candidate = value[7:] if value.startswith('sha256:') else value
+        if SHA256.fullmatch(candidate) is None:
+            continue
+        matches = [row for row in index['inputs'] if row.get('purpose') == purpose]
+        if len(matches) == 1 and candidate != matches[0]['sha256']:
+            raise ValueError(field + ' differs from its unique selected material input')
+    raw = {'scope': scope, 'sources': captured, **identities}
+    if source_set_complete is not None:
+        raw['source_set_complete'] = source_set_complete
+    try:
+        return input_ops.normalize_inputs(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('review input candidate is invalid: ' + str(exc)) from exc
 
 def build_profile_selection(raw: dict) -> dict:
     """Return a canonical selection only when its source and authority are valid."""
@@ -153,7 +192,8 @@ def build_context(manifest: dict, *, execution_plan: list[dict],
     preflight = review_preflight.validate_preflight(
         phase='register', manifest=manifest, logical_scope=logical,
         selection=history[-1], context=result, record=None,
-        sources={'evidence/context.json': _json_bytes(result)})
+        sources={'evidence/context.json': _json_bytes(result)},
+        check_material_sources=False)
     if not preflight['ready']:
         raise ValueError('context does not satisfy registration preflight: ' + _issues_message(preflight))
     return result
@@ -220,3 +260,4 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
     if issues:
         raise ValueError('; '.join(issue['message'] for issue in issues))
     return event
+

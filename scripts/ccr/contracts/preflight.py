@@ -1,8 +1,11 @@
 """Pure phase preflight and assignment-event validation."""
+import hashlib
+import json
 from ccr.archive.layout import ARCHIVE_SCHEMA_VERSION, LAYOUT_VERSION
 from ccr.contracts.reference_types import ReferenceIssue, _issue
-from ccr.contracts.reference_index import validate_selection_reference
+from ccr.contracts.reference_index import validate_reference_index, validate_selection_reference
 from ccr.contracts.receipts import validate_record_receipts
+from ccr.contracts.material_inputs import validate_captured_material_sources
 from ccr.workflow.inputs import normalize_inputs
 
 
@@ -57,7 +60,8 @@ def validate_assignment_event(event: dict,
 def validate_preflight(*, phase: str, manifest: dict | None,
                        logical_scope: dict | None, selection: dict | None,
                        context: dict | None, record: dict | None,
-                       sources: dict[str, bytes]) -> dict:
+                       sources: dict[str, bytes],
+                       check_material_sources: bool = True) -> dict:
     """Check only the supplied phase inputs; never reads or writes files."""
     if phase not in PHASES:
         raise ValueError('phase must be prepare, register, discovery or retain')
@@ -140,6 +144,37 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                 issues.append(_issue('input_changed', 'logical_scope_identity', None,
                                      'execution context logical scope differs from the archive',
                                      str(expected_identity)))
+        if (check_material_sources and phase in {'register', 'discovery', 'retain'}
+                and context.get('reference_index') == 'evidence/reference-index.json'):
+            index_reference = context['reference_index']
+            index_bytes = sources.get(index_reference)
+            if not isinstance(index_bytes, bytes):
+                issues.append(_issue('missing_input', 'reference_index', index_reference,
+                                     'prepared review reference index is not selected for preflight',
+                                     'selected evidence/reference-index.json bytes'))
+            else:
+                try:
+                    index = json.loads(index_bytes.decode('utf-8'))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    index = None
+                    issues.append(_issue('invalid_reference', 'reference_index', index_reference,
+                                         'prepared review reference index is not valid UTF-8 JSON',
+                                         'the captured reference index'))
+                captured_sources = (context.get('review_inputs', {}).get('sources')
+                                    if isinstance(context.get('review_inputs'), dict) else None)
+                index_digest = hashlib.sha256(index_bytes).hexdigest()
+                if not isinstance(captured_sources, dict) or captured_sources.get(index_reference) != index_digest:
+                    issues.append(_issue('input_changed', 'review_inputs.sources', index_reference,
+                                         'reference index is not bound to the initially captured source digest',
+                                         index_digest))
+                if isinstance(index, dict):
+                    from ccr.contracts.reference_index import validate_reference_index
+                    issues.extend(validate_reference_index(index, sources))
+                    if (phase in {'register', 'discovery'}
+                            and manifest.get('state') == 'prepared'):
+                        issues.extend(validate_captured_material_sources(
+                            context.get('review_inputs'), index, sources))
+
         plan = context.get('execution_plan')
         if not isinstance(plan, list):
             issues.append(_issue('missing_input', 'execution_plan', None,

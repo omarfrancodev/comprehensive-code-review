@@ -15,8 +15,10 @@ sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from script_test_support import setup_api
 setup = setup_api()
+from ccr.workflow import builders
+from ccr.archive import lifecycle as archive_lifecycle
 
-from recovery_fixtures import context10, record10, selection_input
+from recovery_fixtures import context10, current_inputs, record10, selection_input
 
 
 def fixture_context():
@@ -55,10 +57,60 @@ class SetupTests(unittest.TestCase):
 
             self.assertEqual(setup._validate_session_reference_index(
                 session, descriptor, captured), index)
+            with self.assertRaisesRegex(ValueError, 'not fully captured'):
+                setup._validate_session_reference_index(
+                    session, descriptor, captured, require_material=True)
+            captured['sources']['evidence/description.md'] = material_hash
+            self.assertEqual(setup._validate_session_reference_index(
+                session, descriptor, captured, require_material=True), index)
 
             (evidence / 'description.md').write_bytes(b'changed description')
             with self.assertRaisesRegex(ValueError, 'invalid'):
                 setup._validate_session_reference_index(session, descriptor, captured)
+
+    def test_inputs_builder_pins_every_material_source_and_preserves_unknowns(self):
+        scope = record10()['scope']
+        description, notes = b'description-v1', b'notes-v1'
+        index = {'schema_version': 1, 'aliases': {}, 'inputs': [
+            {'reference': 'evidence/description.md', 'purpose': 'description',
+             'sha256': hashlib.sha256(description).hexdigest()},
+            {'reference': 'evidence/notes.json', 'purpose': 'notes',
+             'sha256': hashlib.sha256(notes).hexdigest()}]}
+        raw = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+        sources = {'evidence/description.md': description, 'evidence/notes.json': notes}
+        description_hash = hashlib.sha256(description).hexdigest()
+
+        result = builders.build_review_inputs(
+            scope, raw, sources, source_set_complete=None,
+            identities={'description_identity': description_hash})
+        self.assertEqual(result['scope'], scope)
+        self.assertEqual(result['sources'], {
+            'evidence/reference-index.json': hashlib.sha256(raw).hexdigest(),
+            'evidence/description.md': description_hash,
+            'evidence/notes.json': hashlib.sha256(notes).hexdigest()})
+        self.assertNotIn('source_set_complete', result)
+        self.assertEqual(result['description_identity'], description_hash)
+        self.assertNotIn('logical_scope_identity', result)
+        with self.assertRaisesRegex(ValueError, 'description_identity'):
+            builders.build_review_inputs(
+                scope, raw, sources, source_set_complete=False,
+                identities={'description_identity': '0' * 64})
+        with self.assertRaisesRegex(ValueError, 'unsupported'):
+            builders.build_review_inputs(
+                scope, raw, sources, source_set_complete=True, identities={'profile': 'focused'})
+
+    def test_input_builder_rejects_more_than_64_captured_sources(self):
+        scope = record10()['scope']
+        content = b'x'
+        checksum = hashlib.sha256(content).hexdigest()
+        index = {'schema_version': 1, 'aliases': {}, 'inputs': [
+            {'reference': f'evidence/input-{number}.txt', 'purpose': 'other',
+             'sha256': checksum} for number in range(64)]}
+        raw = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+        sources = {row['reference']: content for row in index['inputs']}
+        with self.assertRaisesRegex(ValueError, 'at most 64'):
+            builders.build_review_inputs(scope, raw, sources,
+                                         source_set_complete=True, identities={})
 
     def test_authority_is_required_and_execution_facts_are_not_invented(self):
         explicit = selection_input(source='explicit')
@@ -216,6 +268,104 @@ class SetupCliTests(unittest.TestCase):
                                '--output', str(output)])
                 self.assertEqual(success.returncode, 0, success.stderr)
                 self.assertEqual(json.loads(output.read_text(encoding='utf-8'))['profile'], 'focused')
+
+                description, notes = b'description-v1', b'notes-v1'
+                (evidence / 'description.md').write_bytes(description)
+                (evidence / 'notes.json').write_bytes(notes)
+                index = {'schema_version': 1, 'aliases': {}, 'inputs': [
+                    {'reference': 'evidence/description.md', 'purpose': 'description',
+                     'sha256': hashlib.sha256(description).hexdigest()},
+                    {'reference': 'evidence/notes.json', 'purpose': 'notes',
+                     'sha256': hashlib.sha256(notes).hexdigest()}]}
+                index_bytes = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+                index_file = evidence / 'reference-index.json'
+                index_file.write_bytes(index_bytes)
+                descriptor = {'reference': 'evidence/reference-index.json',
+                              'sha256': hashlib.sha256(index_bytes).hexdigest()}
+                for complete in (True, False, None):
+                    envelope = root / f'inputs-{complete}.json'
+                    envelope.write_text(json.dumps({
+                        'session': manifest['manifest'],
+                        'arguments': {'scope': record10()['scope'],
+                                      'reference_index': descriptor,
+                                      'source_set_complete': complete,
+                                      'identities': {'description_identity': hashlib.sha256(description).hexdigest()}}}),
+                        encoding='utf-8')
+                    candidate = evidence / f'inputs-{complete}.json'
+                    result = run([sys.executable, str(helper), 'setup', 'inputs',
+                                  '--input', str(envelope), '--output', str(candidate)])
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    value = json.loads(candidate.read_text(encoding='utf-8'))
+                    self.assertEqual(set(value['sources']), {
+                        'evidence/reference-index.json', 'evidence/description.md',
+                        'evidence/notes.json'})
+                    if complete is None:
+                        self.assertNotIn('source_set_complete', value)
+                    else:
+                        self.assertIs(value['source_set_complete'], complete)
+
+                duplicate = evidence / 'inputs-True.json'
+                original_candidate = duplicate.read_bytes()
+                collision = run([sys.executable, str(helper), 'setup', 'inputs',
+                                 '--input', str(root / 'inputs-True.json'),
+                                 '--output', str(duplicate)])
+                self.assertNotEqual(collision.returncode, 0)
+                self.assertEqual(duplicate.read_bytes(), original_candidate)
+
+                outside_inputs = root / 'outside-inputs.json'
+                escape = run([sys.executable, str(helper), 'setup', 'inputs',
+                              '--input', str(root / 'inputs-True.json'),
+                              '--output', str(outside_inputs)])
+                self.assertNotEqual(escape.returncode, 0)
+                self.assertFalse(outside_inputs.exists())
+
+                invalid_envelope = root / 'inputs-invalid-identity.json'
+                invalid_envelope.write_text(json.dumps({
+                    'session': manifest['manifest'],
+                    'arguments': {'scope': record10()['scope'], 'reference_index': descriptor,
+                                  'source_set_complete': True, 'identities': {'unknown': 'x'}}}),
+                    encoding='utf-8')
+                invalid_output = evidence / 'inputs-invalid-identity.json'
+                invalid = run([sys.executable, str(helper), 'setup', 'inputs',
+                               '--input', str(invalid_envelope), '--output', str(invalid_output)])
+                self.assertNotEqual(invalid.returncode, 0)
+                self.assertFalse(invalid_output.exists())
+
+                run_inputs = {'scope': record10()['scope'],
+                              'sources': {'evidence/reference-index.json': descriptor['sha256']},
+                              'source_set_complete': True}
+                scope_file = root / 'scope.json'
+                scope_file.write_text(json.dumps(record10()['scope']), encoding='utf-8')
+                archive = Path(archive_lifecycle.prepare(
+                    repo, scope_file, '3.0.0', 'codex', output_root=root / 'archives',
+                    profile_input=selection_input(), current_inputs=run_inputs))
+                archive_manifest = json.loads((archive / 'cierre.json').read_text(encoding='utf-8'))
+                context_envelope = root / 'context-incomplete.json'
+                context_envelope.write_text(json.dumps({
+                    'session': manifest['manifest'],
+                    'arguments': {'run_dir': str(archive),
+                                  'execution_plan': archive_manifest['assignment_registry'],
+                                  'executors': [], 'review_inputs': archive_manifest['review_inputs'],
+                                  'reference_index': descriptor}}), encoding='utf-8')
+                context_output = evidence / 'context-incomplete.json'
+                archive_before = {str(path.relative_to(archive)): path.read_bytes()
+                                  for path in archive.rglob('*') if path.is_file()}
+                incomplete = run([sys.executable, str(helper), 'setup', 'context',
+                                  '--input', str(context_envelope), '--output', str(context_output)])
+                self.assertNotEqual(incomplete.returncode, 0)
+                self.assertIn('not fully captured', incomplete.stderr)
+                self.assertFalse(context_output.exists())
+                self.assertEqual({str(path.relative_to(archive)): path.read_bytes()
+                                  for path in archive.rglob('*') if path.is_file()}, archive_before)
+
+                changed_envelope = root / 'inputs-changed.json'
+                changed_envelope.write_text(envelope.read_text(encoding='utf-8'), encoding='utf-8')
+                (evidence / 'notes.json').write_bytes(b'changed')
+                changed_output = evidence / 'inputs-changed.json'
+                changed = run([sys.executable, str(helper), 'setup', 'inputs',
+                               '--input', str(changed_envelope), '--output', str(changed_output)])
+                self.assertNotEqual(changed.returncode, 0)
+                self.assertFalse(changed_output.exists())
             finally:
                 cleanup = run([sys.executable, str(workspace_helper), 'workspace', 'cleanup',
                                '--manifest', manifest['manifest']])
@@ -224,3 +374,5 @@ class SetupCliTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+

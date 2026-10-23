@@ -3532,215 +3532,272 @@
     "mutually_exclusive_groups": []
   },
   "setup": {
+    "description": "Build validated review preparation candidates inside an owned evidence session.",
+    "defaults": {},
     "actions": [
       {
-        "choices": null,
-        "const": null,
-        "default": "<argparse.SUPPRESS>",
-        "dest": "help",
-        "help": "show this help message and exit",
         "kind": "_HelpAction",
-        "metavar": null,
-        "mutex_groups": [],
-        "nargs": 0,
         "options": [
           "-h",
           "--help"
         ],
+        "dest": "help",
+        "nargs": 0,
         "required": false,
-        "type": null
+        "default": "<argparse.SUPPRESS>",
+        "type": null,
+        "choices": null,
+        "const": null,
+        "metavar": null,
+        "help": "show this help message and exit",
+        "mutex_groups": []
       },
       {
+        "kind": "_SubParsersAction",
+        "options": [],
+        "dest": "command",
+        "nargs": "A...",
+        "required": true,
+        "default": null,
+        "type": null,
         "choices": [
           "profile",
           "context",
-          "event"
+          "event",
+          "inputs"
         ],
         "const": null,
-        "default": null,
-        "dest": "command",
-        "help": null,
-        "kind": "_SubParsersAction",
         "metavar": null,
+        "help": null,
         "mutex_groups": [],
-        "nargs": "A...",
-        "options": [],
-        "required": true,
         "subparsers": {
-          "context": {
+          "profile": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--input"
                 ],
+                "dest": "input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "output",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--output"
                 ],
+                "dest": "output",
+                "nargs": null,
                 "required": true,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
+            "mutually_exclusive_groups": []
+          },
+          "context": {
             "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--output"
+                ],
+                "dest": "output",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
             "mutually_exclusive_groups": []
           },
           "event": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--input"
                 ],
+                "dest": "input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "output",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--output"
                 ],
+                "dest": "output",
+                "nargs": null,
                 "required": true,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "profile": {
+          "inputs": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--input"
                 ],
+                "dest": "input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "output",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--output"
                 ],
+                "dest": "output",
+                "nargs": null,
                 "required": true,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           }
-        },
-        "type": null
+        }
       }
     ],
-    "defaults": {},
-    "description": "Build validated review preparation candidates inside an owned evidence session.",
     "mutually_exclusive_groups": []
   },
   "workspace": {
