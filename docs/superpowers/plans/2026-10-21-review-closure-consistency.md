@@ -262,6 +262,7 @@ git commit -m "fix(archivo): conservar selección al revalidar evidencia retenid
 - Create: `scripts/ccr/contracts/dispatch.py`, `tests/test_review_dispatch.py`.
 - Modify: `scripts/ccr/contracts/preflight.py::validate_assignment_event`.
 - Modify: `scripts/ccr/contracts/execution.py::validate_execution_sources`.
+- Modify: `tests/test_review_preflight.py` — gate de executor antes de registrar el inicio independiente.
 - Modify: `tests/test_review_execution_policy.py`.
 - Modify: `scripts/README.md` — registrar el módulo puro nuevo.
 - Test: `tests/test_script_dependencies.py`, `tests/test_script_layout.py`, `tests/test_script_pure_validation.py`.
@@ -273,7 +274,7 @@ git commit -m "fix(archivo): conservar selección al revalidar evidencia retenid
 - Produces: `project_dispatches(trace_events: list[dict], registry: list[dict]) -> tuple[list[dict], list[ReferenceIssue]]`: copias de despachos originales con identidad explícitamente anotada, sequence/occurred_at originales y sin alterar entradas dadas.
 - Uses: la anotación exacta definida en spec §6.2 (`agent/unchanged`, recovered, records E######, executor y fuente local explícita en evidence).
 
-- [ ] **Step 1: Escribir pruebas unitarias de dispatch/anotación**
+- [x] **Step 1: Escribir pruebas unitarias de dispatch/anotación**
 
 En `DispatchTests` crear `test_independent_start_requires_executor`, `test_late_annotation_keeps_original_order_and_result`, `test_annotation_target_and_conflicts_are_rejected`, `test_static_start_and_unknown_provider_remain_valid`. Usar registry con D1 independiente/activo, brief evidence/briefs.json#D1, original E000004 sequence=4 y executor=null, resultado sequence=7, anotación E000008 sequence=8 como en spec.
 
@@ -289,23 +290,23 @@ self.assertEqual(projected[0]['executor'], {'name': 'worker-a', 'provider_id': N
 self.assertIsNone(projected[0]['occurred_at'])
 ```
 
-Parameterizar target inexistente/futuro/de otro brief/no independiente, executor previo no null, source ausente/URL, occurred_at inventado, dos anotaciones divergentes y ausencia total de dispatch. Ninguno puede producir un despacho utilizable. Un discovery/started estático y provider_id null siguen permitidos.
+Parameterizar target inexistente/futuro/de otro brief/no independiente, executor previo no null, source ausente/URL/sin fragmento, occurred_at inventado, dos anotaciones divergentes y ausencia total de dispatch. Ninguno puede producir un despacho utilizable. Un discovery/started estático y provider_id null siguen permitidos.
 
 En tests de ejecución, reutilizar record10('deep')/source_events: quitar executor sólo del despacho D1, añadir una anotación posterior al resultado y comprobar que valida sin duplicar resultado; sin anotación debe conservar el error de independencia. D2 y V1 conservan sus despachos válidos. Aportar el brief y fuente observada seleccionados al conjunto de referencias del gate, sin inferir identidad del resultado.
 
-- [ ] **Step 2: Comprobar RED**
+- [x] **Step 2: Comprobar RED**
 
 Run: `python -B -m unittest discover -s tests -p test_review_dispatch.py -v`
 
 Expected: FAIL por módulo/interfaces ausentes. El caso de ejecución nuevo falla porque hoy no se proyectan anotaciones.
 
-- [ ] **Step 3: Implementar validación y proyección**
+- [x] **Step 3: Implementar validación y proyección**
 
 En el módulo nuevo usar únicamente identidades explícitas y exactamente un destino original. La proyección no convierte la anotación en started ni desplaza sequence. La forma de dispatch nuevo exige executor sólo para agent/started independiente; el registro de un resultado no necesita duplicar executor si actor ya lo identifica.
 
 Importar `validate_dispatch_identity_event` directamente en `contracts.preflight` y reutilizarlo desde validate_assignment_event para eventos nuevos. En validate_execution_sources usar los dispatches proyectados para la comprobación de independencia, manteniendo los resultados originales y todos los otros gates de perfil/cobertura. No volver a validar eventos históricos originales como si fueran una nueva emisión prohibida.
 
-- [ ] **Step 4: Comprobar GREEN**
+- [x] **Step 4: Comprobar GREEN**
 
 Run: comando de Step 2 y `python -B -m unittest discover -s tests -p test_review_execution_policy.py -v`.
 
@@ -313,7 +314,7 @@ Run: `python -B -m unittest discover -s tests -p test_script_dependencies.py -v`
 
 Expected: OK; grafo sin ciclos, módulo documentado, contratos sin IO; la anotación no fabrica independencia para un target ausente ni impide consultar trazas históricas con executor desconocido.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add scripts/ccr/contracts/dispatch.py scripts/ccr/contracts/preflight.py scripts/ccr/contracts/execution.py scripts/README.md tests/test_review_dispatch.py tests/test_review_execution_policy.py

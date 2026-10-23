@@ -3,6 +3,7 @@ import hashlib
 import json
 from ccr.archive.layout import ARCHIVE_SCHEMA_VERSION, LAYOUT_VERSION
 from ccr.contracts.reference_types import ReferenceIssue, _issue
+from ccr.contracts import dispatch
 from ccr.contracts.reference_index import validate_reference_index, validate_selection_reference
 from ccr.contracts.receipts import validate_record_receipts
 from ccr.contracts.material_inputs import validate_captured_material_sources
@@ -13,7 +14,7 @@ PHASES = {'prepare', 'register', 'discovery', 'retain'}
 
 WORK_KINDS = {'agent', 'discovery', 'grouped-verification'}
 
-WORK_STATUSES = {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
+WORK_STATUSES = {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped', 'unchanged'}
 
 MAX_ISSUES = 100
 
@@ -50,7 +51,7 @@ def validate_assignment_event(event: dict,
               and isinstance(row.get('reference'), str)}
     matched = active.intersection(evidence_refs)
     if matched:
-        return []
+        return dispatch.validate_dispatch_identity_event(event, assignments)
     code = 'unregistered_assignment' if known.intersection(evidence_refs) or evidence_refs else 'missing_assignment'
     reference = next(iter(sorted(evidence_refs)), None)
     return [_issue(code, 'assignment', reference,

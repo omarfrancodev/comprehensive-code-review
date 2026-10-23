@@ -1,4 +1,5 @@
 """Validation of observed execution and profile-policy evidence."""
+from ccr.contracts import dispatch
 from ccr.workflow.profiles import (
     _assignment_rows, _assignment_started, _text, _trace_rows, validate_history,
 )
@@ -253,6 +254,14 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             and event.get('kind') in ('agent', 'discovery', 'grouped-verification')
             and event.get('status') in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped')]
     observed_plan = registry if schema10 and isinstance(registry, list) else execution['plan']
+    projected_dispatches, dispatch_issues = dispatch.project_dispatches(trace_events, observed_plan)
+    errors.extend(prefix + issue['message'] for issue in dispatch_issues)
+    for event in trace_events:
+        if event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+            provenance = event.get('provenance')
+            source = provenance.get('source') if isinstance(provenance, dict) else None
+            if not isinstance(source, str) or source not in retained_references:
+                errors.append(prefix + 'dispatch identity source is not retained')
     ordinary_refs = {row['reference'] for row in observed_plan if isinstance(row, dict)
                      and isinstance(row.get('reference'), str) and row.get('role') != 'project_gate'}
     starts = [event for event in work if event.get('status') == 'started'
@@ -311,7 +320,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             errors.append(prefix + 'completed reviewer result lacks matching observed milestone/source')
             continue
         if assignment['independent'] and assignment['id'] not in {item for row in execution['fallbacks'] for item in row['assignments']}:
-            dispatches = [event for event in trace_events if event.get('kind') == 'agent'
+            dispatches = [event for event in projected_dispatches if event.get('kind') == 'agent'
                           and event.get('status') == 'started' and assignment['reference'] in event.get('evidence', [])
                           and isinstance(event.get('executor'), dict)
                           and event['executor'].get('name') == result['reviewer_context']

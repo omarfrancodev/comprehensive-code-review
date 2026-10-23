@@ -26,6 +26,19 @@ class PreflightTests(unittest.TestCase):
         issues = preflight.validate_assignment_event(event, [])
         self.assertIn('missing_assignment', {i['code'] for i in issues})
 
+    def test_independent_dispatch_requires_observed_executor(self):
+        reference = 'evidence/briefs.json#D1'
+        registry = [{'id': 'D1', 'role': 'discovery', 'independent': True, 'required': True,
+                     'reference': reference, 'selection_id': 'S001', 'superseded_by': None}]
+        event = review_trace.event_input({'kind': 'agent', 'status': 'started',
+            'summary': 'Observed independent dispatch', 'evidence': [reference]})
+
+        issues = preflight.validate_assignment_event(event, registry)
+
+        self.assertIn('invalid_dispatch_identity', {issue['code'] for issue in issues})
+        event['executor'] = {'name': 'worker-a', 'provider_id': None}
+        self.assertEqual(preflight.validate_assignment_event(event, registry), [])
+
     def _guided_preflight_inputs(self, *, state='prepared', captured_notes=False, changed_notes=False):
         record = record10()
         context = context10(record)
