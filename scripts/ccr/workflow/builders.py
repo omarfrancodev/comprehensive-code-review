@@ -254,7 +254,8 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
     event = review_trace.event_input(raw)
     if event['kind'] not in {'agent', 'discovery', 'grouped-verification'}:
         raise ValueError('assignment event kind must identify assigned work')
-    if event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}:
+    if (event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
+            and not (event['kind'] == 'agent' and event['status'] == 'unchanged')):
         raise ValueError('assignment event status must identify an observed work milestone')
     issues = review_preflight.validate_assignment_event(event, [assignment])
     if issues:

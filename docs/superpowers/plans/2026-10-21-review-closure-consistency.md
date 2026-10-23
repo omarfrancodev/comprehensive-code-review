@@ -9,6 +9,7 @@
 **Tech Stack:** Python 3.10+, biblioteca estándar, unittest, Git y Markdown.
 
 **Spec:** [Consistencia de fuentes, despachos y cierre](../specs/2026-10-21-review-closure-consistency-design.md).
+**Estado:** implementación terminada y pruebas focalizadas aprobadas. La suite completa quedó inconclusa; el detalle está en el informe de validación.
 
 ## Global Constraints
 
@@ -327,7 +328,7 @@ git commit -m "fix(trazabilidad): vincular identidad al despacho original"
 - Modify: `scripts/ccr/workflow/builders.py::build_assignment_event`.
 - Modify: `scripts/ccr/archive/lifecycle.py::record_event`, `scripts/ccr/archive/retention.py::_execution_gate`.
 - Test: `scripts/ccr/archive/resources.py::cleanup_workspace`, `scripts/ccr/execution/workspaces.py::prepare`; conservar coordinación/operaciones actuales.
-- Modify: `tests/test_review_trace.py`, `tests/test_review_setup.py`, `tests/test_review_closure_consistency.py`.
+- Modify: `tests/test_review_trace.py`, `tests/test_review_setup.py`, `tests/test_review_closure_consistency.py`, `tests/test_review_recovery_followup.py`.
 - Modify: `SKILL.md`, `references/archive/artifacts.md`, `references/archive/lifecycle-trace.md`, `references/execution/worker-packets.md`, `docs/examples/archive8-lifecycle.md`.
 - Modify: `CHANGELOG.md` — resultados pendientes en Fixed, scopes Artefactos y contratos / Perfiles y ejecución, sin asignar una versión ni fecha de publicación.
 
@@ -336,7 +337,7 @@ git commit -m "fix(trazabilidad): vincular identidad al despacho original"
 - Maintains: CLI setup event y record-event; mismo resultado del mutador para replay idéntico, sin append ni nuevo recorded_at.
 - Produces: reconocimiento del patrón agent/unchanged en builder y mutador, seleccionando provenance.source como evidencia local requerida en retención.
 
-- [ ] **Step 1: Escribir regresiones del mutador y ciclo completo**
+- [x] **Step 1: Escribir regresiones del mutador y ciclo completo**
 
 Añadir a TraceTests `test_dispatch_annotation_replay_is_idempotent`, `test_dispatch_annotation_preserves_previous_trace_bytes` y `test_dispatch_annotation_rejects_complete_run_and_conflict`. Crear la traza previa con el patrón antiguo sólo en fixture sintético; llamar record_event con anotación, comparar el prefijo previo de trazabilidad.jsonl byte a byte y snapshot completo después del primer registro.
 
@@ -351,9 +352,9 @@ Registrar payload divergente para el mismo target: assertRaises y snapshot idén
 
 Importar `resources` desde `ccr.archive` y `workspaces` desde `ccr.execution`, sin usar el facade de test anterior. Extender ClosureConsistencyTests con `test_annotation_and_sources_survive_real_owned_cleanup`: usar `workspaces.prepare(argparse.Namespace(repo=str(repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))`, registrar su manifest/claim auténticos y seleccionar dispatch.json. Usar record10('deep'), con D1/D2 discovery y V1 verification independientes, los helpers de registro y un único resultado por asignación. Representar el dispatch D1 antiguo incompleto parcheando sólo `ccr.contracts.preflight.validate_dispatch_identity_event` durante su primera emisión de fixture; retirar ese parche antes del resultado y de la única anotación posterior. D2/V1 usan la validación normal. Retener, validar require-retained, ejecutar `resources.cleanup_workspace(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(run)))` y cerrar con la observación/recibo real que usa el protocolo existente. Assert de validate(require_complete=True), inputs/identidades conservados, ausencia de recursos y ninguna segunda pareja started/completed. No simular borrado con un flag cleanup=complete ni mockear el gate de evidencia.
 
-En SetupTests comprobar que el builder permite la anotación bien formada, conserva actor/provider/occurred_at y rechaza anotación sin brief/fuente/target. En integración quitar dispatch.json de la selección y comprobar rechazo antes de cleanup.
+En SetupTests comprobar que el builder permite la anotación bien formada, conserva actor/provider/occurred_at y rechaza anotación sin brief/fuente/target. En integración quitar dispatch.json de la selección y comprobar rechazo antes de cleanup. Añadir el caso complementario donde la fuente sí está seleccionada, pero su executor no coincide con el registrado; retention debe fallar antes de escribir el archivo o iniciar cleanup.
 
-- [ ] **Step 2: Comprobar RED**
+- [x] **Step 2: Comprobar RED**
 
 Run: `python -B -m unittest discover -s tests -p test_review_trace.py -v`
 
@@ -361,32 +362,38 @@ Run: `python -B -m unittest discover -s tests -p test_review_closure_consistency
 
 Expected: fallos nuevos por rechazo del status unchanged en builder, falta de guard del mutador, replay que hoy añade otra línea o fuente de anotación no seleccionada. No aceptar fallos de ownership artificiales como RED válido.
 
-- [ ] **Step 3: Integrar sin saltar ownership ni transacciones**
+- [x] **Step 3: Integrar sin saltar ownership ni transacciones**
 
 Builder event acepta el patrón de Task 4 además de hitos de trabajo. Record_event verifica shape, target y conflictos bajo el lock existente y después de verificar la traza; sólo un replay del mismo payload normalizado retorna sin append. Una anotación diferente para ese target falla. Conservar recover de transacciones pendientes y prohibiciones de runs completos/superseded; una anotación no inicia processing ni regresa closing a processing.
 
 En _execution_gate seleccionar la provenance.source de cada anotación reconocida, resolver su fragmento local y comprobar su retención; no hacer IO contra URLs ni interpretar un resumen como fuente. Verificar consistencia de la identidad declarada con el objeto observado seleccionado: éste contiene `executor: {name, provider_id}` y debe coincidir exactamente. La fuente del harness se captura como ese objeto acotado, conservando su procedencia; no se genera desde el paquete de hallazgos.
 
-Actualizar los seis documentos junto con la integración: ejemplo inputs completo, dispatch con executor, anotación única tardía, separación de recorded_at/occurred_at y secuencia original. Mostrar check del coordinador desde recibo con relación records C001; los checks de worker pueden quedar bajo su resultado compacto. Modelos sólo si ya expuestos; sin API probes. Retención fallida conserva recursos, corrección administrativa no relanza revisores ni altera la descripción del MR.
+Actualizar los seis documentos junto con la integración: ejemplo inputs completo, dispatch con executor, anotación única tardía, selección explícita del índice para cada preflight, separación de recorded_at/occurred_at y secuencia original. Mostrar check del coordinador desde recibo con relación records C001; los checks de worker pueden quedar bajo su resultado compacto. Modelos sólo si ya expuestos; sin API probes. Retención fallida conserva recursos, corrección administrativa no relanza revisores ni altera la descripción del MR.
 
-- [ ] **Step 4: Comprobar GREEN y reconciliar cobertura del spec**
+- [x] **Step 4a: Comprobar GREEN focalizado y límites arquitectónicos**
 
-Run: los dos comandos de Step 2; además setup, preflight, source_selection, reference_index, dispatch y execution_policy con el mismo patrón de unittest discover de sus tasks.
+Run: los dos comandos de Step 2; además setup, preflight, source_selection, reference_index, dispatch, execution_policy y recovery_followup.
 
-Expected: OK en cada módulo; el caso completo pasa después de eliminar la sesión propia y las pruebas negativas mantienen snapshots. Ejecutar una sola vez `python -B -m unittest discover -s tests -p 'test_*.py'` para el gate amplio final, registrar duración, fallos y skips reales. No repetir la suite amplia salvo cambios nuevos o fallo no resuelto; una batería focalizada no se presenta como suite completa.
+Expected: OK en los módulos seleccionados; el caso completo pasa después de eliminar la sesión propia y las pruebas negativas mantienen snapshots. El caso de identidad seleccionada pero discrepante también deja recursos y bytes intactos. Evidencia: 134/134 pruebas focalizadas, con 285.902 s.
 
 Run: `python -B -m unittest discover -s tests -p test_script_execution_boundaries.py -v` y `python -B -m unittest discover -s tests -p test_script_resource_boundaries.py -v`.
 
-Expected: OK; ningún módulo de implementación importa CLI y execution no coordina mutaciones del archivo.
+Expected: OK; ningún módulo de implementación importa CLI y execution no coordina mutaciones del archivo. Evidencia: 5/5.
 
 Run: `git diff --check`
 
-Expected: sin errores. Revisar contra A1–A10 del spec y dejar evidencia en `docs/validation/2026-10-21-review-closure-consistency.md` (crearlo en esta task sólo durante implementación): base/head probados, comandos, resultados, skips y límites. No copiar rutas privadas, notas de MR ni logs del caso real.
+Expected: sin errores. Revisar contra A1–A10 del spec y dejar evidencia en `docs/validation/2026-10-21-review-closure-consistency.md`: base/head probados, comandos, resultados, skips y límites. Incluir el ejemplo archive8 y changelog en la revisión documental. No copiar rutas privadas, notas de MR ni logs del caso real. Evidencia: diff check limpio y aceptación A1–A10 trazada en el informe.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4b: Completar gate amplio**
+
+Run una sola vez `python -B -m unittest discover -s tests -p 'test_*.py'`.
+
+Estado: se inició y avanzó sin errores visibles, pero dejó de emitir salida durante varios minutos; se interrumpió manualmente y no emitió resumen. No cuenta como suite aprobada ni se marca como terminada.
+
+- [x] **Step 5: Commit**
 
 ```bash
-git add scripts/ccr/workflow/builders.py scripts/ccr/archive/lifecycle.py scripts/ccr/archive/retention.py tests/test_review_trace.py tests/test_review_setup.py tests/test_review_closure_consistency.py SKILL.md references/archive/artifacts.md references/archive/lifecycle-trace.md references/execution/worker-packets.md docs/examples/archive8-lifecycle.md CHANGELOG.md docs/validation/2026-10-21-review-closure-consistency.md
+git add scripts/ccr/workflow/builders.py scripts/ccr/archive/lifecycle.py scripts/ccr/archive/retention.py tests/test_review_trace.py tests/test_review_setup.py tests/test_review_closure_consistency.py tests/test_review_recovery_followup.py SKILL.md references/archive/artifacts.md references/archive/lifecycle-trace.md references/execution/worker-packets.md docs/examples/archive8-lifecycle.md CHANGELOG.md docs/superpowers/plans/2026-10-21-review-closure-consistency.md docs/superpowers/specs/2026-10-21-review-closure-consistency-design.md docs/validation/2026-10-21-review-closure-consistency.md
 git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 ```
 

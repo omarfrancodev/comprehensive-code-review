@@ -2,6 +2,18 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## Sin publicar
+
+### Fixed
+
+#### Artefactos y contratos
+
+- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run; impedir que evidencia no capturada inicialmente certifique la identidad de la descripción.
+
+#### Perfiles y ejecución
+
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo.
+
 ## 3.0.0 — 2026-10-23
 
 ### Changed

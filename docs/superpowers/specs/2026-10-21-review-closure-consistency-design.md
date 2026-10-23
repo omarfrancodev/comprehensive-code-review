@@ -1,12 +1,12 @@
 # Consistencia de fuentes, despachos y cierre de revisiones
 
-Fecha: 2026-10-21. Revisión: 2026-10-23. Estado: propuesta para revisión; implementación pendiente.
+Fecha: 2026-10-21. Revisión: 2026-10-23. Estado: implementación terminada; pruebas focalizadas aprobadas y suite completa inconclusa.
 
 ## 1. Intención y alcance
 
 Se busca que una revisión con entradas válidas llegue desde preparación hasta cierre sin perder fuentes seleccionadas ni volver a registrar despachos y resultados para satisfacer una validación tardía. Los errores de preparación deben aparecer antes de lanzar revisores; una corrección administrativa debe conservar los resultados ya obtenidos y su procedencia.
 
-El usuario solicitó crear un worktree desde main y producir este spec y su plan. Esa autorización cubre ambos documentos; no constituye aprobación de la implementación. Los documentos se entregan juntos para revisión.
+El usuario solicitó crear un worktree desde main y producir este spec y su plan; después pidió implementar los documentos actualizados. La implementación se realiza en el mismo worktree, con validación y evidencia registradas en el plan y el informe de validación.
 
 Base: `9c3fd6bd7e3a21226e2fcd6dca65c42f512bceea`, main, CCR 3.0.0. Rama documental: `docs/review-closure-consistency`.
 
@@ -147,4 +147,4 @@ Revalidación del 2026-10-23 sobre main `9c3fd6b` (CCR 3.0.0): 40 pruebas aproba
 
 ## 9. Fuera de alcance
 
-Reparar o cerrar el run real, limpiar sus recursos, publicar comentarios, cambiar modelos, reejecutar revisores, modificar el producto revisado, actualizar versiones/release o implementar el visor. La implementación de este spec requerirá revisión de ambos documentos y elección de método de ejecución.
+Reparar o cerrar el run real, limpiar sus recursos, publicar comentarios, cambiar modelos, reejecutar revisores, modificar el producto revisado, actualizar versiones/release o implementar el visor. La implementación de este spec sigue el plan asociado y mantiene estos elementos fuera de alcance.

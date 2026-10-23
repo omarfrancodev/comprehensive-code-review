@@ -1,4 +1,5 @@
 """Retain, validate and close resolve one stable selection of guided sources."""
+import argparse
 import copy
 import hashlib
 import json
@@ -7,12 +8,16 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from ccr.archive import lifecycle, retention
+from ccr.archive import resources
+from ccr.contracts import preflight
+from ccr.execution import workspaces
 from recovery_fixtures import context10, record10, selection_input
 
 
@@ -25,6 +30,8 @@ class ClosureConsistencyTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='review-closure-')
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
+        self.owned_sessions = []
+        self.addCleanup(self.cleanup_owned_sessions)
         self.repo = self.root / 'repo'
         self.repo.mkdir()
         self.git('init')
@@ -51,7 +58,21 @@ class ClosureConsistencyTests(unittest.TestCase):
         return {str(path.relative_to(run)): path.read_bytes()
                 for path in Path(run).rglob('*') if path.is_file()}
 
-    def make_guided_run(self, *, complete_capture: bool) -> dict:
+    def cleanup_owned_sessions(self):
+        for entry in reversed(self.owned_sessions):
+            session = entry['session']
+            if not session.exists():
+                continue
+            claim = session / '.review-run-owner.json'
+            owned = claim.exists() and self.read(claim).get('status') == 'owned'
+            run = entry.get('run')
+            resources.cleanup_workspace(argparse.Namespace(
+                manifest=str(session / 'manifest.json'),
+                run_dir=str(run) if owned and run is not None else None))
+
+    def make_guided_run(self, *, complete_capture: bool, owned_session: bool = False,
+                        late_dispatch: bool = False, capture_dispatch: bool = False,
+                        profile: str = 'focused') -> dict:
         description, notes = b'MR description captured for the fixture', b'External review notes'
         (self.root / 'description.md').write_bytes(description)
         (self.root / 'notes.json').write_bytes(notes)
@@ -71,15 +92,26 @@ class ClosureConsistencyTests(unittest.TestCase):
         if complete_capture:
             captured.update({'evidence/description.md': digest(description),
                              'evidence/notes.json': digest(notes)})
-        scope = record10()['scope']
+        scope = record10(profile)['scope']
         scope_path = self.write('scope.json', scope)
         output_root = self.root / 'archive'
+        session = None
+        owned_entry = None
+        if owned_session:
+            session_manifest = workspaces.prepare(argparse.Namespace(
+                repo=str(self.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))
+            session = Path(session_manifest['session_dir'])
+            owned_entry = {'session': session, 'run': None}
+            self.owned_sessions.append(owned_entry)
         run = Path(lifecycle.prepare(
             self.repo, scope_path, '3.0.0', 'codex', output_root=output_root,
-            profile_input=selection_input(),
+            temporary_paths=[str(session)] if session is not None else None,
+            profile_input=selection_input(profile),
             current_inputs={'scope': scope, 'sources': captured, 'source_set_complete': complete_capture}))
+        if owned_entry is not None:
+            owned_entry['run'] = run
         manifest = self.read(run / 'cierre.json')
-        final = record10()
+        final = record10(profile)
         final['scope'] = manifest['scope']
         final['review_id'] = 'CR-' + manifest['run_id']
         final['description'] = {'status': 'unverified', 'identity': None,
@@ -88,7 +120,7 @@ class ClosureConsistencyTests(unittest.TestCase):
         execution = final['coverage']['execution']
         execution['selection_source'] = manifest['profile_history'][0]['selection_source']
         execution['profile_history'] = copy.deepcopy(manifest['profile_history'])
-        execution['plan'] = copy.deepcopy(record10()['coverage']['execution']['plan'])
+        execution['plan'] = copy.deepcopy(record10(profile)['coverage']['execution']['plan'])
         for row in execution['plan']:
             row['selection_id'] = manifest['profile_history'][-1]['id']
         briefs = {row['id']: {'assignment_id': row['id'], 'scope': scope}
@@ -104,28 +136,57 @@ class ClosureConsistencyTests(unittest.TestCase):
         context['profile_reference'] = manifest['profile_history'][-1]['reference']
         context['execution_plan'] = copy.deepcopy(execution['plan'])
         context_path = self.write('context.json', context)
-        lifecycle.register(run, [], context_input=context_path)
+        lifecycle.register(run, [str(session)] if session is not None else [], context_input=context_path)
         manifest = self.read(run / 'cierre.json')
+        dispatch_identity = None
+        d1_start = None
         for row, result in zip(execution['plan'], execution['results']):
             identity = {'name': result['reviewer_context'], 'provider_id': result['provider_id']}
             role = row['role']
-            lifecycle.record_event(run, self.write('event-start.json', {
+            start_payload = {
                 'kind': 'agent', 'status': 'started', 'summary': 'Synthetic reviewer started',
-                'executor': identity, 'evidence': [row['reference']]}))
+                'executor': None if late_dispatch and row['id'] == 'D1' else identity,
+                'evidence': [row['reference']]}
+            if late_dispatch and row['id'] == 'D1':
+                with patch.object(preflight.dispatch, 'validate_dispatch_identity_event', return_value=[]):
+                    start_result = lifecycle.record_event(run, self.write('event-start.json', start_payload))
+                d1_start = start_result['event_id']
+                dispatch_identity = identity
+            else:
+                lifecycle.record_event(run, self.write('event-start.json', start_payload))
             lifecycle.record_event(run, self.write('event-result.json', {
                 'kind': 'discovery' if role == 'discovery' else 'grouped-verification',
                 'status': 'completed', 'summary': 'Synthetic reviewer completed',
                 'actor': {'kind': 'agent', **identity},
                 'evidence': [row['reference'], result['reference']]}))
+        dispatch_path = None
+        if late_dispatch:
+            dispatch_path = self.write_bytes('dispatch.json', {'D1': {'executor': dispatch_identity}})
+            annotation = {'kind': 'agent', 'status': 'unchanged',
+                'summary': 'Observed identity for original dispatch; no new execution',
+                'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+                'executor': dispatch_identity,
+                'provenance': {'kind': 'recovered', 'source': 'evidence/dispatch.json#D1'},
+                'evidence': ['evidence/briefs.json#D1', 'evidence/dispatch.json#D1'],
+                'relations': [{'relation': 'records', 'target': d1_start}],
+                'authority': None, 'occurred_at': None}
+            annotation_path = self.write('dispatch-annotation.json', annotation)
+            lifecycle.record_event(run, annotation_path)
+        else:
+            annotation_path = None
         context['execution_plan'] = copy.deepcopy(manifest['assignment_registry'])
         context_path = self.write('context-retain.json', context)
         final_path = self.write('final.json', final)
         evidence_inputs = [index_path, self.root / 'description.md', self.root / 'notes.json',
                            self.root / 'summary.json', self.write_bytes('briefs.json', briefs),
                            self.write_bytes('results.json', results)]
+        if capture_dispatch and dispatch_path is not None:
+            evidence_inputs.append(dispatch_path)
         return {'run': run, 'record': final_path, 'context': context_path,
                 'evidence_inputs': evidence_inputs, 'index': index,
-                'description': description, 'notes': notes, 'index_bytes': index_bytes}
+                'description': description, 'notes': notes, 'index_bytes': index_bytes,
+                'session': session, 'dispatch_path': dispatch_path,
+                'annotation': annotation_path}
 
     def write_bytes(self, name, value):
         path = self.root / name
@@ -196,6 +257,67 @@ class ClosureConsistencyTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'initially captured'):
             self.retain(case)
         self.assertEqual(self.snapshot(case['run']), before)
+
+    def test_annotation_and_sources_survive_real_owned_cleanup(self):
+        case = self.make_guided_run(complete_capture=True, owned_session=True,
+                                    late_dispatch=True, capture_dispatch=True, profile='deep')
+        self.retain(case)
+        self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+        before_replay = self.snapshot(case['run'])
+        lifecycle.record_event(case['run'], case['annotation'])
+        self.assertEqual(self.snapshot(case['run']), before_replay)
+        self.assertEqual(lifecycle.validate(case['run'], require_retained=True)['state'], 'closing')
+        trace = [json.loads(line) for line in (case['run'] / 'trazabilidad.jsonl').read_bytes().splitlines()]
+        d1_starts = [row for row in trace if row.get('kind') == 'agent' and row.get('status') == 'started'
+                     and 'evidence/briefs.json#D1' in row.get('evidence', [])]
+        d1_results = [row for row in trace if row.get('kind') == 'discovery' and row.get('status') == 'completed'
+                      and 'evidence/results.json#D1' in row.get('evidence', [])]
+        annotations = [row for row in trace if row.get('kind') == 'agent' and row.get('status') == 'unchanged']
+        self.assertEqual(len(d1_starts), 1)
+        self.assertIsNone(d1_starts[0]['executor'])
+        self.assertEqual(len(d1_results), 1)
+        self.assertEqual(len(annotations), 1)
+        self.assertEqual(annotations[0]['relations'][0]['target'], d1_starts[0]['event_id'])
+
+        cleanup = resources.cleanup_workspace(argparse.Namespace(
+            manifest=str(case['session'] / 'manifest.json'), run_dir=str(case['run'])))
+        self.assertFalse(case['session'].exists())
+        self.assertEqual(lifecycle.validate(case['run'], require_retained=True)['state'], 'closing')
+        lifecycle.close(case['run'], cleanup='complete', residuals=[],
+                        released_claims=cleanup['released_claims'])
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+        self.assertIn('evidence/dispatch.json', self.read(case['run'] / 'cierre.json')['hashes'])
+
+    def test_unselected_dispatch_identity_source_blocks_before_cleanup(self):
+        case = self.make_guided_run(complete_capture=True, owned_session=True,
+                                    late_dispatch=True, capture_dispatch=False, profile='deep')
+        try:
+            with self.assertRaisesRegex(ValueError, 'dispatch identity source'):
+                self.retain(case)
+            manifest = self.read(case['run'] / 'cierre.json')
+            self.assertEqual(manifest['resource_cleanup'], None)
+            self.assertTrue(case['session'].exists())
+        finally:
+            self.cleanup_owned_sessions()
+
+    def test_mismatched_dispatch_identity_source_blocks_before_cleanup(self):
+        case = self.make_guided_run(complete_capture=True, owned_session=True,
+                                    late_dispatch=True, capture_dispatch=True, profile='deep')
+        try:
+            dispatch = self.read(case['dispatch_path'])
+            dispatch['D1']['executor']['name'] = 'worker-b'
+            case['dispatch_path'].write_bytes(
+                json.dumps(dispatch, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+            before = self.snapshot(case['run'])
+
+            with self.assertRaisesRegex(ValueError, 'dispatch identity source does not match recorded executor'):
+                self.retain(case)
+
+            self.assertEqual(self.snapshot(case['run']), before)
+            self.assertIsNone(self.read(case['run'] / 'cierre.json')['resource_cleanup'])
+            self.assertTrue(case['session'].exists())
+        finally:
+            self.cleanup_owned_sessions()
 
 
 if __name__ == '__main__':

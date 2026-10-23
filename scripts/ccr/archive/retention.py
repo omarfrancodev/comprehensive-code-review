@@ -179,6 +179,12 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    for event in events:
+        if isinstance(event, dict) and event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+            provenance = event.get('provenance')
+            source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+            if isinstance(source_reference, str):
+                requested.add(source_reference)
     index_reference = context.get('reference_index')
     checks = value.get('checks', []) if isinstance(value.get('checks'), list) else []
     for check in checks:
@@ -252,6 +258,18 @@ def _execution_gate(run, manifest, value, contents):
         except (TypeError, ValueError) as exc:
             raise ValueError('selected reference index source selection is invalid: ' + str(exc)) from exc
         selected_sources[index_reference] = index_bytes
+    for event in events:
+        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+            continue
+        provenance = event.get('provenance')
+        source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+        try:
+            canonical_source = canonical_reference(source_reference, aliases)
+            source_path, _ = parse_reference(canonical_source, field='dispatch identity source')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('dispatch identity source is invalid: ' + str(exc)) from exc
+        if source_path not in contents and source_path not in manifest['hashes']:
+            raise ValueError('dispatch identity source is not selected for retention: ' + source_path)
     for reference in requested:
         try:
             canonical = canonical_reference(reference, aliases)
@@ -286,6 +304,14 @@ def _execution_gate(run, manifest, value, contents):
             references.add(row['reference'])
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
+    for event in events:
+        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+            continue
+        provenance = event.get('provenance')
+        source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+        observed = resolved.get(source_reference) if isinstance(source_reference, str) else None
+        if not isinstance(observed, dict) or observed.get('executor') != event.get('executor'):
+            errors.append('coverage.execution.sources: dispatch identity source does not match recorded executor')
     if index_reference is not None:
         packets = []
         for group_name in ('plan', 'results'):

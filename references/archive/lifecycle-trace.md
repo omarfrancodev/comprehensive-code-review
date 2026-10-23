@@ -42,6 +42,28 @@ For new executions, create assignment events with `scripts setup event` from an 
 
 The coordinator takes actor/executor names and available provider IDs from existing dispatch/results, while recorder remains review_artifacts. Do not infer identity from a summary, fabricate provider IDs or turn recording order into execution order. The temporal metadata adapter does not substitute a model/role label for an observed identity. Missing executor or provider IDs stay null. Workers do not write the durable trace or acquire additional required packet fields.
 
+## Late identity for an original dispatch
+
+A new `agent/started` for an active independent assignment must record the observed executor name. `provider_id` may be null. A static `discovery/started` by the coordinator does not need an external executor. If a run already has an executor-less dispatch, record the observed fact once instead of dispatching that reviewer again. The annotation is limited to an open archive and names the exact earlier `agent/started`, the same active independent brief and a selected local source from dispatch/result metadata.
+
+```json
+{
+  "kind": "agent",
+  "status": "unchanged",
+  "summary": "Observed identity for original dispatch; no new execution",
+  "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+  "executor": {"name": "worker-a", "provider_id": null},
+  "provenance": {"kind": "recovered", "source": "evidence/dispatch.json#D1"},
+  "occurred_at": null,
+  "evidence": ["evidence/briefs.json#D1", "evidence/dispatch.json#D1"],
+  "relations": [{"relation": "records", "target": "E000004"}]
+}
+```
+
+The referenced JSON object must carry the same `{ "executor": {"name", "provider_id"} }` value. The coordinator records the event with `setup event` and `record-event`; durable mutation validates the relation against the existing hash-verified trace under its current lock/transaction. Retention selects the provenance source, verifies its fragment and identity, and keeps its bytes for post-cleanup reads. The annotation has `occurred_at: null` because it does not assert when the old execution occurred. Projection completes only the original start in memory; its sequence, actor, evidence, timestamp and the original result remain in place.
+
+Replaying the same normalized annotation returns its original event ID/sequence and appends nothing. A divergent annotation, absent/future/foreign target, already-known identity, unselected or mismatched source, or completed run is rejected. An annotation during closing is accepted only if its source is already retained; it leaves the review in closing. A rejected annotation preserves the trace and owned resources and never requests another worker run.
+
 Relations are optional observed links, never edges inferred from adjacent events, matching text or ABCDE letters. Use same-run `E000001`, `F001`, `C001`; for a known other review, use `CR-<run_id>#F001`, `CR-<run_id>#C001` or `CR-<run_id>#E000001`. Preserve existing IDs and bounded legacy/external references without renaming them or manufacturing a CR identity. Existing types and limits (24 relations, 8 KiB event) apply.
 
 Archive schemas 5/6 emission requires a local E plus six-digit target to exist in the previously verified trace. Self/future/missing local events fail before mutation. F/C targets may denote assigned candidates later discarded, so no final finding or extra registry is required. Cross-review links do not trigger automatic archive access. Historical structural validation remains unchanged; hashes and target existence do not prove a relation's semantic truth or require sequential execution.

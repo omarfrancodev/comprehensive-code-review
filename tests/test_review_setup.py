@@ -169,6 +169,31 @@ class SetupTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'active required assignment brief'):
             setup.build_assignment_event(raw, assignment)
 
+    def test_assignment_builder_preserves_late_identity_annotation_facts(self):
+        assignment = record10('deep')['coverage']['execution']['plan'][0]
+        source = 'evidence/dispatch.json#D1'
+        raw = {'kind': 'agent', 'status': 'unchanged',
+               'summary': 'Observed identity for original dispatch; no new execution',
+               'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+               'executor': {'name': 'worker-a', 'provider_id': None},
+               'provenance': {'kind': 'recovered', 'source': source},
+               'occurred_at': None,
+               'evidence': [assignment['reference'], source],
+               'relations': [{'relation': 'records', 'target': 'E000004'}]}
+
+        event = setup.build_assignment_event(raw, assignment)
+
+        self.assertEqual(event['actor'], raw['actor'])
+        self.assertEqual(event['executor'], raw['executor'])
+        self.assertEqual(event['occurred_at'], raw['occurred_at'])
+        for mutation in (
+                {'evidence': [source]},
+                {'provenance': {'kind': 'recovered', 'source': None}},
+                {'relations': []}):
+            invalid = dict(raw, **mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                setup.build_assignment_event(invalid, assignment)
+
     def test_model_usage_update_links_private_sidecar_and_preserves_history(self):
         _, context, manifest, _, _ = fixture_context()
         original = copy.deepcopy(context)
