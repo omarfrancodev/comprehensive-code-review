@@ -6,6 +6,7 @@ import sys
 import unittest
 
 import test_review_artifacts as archive_tests
+from ccr.archive.reader import load_run
 
 artifacts = archive_tests.artifacts
 
@@ -76,7 +77,7 @@ class LayoutTests(unittest.TestCase):
     def test_cli_validation_is_read_only_and_retention_is_an_explicit_gate(self):
         run = self.prepare()
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+            return subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                    'validate', '--run-dir', str(run), *args],
                                   capture_output=True, text=True, encoding='utf-8')
         before = {path.name: path.read_bytes() for path in run.iterdir() if path.is_file()}
@@ -106,7 +107,7 @@ class LayoutTests(unittest.TestCase):
             with self.subTest(schema=schema):
                 run = self.prepare()
                 self.retain(run)
-                _, manifest, marker = artifacts._load_run(run)
+                _, manifest, marker = load_run(run)
                 manifest['schema_version'] = schema
                 manifest.pop('repository_identity', None)
                 manifest.pop('run_id', None)
@@ -126,7 +127,7 @@ class LayoutTests(unittest.TestCase):
 
     def test_schema3_rejects_repository_identity_with_wrong_key(self):
         run = self.prepare()
-        _, manifest, marker = artifacts._load_run(run)
+        _, manifest, marker = load_run(run)
         manifest['repository_identity'] = 'origin:example.test/other/repo'
         artifacts._save_manifest(run, manifest, marker)
         with self.assertRaisesRegex(ValueError, 'layout'):
@@ -143,7 +144,7 @@ class LayoutTests(unittest.TestCase):
         context_file = self.write('planned-context.json', context)
         session = self.root / 'planned-session'
         self.assertFalse(session.exists())
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'register', '--run-dir', str(run), '--temporary-path', str(session),
                                  '--context-input', str(context_file)],
                                 capture_output=True, text=True, encoding='utf-8')
@@ -170,7 +171,7 @@ class LayoutTests(unittest.TestCase):
     def test_retention_gate_rejects_final_record_from_other_scope_even_with_matching_hash(self):
         run = self.prepare()
         self.retain(run)
-        _, manifest, marker = artifacts._load_run(run)
+        _, manifest, marker = load_run(run)
         value = self.read(run / 'review.json')
         value['scope']['head'] = 'other-revision'
         data = artifacts._json_bytes(value)
@@ -203,7 +204,7 @@ class LayoutTests(unittest.TestCase):
         run = self.prepare(temporary_paths=[session])
         self.retain(run)
         session.rmdir()
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'close', '--run-dir', str(run), '--cleanup', 'complete'],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -215,7 +216,7 @@ class LayoutTests(unittest.TestCase):
         session.mkdir()
         run = self.prepare(temporary_paths=[session])
         self.retain(run)
-        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS / 'review_artifacts.py'),
+        result = subprocess.run([sys.executable, '-B', str(archive_tests.SCRIPTS), 'artifacts',
                                  'close', '--run-dir', str(run), '--cleanup', 'pending', '--residual', str(session)],
                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 0, result.stderr)

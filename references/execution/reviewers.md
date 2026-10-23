@@ -39,7 +39,7 @@ Preserve role packets, then contrast collected external note claims with indepen
 
 Group only evidenced shared root causes, including matching external/internal claims. Map provisional worker IDs once into canonical coordinator IDs under identifiers.md. Keep source IDs, distinct scenarios and evidence; similar titles/locations/consequences alone are insufficient. Distinct causes remain separate. Preserve surviving historical IDs and evidenced duplicate aliases for re-review.
 
-Optional review_contract.py deduplicate preserves explicit same-cause groups; it does not infer equivalence. The verifier may split a group. Grouping never upgrades status.
+Optional `python <skill-path>/scripts contract deduplicate` preserves explicit same-cause groups; it does not infer equivalence. The verifier may split a group. Grouping never upgrades status.
 
 ## Verification packet
 

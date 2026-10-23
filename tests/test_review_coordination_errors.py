@@ -10,7 +10,9 @@ import unittest
 from unittest.mock import patch
 
 import test_review_session_operations as operations
-import review_run_lock as locks
+from ccr.execution import claims as claim_ops
+from ccr.execution import locks
+from ccr.execution import workspaces as workspace_ops
 
 workspace = operations.workspace
 claims = operations.claims
@@ -33,15 +35,15 @@ class CoordinationErrorTests(unittest.TestCase):
         session = self.workspace_session()
         path = self.fixture(session, 'reproduction.py')
         before = self.snapshot(session)
-        original_out = workspace.out
+        original_out = claim_ops._git
 
         def git_failure(repo, *args):
             if args == ('rev-parse', '--git-common-dir'):
-                raise workspace.ReviewError('Git rev-parse failed (128): unreadable Git directory')
+                raise ValueError('Git rev-parse failed (128): unreadable Git directory')
             return original_out(repo, *args)
 
         for command, args in self.commands(session, path):
-            with self.subTest(command=command.__name__), patch.object(workspace, 'out', side_effect=git_failure):
+            with self.subTest(command=command.__name__), patch.object(claim_ops, '_git', side_effect=git_failure):
                 with self.assertRaises(Exception) as caught:
                     command(args)
                 self.assertIsInstance(caught.exception, workspace.ReviewError)
@@ -58,7 +60,7 @@ class CoordinationErrorTests(unittest.TestCase):
         before = self.snapshot(session)
         target = '_windows_lock_fd' if os.name == 'nt' else 'os.open'
         for command, args in self.commands(session, path):
-            with self.subTest(command=command.__name__), patch('review_run_lock.' + target,
+            with self.subTest(command=command.__name__), patch('ccr.execution.locks.' + target,
                     side_effect=PermissionError(errno.EACCES, 'coordination access denied')):
                 with self.assertRaises(Exception) as caught:
                     command(args)
@@ -75,7 +77,10 @@ class CoordinationErrorTests(unittest.TestCase):
         _, lock_path = locks._lock_identity(session, coordination_root=root)
         foreign = self.root / 'foreign-lock.bin'
         foreign.write_bytes(b'')
-        os.link(foreign, lock_path)
+        try:
+            os.link(foreign, lock_path)
+        except OSError as exc:
+            self.skipTest(f"Host does not permit hardlinks: {exc}")
         before = self.snapshot(session)
         for command, args in self.commands(session, path):
             with self.subTest(command=command.__name__), self.assertRaises(Exception) as caught:
@@ -108,10 +113,10 @@ class CoordinationErrorTests(unittest.TestCase):
                   UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'invalid manifest encoding'),
                   OSError(errno.ENOSPC, 'manifest save has no space')]
         for command, args in self.commands(session, path):
-            helper = '_record_artifact_locked' if command is workspace.record_artifact else '_cleanup_locked'
+            helper = 'record_artifact' if command is workspace.record_artifact else 'plan_cleanup'
             for error in errors:
                 with self.subTest(command=command.__name__, error=type(error).__name__), \
-                        patch.object(workspace, helper, side_effect=error):
+                        patch.object(workspace_ops, helper, side_effect=error):
                     with self.assertRaises(Exception) as caught:
                         command(args)
                     self.assertIs(caught.exception, error)
@@ -123,21 +128,24 @@ class CoordinationErrorTests(unittest.TestCase):
         code = r'''
 import runpy, sys
 from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
-import review_workspace as workspace
-script, manifest, artifact = sys.argv[2:5]
-original = workspace.out
+sys.path[:0] = sys.argv[1:3]
+from script_test_support import workspace_api
+workspace = workspace_api()
+import ccr.execution.claims as claim_ops
+script, manifest, artifact = sys.argv[3:6]
+original = claim_ops._git
 def failed(repo, *args):
     if args == ('rev-parse', '--git-common-dir'):
-        raise workspace.ReviewError('Git rev-parse failed (128): unreadable Git directory')
+        raise ValueError('Git rev-parse failed (128): unreadable Git directory')
     return original(repo, *args)
-sys.argv = [script, 'record-artifact', '--manifest', manifest, '--path', artifact]
-with patch.object(workspace, 'out', side_effect=failed):
+sys.argv = [script, 'workspace', 'record-artifact', '--manifest', manifest, '--path', artifact]
+with patch.object(claim_ops, '_git', side_effect=failed):
     runpy.run_path(script, run_name='__main__')
 '''
         scripts = Path(workspace.__file__).parent
+        script = scripts / '__main__.py'
         result = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code, str(scripts),
-            str(scripts / 'review_workspace.py'), str(session / 'manifest.json'), str(path)],
+            str(Path(__file__).resolve().parent), str(script), str(session / 'manifest.json'), str(path)],
             capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(result.returncode, 1)
         self.assertTrue(result.stderr.startswith('{'), result.stderr)

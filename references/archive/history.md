@@ -1,11 +1,11 @@
 # Historical review consultation
 
-The `review_history.py` helper reads a bounded source archive without calling native mutation, recovery, cleanup or delivery operations. Start with `inspect --source-run <exact-path>`. It reports whether the retained `review.json` and `informe.md` are internally portable. A missing report, unknown schema, invalid hash/scope/ID, unsafe path or pending helper transaction remains a diagnostic; there is no force option.
+The `history` area reads a bounded source archive without calling native mutation, recovery, cleanup or delivery operations. Start with `python <skill-path>/scripts history inspect --source-run <exact-path>`. It reports whether the retained `review.json` and `informe.md` are internally portable. A missing report, unknown schema, invalid hash/scope/ID, unsafe path or pending helper transaction remains a diagnostic; there is no force option.
 
 ```text
-python scripts/review_history.py inspect --source-run <exact-old-run>
-python scripts/review_history.py port --source-run <exact-old-run> [--output-root <history-root>]
-python scripts/review_history.py show --history-dir <exact-package>
+python scripts history inspect --source-run <exact-old-run>
+python scripts history port --source-run <exact-old-run> [--output-root <history-root>]
+python scripts history show --history-dir <exact-package>
 ```
 
 Port only creates a consultation package containing exactly:

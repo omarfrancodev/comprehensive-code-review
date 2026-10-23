@@ -14,8 +14,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 from recovery_fixtures import context10, record10, selection, source_events
-import review_delivery
-import review_model_usage
+from ccr.reporting import delivery as review_delivery
+from ccr.contracts import model_usage as review_model_usage
 
 
 class CheckpointTests(unittest.TestCase):
@@ -273,7 +273,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint boundary')
                         original(path, data, **kwargs)
 
-                    with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                    with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                         artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                              input_record=final_file, phase='verification')
                     result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
@@ -304,7 +304,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint ownership boundary')
                     original(path, data, **kwargs)
 
-                with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                     artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 self.assertEqual(result['id'], 'K001')
@@ -363,7 +363,7 @@ class CheckpointTests(unittest.TestCase):
     def test_cli_checkpoint_accepts_context_packets_phase_and_diagnostics(self):
         run, context = self.start_run()
         diagnostic = self.write('diagnostic.json', {'gate_errors': ['synthetic source gate unavailable']})
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'checkpoint',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'checkpoint',
                 '--run-dir', str(run), '--context-input', str(context), '--phase', 'verification',
                 '--diagnostic-input', str(diagnostic)]
         for evidence in self.packet_files():

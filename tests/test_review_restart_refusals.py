@@ -126,18 +126,18 @@ class RestartRefusalTests(unittest.TestCase):
 
     def test_cli_exposes_typed_denial_and_explicit_recorded_receipt(self):
         source, successor, missing, request, kwargs = self.missing_after_transfer_intent()
-        script = str(Path(artifacts.__file__))
+        script = str(Path(artifacts.__file__).parent)
         actor = self.write('refusal-controller.json', kwargs['controller'])
         authority = self.write('refusal-authority.json', {'authority': kwargs['authority']})
         args = ['--run-dir', str(source), '--intent-input', kwargs['intent_path'],
                 '--controller-input', str(actor), '--authority-input', str(authority), '--reason', kwargs['reason']]
         before = self.snapshot(source), self.snapshot(successor)
-        refused = subprocess.run([sys.executable, '-B', '-X', 'utf8', script, 'abandon-restart', *args],
+        refused = subprocess.run([sys.executable, '-B', '-X', 'utf8', script, 'artifacts', 'abandon-restart', *args],
                                  capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(refused.returncode, 1, refused.stderr)
         self.assertEqual(json.loads(refused.stderr)['cancellation_denial']['phase'], 'transfer_durable')
         self.assertEqual((self.snapshot(source), self.snapshot(successor)), before)
-        recorded = subprocess.run([sys.executable, '-B', '-X', 'utf8', script, 'record-restart-refusal', *args],
+        recorded = subprocess.run([sys.executable, '-B', '-X', 'utf8', script, 'artifacts', 'record-restart-refusal', *args],
                                   capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(recorded.returncode, 0, recorded.stderr)
         self.assertEqual(json.loads(recorded.stdout)['decision'], 'refused')

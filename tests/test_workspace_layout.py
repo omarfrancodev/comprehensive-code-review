@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 
-HELPER = Path(__file__).resolve().parents[1] / 'scripts' / 'review_workspace.py'
+HELPER = Path(__file__).resolve().parents[1] / 'scripts'
 
 
 @unittest.skipUnless(shutil.which('git'), 'Git is required for workspace integration')
@@ -40,7 +40,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
             run(['git', 'add', 'product.py'])
             run(['git', 'commit', '-qm', 'fixture baseline'])
             original = product.read_bytes()
-            prefix = [sys.executable, '-B', str(HELPER)]
+            prefix = [sys.executable, '-B', str(HELPER), 'workspace']
             manifest = json.loads(run(prefix + ['prepare', '--repo', str(repo), '--role', 'discovery']).stdout)
             session = Path(manifest['session_dir'])
             self.assertTrue(session.is_relative_to(repo / '.worktrees'))

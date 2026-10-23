@@ -69,7 +69,7 @@ class ExtendedContractTests(unittest.TestCase):
                                              'material': True}]
         value['verdict'] = 'insufficient_evidence'
         self.assertEqual(contract.validate(value), [])
-        from review_publication import publication_digest
+        from ccr.reporting.projections import publication_digest
         output = contract.render(value, 'comment', publication_context={
             'source_sha256': publication_digest(value),
             'limitations': [{'index': 0, 'kind': 'execution',
@@ -98,7 +98,7 @@ class ExtendedContractTests(unittest.TestCase):
             path.write_text(json.dumps(extended_record()), encoding='utf-8')
             for command in ('validate', 'render-user', 'render-comment'):
                 with self.subTest(command=command):
-                    result = subprocess.run([sys.executable, '-B', str(MODULE_PATH),
+                    result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'contract',
                                              command, '--input', str(path)],
                                             capture_output=True, text=True, encoding='utf-8')
                     self.assertEqual(result.returncode, 0, result.stderr)

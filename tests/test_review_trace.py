@@ -1,5 +1,6 @@
 """Archive traces preserve milestones and integrity without logging every probe."""
 from datetime import datetime
+from contextlib import contextmanager
 import json
 from pathlib import Path
 import subprocess
@@ -8,8 +9,16 @@ import unittest
 from unittest.mock import patch
 
 import test_review_artifacts as fixtures
+from ccr.archive import lifecycle as lifecycle_ops, transactions as transaction_ops
 
 artifacts = fixtures.artifacts
+
+
+@contextmanager
+def patch_event_writes(side_effect):
+    with patch.object(transaction_ops, 'atomic_write', side_effect=side_effect), \
+            patch.object(lifecycle_ops, 'atomic_write', side_effect=side_effect):
+        yield
 
 
 class TraceTests(unittest.TestCase):
@@ -65,7 +74,7 @@ class TraceTests(unittest.TestCase):
     def test_structured_event_cli_keeps_actor_separate_from_recorder(self):
         run = self.prepare()
         event_file = self.write('event.json', self.event())
-        process = subprocess.run([sys.executable, str(Path(artifacts.__file__)), 'record-event',
+        process = subprocess.run([sys.executable, str(Path(artifacts.__file__).parent), 'artifacts', 'record-event',
                                   '--run-dir', str(run), '--event-file', str(event_file)], capture_output=True, text=True)
         self.assertEqual(process.returncode, 0, process.stderr)
         event = self.events(run)[-1]
@@ -139,7 +148,7 @@ class TraceTests(unittest.TestCase):
                     if failed_file == 'trazabilidad.jsonl' or writes == 2:
                         raise OSError('interrupted processing transition')
                 original(path, data)
-            with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+            with patch_event_writes(interrupt), self.assertRaises(OSError):
                 artifacts.record_event(run, self.write('start.json', dict(kind='check', status='started', summary='Observed start')))
             pending = self.read(run / 'cierre.json')['pending_trace']['events'][0]
             with self.assertRaisesRegex(ValueError, 'pending'):
@@ -155,7 +164,7 @@ class TraceTests(unittest.TestCase):
             if Path(path).name == 'cierre.json':
                 raise OSError('manifest replace interrupted')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_event_writes(interrupt), self.assertRaises(OSError):
             artifacts.record_event(run, self.write('start.json', dict(kind='check', status='started', summary='Observed start')))
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
@@ -243,7 +252,7 @@ class TraceTests(unittest.TestCase):
         run = self.prepare()
         event_path = self.write('timed-event.json', self.event())
         metadata = self.write('runner.json', {'finished_at': '2026-10-09T12:01:00+00:00'})
-        result = subprocess.run([sys.executable, artifacts.__file__, 'record-event', '--run-dir', str(run),
+        result = subprocess.run([sys.executable, str(Path(artifacts.__file__).parent), 'artifacts', 'record-event', '--run-dir', str(run),
                                  '--event-file', str(event_path), '--execution-metadata', str(metadata)], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         observed = self.events(run)[-1]
@@ -323,7 +332,7 @@ class TraceTests(unittest.TestCase):
             if Path(path).name == 'trazabilidad.jsonl':
                 raise OSError('interrupted trace write')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_event_writes(interrupt), self.assertRaises(OSError):
             artifacts.record_event(run, event_file)
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)
@@ -383,7 +392,7 @@ class TraceTests(unittest.TestCase):
             if Path(path).name == 'cierre.json':
                 raise OSError('interrupted pending manifest write')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_event_writes(interrupt), self.assertRaises(OSError):
             artifacts.record_event(run, event_file)
         with self.assertRaisesRegex(ValueError, 'pending'):
             artifacts.validate(run)

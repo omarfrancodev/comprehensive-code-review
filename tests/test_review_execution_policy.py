@@ -5,7 +5,8 @@ import unittest
 
 from test_review_profile_names import record7
 from test_review_contract import contract, finding
-from review_execution import validate_execution_sources
+from ccr.contracts.execution import validate_execution_sources
+from ccr.archive import retention as archive_retention
 import test_review_delivery as delivery_tests
 
 
@@ -363,12 +364,12 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         from unittest.mock import patch
         run, value, context, inputs = self.prepared()
         final = self.fixture.write('final.json', value)
-        original = self.artifacts.atomic_write
+        original = archive_retention.atomic_write
         def interrupt(path, data):
             original(path, data)
             if path == run / 'evidence' / 'context.json':
                 raise OSError('interrupted after owned context write')
-        with patch.object(self.artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch.object(archive_retention, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
             self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
         self.assertIn('evidence/context.json', self.artifacts.read_json(run / 'cierre.json')['planned_hashes'])
         self.artifacts.retain(run, final, context_input=context)

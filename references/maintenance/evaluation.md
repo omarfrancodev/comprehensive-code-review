@@ -28,7 +28,7 @@ Use the same immutable inputs, profile, capability constraints and harness confi
 
 Record actual provider/harness input/output/cached tokens and charges when exposed; unavailable is **unknown**, never zero or an inferred price. Compare both accuracy and measured total cost. Do not infer savings from fewer reference words alone. Before/after comparisons require observations for both skill versions; planning probes are separate.
 
-Use measurements.md and review_metrics.py for disjoint per-phase actual counters and incomplete totals. New discovery/verification probes use worker-packets.md; the final result still follows result-contract.md. Native counters are available only when exposed by the harness; the helpers do not instrument native tools automatically.
+Use measurements.md and scripts metrics for disjoint per-phase actual counters and incomplete totals. New discovery/verification probes use worker-packets.md; the final result still follows result-contract.md. Native counters are available only when exposed by the harness; the helpers do not instrument native tools automatically.
 
 Worksheet: run ID | skill version | case/profile | model/harness/effort | verification mode | found/missed causes | false positives | repeated checks/reads | tool output size | elapsed | measured tokens/charge or unknown.
 
