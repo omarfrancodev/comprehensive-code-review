@@ -1,11 +1,15 @@
 """Pure review setup builders."""
 import copy
+import hashlib
+import json
 import os
 import re
 
 from ccr.archive import layout as review_layout, trace as review_trace
 from ccr.contracts import model_usage as review_model_usage, preflight as review_preflight
-from ccr.contracts.reference_index import validate_selection_reference
+from ccr.contracts.reference_index import (
+    reference_source_paths, validate_reference_selection, validate_selection_reference,
+)
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE
 from ccr.shared.encoding import compact_bytes as _json_bytes
 from ccr.shared.json_io import read_json
@@ -17,6 +21,71 @@ SHA256 = re.compile(r'[0-9a-f]{64}')
 
 def _issues_message(result):
     return '; '.join(issue['message'] for issue in result.get('issues', []))
+
+def capture_input_sources(index_bytes: bytes,
+                         sources: dict[str, bytes]) -> dict[str, str]:
+    """Hash a validated reference index and its material inputs, excluding outputs."""
+    if not isinstance(index_bytes, bytes):
+        raise ValueError('reference index bytes must be supplied explicitly')
+    try:
+        index = json.loads(index_bytes.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError('reference index is not valid UTF-8 JSON') from exc
+    if not isinstance(sources, dict):
+        raise ValueError('selected source bytes must be an explicit map')
+    selected = dict(sources)
+    selected[REFERENCE_INDEX] = index_bytes
+    issues = validate_reference_selection(index, selected)
+    if issues:
+        raise ValueError('; '.join(issue['message'] + ': ' +
+                                 (issue['reference'] or issue['field']) for issue in issues))
+    try:
+        paths = reference_source_paths(index)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('reference index source selection is invalid: ' + str(exc)) from exc
+    result = {REFERENCE_INDEX: hashlib.sha256(index_bytes).hexdigest()}
+    for row in index['inputs']:
+        reference = row['reference']
+        path = reference.split('#', 1)[0]
+        result[path] = hashlib.sha256(selected[path]).hexdigest()
+    # Validate that alias targets belong to the selected, bounded byte map.
+    missing = [path for path in paths if path not in selected]
+    if missing:
+        raise ValueError('selected reference source is missing: ' + ', '.join(missing))
+    return result
+
+def build_review_inputs(scope: dict, index_bytes: bytes, sources: dict[str, bytes], *,
+                       source_set_complete: bool | None, identities: dict) -> dict:
+    """Build a normalized initial-input candidate from explicitly selected bytes."""
+    if not isinstance(identities, dict):
+        raise ValueError('identities must be an object')
+    supported = {'description_identity', 'requirements_identity',
+                 'plan_identity', 'configuration_identity'}
+    if set(identities) - supported:
+        raise ValueError('identities contains unsupported fields')
+    captured = capture_input_sources(index_bytes, sources)
+    index = json.loads(index_bytes.decode('utf-8'))
+    purpose_fields = {'description': 'description_identity',
+                      'requirements': 'requirements_identity',
+                      'plan': 'plan_identity',
+                      'configuration': 'configuration_identity'}
+    for purpose, field in purpose_fields.items():
+        value = identities.get(field)
+        if not isinstance(value, str):
+            continue
+        candidate = value[7:] if value.startswith('sha256:') else value
+        if SHA256.fullmatch(candidate) is None:
+            continue
+        matches = [row for row in index['inputs'] if row.get('purpose') == purpose]
+        if len(matches) == 1 and candidate != matches[0]['sha256']:
+            raise ValueError(field + ' differs from its unique selected material input')
+    raw = {'scope': scope, 'sources': captured, **identities}
+    if source_set_complete is not None:
+        raw['source_set_complete'] = source_set_complete
+    try:
+        return input_ops.normalize_inputs(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError('review input candidate is invalid: ' + str(exc)) from exc
 
 def build_profile_selection(raw: dict) -> dict:
     """Return a canonical selection only when its source and authority are valid."""
@@ -117,7 +186,8 @@ def build_context(manifest: dict, *, execution_plan: list[dict],
     preflight = review_preflight.validate_preflight(
         phase='register', manifest=manifest, logical_scope=logical,
         selection=history[-1], context=result, record=None,
-        sources={'evidence/context.json': _json_bytes(result)})
+        sources={'evidence/context.json': _json_bytes(result)},
+        check_material_sources=False)
     if not preflight['ready']:
         raise ValueError('context does not satisfy registration preflight: ' + _issues_message(preflight))
     return result
@@ -178,7 +248,8 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
     event = review_trace.event_input(raw)
     if event['kind'] not in {'agent', 'discovery', 'grouped-verification'}:
         raise ValueError('assignment event kind must identify assigned work')
-    if event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}:
+    if (event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
+            and not (event['kind'] == 'agent' and event['status'] == 'unchanged')):
         raise ValueError('assignment event status must identify an observed work milestone')
     issues = review_preflight.validate_assignment_event(event, [assignment])
     if issues:

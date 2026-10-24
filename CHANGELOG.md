@@ -2,6 +2,20 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## Sin publicar
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente mediante aliases planos o anidados seguros.
+
+#### Artefactos y contratos
+
+- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run, conservando las entradas materiales originales aunque tengan alias e impidiendo que evidencia no capturada inicialmente certifique la identidad de la descripción.
+- Rechazar índices JSON que no sean objetos y selecciones de más de 64 archivos o 64 MiB, incluido el índice, antes de aprobar preflight; compartir la autoridad de selección con el builder.
+- Reutilizar al retener de nuevo los bytes del inventario hash-verificado del run exacto, sin exigir resuministrarlos ni leer archivos meramente presentes; conservar la prioridad y validación de candidatos explícitos también en preflight CLI.
+
 ## 3.0.0 — 2026-10-23
 
 ### Changed

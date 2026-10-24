@@ -224,6 +224,39 @@ class ExecutionPolicyTests(unittest.TestCase):
         events[1]['executor'] = None
         self.assertTrue(validate_execution_sources(value, context, events, references))
 
+    def test_late_dispatch_identity_projects_the_original_independent_start(self):
+        from recovery_fixtures import context10, record10, source_events
+
+        value = record10('deep')
+        context = context10(value)
+        events = source_events(value)
+        assignment = next(row for row in value['coverage']['execution']['plan'] if row['id'] == 'D1')
+        result = next(row for row in value['coverage']['execution']['results']
+                      if row['assignment_id'] == 'D1')
+        start = next(event for event in events if event.get('kind') == 'agent'
+                     and event.get('status') == 'started' and assignment['reference'] in event['evidence'])
+        start['executor'] = None
+        references = {context['profile_reference']}
+        references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+        references.update(row['reference'] for row in value['coverage']['execution']['results'])
+        self.assertTrue(validate_execution_sources(value, context, events, references))
+
+        source = 'evidence/dispatch.json#D1'
+        annotation = {
+            'kind': 'agent', 'status': 'unchanged',
+            'summary': 'Observed identity for original dispatch; no new execution',
+            'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            'executor': {'name': result['reviewer_context'], 'provider_id': result['provider_id']},
+            'provenance': {'kind': 'recovered', 'source': source},
+            'evidence': [assignment['reference'], source],
+            'relations': [{'relation': 'records', 'target': start['event_id']}],
+            'authority': None, 'occurred_at': None,
+            'event_id': 'E000008', 'sequence': 8,
+        }
+        events.append(annotation)
+        references.add(source)
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
     def test_focused_requires_one_actual_context(self):
         value = record8()
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'

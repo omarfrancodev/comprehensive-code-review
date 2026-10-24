@@ -364,7 +364,8 @@ a.restart(source, **request)
         source, session, context = self.registered_session()
         reference = context['execution_plan'][0]['reference']
         artifacts.record_event(source, self.write('started.json', {'kind': 'agent', 'status': 'started',
-            'summary': 'Observed dispatch', 'evidence': [reference]}))
+            'summary': 'Observed dispatch', 'executor': {'name': 'observed-worker', 'provider_id': None},
+            'evidence': [reference]}))
         candidate = selection_input('standard', phase='discovery', affected_assignments=['D1'],
             reason='Only one independent flow remains in the verified scope', reference='evidence/scope.md#decision')
         before = self.snapshot(source)
@@ -391,8 +392,11 @@ a.restart(source, **request)
             for evidence in ([row['reference']], [active_reference, row['reference']]):
                 with self.subTest(status=status, evidence=evidence):
                     with self.assertRaisesRegex(ValueError, 'superseded|active|required'):
-                        artifacts.record_event(source, self.write('inactive-start.json', {'kind': 'agent', 'status': status,
-                            'summary': 'Rejected assignment work', 'evidence': evidence}))
+                        event = {'kind': 'agent', 'status': status,
+                                 'summary': 'Rejected assignment work', 'evidence': evidence}
+                        if status == 'started':
+                            event['executor'] = {'name': 'observed-worker', 'provider_id': None}
+                        artifacts.record_event(source, self.write('inactive-start.json', event))
                     self.assertEqual(self.snapshot(source), before)
         review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(source)))
 

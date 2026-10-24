@@ -51,8 +51,10 @@ from ccr.workflow import inputs as review_inputs
 from ccr.workflow import profiles as review_profiles
 from ccr.workflow.builders import initial_selection as _initial_selection
 from ccr.contracts import preflight as review_preflight
+from ccr.contracts import dispatch as review_dispatch
 from ccr.contracts import review as review_contract
-from ccr.contracts.reference_index import validate_selection_reference
+from ccr.contracts.references import parse_reference as _parse_reference, resolve_reference
+from ccr.contracts.reference_index import canonical_reference, validate_selection_reference
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE
 from ccr.contracts import model_usage as review_model_usage
 from ccr.maintenance import metrics as review_metrics
@@ -133,6 +135,36 @@ def _remove_unowned_prepare_directory(run, marker):
     except (OSError, ValueError, TypeError):
         return
 
+
+def _retained_dispatch_identity(run, manifest, reference):
+    """Resolve a closing annotation against its hash-verified retained source."""
+    hashes = manifest.get('hashes', {})
+    context_reference = 'evidence/context.json'
+    if context_reference not in hashes:
+        raise ValueError('closing review requires an already-retained execution context')
+    context = read_json(safe_path(run / context_reference))
+    if not isinstance(context, dict):
+        raise ValueError('retained execution context must be an object')
+    aliases = {}
+    index_reference = context.get('reference_index')
+    if index_reference is not None:
+        if index_reference != 'evidence/reference-index.json' or index_reference not in hashes:
+            raise ValueError('closing review requires an already-retained reference index')
+        index = read_json(safe_path(run / index_reference))
+        if not isinstance(index, dict):
+            raise ValueError('retained reference index must be a JSON object')
+        aliases = index.get('aliases', {})
+    canonical = canonical_reference(reference, aliases)
+    source_path, _ = _parse_reference(canonical, field='dispatch identity provenance')
+    if source_path not in hashes:
+        raise ValueError('closing review requires an already-retained dispatch identity source')
+    raw = safe_path(run / source_path).read_bytes()
+    alias_path, _ = _parse_reference(reference, field='dispatch identity provenance', allow_alias_key=True)
+    if alias_path in aliases and _digest(raw) != aliases[alias_path]['sha256']:
+        raise ValueError('retained dispatch identity source differs from the alias SHA-256 identity')
+    return resolve_reference(canonical, {source_path: raw}, field='dispatch identity source')
+
+
 @_locked_run
 def record_event(run_dir, event_file, execution_metadata=None):
     """Coordinator-only durable writer for a bounded, structured worker milestone."""
@@ -151,8 +183,10 @@ def record_event(run_dir, event_file, execution_metadata=None):
         raise ValueError('retention is interrupted; finish retention before recording milestones')
     if manifest['schema_version'] in (5, 6, 7, 8) and event['occurred_at'] is not None and event['provenance']['source'] is None:
         raise ValueError('observed execution time requires an identifiable provenance source')
+    trace_data = None
     if manifest['schema_version'] in (5, 6, 7, 8):
-        review_trace.validate_local_event_targets(event, (run / review_trace.NAME).read_bytes())
+        trace_data = (run / review_trace.NAME).read_bytes()
+        review_trace.validate_local_event_targets(event, trace_data)
     if manifest['schema_version'] == 8 and event['kind'] == 'profile':
         raise ValueError('use select-profile to record structured profile transitions')
     if manifest['schema_version'] == 8 and _starts_processing(event):
@@ -178,6 +212,41 @@ def record_event(run_dir, event_file, execution_metadata=None):
                 raise ValueError('assignment work cannot start a superseded or non-required brief')
             if event['status'] == 'started' and not references.intersection(event['evidence']):
                 raise ValueError('assignment work must start from an active required brief captured in the execution plan')
+    if (manifest['schema_version'] == 8 and event.get('kind') == 'agent'
+            and event.get('status') == 'unchanged'):
+        if manifest['state'] not in {'processing', 'closing'}:
+            raise ValueError('dispatch identity annotation requires an already-open review trace')
+        if manifest.get('operation', {}).get('disposition') != 'open':
+            raise ValueError('review operation is not open; resume or recover before annotating dispatch identity')
+        registry = manifest.get('assignment_registry', [])
+        previous_events = [json.loads(line) for line in (trace_data or b'').splitlines()]
+        next_sequence = manifest['trace']['events'] + 1
+        candidate = dict(event, sequence=next_sequence,
+                         event_id='E' + str(next_sequence).zfill(6))
+        issues = review_preflight.validate_assignment_event(event, registry)
+        issues.extend(review_dispatch.validate_dispatch_identity_event(
+            candidate, registry, previous_events + [candidate]))
+        if issues:
+            raise ValueError('; '.join(issue['message'] for issue in issues))
+        if manifest['state'] == 'closing':
+            source = event.get('provenance', {}).get('source')
+            observed = _retained_dispatch_identity(run, manifest, source)
+            if not isinstance(observed, dict) or observed.get('executor') != event['executor']:
+                raise ValueError('dispatch identity source does not match recorded executor')
+        target = candidate['relations'][0]['target']
+        existing = [row for row in previous_events if row.get('kind') == 'agent'
+                    and row.get('status') == 'unchanged'
+                    and any(item.get('relation') == 'records' and item.get('target') == target
+                            for item in row.get('relations', []) if isinstance(item, dict))]
+        payload = {key: event[key] for key in review_trace.FIELDS}
+        if existing:
+            matching = [row for row in existing
+                        if {key: row[key] for key in review_trace.FIELDS} == payload]
+            if len(matching) == len(existing):
+                first = matching[0]
+                return {'run_id': manifest['run_id'], 'event_id': first['event_id'],
+                        'sequence': first['sequence']}
+            raise ValueError('divergent dispatch identity annotation conflicts with the existing target')
     if manifest['schema_version'] in (5, 6, 7, 8) and manifest['state'] == 'prepared' and _starts_processing(event):
         manifest['state'] = 'processing'
     _append_trace(run, manifest, marker, event, helper=False)
@@ -445,7 +514,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         phase_preflight = review_preflight.validate_preflight(
             phase='register', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=None,
-            sources={'evidence/context.json': _json_bytes(context)})
+            sources={'evidence/context.json': _json_bytes(context)},
+            check_material_sources=False)
         if not phase_preflight['ready']:
             raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
         if (context.get('profile') != manifest['profile_history'][-1]['profile']

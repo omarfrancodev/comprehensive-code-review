@@ -1,4 +1,6 @@
 """Phase preflight and assignment barrier contracts."""
+import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -23,6 +25,132 @@ class PreflightTests(unittest.TestCase):
             'summary': 'Observed completion', 'evidence': []})
         issues = preflight.validate_assignment_event(event, [])
         self.assertIn('missing_assignment', {i['code'] for i in issues})
+
+    def test_independent_dispatch_requires_observed_executor(self):
+        reference = 'evidence/briefs.json#D1'
+        registry = [{'id': 'D1', 'role': 'discovery', 'independent': True, 'required': True,
+                     'reference': reference, 'selection_id': 'S001', 'superseded_by': None}]
+        event = review_trace.event_input({'kind': 'agent', 'status': 'started',
+            'summary': 'Observed independent dispatch', 'evidence': [reference]})
+
+        issues = preflight.validate_assignment_event(event, registry)
+
+        self.assertIn('invalid_dispatch_identity', {issue['code'] for issue in issues})
+        event['executor'] = {'name': 'worker-a', 'provider_id': None}
+        self.assertEqual(preflight.validate_assignment_event(event, registry), [])
+
+    def _guided_preflight_inputs(self, *, state='prepared', captured_notes=False, changed_notes=False):
+        record = record10()
+        context = context10(record)
+        notes = b'notes-v1'
+        index = {'schema_version': 1, 'aliases': {}, 'inputs': [
+            {'reference': 'evidence/notes.json', 'purpose': 'notes',
+             'sha256': hashlib.sha256(notes).hexdigest()}]}
+        index_bytes = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+        context['reference_index'] = 'evidence/reference-index.json'
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': hashlib.sha256(index_bytes).hexdigest()}
+        if captured_notes:
+            context['review_inputs']['sources']['evidence/notes.json'] = hashlib.sha256(notes).hexdigest()
+        manifest = {'schema_version': 8, 'layout_version': 2, 'state': state,
+                    'scope': record['scope'], 'review_inputs': context['review_inputs'],
+                    'profile_history': context['profile_history'],
+                    'logical_scope': {'identity': context['review_inputs']['logical_scope_identity']},
+                    'assignment_registry': context['execution_plan']}
+        sources = {'evidence/context.json': json.dumps(context).encode(),
+                   'evidence/reference-index.json': index_bytes,
+                   'evidence/notes.json': b'changed' if changed_notes else notes}
+        return manifest, context, record, sources
+
+    def test_prepared_material_capture_fails_before_dispatch(self):
+        manifest, context, record, sources = self._guided_preflight_inputs()
+        before = copy.deepcopy((manifest, context, sources))
+        result = preflight.validate_preflight(
+            phase='register', manifest=manifest, logical_scope=manifest['logical_scope'],
+            selection=None, context=context, record=None, sources=sources)
+        self.assertFalse(result['ready'])
+        self.assertIn('evidence/notes.json', {issue['reference'] for issue in result['issues']})
+        self.assertEqual((manifest, context, sources), before)
+
+    def test_preflight_rejects_non_object_reference_index_with_matching_digest(self):
+        for value in ([], None, False, 'invalid'):
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(value=value, phase=phase):
+                    manifest, context, record, sources = self._guided_preflight_inputs(
+                        state='processing', captured_notes=True)
+                    raw = json.dumps(value).encode('utf-8')
+                    sources['evidence/reference-index.json'] = raw
+                    context['review_inputs']['sources']['evidence/reference-index.json'] = hashlib.sha256(raw).hexdigest()
+                    record['schema_version'] = 8
+                    before = copy.deepcopy((manifest, context, sources))
+
+                    result = preflight.validate_preflight(
+                        phase=phase, manifest=manifest, logical_scope=manifest['logical_scope'],
+                        selection=None, context=context, record=record, sources=sources)
+
+                    self.assertFalse(result['ready'])
+                    self.assertTrue(any(issue['field'] == 'reference_index'
+                                        and 'must be an object' in issue['message']
+                                        for issue in result['issues']))
+                    self.assertEqual((manifest, context, sources), before)
+
+    def test_retain_preflight_reports_index_source_errors(self):
+        manifest, context, record, sources = self._guided_preflight_inputs(
+            state='processing', captured_notes=True, changed_notes=True)
+        record['schema_version'] = 8
+        result = preflight.validate_preflight(
+            phase='retain', manifest=manifest, logical_scope=manifest['logical_scope'],
+            selection=None, context=context, record=record, sources=sources)
+        self.assertFalse(result['ready'])
+        self.assertIn('evidence/notes.json', {issue['reference'] for issue in result['issues']})
+
+    def indexed_preflight(self, index, selected, phase):
+        manifest, context, record, sources = self._guided_preflight_inputs()
+        raw = json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        sources.update(selected)
+        sources['evidence/reference-index.json'] = raw
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': hashlib.sha256(raw).hexdigest()}
+        record['schema_version'] = 8
+        before = copy.deepcopy((manifest, context, sources))
+        result = preflight.validate_preflight(
+            phase=phase, manifest=manifest, logical_scope=manifest['logical_scope'],
+            selection=None, context=context, record=record, sources=sources)
+        self.assertEqual((manifest, context, sources), before)
+        return result
+
+    def test_preflight_bounds_count_index_and_unique_alias_targets(self):
+        checksum = hashlib.sha256(b'').hexdigest()
+        for count, ready in ((63, True), (64, False)):
+            index = {'schema_version': 1, 'inputs': [], 'aliases': {
+                f'evidence/worker/source-{i}.json': {
+                    'reference': f'evidence/source-{i}.json', 'sha256': checksum}
+                for i in range(count)}}
+            if ready:
+                index['aliases']['evidence/another/source.json'] = {
+                    'reference': 'evidence/source-0.json', 'sha256': checksum}
+            selected = {f'evidence/source-{i}.json': b'' for i in range(count)}
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(count=count, phase=phase):
+                    result = self.indexed_preflight(index, selected, phase)
+                    self.assertEqual(result['ready'], ready)
+                    if not ready:
+                        self.assertTrue(any('64' in issue['message'] for issue in result['issues']))
+
+    def test_preflight_bounds_include_index_bytes_in_64_mib_budget(self):
+        index = {'schema_version': 1, 'inputs': [], 'aliases': {
+            'evidence/worker/output.json': {
+                'reference': 'evidence/output.json', 'sha256': '0' * 64}}}
+        overhead = len(json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+        for extra, ready in ((0, True), (1, False)):
+            raw = b'x' * (64 * 1024 * 1024 - overhead + extra)
+            index['aliases']['evidence/worker/output.json']['sha256'] = hashlib.sha256(raw).hexdigest()
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(extra=extra, phase=phase):
+                    result = self.indexed_preflight(index, {'evidence/output.json': raw}, phase)
+                    self.assertEqual(result['ready'], ready)
+                    if not ready:
+                        self.assertTrue(any('64 MiB' in issue['message'] for issue in result['issues']))
 
     def test_prepare_checks_syntax_without_future_results(self):
         selected = selection_input()
@@ -88,12 +216,15 @@ class PreflightIntegrationTests(unittest.TestCase):
             context['review_inputs']['logical_scope_identity'] = identity
         return self.write('context.json', context)
 
-    def invoke_preflight(self, run, context_file, phase='register'):
-        return subprocess.run([
+    def invoke_preflight(self, run, context_file, phase='register', evidence_inputs=()):
+        command = [
             sys.executable, str(Path(__file__).resolve().parents[1] / 'scripts'),
             'artifacts', 'preflight',
             '--run-dir', str(run), '--context-input', str(context_file),
-            '--phase', phase], capture_output=True, text=True, encoding='utf-8')
+            '--phase', phase]
+        for evidence in evidence_inputs:
+            command.extend(['--evidence-input', str(evidence)])
+        return subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
 
     def test_prepare_rejects_invalid_profile_reference_before_archive_creation(self):
         with self.assertRaises(ValueError):
@@ -123,6 +254,31 @@ class PreflightIntegrationTests(unittest.TestCase):
         self.assertIn('missing_assignment', {issue['code']
             for issue in json.loads(discovery.stdout)['issues']})
         self.assertEqual(self.snapshot(self.root), before)
+
+    def test_prepared_material_capture_fails_before_dispatch_without_writes(self):
+        notes = b'notes-v1'
+        index = {'schema_version': 1, 'aliases': {}, 'inputs': [
+            {'reference': 'evidence/notes.json', 'purpose': 'notes',
+             'sha256': hashlib.sha256(notes).hexdigest()}]}
+        index_bytes = json.dumps(index, sort_keys=True, separators=(',', ':')).encode()
+        index_path = self.root / 'reference-index.json'
+        notes_path = self.root / 'notes.json'
+        index_path.write_bytes(index_bytes)
+        notes_path.write_bytes(notes)
+        run = self.prepare(current_inputs=current_inputs(self.scope, {
+            'evidence/reference-index.json': hashlib.sha256(index_bytes).hexdigest()},
+            source_set_complete=True))
+        context_path = self.context_file(run)
+        context = json.loads(context_path.read_text(encoding='utf-8'))
+        context['reference_index'] = 'evidence/reference-index.json'
+        context_path.write_text(json.dumps(context), encoding='utf-8')
+        before = self.snapshot(run)
+
+        result = self.invoke_preflight(run, context_path, evidence_inputs=[index_path, notes_path])
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('evidence/notes.json', {
+            issue['reference'] for issue in json.loads(result.stdout)['issues']})
+        self.assertEqual(self.snapshot(run), before)
 
     def test_preflight_rejects_unsupported_layout_without_writes(self):
         historical = historical_prepare(review_artifacts, self.repo, self.scope,

@@ -6,16 +6,77 @@ import os
 from pathlib import Path
 import stat
 
-from ccr.archive.integrity import _evidence_name, PENDING_CONTEXT_LIMIT
+from ccr.archive.integrity import _evidence_name, _retained_name, PENDING_CONTEXT_LIMIT
 from ccr.contracts.references import parse_reference
+from ccr.contracts.reference_index import reference_source_paths, REFERENCE_SOURCE_BYTES_LIMIT
+from ccr.contracts.receipts import is_receipt_reference
 from ccr.shared.encoding import archive_bytes as _json_bytes
-from ccr.shared.json_io import read_json
+from ccr.shared.json_io import read_bounded, read_json
 from ccr.shared.paths import safe_path
 from ccr.workflow import inputs as review_inputs
 
 
 def _digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def selected_source_bytes(run, manifest, contents, name):
+    """Prefer explicit candidates; otherwise read only exact, hash-bound inventory."""
+    if not _retained_name(name):
+        raise ValueError('execution reference must identify retained local evidence')
+    if name in contents:
+        raw = contents[name]
+        if not isinstance(raw, bytes):
+            raise ValueError('selected execution source must contain bytes')
+        return raw
+    if name not in manifest['hashes']:
+        raise ValueError('execution source is not selected for retention: ' + name)
+    raw = read_bounded(run / name, REFERENCE_SOURCE_BYTES_LIMIT)
+    if _digest(raw) != manifest['hashes'][name]:
+        raise ValueError('retained execution source differs from its inventoried SHA-256: ' + name)
+    return raw
+
+
+def select_preflight_sources(run, manifest, contents, context, record=None):
+    """Load the bounded index selection and selected check receipts without scanning."""
+    selected = dict(contents)
+    index_reference = context.get('reference_index') if isinstance(context, dict) else None
+    if index_reference is not None:
+        if index_reference != 'evidence/reference-index.json':
+            raise ValueError('guided reference_index must use evidence/reference-index.json')
+        raw = selected_source_bytes(run, manifest, selected, index_reference)
+        selected[index_reference] = raw
+        try:
+            index = json.loads(raw.decode('utf-8'))
+            paths = reference_source_paths(index)
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+            # Preserve the pure preflight's structured index diagnostics.
+            return selected
+        size = len(raw)
+        for name in paths:
+            raw = selected_source_bytes(run, manifest, selected, name)
+            size += len(raw)
+            if size > REFERENCE_SOURCE_BYTES_LIMIT:
+                raise ValueError('selected reference sources exceed the 64 MiB input limit')
+            selected[name] = raw
+    for check in record.get('checks', []) if isinstance(record, dict) else []:
+        if not isinstance(check, dict) or not is_receipt_reference(check.get('reference'), check.get('id')):
+            continue
+        name = check['reference']
+        raw = selected_source_bytes(run, manifest, selected, name)
+        selected[name] = raw
+        try:
+            receipt = json.loads(raw.decode('utf-8'))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if isinstance(receipt, dict):
+            for stream in ('stdout', 'stderr'):
+                row = receipt.get(stream)
+                if isinstance(row, dict) and isinstance(row.get('reference'), str):
+                    name = row['reference']
+                    selected[name] = selected_source_bytes(run, manifest, selected, name)
+    return selected
+
 
 def _input_object(value, label, *, max_bytes=None):
     result = read_json(value, max_bytes=max_bytes) if isinstance(value, (str, os.PathLike)) else copy.deepcopy(value)

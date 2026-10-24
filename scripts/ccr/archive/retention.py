@@ -9,7 +9,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ccr.archive.coordination import _locked_run
-from ccr.archive.evidence import _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object
+from ccr.archive.evidence import (
+    _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object,
+    selected_source_bytes, select_preflight_sources,
+)
 from ccr.archive.integrity import (
     CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT, _evidence_name, _retained_name,
     verify_files as _verify_files,
@@ -35,7 +38,7 @@ from ccr.execution import claims as resource_claims
 from ccr.contracts.execution import validate_execution_sources
 from ccr.contracts.provenance import validate_check_sources
 from ccr.contracts.references import parse_reference, resolve_reference
-from ccr.contracts.reference_index import canonical_reference
+from ccr.contracts.reference_index import canonical_reference, reference_source_paths
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE, LEGACY_INITIAL_PROFILE_REFERENCE
 
 def _temporary_paths(paths, manifest):
@@ -163,13 +166,7 @@ def _present_resources(registered):
 def _execution_gate(run, manifest, value, contents):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
     def source(name):
-        if not _retained_name(name):
-            raise ValueError('execution reference must identify retained local evidence')
-        if name in contents:
-            return contents[name]
-        if name in manifest['hashes']:
-            return safe_path(run / name).read_bytes()
-        raise ValueError('execution source is not selected for retention: ' + name)
+        return selected_source_bytes(run, manifest, contents, name)
 
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
@@ -179,6 +176,12 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    for event in events:
+        if isinstance(event, dict) and event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+            provenance = event.get('provenance')
+            source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+            if isinstance(source_reference, str):
+                requested.add(source_reference)
     index_reference = context.get('reference_index')
     checks = value.get('checks', []) if isinstance(value.get('checks'), list) else []
     for check in checks:
@@ -247,7 +250,25 @@ def _execution_gate(run, manifest, value, contents):
         aliases = reference_index.get('aliases', {})
         if not isinstance(aliases, dict):
             raise ValueError('selected reference index aliases must be an object')
+        try:
+            requested.update(reference_source_paths(reference_index))
+        except (TypeError, ValueError) as exc:
+            raise ValueError('selected reference index source selection is invalid: ' + str(exc)) from exc
         selected_sources[index_reference] = index_bytes
+        for row in reference_index['inputs']:
+            selected_sources[row['reference']] = source(row['reference'])
+    for event in events:
+        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+            continue
+        provenance = event.get('provenance')
+        source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+        try:
+            canonical_source = canonical_reference(source_reference, aliases)
+            source_path, _ = parse_reference(canonical_source, field='dispatch identity source')
+        except (TypeError, ValueError) as exc:
+            raise ValueError('dispatch identity source is invalid: ' + str(exc)) from exc
+        if source_path not in contents and source_path not in manifest['hashes']:
+            raise ValueError('dispatch identity source is not selected for retention: ' + source_path)
     for reference in requested:
         try:
             canonical = canonical_reference(reference, aliases)
@@ -282,6 +303,14 @@ def _execution_gate(run, manifest, value, contents):
             references.add(row['reference'])
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
+    for event in events:
+        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+            continue
+        provenance = event.get('provenance')
+        source_reference = provenance.get('source') if isinstance(provenance, dict) else None
+        observed = resolved.get(source_reference) if isinstance(source_reference, str) else None
+        if not isinstance(observed, dict) or observed.get('executor') != event.get('executor'):
+            errors.append('coverage.execution.sources: dispatch identity source does not match recorded executor')
     if index_reference is not None:
         packets = []
         for group_name in ('plan', 'results'):
@@ -511,6 +540,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
             if name in preflight_sources:
                 raise ValueError('duplicate selected preflight evidence name: ' + name)
             preflight_sources[name] = path.read_bytes()
+        preflight_sources = select_preflight_sources(run, manifest, preflight_sources, context, value)
         phase_preflight = review_preflight.validate_preflight(
             phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=value,
