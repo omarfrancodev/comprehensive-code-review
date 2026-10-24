@@ -57,7 +57,9 @@ La selección incluye el índice, cada input material y cada destino de alias re
 
 Al reconstruir los bytes seleccionados, conservar la clave original de cada entrada material aunque también sea un alias. Resolver el destino para sus consumidores no sustituye la entrada original ni sus comprobaciones de digest. Preflight rechaza cualquier índice JSON que no sea objeto, incluso si su hash coincide con el capturado.
 
-El adaptador de archivo cargará cada ruta enumerada únicamente desde los bytes candidatos explícitos o desde una entrada hash-verificada de `cierre.hashes`. La existencia de un archivo sin entrada de inventario no autoriza su lectura como evidencia seleccionada. La captura inicial limita índice más fuentes seleccionadas a 64 archivos y 64 MiB agregados. No se importarán todos los archivos del directorio para ocultar una referencia ausente.
+El adaptador de archivo cargará cada ruta enumerada únicamente desde los bytes candidatos explícitos o desde una entrada hash-verificada de `cierre.hashes`, con prioridad de los candidatos. Preflight CLI y retención comparten este lector con el gate de ejecución; un run closing puede volver a retener su selección inventariada sin resuministrar evidencia. Un candidato discrepante se rechaza y nunca se sustituye silenciosamente por el archivo previo. La existencia de un archivo sin entrada de inventario no autoriza su lectura como evidencia seleccionada.
+
+`validate_reference_selection` aplica en el builder y preflight la autoridad común de rutas y límites: índice más destinos únicos e inputs materiales no exceden 64 archivos ni 64 MiB agregados. Los aliases que comparten destino cuentan sus bytes una sola vez; el contexto u otros bytes ajenos al índice no se añaden a ese presupuesto. No se importarán todos los archivos del directorio para ocultar una referencia ausente.
 
 Preflight de retención, retain, validate y close usarán esa misma selección y los validadores semánticos existentes. Para un mismo snapshot e inventario válido debe cumplirse: retain exitoso implica validate --require-retained exitoso. Esto no implica limpieza completa ni garantiza el resultado de un posterior --require-complete.
 
@@ -111,6 +113,8 @@ Es un patrón semántico explícito, no otro despacho ni una corrección de cont
 No aceptar destinos inexistentes, futuros, de asignaciones no independientes, de otra asignación, con identidad ya declarada o anotaciones divergentes. Los runs completos rechazan toda anotación. El replay del mismo payload canónico es idempotente y no añade otro evento. La ausencia de evidencia auténtica mantiene la limitación; no permite fabricar un despacho.
 
 En `closing`, resolver primero el alias con el índice retenido, verificar los bytes inventariados y su digest, resolver el fragmento y cotejar su `executor` antes de escribir. Un fragmento inexistente o una identidad discrepante falla sin cambiar el archivo; después puede registrarse la anotación correcta. El replay idéntico con alias devuelve el ID y sequence de la anotación original sin añadir eventos.
+
+La gramática pura de la anotación admite claves de alias anidadas seguras, como `evidence/harness/dispatch.json#D1`. Builder y proyección no las rechazan por su profundidad; el mutador de closing y la retención exigen que el índice las resuelva a una fuente plana seleccionada y verificable. Rutas externas, traversal, separadores codificados, alias no declarado, digest discrepante y fragmentos inexistentes conservan sus rechazos.
 
 La proyección de ejecución completa sólo la identidad del despacho original en memoria y conserva su `sequence`, actor, evidencia y `occurred_at`. Así puede emparejarlo con el resultado original, aunque la anotación se haya registrado después. No se modifica la línea original ni se añade otro resultado. La anotación no cambia perfil, assignments, inputs, timestamps ni estado de cleanup.
 

@@ -104,6 +104,54 @@ class PreflightTests(unittest.TestCase):
         self.assertFalse(result['ready'])
         self.assertIn('evidence/notes.json', {issue['reference'] for issue in result['issues']})
 
+    def indexed_preflight(self, index, selected, phase):
+        manifest, context, record, sources = self._guided_preflight_inputs()
+        raw = json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8')
+        sources.update(selected)
+        sources['evidence/reference-index.json'] = raw
+        context['review_inputs']['sources'] = {
+            'evidence/reference-index.json': hashlib.sha256(raw).hexdigest()}
+        record['schema_version'] = 8
+        before = copy.deepcopy((manifest, context, sources))
+        result = preflight.validate_preflight(
+            phase=phase, manifest=manifest, logical_scope=manifest['logical_scope'],
+            selection=None, context=context, record=record, sources=sources)
+        self.assertEqual((manifest, context, sources), before)
+        return result
+
+    def test_preflight_bounds_count_index_and_unique_alias_targets(self):
+        checksum = hashlib.sha256(b'').hexdigest()
+        for count, ready in ((63, True), (64, False)):
+            index = {'schema_version': 1, 'inputs': [], 'aliases': {
+                f'evidence/worker/source-{i}.json': {
+                    'reference': f'evidence/source-{i}.json', 'sha256': checksum}
+                for i in range(count)}}
+            if ready:
+                index['aliases']['evidence/another/source.json'] = {
+                    'reference': 'evidence/source-0.json', 'sha256': checksum}
+            selected = {f'evidence/source-{i}.json': b'' for i in range(count)}
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(count=count, phase=phase):
+                    result = self.indexed_preflight(index, selected, phase)
+                    self.assertEqual(result['ready'], ready)
+                    if not ready:
+                        self.assertTrue(any('64' in issue['message'] for issue in result['issues']))
+
+    def test_preflight_bounds_include_index_bytes_in_64_mib_budget(self):
+        index = {'schema_version': 1, 'inputs': [], 'aliases': {
+            'evidence/worker/output.json': {
+                'reference': 'evidence/output.json', 'sha256': '0' * 64}}}
+        overhead = len(json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8'))
+        for extra, ready in ((0, True), (1, False)):
+            raw = b'x' * (64 * 1024 * 1024 - overhead + extra)
+            index['aliases']['evidence/worker/output.json']['sha256'] = hashlib.sha256(raw).hexdigest()
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(extra=extra, phase=phase):
+                    result = self.indexed_preflight(index, {'evidence/output.json': raw}, phase)
+                    self.assertEqual(result['ready'], ready)
+                    if not ready:
+                        self.assertTrue(any('64 MiB' in issue['message'] for issue in result['issues']))
+
     def test_prepare_checks_syntax_without_future_results(self):
         selected = selection_input()
         args = dict(phase='prepare', manifest=None, logical_scope=None,

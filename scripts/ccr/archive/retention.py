@@ -9,7 +9,10 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ccr.archive.coordination import _locked_run
-from ccr.archive.evidence import _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object
+from ccr.archive.evidence import (
+    _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object,
+    selected_source_bytes, select_preflight_sources,
+)
 from ccr.archive.integrity import (
     CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT, _evidence_name, _retained_name,
     verify_files as _verify_files,
@@ -163,13 +166,7 @@ def _present_resources(registered):
 def _execution_gate(run, manifest, value, contents):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
     def source(name):
-        if not _retained_name(name):
-            raise ValueError('execution reference must identify retained local evidence')
-        if name in contents:
-            return contents[name]
-        if name in manifest['hashes']:
-            return safe_path(run / name).read_bytes()
-        raise ValueError('execution source is not selected for retention: ' + name)
+        return selected_source_bytes(run, manifest, contents, name)
 
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
@@ -543,6 +540,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
             if name in preflight_sources:
                 raise ValueError('duplicate selected preflight evidence name: ' + name)
             preflight_sources[name] = path.read_bytes()
+        preflight_sources = select_preflight_sources(run, manifest, preflight_sources, context, value)
         phase_preflight = review_preflight.validate_preflight(
             phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=value,

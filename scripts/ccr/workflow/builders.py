@@ -8,7 +8,7 @@ import re
 from ccr.archive import layout as review_layout, trace as review_trace
 from ccr.contracts import model_usage as review_model_usage, preflight as review_preflight
 from ccr.contracts.reference_index import (
-    reference_source_paths, validate_reference_index, validate_selection_reference,
+    reference_source_paths, validate_reference_selection, validate_selection_reference,
 )
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE
 from ccr.shared.encoding import compact_bytes as _json_bytes
@@ -35,7 +35,7 @@ def capture_input_sources(index_bytes: bytes,
         raise ValueError('selected source bytes must be an explicit map')
     selected = dict(sources)
     selected[REFERENCE_INDEX] = index_bytes
-    issues = validate_reference_index(index, selected)
+    issues = validate_reference_selection(index, selected)
     if issues:
         raise ValueError('; '.join(issue['message'] + ': ' +
                                  (issue['reference'] or issue['field']) for issue in issues))
@@ -43,12 +43,6 @@ def capture_input_sources(index_bytes: bytes,
         paths = reference_source_paths(index)
     except (TypeError, ValueError) as exc:
         raise ValueError('reference index source selection is invalid: ' + str(exc)) from exc
-    if (len(index['inputs']) + 1 > input_ops.CALLER_SOURCE_LIMIT
-            or len(paths) + 1 > input_ops.CALLER_SOURCE_LIMIT):
-        raise ValueError('review input sources must contain at most 64 entries; selected evidence is limited to 64 files')
-    selected_size = len(index_bytes) + sum(len(selected[path]) for path in paths)
-    if selected_size > 64 * 1024 * 1024:
-        raise ValueError('selected reference sources exceed the 64 MiB input limit')
     result = {REFERENCE_INDEX: hashlib.sha256(index_bytes).hexdigest()}
     for row in index['inputs']:
         reference = row['reference']

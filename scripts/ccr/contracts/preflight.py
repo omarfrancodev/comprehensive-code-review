@@ -4,7 +4,7 @@ import json
 from ccr.archive.layout import ARCHIVE_SCHEMA_VERSION, LAYOUT_VERSION
 from ccr.contracts.reference_types import ReferenceIssue, _issue
 from ccr.contracts import dispatch
-from ccr.contracts.reference_index import validate_reference_index, validate_selection_reference
+from ccr.contracts.reference_index import validate_reference_selection, validate_selection_reference
 from ccr.contracts.receipts import validate_record_receipts
 from ccr.contracts.material_inputs import validate_captured_material_sources
 from ccr.workflow.inputs import normalize_inputs
@@ -162,7 +162,7 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                                          'prepared review reference index is not valid UTF-8 JSON',
                                          'the captured reference index'))
                 else:
-                    issues.extend(validate_reference_index(index, sources))
+                    issues.extend(validate_reference_selection(index, sources))
                 captured_sources = (context.get('review_inputs', {}).get('sources')
                                     if isinstance(context.get('review_inputs'), dict) else None)
                 index_digest = hashlib.sha256(index_bytes).hexdigest()

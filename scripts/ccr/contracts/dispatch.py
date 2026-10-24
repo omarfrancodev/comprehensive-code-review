@@ -77,7 +77,8 @@ def _validate_annotation(event: dict, registry: list[dict],
                                source if isinstance(source, str) else None))
     else:
         try:
-            path, fragment = parse_reference(source, field='dispatch identity provenance')
+            path, fragment = parse_reference(source, field='dispatch identity provenance',
+                                             allow_alias_key=True)
             if not path.startswith('evidence/') or fragment is None:
                 raise ValueError('dispatch identity provenance must select a local evidence object')
         except ValueError as exc:

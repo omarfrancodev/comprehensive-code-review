@@ -107,6 +107,18 @@ class DispatchTests(unittest.TestCase):
         observed = self.start(executor={'name': 'worker-a', 'provider_id': None})
         self.assertEqual(dispatch.validate_dispatch_identity_event(observed, self.registry), [])
 
+    def test_nested_dispatch_alias_grammar_preserves_projection_and_rejects_unsafe_paths(self):
+        event = self.annotation(source='evidence/harness/dispatch.json#D1')
+        projected, issues = dispatch.project_dispatches([self.start(), event], self.registry)
+        self.assertEqual(issues, [])
+        self.assertEqual(projected[0]['event_id'], 'E000004')
+        self.assertEqual(projected[0]['executor'], {'name': 'worker-a', 'provider_id': None})
+        for source in ('evidence/../dispatch.json#D1', '/evidence/harness/dispatch.json#D1',
+                       'evidence/harness%2fdispatch.json#D1', 'evidence/harness/dispatch.json?x#D1'):
+            with self.subTest(source=source):
+                self.assertTrue(dispatch.validate_dispatch_identity_event(
+                    self.annotation(source=source), self.registry))
+
 
 if __name__ == '__main__':
     unittest.main()

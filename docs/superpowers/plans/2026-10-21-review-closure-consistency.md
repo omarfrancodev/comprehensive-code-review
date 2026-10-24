@@ -69,6 +69,7 @@ Los comandos se ejecutan en la raíz del worktree con un Python 3.10+ real. `pyt
 **Interfaces:**
 - Consumes: `parse_reference`, `canonical_reference`, `validate_reference_index`, `ReferenceIssue` y la estructura actual `{schema_version, aliases, inputs}`.
 - Produces: `ccr.contracts.reference_index.reference_source_paths(index: dict) -> list[str]`: rutas seleccionadas, únicas y ordenadas de inputs y destinos de aliases; no incluye el propio índice ni abre archivos. Índice/ruta malformados producen ValueError.
+- Produces: `ccr.contracts.reference_index.validate_reference_selection(index, sources) -> list[ReferenceIssue]`: valida el índice y los límites comunes de 64 archivos/64 MiB, incluyendo el índice y deduplicando destinos. Usarlo desde builder y preflight. Cubrir 64 archivos exactos frente a 65, y 64 MiB exactos frente a un byte extra, en register/discovery/retain.
 - Produces: `ccr.workflow.builders.capture_input_sources(index_bytes: bytes, sources: dict[str, bytes]) -> dict[str, str]`: valida bytes y devuelve hashes del índice y sus inputs materiales; los destinos de alias que sólo son outputs no se capturan como inputs. Errores producen ValueError con el diagnóstico de referencia concreto.
 - Produces: `ccr.contracts.material_inputs.validate_captured_material_sources(captured_inputs: dict, index: dict, sources: dict[str, bytes]) -> list[ReferenceIssue]`: exige que cada input material esté capturado directamente o mediante alias validado con el mismo hash. Extraer/reutilizar la comparación de `validate_material_inputs`, sin debilitar esa función.
 
@@ -201,6 +202,8 @@ git commit -m "fix(preparacion): fijar fuentes materiales antes del despacho"
 
 **Files:**
 - Modify: `scripts/ccr/archive/retention.py` — `_execution_gate` y retain.
+- Modify: `scripts/ccr/archive/evidence.py` — lector de candidatos/inventario y selección acotada compartida.
+- Modify: `scripts/ccr/cli/artifacts.py` — preflight CLI reutiliza la selección exacta del archivo.
 - Modify: `scripts/ccr/archive/lifecycle.py` — validate/close comparten gate; el registro valida bytes en el adaptador de sesión que puede leerlos.
 - Modify: `scripts/ccr/contracts/reference_index.py` — hacer cumplir el límite de 64 fuentes al reconstruir selección.
 - Create: `tests/test_review_closure_consistency.py` — `ClosureConsistencyTests`.
@@ -242,7 +245,9 @@ Expected: el caso con índice no vacío reproduce el rechazo posterior a retain;
 
 En `_execution_gate`, parsear el índice seleccionado, enumerar sus rutas mediante Task 1 e incluirlas en requested antes de formar selected_sources. Resolverlas por source(name), que sólo acepta contents o manifest.hashes, conservando verificación y límites existentes. Aplicar el límite de 64 a la selección reconstruida. No usar rglob ni leer un archivo sólo porque exista.
 
-Al reconstruir `selected_sources`, cargar cada `reference_index.inputs[].reference` bajo su clave original, además del destino canónico que utilicen sus consumidores. El preflight debe pasar cualquier JSON parseado a `validate_reference_index`, incluidos lista, null, booleano y string, antes de permitir register/discovery/retain.
+Al reconstruir `selected_sources`, cargar cada `reference_index.inputs[].reference` bajo su clave original, además del destino canónico que utilicen sus consumidores. El preflight debe pasar cualquier JSON parseado a `validate_reference_selection` (que integra `validate_reference_index`), incluidos lista, null, booleano y string, antes de permitir register/discovery/retain.
+
+Extraer `selected_source_bytes` y `select_preflight_sources` en `archive.evidence`: candidatos explícitos tienen prioridad; el fallback exige una entrada del inventario del run exacto, lectura acotada y cotejo del hash. Compartir la lectura con `_execution_gate`, `retention.retain` y `cli.artifacts.preflight_run`. Seleccionar únicamente índice, rutas enumeradas y recibos/streams requeridos, sin escanear el directorio. Cubrir re-retención sin evidence_inputs, preflight CLI de sólo lectura, candidato explícito cambiado y archivo presente sin inventario.
 
 Mantener la validación inicial de descripción y requirements; no añadir captura directa a runs processing/closing. Verificar que close usa la misma selección incluso en replay y que validate no escribe checkpoint por defecto. Documentar que conservar evidencia permite verificarla, pero no certificar retroactivamente su captura inicial. El preflight interno de `archive.lifecycle.register` sólo dispone del contexto serializado; por eso no suplanta la comprobación de bytes. El flujo soportado ejecuta antes `setup context`, adaptador que tiene los bytes de la sesión y exige la captura material en estado prepared. El CLI preflight también exige los bytes explícitos. No presentar la llamada directa al mutador con un contexto fabricado como captura probada.
 
@@ -306,6 +311,8 @@ Expected: FAIL por módulo/interfaces ausentes. El caso de ejecución nuevo fall
 - [x] **Step 3: Implementar validación y proyección**
 
 En el módulo nuevo usar únicamente identidades explícitas y exactamente un destino original. La proyección no convierte la anotación en started ni desplaza sequence. La forma de dispatch nuevo exige executor sólo para agent/started independiente; el registro de un resultado no necesita duplicar executor si actor ya lo identifica.
+
+Para la procedencia de anotaciones, permitir la gramática de alias keys anidadas seguras mediante `parse_reference(..., allow_alias_key=True)`. Probar builder, proyección y mutador closing con `evidence/harness/dispatch.json#D1`; la resolución posterior exige destino plano seleccionado y digest/fragmento/executor coincidentes. Mantener rechazos de traversal, rutas externas, separadores codificados y alias no declarado.
 
 Importar `validate_dispatch_identity_event` directamente en `contracts.preflight` y reutilizarlo desde validate_assignment_event para eventos nuevos. En validate_execution_sources usar los dispatches proyectados para la comprobación de independencia, manteniendo los resultados originales y todos los otros gates de perfil/cobertura. No volver a validar eventos históricos originales como si fueran una nueva emisión prohibida.
 
@@ -394,6 +401,8 @@ Estado: se inició y avanzó sin errores visibles, pero dejó de emitir salida d
 
 Seguimiento del PR #30: 151/151 pruebas focalizadas aprobadas. La ampliación observó 759 de 782 casos (752 aprobados, 7 omitidos por el entorno); se detuvo por duración en la matriz de transferencia de recursos de reinicio y quedaron 23 sin resultado. El intento monolítico anterior tampoco emitió resumen; su error de recibos pasó aisladamente. Conservar este gate pendiente y consultar el alcance exacto en `docs/validation/2026-10-21-review-closure-consistency.md`.
 
+Segundo seguimiento: la suite completa terminó 789 casos en 2191.694 s (785 aprobados, un PermissionError de Windows en os.replace y 3 omisiones de symlinks). Los 23 casos antes pendientes ya se ejecutaron. La matriz completa que registró el error pasó después sin filtrar subcasos: 1/1, exit 0, 113.667 s. Las 158 pruebas focalizadas pasaron en la corrida amplia. El gate se conserva pendiente de una ejecución global con exit 0; no presentar el reintento aislado como una corrida monolítica limpia.
+
 - [x] **Step 5: Commit**
 
 ```bash
@@ -406,12 +415,12 @@ git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 | Aceptación | Task / prueba principal |
 |---|---|
 | A1 | 1–2: capture_input_sources y CLI inputs con tres hashes |
-| A2 | 2: prepared_material_capture_fails_before_dispatch; preflight_rejects_non_object_reference_index_with_matching_digest en register/discovery/retain |
-| A3 | 3: retain_then_validate_reloads_all_indexed_sources; material_input_alias_survives_revalidation_and_close conserva las claves materiales originales |
+| A2 | 2: prepared_material_capture_fails_before_dispatch; preflight_rejects_non_object_reference_index_with_matching_digest; límites exactos de 64 archivos/64 MiB en register/discovery/retain |
+| A3 | 3: retain_then_validate_reloads_all_indexed_sources; material_input_alias_survives_revalidation_and_close; reretain_reuses_inventoried_index_material_and_alias_sources, incluido preflight CLI sin evidence_inputs |
 | A4 | 1–3: aliases/rutas/hashes y uninventoried_or_changed_source_blocks_without_cleanup |
 | A5 | 3: processing_unverified_snapshot_is_preserved |
 | A6 | 4–5: independent_start_requires_executor y rechazo durable directo |
-| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes |
+| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes; nested_dispatch_alias_passes_builder_closing_mutator_and_replay y proyección pura |
 | A8 | 4–5: targets/conflictos y preservación del prefijo de traza; closing_annotation_rejects_invalid_fragment_and_executor_without_writes, con y sin alias y anotación válida posterior |
 | A9 | 5: annotation_and_sources_survive_real_owned_cleanup |
 | A10 | 2 y 5: ejemplos operativos, checks/modelos y gates de cierre |

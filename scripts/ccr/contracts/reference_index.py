@@ -9,6 +9,9 @@ from ccr.contracts.reference_types import (
 from ccr.contracts.references import parse_reference, resolve_reference
 from ccr.workflow.profiles import canonical_profile
 
+REFERENCE_SOURCE_LIMIT = 64
+REFERENCE_SOURCE_BYTES_LIMIT = 64 * 1024 * 1024
+
 
 def validate_selection_reference(selection: dict,
                                  sources: dict[str, bytes] | None) -> list[ReferenceIssue]:
@@ -264,9 +267,29 @@ def reference_source_paths(index: dict) -> list[str]:
         if path == 'evidence/reference-index.json':
             raise ValueError('reference index cannot include itself in inputs')
         selected.add(path)
-    if len(selected) + 1 > 64:
+    if len(selected) + 1 > REFERENCE_SOURCE_LIMIT:
         raise ValueError('reference index selects at most 64 evidence files')
     return sorted(selected)
+
+
+def validate_reference_selection(index: dict, sources: dict[str, bytes]) -> list[ReferenceIssue]:
+    """Validate one indexed selection, including its index in aggregate bounds."""
+    issues = validate_reference_index(index, sources)
+    try:
+        paths = reference_source_paths(index)
+    except (TypeError, ValueError) as exc:
+        issues.append(_issue('invalid_reference', 'reference_index.selection', None,
+                             str(exc), 'at most 64 selected files including the reference index'))
+        return _ordered_issues(issues)
+    selected = {'evidence/reference-index.json', *paths}
+    size = sum(len(sources[name]) for name in selected
+               if isinstance(sources, dict) and isinstance(sources.get(name), bytes))
+    if size > REFERENCE_SOURCE_BYTES_LIMIT:
+        issues.append(_issue('input_changed', 'reference_index.selection', None,
+                             'selected reference sources exceed the 64 MiB input limit',
+                             'at most 64 MiB including the reference index'))
+    return _ordered_issues(issues)
+
 
 def canonical_reference(reference: str, aliases: dict[str, dict[str, str]]) -> str:
     """Canonicalize a retained reference through at most one validated alias."""

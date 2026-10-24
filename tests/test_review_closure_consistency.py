@@ -18,6 +18,8 @@ from ccr.archive import lifecycle, retention
 from ccr.archive import resources
 from ccr.contracts import preflight
 from ccr.execution import workspaces
+from ccr.workflow import builders
+from ccr.cli.artifacts import preflight_run
 from recovery_fixtures import context10, record10, selection_input
 
 
@@ -74,6 +76,7 @@ class ClosureConsistencyTests(unittest.TestCase):
                         late_dispatch: bool = False, capture_dispatch: bool = False,
                         material_alias: bool = False, dispatch_alias: bool = False,
                         annotate_dispatch: bool = True,
+                        dispatch_source: str = 'evidence/dispatch.json#D1',
                         profile: str = 'focused') -> dict:
         description, notes = b'MR description captured for the fixture', b'External review notes'
         (self.root / 'description.md').write_bytes(description)
@@ -95,7 +98,7 @@ class ClosureConsistencyTests(unittest.TestCase):
             dispatch_bytes = json.dumps({'D1': {'executor': {
                 'name': result['reviewer_context'], 'provider_id': result['provider_id']}}},
                 sort_keys=True, separators=(',', ':')).encode('utf-8')
-            index['aliases']['evidence/dispatch.json'] = {
+            index['aliases'][dispatch_source.partition('#')[0]] = {
                 'reference': 'evidence/dispatch-retained.json', 'sha256': digest(dispatch_bytes)}
         index_bytes = json.dumps(index, sort_keys=True, separators=(',', ':')).encode('utf-8')
         index_path = self.root / 'reference-index.json'
@@ -190,8 +193,8 @@ class ClosureConsistencyTests(unittest.TestCase):
                 'summary': 'Observed identity for original dispatch; no new execution',
                 'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
                 'executor': dispatch_identity,
-                'provenance': {'kind': 'recovered', 'source': 'evidence/dispatch.json#D1'},
-                'evidence': ['evidence/briefs.json#D1', 'evidence/dispatch.json#D1'],
+                'provenance': {'kind': 'recovered', 'source': dispatch_source},
+                'evidence': ['evidence/briefs.json#D1', dispatch_source],
                 'relations': [{'relation': 'records', 'target': d1_start}],
                 'authority': None, 'occurred_at': None}
             annotation_path = self.write('dispatch-annotation.json', annotation)
@@ -252,6 +255,74 @@ class ClosureConsistencyTests(unittest.TestCase):
         self.assertEqual(after['description']['status'], 'unverified')
         self.assertEqual(after['description'], self.read(case['record'])['description'])
         self.assertEqual(self.snapshot(case['run']), before)
+
+    def test_reretain_reuses_inventoried_index_material_and_alias_sources(self):
+        case = self.make_guided_run(complete_capture=True, material_alias=True,
+                                    late_dispatch=True, dispatch_alias=True,
+                                    capture_dispatch=True, profile='deep')
+        self.retain(case)
+        selected_before = {name: raw for name, raw in self.snapshot(case['run']).items()
+                           if name.startswith('evidence/')}
+        case['evidence_inputs'] = []
+        before = self.snapshot(case['run'])
+        result, code = preflight_run(case['run'], case['context'], phase='retain',
+                                    input_file=case['record'])
+        self.assertEqual(code, 0, result)
+        self.assertTrue(result['ready'])
+        self.assertEqual(self.snapshot(case['run']), before)
+
+        self.retain(case)
+
+        self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+        self.assertEqual({name: raw for name, raw in self.snapshot(case['run']).items()
+                          if name.startswith('evidence/')}, selected_before)
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_reretain_explicit_changed_source_is_not_replaced_by_archived_bytes(self):
+        case = self.make_guided_run(complete_capture=True)
+        self.retain(case)
+        (self.root / 'notes.json').write_bytes(b'changed explicit candidate')
+        case['evidence_inputs'] = [self.root / 'notes.json']
+        before = self.snapshot(case['run'])
+        with self.assertRaisesRegex(ValueError, 'selected material input differs'):
+            self.retain(case)
+        self.assertEqual(self.snapshot(case['run']), before)
+
+    def test_present_but_uninventoried_material_is_not_reused_by_preflight(self):
+        case = self.make_guided_run(complete_capture=True)
+        (case['run'] / 'evidence').mkdir(exist_ok=True)
+        (case['run'] / 'evidence' / 'notes.json').write_bytes(case['notes'])
+        case['evidence_inputs'] = [path for path in case['evidence_inputs'] if path.name != 'notes.json']
+        before = self.snapshot(case['run'])
+        with self.assertRaisesRegex(ValueError, 'not selected'):
+            self.retain(case)
+        self.assertEqual(self.snapshot(case['run']), before)
+
+    def test_nested_dispatch_alias_passes_builder_closing_mutator_and_replay(self):
+        case = self.make_guided_run(complete_capture=True, late_dispatch=True,
+            dispatch_alias=True, capture_dispatch=True, annotate_dispatch=False,
+            dispatch_source='evidence/harness/dispatch.json#D1', profile='deep')
+        self.retain(case)
+        annotation = self.read(case['annotation'])
+        assignment = self.read(case['run'] / 'cierre.json')['assignment_registry'][0]
+        built = builders.build_assignment_event(annotation, assignment)
+        self.assertEqual(built['provenance']['source'], 'evidence/harness/dispatch.json#D1')
+        for source in ('evidence/unknown/dispatch.json#D1', 'evidence/harness/dispatch.json#D999'):
+            invalid = copy.deepcopy(annotation)
+            invalid['provenance']['source'] = source
+            invalid['evidence'][-1] = source
+            before = self.snapshot(case['run'])
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                lifecycle.record_event(case['run'], self.write('invalid-nested-annotation.json', invalid))
+            self.assertEqual(self.snapshot(case['run']), before)
+        first = lifecycle.record_event(case['run'], case['annotation'])
+        before = self.snapshot(case['run'])
+        self.assertEqual(lifecycle.record_event(case['run'], case['annotation']), first)
+        self.assertEqual(self.snapshot(case['run']), before)
+        self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
 
     def test_material_input_alias_survives_revalidation_and_close(self):
         case = self.make_guided_run(complete_capture=True, material_alias=True)

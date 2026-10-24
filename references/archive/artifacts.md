@@ -81,6 +81,10 @@ prepare accepts optional --output-root and --previous-run. Supply canonical scop
 
 ### One retained source selection
 
+The builder and register/discovery/retain preflight enforce the same indexed selection bounds: at most 64 unique files and 64 MiB including the reference index. Multiple aliases to one canonical target count that target once. A failed bound check never authorizes starting review work.
+
+Read-only preflight and repeated retention reuse selected bytes already present in the exact run's hash-verified inventory. Explicit candidates take precedence and must pass their own hash/semantic checks; a changed candidate is never silently replaced by archived bytes. Pass the existing record/context when retaining again; already-inventoried indexed sources and check receipts do not need another evidence-input argument.
+
 For guided archives, retention selects the reference index, each material input and every canonical alias target. It reads only candidate bytes explicitly supplied to `retain` or entries in the exact run's verified hash inventory. `validate --require-retained` and `close` rebuild that same bounded selection from the inventory, so successful retention remains verifiable after the candidate inputs have been consumed. A missing hash entry or changed byte blocks validation and leaves cleanup pending. Existing runs whose initial source map omitted a material input may verify retained bytes while keeping an unverified description and the original input map unchanged.
 
 The `setup context` adapter verifies the complete material capture while a run is prepared. The read-only `artifacts preflight` command performs the same check when its selected index and material files are supplied with `--evidence-input`; it does not scan a session or run to fill gaps.

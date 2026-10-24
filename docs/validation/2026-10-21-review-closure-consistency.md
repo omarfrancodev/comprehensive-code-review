@@ -75,3 +75,35 @@ La continuación cargó la misma selección de `unittest` (782 casos), excluyó 
 Las siete omisiones corresponden a privilegios Windows de symlinks/junctions/hardlinks y al objeto de sincronización de Git Bash: `ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused`, `ArchiveTests.test_windows_junction_root_is_refused`, `SessionClaimSafetyTests.test_registration_accepts_sessions_from_two_clones_of_same_repository`, `LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target`, `LockFileSafetyTests.test_final_hardlink_is_refused_before_writing_foreign_bytes`, `LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused` y `CoordinationErrorTests.test_unsafe_final_lock_is_not_reported_as_contention`.
 
 El gate amplio del plan sigue pendiente; estos resultados no equivalen a una ejecución monolítica completa aprobada.
+
+## Segundo seguimiento del PR #30 — 2026-10-23
+
+Cambios posteriores a `0f4c07186c0d399841318eb17a849c22b47c3660`, tras confirmar que F001–F004 quedaron resueltos y reproducir los escenarios nuevos:
+
+| Hallazgo | Corrección y prueba |
+|---|---|
+| F005 | `validate_reference_selection` comparte la enumeración y límites entre builder/preflight. Las pruebas aceptan exactamente 64 archivos y 64 MiB incluyendo el índice, rechazan un archivo o byte adicional y deduplican destinos de aliases en register/discovery/retain. |
+| F006 | `selected_source_bytes` y `select_preflight_sources` comparten lectura entre gate, retain y preflight CLI, con prioridad del candidato explícito y fallback exclusivo a inventario verificado. Se comprueban re-retención sin evidence_inputs, lectura CLI sin mutación, rechazo del candidato cambiado y rechazo de un archivo presente sin inventario. |
+| F007 | El validador puro admite la gramática de alias keys anidadas seguras. Las pruebas pasan por builder, proyección, mutador closing, replay y cierre, manteniendo los rechazos de rutas inseguras, aliases no declarados y fragmentos inexistentes. |
+
+Las regresiones de F005–F007 fallaron antes de corregir el producto. Una prueba negativa adicional necesitó crear su directorio evidence para alcanzar el guard que pretendía comprobar; ese error del fixture no se contó como reproducción funcional. Las siete pruebas nuevas pasaron después: 7/7, exit 0, 7.428 s. La comprobación positiva de F006 se amplió además al adaptador CLI antes de iniciar la suite completa.
+
+La validación usa el Python administrado con TEMP explícito propio y ejecución fuera del sandbox para evitar las restricciones observadas en los intentos anteriores. El runner conserva la selección completa de `unittest.discover`, emite progreso por subcaso y no modifica resultados, omisiones ni aserciones.
+
+### Suite completa y repetición acotada
+
+La ejecución completa concluyó los 789 casos en 2191.694 s: 785 aprobados, 1 error y 3 omisiones, exit 1. Las 158 pruebas de los módulos focalizados (los 151 anteriores más siete regresiones nuevas) pasaron sin omisiones ni errores dentro de esa misma corrida.
+
+El error fue `PermissionError: [WinError 5]` en `os.replace` del marcador `.review-ownership.json`, dentro de `test_review_restart_resources.RestartResourceReplayTests.test_unclaimed_workspace_all_adoption_replacements`, subcaso `write=2, boundary=after, route=retry`. No fue una aserción de los contratos modificados. El prefijo de la matriz pasó en una reproducción diagnóstica; después se ejecutó la prueba completa original, sin filtrar subcasos ni modificar su comportamiento:
+
+```text
+python -B -m unittest -v test_review_restart_resources.RestartResourceReplayTests.test_unclaimed_workspace_all_adoption_replacements
+Ran 1 test in 113.667s
+OK
+```
+
+La repetición completa obtuvo exit 0. La causa externa específica del permiso denegado no quedó determinada; no se atribuye a antivirus, ACL ni otro proceso sin evidencia. Se conserva la incidencia de la primera corrida y no se afirma que haya existido una ejecución monolítica limpia.
+
+Las tres omisiones fueron por falta de privilegios de symlinks en Windows: `ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused`, `LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target` y `LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused`. Los casos de junctions, hardlinks y sincronización entre clones que antes se omitieron sí concluyeron en esta ejecución.
+
+No quedan casos sin observar de la selección ampliada: los 23 pendientes anteriores se ejecutaron. Sigue pendiente una corrida global con exit 0 para aprobar estrictamente el gate amplio del plan; la matriz que registró el error sí pasó completa en aislamiento. `git diff --check origin/main` terminó sin errores sobre el candidato acumulado.
