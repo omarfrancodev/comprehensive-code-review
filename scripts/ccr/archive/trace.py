@@ -12,7 +12,7 @@ import re
 SCHEMA_VERSION = 1
 NAME = 'trazabilidad.jsonl'
 EXTERNAL_KINDS = {'agent', 'profile', 'discovery', 'check', 'grouped-verification',
-                  'freshness', 'authorized-publication', 'cleanup', 'interruption'}
+                  'freshness', 'authorized-publication', 'cleanup', 'interruption', 'dispatch-identity'}
 HELPER_KINDS = {'prepare', 'register', 'retain', 'validation', 'handoff', 'close'}
 FIELDS = {'kind', 'status', 'summary', 'actor', 'executor', 'provenance', 'evidence', 'relations', 'authority', 'occurred_at'}
 STATUSES = {'started', 'completed', 'passed', 'failed', 'skipped', 'pending', 'blocked',

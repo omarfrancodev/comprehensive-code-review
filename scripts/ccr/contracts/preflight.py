@@ -12,7 +12,7 @@ from ccr.workflow.inputs import normalize_inputs
 
 PHASES = {'prepare', 'register', 'discovery', 'retain'}
 
-WORK_KINDS = {'agent', 'discovery', 'grouped-verification'}
+WORK_KINDS = {'agent', 'discovery', 'grouped-verification', dispatch.IDENTITY_ANNOTATION_KIND}
 
 WORK_STATUSES = {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
 

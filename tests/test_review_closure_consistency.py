@@ -208,7 +208,7 @@ class ClosureConsistencyTests(unittest.TestCase):
             dispatch_path = self.write_bytes(
                 'dispatch-retained.json' if dispatch_alias else 'dispatch.json',
                 {late_assignment: {'executor': dispatch_identity}})
-            annotation = {'kind': 'agent', 'status': 'unchanged',
+            annotation = {'kind': 'dispatch-identity', 'status': 'unchanged',
                 'summary': 'Observed identity for original dispatch; no new execution',
                 'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
                 'executor': dispatch_identity,
@@ -254,14 +254,49 @@ class ClosureConsistencyTests(unittest.TestCase):
                                 unavailable_reason='Fixture has no provider counters',
                                 expected_schema=10)
 
-    def generic_agent_event(self):
-        return {
+    def generic_agent_event(self, variant='plain'):
+        event = {
             'kind': 'agent', 'status': 'unchanged',
             'summary': 'Worker already active; no new dispatch',
             'actor': {'kind': 'agent', 'name': 'worker-notice', 'provider_id': None},
             'executor': None, 'provenance': {'kind': 'agent', 'source': None},
             'evidence': [], 'relations': [],
         }
+        if variant in ('recovered', 'both'):
+            event['provenance'] = {'kind': 'recovered', 'source': 'Observed worker notice'}
+        elif variant == 'records':
+            event['provenance'] = {'kind': 'tool', 'source': None}
+        if variant in ('records', 'both'):
+            event['relations'] = [{'relation': 'records', 'target': 'E000001'}]
+        return event
+
+    def test_historical_marker_observations_retain_close_and_remain_immutable(self):
+        for variant in ('recovered', 'records', 'both'):
+            with self.subTest(variant=variant):
+                case = self.make_guided_run(complete_capture=True)
+                run, manifest, marker = lifecycle._load_run(case['run'])
+                event = lifecycle.review_trace.event_input(self.generic_agent_event(variant))
+                lifecycle._append_trace(run, manifest, marker, event, helper=False)
+                historical_trace = (run / 'trazabilidad.jsonl').read_bytes()
+
+                self.retain(case)
+
+                self.assertTrue(lifecycle.validate(run, require_retained=True)['retained'])
+                lifecycle.close(run, cleanup='not_needed')
+                self.assertTrue((run / 'trazabilidad.jsonl').read_bytes().startswith(historical_trace))
+                before = self.snapshot(run)
+                self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+                self.assertEqual(self.snapshot(run), before)
+
+    def test_marker_observations_can_be_recorded_as_generic(self):
+        for variant in ('recovered', 'records', 'both'):
+            with self.subTest(variant=variant):
+                case = self.make_guided_run(complete_capture=True)
+                event = self.write('generic-event.json', self.generic_agent_event(variant))
+                lifecycle.record_event(case['run'], event)
+                self.retain(case)
+                lifecycle.close(case['run'], cleanup='not_needed')
+                self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
 
     def test_generic_agent_event_is_recorded_in_processing_and_closing(self):
         case = self.make_guided_run(complete_capture=True)
@@ -301,7 +336,7 @@ class ClosureConsistencyTests(unittest.TestCase):
                                     annotate_dispatch=False, capture_dispatch=True, profile='deep')
         annotation = self.read(case['annotation'])
         before = self.snapshot(case['run'])
-        for changes in ({'relations': []},
+        for changes in ({'relations': []}, {'status': 'completed'},
                         {'provenance': {'kind': 'agent', 'source': None}},
                         {'provenance': {'kind': 'recovered', 'source': None}},
                         {'executor': None}):
@@ -457,7 +492,7 @@ class ClosureConsistencyTests(unittest.TestCase):
         self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
         before = self.snapshot(case['run'])
         events = [json.loads(line) for line in (case['run'] / 'trazabilidad.jsonl').read_bytes().splitlines()]
-        original = next(row for row in events if row['kind'] == 'agent' and row['status'] == 'unchanged')
+        original = next(row for row in events if row['kind'] == 'dispatch-identity')
 
         replay = lifecycle.record_event(case['run'], case['annotation'])
 
@@ -542,7 +577,7 @@ class ClosureConsistencyTests(unittest.TestCase):
                      and 'evidence/briefs.json#D1' in row.get('evidence', [])]
         d1_results = [row for row in trace if row.get('kind') == 'discovery' and row.get('status') == 'completed'
                       and 'evidence/results.json#D1' in row.get('evidence', [])]
-        annotations = [row for row in trace if row.get('kind') == 'agent' and row.get('status') == 'unchanged']
+        annotations = [row for row in trace if row.get('kind') == 'dispatch-identity']
         self.assertEqual(len(d1_starts), 1)
         self.assertIsNone(d1_starts[0]['executor'])
         self.assertEqual(len(d1_results), 1)

@@ -48,7 +48,7 @@ A new `agent/started` for an active independent assignment must record the obser
 
 ```json
 {
-  "kind": "agent",
+  "kind": "dispatch-identity",
   "status": "unchanged",
   "summary": "Observed identity for original dispatch; no new execution",
   "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
@@ -62,7 +62,9 @@ A new `agent/started` for an active independent assignment must record the obser
 
 The referenced JSON object must carry the same `{ "executor": {"name", "provider_id"} }` value. The coordinator records the event with `setup event` and `record-event`; durable mutation validates the relation against the existing hash-verified trace under its current lock/transaction. Retention selects the provenance source, verifies its fragment and identity, and keeps its bytes for post-cleanup reads. The annotation has `occurred_at: null` because it does not assert when the old execution occurred. Projection completes only the original start in memory; its sequence, actor, evidence, timestamp and the original result remain in place.
 
-The shared `is_identity_annotation` predicate recognizes recovery intent through recovered provenance or a records relation to the local E event namespace. `agent/unchanged` alone remains an ordinary historical observation: null executor/source and absent brief/relations do not turn it into an annotation or add dispatch-source retention requirements. Producer, builder, preflight, projection, replay and source gates use the same distinction. Partial recovery claims still undergo full validation and fail before mutation; generic milestones never supply a missing dispatch identity. Existing complete archives remain immutable during validation.
+The shared `is_identity_annotation` predicate recognizes only `kind: dispatch-identity`, including incomplete payloads or a wrong status that must fail validation. Historical `agent/unchanged` observations keep their meaning even with recovered provenance, records links to local events, or fields resembling an annotation. They never supply a missing dispatch identity or add source-retention requirements. Producer, builder, preflight, projection, replay and source gates use this explicit distinction; complete archives remain immutable during validation.
+
+`dispatch-identity` is an additive external kind in trace schema 1. Archive 8/layout 2 and final schema 10 remain unchanged. Helpers must understand this new kind before emitting or reading new identity annotations; no historical agent event is converted or rewritten to acquire the new semantics.
 
 Replaying the same normalized annotation returns its original event ID/sequence and appends nothing, including when its source uses a retained alias. A divergent annotation, absent/future/foreign target, already-known identity, unselected or mismatched source, or completed run is rejected. During closing, resolve aliases through the retained reference index and verify the selected bytes, alias digest, fragment and matching executor before appending; the review remains in closing. A rejected annotation preserves the trace and owned resources, permits a later valid annotation and never requests another worker run.
 

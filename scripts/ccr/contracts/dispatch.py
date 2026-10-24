@@ -8,6 +8,7 @@ from ccr.contracts.references import parse_reference
 
 
 _EVENT_ID = re.compile(r'E[0-9]{6,}')
+IDENTITY_ANNOTATION_KIND = 'dispatch-identity'
 _SYSTEM_FIELDS = {'event_id', 'sequence', 'run_id', 'review_id', 'recorded_at',
                   'recorder', 'previous_sha256', 'sha256', 'schema_version'}
 
@@ -18,22 +19,12 @@ def _failure(message: str, reference: str | None = None) -> ReferenceIssue:
 
 
 def is_identity_annotation(event: object) -> bool:
-    """Recognize recovery intent, including partial claims that must be rejected.
+    """Recognize only the explicit kind, including malformed annotation payloads.
 
-    Status alone never upgrades a historical observation into an identity claim.
-    Either recovered provenance or a records link to the local event namespace
-    expresses that intent; F/C and cross-review links remain ordinary milestones.
+    Historical agent/unchanged events never acquire identity semantics from
+    their provenance, relations, executor or other previously legal fields.
     """
-    if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
-        return False
-    provenance = event.get('provenance')
-    if isinstance(provenance, dict) and provenance.get('kind') == 'recovered':
-        return True
-    relations = event.get('relations')
-    return isinstance(relations, list) and any(
-        isinstance(row, dict) and row.get('relation') == 'records'
-        and isinstance(row.get('target'), str) and re.fullmatch(r'E[0-9]+', row['target']) is not None
-        for row in relations)
+    return isinstance(event, dict) and event.get('kind') == IDENTITY_ANNOTATION_KIND
 
 
 def _identity(value: object) -> bool:
@@ -68,7 +59,7 @@ def _validate_annotation(event: dict, registry: list[dict],
     relation = event.get('relations')
     target = (relation[0].get('target') if isinstance(relation, list) and len(relation) == 1
               and isinstance(relation[0], dict) else None)
-    if (event.get('kind') != 'agent' or event.get('status') != 'unchanged'
+    if (event.get('kind') != IDENTITY_ANNOTATION_KIND or event.get('status') != 'unchanged'
             or not isinstance(event.get('summary'), str) or not event['summary'].strip()
             or not isinstance(event.get('actor'), dict)
             or set(event['actor']) != {'kind', 'name', 'provider_id'}

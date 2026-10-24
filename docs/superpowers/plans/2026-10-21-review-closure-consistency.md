@@ -280,7 +280,7 @@ git commit -m "fix(archivo): conservar selección al revalidar evidencia retenid
 - Consumes: trace schema 1, ReferenceIssue, registry y evento original verificado por el coordinador; ninguna función nueva hace IO.
 - Produces: `validate_dispatch_identity_event(event: dict, registry: list[dict], trace_events: list[dict] | None = None) -> list[ReferenceIssue]`. Sin trace_events valida sólo forma; con traza también verifica destino y conflicto.
 - Produces: `project_dispatches(trace_events: list[dict], registry: list[dict]) -> tuple[list[dict], list[ReferenceIssue]]`: copias de despachos originales con identidad explícitamente anotada, sequence/occurred_at originales y sin alterar entradas dadas.
-- Uses: la anotación exacta definida en spec §6.2 (`agent/unchanged`, recovered, records E######, executor y fuente local explícita en evidence).
+- Uses: la anotación exacta definida en spec §6.2 (`dispatch-identity/unchanged`, recovered, records E######, executor y fuente local explícita en evidence). El nuevo tipo externo se acepta en trace schema 1 sin reinterpretar tipos anteriores.
 
 - [x] **Step 1: Escribir pruebas unitarias de dispatch/anotación**
 
@@ -320,7 +320,7 @@ Regresión F008: ampliar `test_late_dispatch_identity_projects_the_original_inde
 
 Regresión F009: compartir también la correlación del resultado con el primer `agent/started` proyectado del mismo brief, executor.name y provider_id, anterior a la finalización. Para independencia, comparar ese despacho original contra el último discovery; no usar otro hito started ni repetir el mismo contexto para renovar su secuencia. En `test_later_start_cannot_replace_early_independent_dispatch`, combinar identidad explícita/recuperada con etapa tardía, provider distinto, coincidencia sólo por actor y repetición de despacho. En `test_fresh_recovered_verifier_ignores_other_provider_dispatch`, comprobar que un provider distinto no se confunde con el del V1 válido. Preservar el positivo D1/V1 y `test_same_session_final_verifier_accepts_grouped_stage_start`. Añadir `test_retention_rejects_early_verifier_with_later_stage_start_without_writes` con eventos registrados por el mutador real y snapshot intacto tras el rechazo, para identidad explícita y recuperada. Ejecutar primero los negativos contra el código anterior y comprobar su fallo funcional.
 
-Regresión F010: centralizar en `is_identity_annotation` la intención recovered o records hacia un evento local E; no seleccionar por agent/unchanged solamente. Reutilizarlo en builder, preflight, mutador/replay, proyección y las tres fases de lectura/verificación de fuentes. Probar generic_unchanged_milestones_do_not_project_dispatch_identity y generic_unchanged_milestone_preserves_schema8_and_schema10_sources, incluyendo sources null/observadas y relaciones C. Mantener partial_identity_intent_is_still_rejected y partial_identity_annotation_is_rejected_without_trace_writes: quitar un marcador o executor no evade el rechazo. Ejecutar generic_agent_event_is_recorded_in_processing_and_closing e historical_generic_event_survives_retention_close_and_immutable_validation sin mockear gates. Comprobar además dos archivos sintéticos creados por el helper original de la base, uno retenido y otro completo: validar sin mutación, cerrar el primero y conservar el prefijo de traza original. No reescribir historia para adaptarla a la anotación nueva.
+Regresión F010: usar exclusivamente kind=dispatch-identity como discriminador; recovered y records a eventos locales ya eran legales en historia y no prueban intención nueva. Aceptar el tipo explícito en el parser trace1, builder y preflight; reutilizar el predicado en mutador/replay, proyección y las tres fases de fuentes. Conservar los genéricos simples, recovered, records locales y ambos combinados. Verificar que incluso un evento agent/unchanged con forma completa de anotación no aporte identidad. Con tipo explícito, quitar fuente/relación/executor/brief o cambiar status debe mantener el rechazo sin escritura. Probar historia creada por el helper real base con cada variante, en closing y complete, sin reescribir la traza previa. Actualizar SKILL y referencias; extraer los ejemplos JSON y comprobar que el builder real acepta el protocolo explícito. No usar heurísticas sobre los campos históricos.
 
 - [x] **Step 4: Comprobar GREEN**
 
@@ -350,7 +350,7 @@ git commit -m "fix(trazabilidad): vincular identidad al despacho original"
 **Interfaces:**
 - Consumes: validador/proyección de Task 4 y selección de Tasks 1–3.
 - Maintains: CLI setup event y record-event; mismo resultado del mutador para replay idéntico, sin append ni nuevo recorded_at.
-- Produces: reconocimiento del patrón agent/unchanged en builder y mutador, seleccionando provenance.source como evidencia local requerida en retención.
+- Produces: reconocimiento del tipo explícito dispatch-identity en builder y mutador, seleccionando provenance.source como evidencia local requerida sólo para esa anotación nueva.
 
 - [x] **Step 1: Escribir regresiones del mutador y ciclo completo**
 
@@ -418,6 +418,8 @@ El resultado global anterior corresponde a `711e89e`. El seguimiento F009 valida
 Evidencia F009: 199/199 casos de 16 módulos, 190.547 s, exit 0, sin omisiones. Incluye los ocho negativos puros, los dos negativos de retención sin escritura, el positivo V1 recuperado con provider observado y la verificación same-session. No se repitió la suite global; consultar el cuarto seguimiento del informe para la selección exacta y los fallos previos reproducidos.
 
 Evidencia F010: 206/206 casos de esos 16 módulos en 189.321 s, exit 0, sin omisiones. Dos archivos sintéticos creados y validados por el helper real de la base pasan después la validación con el helper actualizado; el pendiente puede cerrarse sin reescribir su traza previa y el completo conserva todos sus bytes. Tras precisar el namespace local para no confundir texto externo que empieza con E se ejecutó de nuevo dispatch: 7/7, exit 0, 0.002 s. Consultar el quinto seguimiento para el alcance exacto y los controles auxiliares; no se repitió la suite global.
+
+Seguimiento de F010: el criterio del párrafo anterior era parcial y queda reemplazado por kind=dispatch-identity, sin inferir intención desde valores históricos. La batería final pasó 214/214 en 247.844 s, exit 0, sin omisiones. Ocho archivos creados y validados por la base cubren plain/recovered/records/ambos en closing y complete: validación sin escritura, cierre de los pendientes con traza previa intacta y require-complete en los ocho. Los ejemplos JSON e instrucciones de la skill usan el protocolo explícito y pasan por el builder real. El sexto seguimiento del informe conserva el alcance, los fallos previos y la condición de actualizar los lectores del nuevo tipo; no se repitió la suite global.
 
 - [x] **Step 5: Commit**
 

@@ -72,7 +72,7 @@ class TraceTests(unittest.TestCase):
         with patch.object(review_preflight.dispatch, 'validate_dispatch_identity_event', return_value=[]):
             artifacts.record_event(run, self.write('legacy-dispatch.json', start))
         target = self.events(run)[-1]['event_id']
-        annotation = {'kind': 'agent', 'status': 'unchanged',
+        annotation = {'kind': 'dispatch-identity', 'status': 'unchanged',
             'summary': 'Observed identity for original dispatch; no new execution',
             'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
             'executor': {'name': 'worker-a', 'provider_id': None},

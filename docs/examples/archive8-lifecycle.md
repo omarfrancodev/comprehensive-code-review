@@ -136,11 +136,11 @@ python /absolute/skill/scripts artifacts record-event \
   --event-file /absolute/owned/session/evidence/dispatch-event.json
 ```
 
-For an already-recorded independent dispatch whose executor was omitted, do not repeat the review. If the harness has a local dispatch record with the observed identity, record one `agent/unchanged` annotation against the original start before retention. This recovery applies only to an active independent assignment; it does not apply to the focused, non-independent assignments above. The referenced JSON fragment must contain the same observed `executor` object, and its file must be selected as evidence for retention.
+For an already-recorded independent dispatch whose executor was omitted, do not repeat the review. If the harness has a local dispatch record with the observed identity, record one `dispatch-identity/unchanged` annotation against the original start before retention. This recovery applies only to an active independent assignment; it does not apply to the focused, non-independent assignments above. The referenced JSON fragment must contain the same observed `executor` object, and its file must be selected as evidence for retention.
 
 ```json
 {
-  "kind": "agent",
+  "kind": "dispatch-identity",
   "status": "unchanged",
   "summary": "Observed identity for original dispatch; no new execution",
   "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},

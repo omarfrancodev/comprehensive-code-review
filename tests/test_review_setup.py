@@ -172,7 +172,7 @@ class SetupTests(unittest.TestCase):
     def test_assignment_builder_preserves_late_identity_annotation_facts(self):
         assignment = record10('deep')['coverage']['execution']['plan'][0]
         source = 'evidence/dispatch.json#D1'
-        raw = {'kind': 'agent', 'status': 'unchanged',
+        raw = {'kind': 'dispatch-identity', 'status': 'unchanged',
                'summary': 'Observed identity for original dispatch; no new execution',
                'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
                'executor': {'name': 'worker-a', 'provider_id': None},
@@ -193,6 +193,25 @@ class SetupTests(unittest.TestCase):
             invalid = dict(raw, **mutation)
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 setup.build_assignment_event(invalid, assignment)
+
+    def test_documented_identity_annotation_builds_with_explicit_kind(self):
+        import re
+
+        root = Path(__file__).resolve().parents[1]
+        assignment = record10('deep')['coverage']['execution']['plan'][0]
+        for relative in ('references/archive/lifecycle-trace.md', 'docs/examples/archive8-lifecycle.md'):
+            with self.subTest(document=relative):
+                blocks = re.findall(r'```json\s*\n(.*?)\n```', (root / relative).read_text(encoding='utf-8'), re.S)
+                annotations = [row for row in map(json.loads, blocks)
+                               if isinstance(row, dict) and isinstance(row.get('provenance'), dict)
+                               and row['provenance'].get('kind') == 'recovered']
+                self.assertEqual(len(annotations), 1)
+                self.assertEqual(annotations[0]['kind'], 'dispatch-identity')
+                self.assertEqual(setup.build_assignment_event(annotations[0], assignment),
+                                 dict(annotations[0], authority=None))
+        for relative in ('SKILL.md', 'references/archive/artifacts.md', 'references/execution/worker-packets.md'):
+            with self.subTest(document=relative):
+                self.assertTrue('dispatch-identity/unchanged' in (root / relative).read_text(encoding='utf-8'), relative)
 
     def test_model_usage_update_links_private_sidecar_and_preserves_history(self):
         _, context, manifest, _, _ = fixture_context()

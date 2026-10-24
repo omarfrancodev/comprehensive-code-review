@@ -246,7 +246,7 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
             or assignment.get('superseded_by') is not None):
         raise ValueError('assignment event requires one active required registered assignment')
     event = review_trace.event_input(raw)
-    if event['kind'] not in {'agent', 'discovery', 'grouped-verification'}:
+    if event['kind'] not in {'agent', 'discovery', 'grouped-verification', review_dispatch.IDENTITY_ANNOTATION_KIND}:
         raise ValueError('assignment event kind must identify assigned work')
     if (event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
             and not review_dispatch.is_identity_annotation(event)):

@@ -32,7 +32,7 @@ class DispatchTests(unittest.TestCase):
     def annotation(self, *, target='E000004', executor=None, source='evidence/dispatch.json#D1',
                    evidence=None, sequence=8, event_id='E000008', occurred_at=None):
         return {
-            'kind': 'agent', 'status': 'unchanged',
+            'kind': 'dispatch-identity', 'status': 'unchanged',
             'summary': 'Observed identity for original dispatch; no new execution',
             'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
             'executor': {'name': 'worker-a', 'provider_id': None} if executor is None else executor,
@@ -55,7 +55,7 @@ class DispatchTests(unittest.TestCase):
                               [{'relation': 'records', 'target': 'External worker observation'}]):
                 with self.subTest(source=source, relations=relations):
                     event = self.annotation()
-                    event.update(summary='Worker already active; no new dispatch', executor=None,
+                    event.update(kind='agent', summary='Worker already active; no new dispatch', executor=None,
                                  provenance={'kind': 'agent', 'source': source},
                                  evidence=[], relations=relations)
                     events = [self.start(), event]
@@ -87,6 +87,51 @@ class DispatchTests(unittest.TestCase):
                 self.assertTrue(issues)
                 self.assertIsNone(projected[0]['executor'])
                 self.assertEqual(events, before)
+
+    def test_historical_recovered_and_local_records_do_not_claim_identity(self):
+        for provenance, relations in (
+            ({'kind': 'recovered', 'source': 'Observed worker notice'}, []),
+            ({'kind': 'tool', 'source': None}, [{'relation': 'records', 'target': 'E000004'}]),
+            ({'kind': 'recovered', 'source': 'Observed worker notice'},
+             [{'relation': 'records', 'target': 'E000004'}]),
+        ):
+            with self.subTest(provenance=provenance, relations=relations):
+                event = self.annotation()
+                event.update(kind='agent', executor=None, evidence=[],
+                             provenance=provenance, relations=relations)
+                events = [self.start(), event]
+                before = copy.deepcopy(events)
+
+                self.assertEqual(dispatch.validate_dispatch_identity_event(event, self.registry), [])
+                projected, issues = dispatch.project_dispatches(events, self.registry)
+
+                self.assertEqual(issues, [])
+                self.assertIsNone(projected[0]['executor'])
+                self.assertEqual(events, before)
+
+    def test_explicit_identity_kind_projects_the_original_dispatch(self):
+        event = dict(self.annotation(), kind='dispatch-identity')
+        projected, issues = dispatch.project_dispatches([self.start(), event], self.registry)
+        self.assertEqual(issues, [])
+        self.assertEqual(projected[0]['executor'], event['executor'])
+        self.assertEqual(projected[0]['sequence'], 4)
+
+    def test_annotation_shaped_historical_event_does_not_supply_identity(self):
+        event = dict(self.annotation(), kind='agent')
+        projected, issues = dispatch.project_dispatches([self.start(), event], self.registry)
+        self.assertEqual(issues, [])
+        self.assertFalse(dispatch.is_identity_annotation(event))
+        self.assertIsNone(projected[0]['executor'])
+
+    def test_explicit_identity_kind_keeps_partial_events_under_validation(self):
+        for changes in ({'relations': []}, {'executor': None}, {'status': 'completed'},
+                        {'provenance': {'kind': 'agent', 'source': None}},
+                        {'evidence': []}):
+            with self.subTest(changes=changes):
+                event = dict(self.annotation(), kind='dispatch-identity', **changes)
+                self.assertTrue(dispatch.validate_dispatch_identity_event(event, self.registry))
+                _, issues = dispatch.project_dispatches([self.start(), event], self.registry)
+                self.assertTrue(issues)
 
     def test_late_annotation_keeps_original_order_and_result(self):
         original = self.start()

@@ -247,7 +247,7 @@ class ExecutionPolicyTests(unittest.TestCase):
         references.update(row['reference'] for row in value['coverage']['execution']['results'])
         source = 'evidence/dispatch.json#' + identifier
         annotation = {
-            'kind': 'agent', 'status': 'unchanged',
+            'kind': 'dispatch-identity', 'status': 'unchanged',
             'summary': 'Observed identity for original dispatch; no new execution',
             'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
             'executor': {'name': result['reviewer_context'], 'provider_id': result['provider_id']},
@@ -384,6 +384,17 @@ class ExecutionPolicyTests(unittest.TestCase):
                 self.assertEqual(validate_execution_sources(value, context, events, references), [])
 
                 self.assertEqual(events, before)
+
+    def test_unmarked_historical_event_cannot_complete_a_dispatch_identity(self):
+        value, context, events, references, _ = self.recovered_dispatch('V1')
+        events[-1]['kind'] = 'agent'
+        before = copy.deepcopy(events)
+
+        errors = validate_execution_sources(value, context, events, references)
+
+        self.assertTrue(any('independent result lacks observed dispatch' in error for error in errors), errors)
+        self.assertFalse(any('identity annotation' in error for error in errors), errors)
+        self.assertEqual(events, before)
 
     def test_focused_requires_one_actual_context(self):
         value = record8()

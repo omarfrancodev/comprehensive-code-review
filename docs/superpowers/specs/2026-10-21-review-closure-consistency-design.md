@@ -38,7 +38,7 @@ La decisión de conservar workspaces cuando falla el gate de retención fue corr
 - Python 3.10+ y biblioteca estándar; no añadir dependencias de ejecución.
 - Respetar el paquete `scripts/ccr`, las 12 áreas CLI existentes y la entrada `python <skill>/scripts AREA SUBCOMMAND`; no restaurar scripts `review_*.py` ni facades agregadas.
 - Mantener contratos puros sin IO, sin imports de `ccr.cli` desde módulos de implementación y sin ciclos; `archive.resources` coordina cleanup y `execution.workspaces` las operaciones físicas. Documentar cada módulo nuevo en `scripts/README.md`.
-- Mantener archive schema 8/layout 2, final schema 10 y trace schema 1; no migrar ni reescribir historia.
+- Mantener archive schema 8/layout 2, final schema 10 y trace schema 1; añadir sólo el tipo externo explícito dispatch-identity para las anotaciones nuevas, sin migrar ni reescribir historia. Los helpers anteriores necesitan actualizarse para leer ese valor nuevo.
 - Los runs completos son inmutables; ningún cambio de este trabajo modifica sus bytes.
 - No inferir identidades, timestamps, modelos, independencia ni resultados a partir de nombres de archivos, briefs o resúmenes.
 - Las lecturas se limitan a fuentes explícitamente seleccionadas o declaradas en el inventario de hashes del run exacto; no recorrer otros archives, historias del proveedor ni árboles completos.
@@ -93,13 +93,13 @@ Un inicio estático del coordinador (`discovery/started`) no requiere ejecutor e
 
 ### 6.2 Anotación acotada en una traza abierta
 
-El estado `agent/unchanged` por sí solo no identifica una anotación: los hitos genéricos históricos conservan su significado, incluso con executor/source null y sin brief ni relaciones. `is_identity_annotation` reconoce intención de recuperar identidad mediante provenance.kind=recovered o una relación records dirigida al namespace local E. Productor, builder, preflight, proyección, replay y selección/verificación de fuentes comparten ese predicado. Un marcador parcial mantiene la obligación de validar todos los campos; no se ignora una recuperación inválida como si fuera un hito genérico. Las observaciones genéricas no proyectan identidad ni requieren seleccionar su provenance.source como evidencia de despacho.
+`is_identity_annotation` reconoce exclusivamente kind=dispatch-identity, incluso si el status o los demás campos son inválidos. Productor, builder, preflight, proyección, replay y selección/verificación de fuentes comparten ese predicado. Toda observación histórica agent/unchanged conserva su significado, incluso con procedencia recovered, enlaces records a E locales o campos que se parezcan a una anotación: no proyecta identidad ni requiere seleccionar su source como evidencia de despacho. Un payload nuevo con tipo explícito incompleto sigue rechazándose; no se infiere la intención a partir de campos antiguos.
 
-Para un despacho original existente cuyo `executor` sea null, permitir una anotación con los campos ya válidos de trace schema 1:
+Para un despacho original existente cuyo `executor` sea null, permitir una anotación con los campos de trace schema 1 y el nuevo tipo externo dispatch-identity:
 
 ```json
 {
-  "kind": "agent", "status": "unchanged",
+  "kind": "dispatch-identity", "status": "unchanged",
   "summary": "Identidad observada del despacho original; sin nueva ejecución",
   "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
   "executor": {"name": "worker-a", "provider_id": null},

@@ -191,3 +191,31 @@ La batería de los mismos 16 módulos del cuarto seguimiento pasó **206/206 en 
 La revisión final añadió dos controles de referencias externas cuyo texto empieza con E: fallaron al usar sólo startswith y justificaron acotar el namespace a E seguido de dígitos. Tras ese ajuste se volvió a ejecutar todo `test_review_dispatch`: **7/7, exit 0, 0.002 s**, incluidos los nuevos subcasos y los rechazos de anotaciones inválidas. Este ajuste final no se presenta como otra corrida de los 206 casos.
 
 No se repitió la suite global: los 791 casos históricos siguen correspondiendo a `711e89e`. Spec, plan, referencia de trazas, índice de módulos y changelog se actualizan con el criterio compartido. Se comprueba además `git diff --check origin/main` sobre el diff acumulado antes del commit.
+
+## Sexto seguimiento del PR #30 — 2026-10-24
+
+El [seguimiento de F010](https://github.com/omarfrancodev/comprehensive-code-review/pull/30#issuecomment-6390585077), sobre `39b41152a480f6a59dfd5ed3e7ff367095e2fe1b`, demuestra que la corrección anterior era parcial: recovered y records locales ya eran legales en la base. Ninguno podía reservarse retrospectivamente para identificar una recuperación de identidad.
+
+### Discriminador explícito
+
+Se añade el tipo externo `dispatch-identity` a trace schema 1. `is_identity_annotation` reconoce sólo ese tipo, sin depender del status ni de sus otros campos. Una anotación explícita incompleta o con status incorrecto sigue pasando por la validación completa y se rechaza antes de escribir. Parser, builder, preflight y los consumidores existentes usan este tipo; la identidad se proyecta sobre el despacho original y no crea otra ejecución.
+
+Todo agent/unchanged antiguo conserva su semántica, incluso con recovered, records locales, ambos combinados o todos los campos que antes se parecían a una anotación. No se reinterpretan ni reescriben esos eventos y tampoco se usan para completar una identidad ausente. Se conservan archive8/layout2/final10 y el número de versión trace1; los helpers anteriores necesitan actualizarse para aceptar el nuevo valor del enum. Las instrucciones, ejemplos, spec, plan y changelog describen esa condición de lectura.
+
+### Reproducción y comprobaciones dirigidas
+
+Antes del cambio, cinco métodos produjeron nueve fallos de aserción y seis errores funcionales en 8.131 s, exit 1. Los controles históricos recovered, records y ambos fallaron en el contrato; su retención y su emisión durable fallaron al exigir campos o fuentes de identidad que no correspondían. Los controles del nuevo tipo mostraron que todavía no se proyectaba ni se validaban sus payloads parciales. Después del cambio pasaron 15 pruebas dirigidas en 54.407 s, exit 0, incluidos el cierre válido V1 y el rechazo sin escritura de anotaciones incompletas.
+
+La prueba nueva de referencias extrajo los JSON y comprobó las instrucciones principales: detectó cinco referencias al protocolo anterior. Tras actualizarlas, los ejemplos pasan por el builder real y conservan sus campos, con authority null normalizado por defecto. El primer assert posterior a la edición omitía ese default; se ajustó la expectativa del test, sin cambiar el producto. La comprobación dirigida final de documentación, dispatch y rechazo de recuperación implícita pasó 13/13 en 0.007 s, exit 0.
+
+### Historia producida por la base
+
+Se usaron scripts/tests y catálogo originales de `9c3fd6b`, aislados del checkout, con el fixture focused sin alias de salida ajeno al caso. No se modificó código del helper base ni se simularon gates. Un control auxiliar de ubicación de módulo tuvo que comparar rutas Windows sin distinguir mayúsculas antes de ejecutar los casos; ese intento no se contó como fallo funcional.
+
+El helper base creó y validó ocho archivos del formato vigente: plain, recovered, records a un E existente y recovered+records, cada variante en closing y complete. El helper nuevo validó los ocho con snapshots idénticos. Cerró los cuatro pendientes conservando exactamente el prefijo de traza anterior, y los ocho pasaron require-complete sin cambios de bytes durante la validación final. Esto comprueba las dos variantes del review y su combinación, sin migrar una traza completa.
+
+### Batería actual y límites
+
+Los 16 módulos de la batería del cuarto seguimiento pasaron **214/214 en 247.844 s, exit 0, sin fallos, errores ni omisiones**. Incluyen ocho métodos nuevos sobre el candidato anterior: variantes históricas, proyección y rechazo del tipo explícito, historia durable, observaciones nuevas compatibles, prohibición de recuperar identidad desde eventos no marcados y ejemplos documentados ejecutados por el builder. Las regresiones previas, los ejemplos CLI y los límites de arquitectura siguen pasando.
+
+No se repitió la suite global: la corrida histórica de 791 casos permanece ligada a `711e89e`. Esta validación usa el protocolo final explícito y los ocho controles entre versiones; no atribuye al candidato nuevo las corridas anteriores. Se comprueba `git diff --check origin/main` antes del commit.
