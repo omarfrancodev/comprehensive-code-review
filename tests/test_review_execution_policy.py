@@ -224,24 +224,28 @@ class ExecutionPolicyTests(unittest.TestCase):
         events[1]['executor'] = None
         self.assertTrue(validate_execution_sources(value, context, events, references))
 
-    def test_late_dispatch_identity_projects_the_original_independent_start(self):
+    def recovered_dispatch(self, identifier, *, early_verifier=False):
         from recovery_fixtures import context10, record10, source_events
 
         value = record10('deep')
         context = context10(value)
         events = source_events(value)
-        assignment = next(row for row in value['coverage']['execution']['plan'] if row['id'] == 'D1')
+        assignment = next(row for row in value['coverage']['execution']['plan'] if row['id'] == identifier)
         result = next(row for row in value['coverage']['execution']['results']
-                      if row['assignment_id'] == 'D1')
+                      if row['assignment_id'] == identifier)
         start = next(event for event in events if event.get('kind') == 'agent'
                      and event.get('status') == 'started' and assignment['reference'] in event['evidence'])
+        if early_verifier:
+            events.remove(start)
+            events.insert(2, start)
+            for sequence, event in enumerate(events, 1):
+                event.update(sequence=sequence, event_id=f'E{sequence:06d}')
         start['executor'] = None
+        start['actor'] = {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None}
         references = {context['profile_reference']}
         references.update(row['reference'] for row in value['coverage']['execution']['plan'])
         references.update(row['reference'] for row in value['coverage']['execution']['results'])
-        self.assertTrue(validate_execution_sources(value, context, events, references))
-
-        source = 'evidence/dispatch.json#D1'
+        source = 'evidence/dispatch.json#' + identifier
         annotation = {
             'kind': 'agent', 'status': 'unchanged',
             'summary': 'Observed identity for original dispatch; no new execution',
@@ -255,7 +259,30 @@ class ExecutionPolicyTests(unittest.TestCase):
         }
         events.append(annotation)
         references.add(source)
-        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+        return value, context, events, references, start
+
+    def test_late_dispatch_identity_projects_the_original_independent_start(self):
+        for identifier in ('D1', 'V1'):
+            with self.subTest(assignment=identifier):
+                value, context, events, references, start = self.recovered_dispatch(identifier)
+                self.assertTrue(validate_execution_sources(value, context, events[:-1], references))
+                before = copy.deepcopy(events)
+
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+                self.assertEqual(events, before)
+                self.assertIsNone(start['executor'])
+
+    def test_late_verifier_identity_does_not_move_early_dispatch_after_discovery(self):
+        value, context, events, references, start = self.recovered_dispatch('V1', early_verifier=True)
+        before = copy.deepcopy(events)
+
+        errors = validate_execution_sources(value, context, events, references)
+
+        self.assertTrue(any('one fresh verifier after the final discovery batch' in error for error in errors))
+        self.assertEqual(start['sequence'], 3)
+        self.assertEqual(events[-1]['sequence'], 8)
+        self.assertEqual(events, before)
 
     def test_focused_requires_one_actual_context(self):
         value = record8()

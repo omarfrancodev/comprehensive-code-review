@@ -256,6 +256,9 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     observed_plan = registry if schema10 and isinstance(registry, list) else execution['plan']
     projected_dispatches, dispatch_issues = dispatch.project_dispatches(trace_events, observed_plan)
     errors.extend(prefix + issue['message'] for issue in dispatch_issues)
+    observed_starts = projected_dispatches + [event for event in work
+                                             if event.get('kind') != 'agent'
+                                             and event.get('status') == 'started']
     for event in trace_events:
         if event.get('kind') == 'agent' and event.get('status') == 'unchanged':
             provenance = event.get('provenance')
@@ -264,8 +267,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                 errors.append(prefix + 'dispatch identity source is not retained')
     ordinary_refs = {row['reference'] for row in observed_plan if isinstance(row, dict)
                      and isinstance(row.get('reference'), str) and row.get('role') != 'project_gate'}
-    starts = [event for event in work if event.get('status') == 'started'
-              and isinstance(event.get('evidence'), list)
+    starts = [event for event in observed_starts if isinstance(event.get('evidence'), list)
               and ordinary_refs.intersection(event.get('evidence', []))]
     for index, row in enumerate(history):
         if (not isinstance(row, dict) or (not schema10 and set(row) != {'profile', 'reference'})
@@ -320,7 +322,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             errors.append(prefix + 'completed reviewer result lacks matching observed milestone/source')
             continue
         if assignment['independent'] and assignment['id'] not in {item for row in execution['fallbacks'] for item in row['assignments']}:
-            dispatches = [event for event in projected_dispatches if event.get('kind') == 'agent'
+            dispatches = [event for event in observed_starts if event.get('kind') == 'agent'
                           and event.get('status') == 'started' and assignment['reference'] in event.get('evidence', [])
                           and isinstance(event.get('executor'), dict)
                           and event['executor'].get('name') == result['reviewer_context']
@@ -389,7 +391,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                            and isinstance(event.get('actor'), dict)
                            and (event.get('actor') or {}).get('name') == result['reviewer_context']
                            and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
-            starts_for_verifier = [event for event in trace_events if isinstance(event, dict)
+            starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
                                    and event.get('status') == 'started'
                                    and event.get('kind') in ('agent', 'grouped-verification')
                                    and isinstance(event.get('evidence'), list)

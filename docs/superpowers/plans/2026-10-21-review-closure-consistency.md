@@ -314,7 +314,9 @@ En el módulo nuevo usar únicamente identidades explícitas y exactamente un de
 
 Para la procedencia de anotaciones, permitir la gramática de alias keys anidadas seguras mediante `parse_reference(..., allow_alias_key=True)`. Probar builder, proyección y mutador closing con `evidence/harness/dispatch.json#D1`; la resolución posterior exige destino plano seleccionado y digest/fragmento/executor coincidentes. Mantener rechazos de traversal, rutas externas, separadores codificados y alias no declarado.
 
-Importar `validate_dispatch_identity_event` directamente en `contracts.preflight` y reutilizarlo desde validate_assignment_event para eventos nuevos. En validate_execution_sources usar los dispatches proyectados para la comprobación de independencia, manteniendo los resultados originales y todos los otros gates de perfil/cobertura. No volver a validar eventos históricos originales como si fueran una nueva emisión prohibida.
+Importar `validate_dispatch_identity_event` directamente en `contracts.preflight` y reutilizarlo desde validate_assignment_event para eventos nuevos. En validate_execution_sources compartir una vista de inicios con los dispatches proyectados y los inicios estáticos originales entre el orden de perfil, la comprobación de independencia y el gate del verificador final. Mantener las secuencias y resultados originales y todos los otros gates de perfil/cobertura. No volver a validar eventos históricos originales como si fueran una nueva emisión prohibida.
+
+Regresión F008: ampliar `test_late_dispatch_identity_projects_the_original_independent_start` a D1 y V1 con actor coordinador; comprobar inmutabilidad. Añadir `test_late_verifier_identity_does_not_move_early_dispatch_after_discovery` para rechazar un V1 anterior al último discovery aunque su anotación sea posterior, y `test_late_final_verifier_identity_retains_and_closes_without_new_execution` para comprobar retain/validate/close con alias anidado y un único inicio/resultado original. Reproducir primero los fallos de V1 y después exigir que pasen sin mover el inicio.
 
 - [x] **Step 4: Comprobar GREEN**
 
@@ -393,15 +395,19 @@ Run: `git diff --check`
 
 Expected: sin errores. Revisar contra A1–A10 del spec y dejar evidencia en `docs/validation/2026-10-21-review-closure-consistency.md`: base/head probados, comandos, resultados, skips y límites. Incluir el ejemplo archive8 y changelog en la revisión documental. No copiar rutas privadas, notas de MR ni logs del caso real. Evidencia: diff check limpio y aceptación A1–A10 trazada en el informe.
 
-- [ ] **Step 4b: Completar gate amplio**
+- [x] **Step 4b: Completar gate amplio**
 
 Run una sola vez `python -B -m unittest discover -s tests -p 'test_*.py'`.
+
+En Windows, cargar la selección completa desde las rutas absolutas de tests/scripts y ejecutar con TEMP/TMP y CWD en un directorio temporal corto propio. Dos fixtures de recibos crean repositorios bajo CWD: cambiar sólo TEMP no evita `$GIT_DIR too big`. El observador puede emitir progreso y guardar errores; no filtrar casos, modificar aserciones ni añadir omisiones.
 
 Estado: se inició y avanzó sin errores visibles, pero dejó de emitir salida durante varios minutos; se interrumpió manualmente y no emitió resumen. No cuenta como suite aprobada ni se marca como terminada.
 
 Seguimiento del PR #30: 151/151 pruebas focalizadas aprobadas. La ampliación observó 759 de 782 casos (752 aprobados, 7 omitidos por el entorno); se detuvo por duración en la matriz de transferencia de recursos de reinicio y quedaron 23 sin resultado. El intento monolítico anterior tampoco emitió resumen; su error de recibos pasó aisladamente. Conservar este gate pendiente y consultar el alcance exacto en `docs/validation/2026-10-21-review-closure-consistency.md`.
 
 Segundo seguimiento: la suite completa terminó 789 casos en 2191.694 s (785 aprobados, un PermissionError de Windows en os.replace y 3 omisiones de symlinks). Los 23 casos antes pendientes ya se ejecutaron. La matriz completa que registró el error pasó después sin filtrar subcasos: 1/1, exit 0, 113.667 s. Las 158 pruebas focalizadas pasaron en la corrida amplia. El gate se conserva pendiente de una ejecución global con exit 0; no presentar el reintento aislado como una corrida monolítica limpia.
+
+Tercer seguimiento, 2026-10-24: gate completado mediante una ejecución global de los 791 casos en 1970.371 s, exit 0: 788 aprobados, cero errores/fallos y 3 omisiones por privilegios de symlinks de Windows. Se usaron CWD y TEMP/TMP cortos, con la selección completa y sin modificar aserciones ni skips. Pasaron dentro de esa corrida la regresión F008, el caso de recibos antes afectado por longitud de ruta y la matriz completa de adopción antes afectada por permisos. El historial de los intentos anteriores permanece en el informe; su estado pendiente queda superado por esta corrida.
 
 - [x] **Step 5: Commit**
 
@@ -420,7 +426,7 @@ git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 | A4 | 1–3: aliases/rutas/hashes y uninventoried_or_changed_source_blocks_without_cleanup |
 | A5 | 3: processing_unverified_snapshot_is_preserved |
 | A6 | 4–5: independent_start_requires_executor y rechazo durable directo |
-| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes; nested_dispatch_alias_passes_builder_closing_mutator_and_replay y proyección pura |
+| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes; nested_dispatch_alias_passes_builder_closing_mutator_and_replay; proyección pura D1/V1; late_verifier_identity_does_not_move_early_dispatch_after_discovery; late_final_verifier_identity_retains_and_closes_without_new_execution |
 | A8 | 4–5: targets/conflictos y preservación del prefijo de traza; closing_annotation_rejects_invalid_fragment_and_executor_without_writes, con y sin alias y anotación válida posterior |
 | A9 | 5: annotation_and_sources_survive_real_owned_cleanup |
 | A10 | 2 y 5: ejemplos operativos, checks/modelos y gates de cierre |

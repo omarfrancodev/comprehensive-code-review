@@ -107,3 +107,35 @@ La repetición completa obtuvo exit 0. La causa externa específica del permiso 
 Las tres omisiones fueron por falta de privilegios de symlinks en Windows: `ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused`, `LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target` y `LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused`. Los casos de junctions, hardlinks y sincronización entre clones que antes se omitieron sí concluyeron en esta ejecución.
 
 No quedan casos sin observar de la selección ampliada: los 23 pendientes anteriores se ejecutaron. Sigue pendiente una corrida global con exit 0 para aprobar estrictamente el gate amplio del plan; la matriz que registró el error sí pasó completa en aislamiento. `git diff --check origin/main` terminó sin errores sobre el candidato acumulado.
+
+## Tercer seguimiento del PR #30 — 2026-10-24
+
+El comentario `issuecomment-6387350881`, sobre `d0847ed47fbdf3bb72d62950026de274462181b4`, confirma F001–F007 y señala F008: el emparejamiento independiente usa despachos proyectados, pero el gate del verificador final consultaba los eventos originales. Un inicio V1 con actor coordinador y executor null seguía rechazándose aunque una anotación válida recuperase su identidad.
+
+Se comparte una vista de inicios entre el orden de perfil, el emparejamiento independiente y el gate final. Los inicios agent se proyectan; los inicios estáticos y los resultados conservan su representación original. La anotación sólo aporta identidad: no mueve sequence ni modifica los eventos suministrados.
+
+### Reproducción y regresiones
+
+Antes de corregir el producto se ejecutaron tres pruebas: el subcaso D1 pasó, el subcaso V1 falló y la integración retain/close produjo el mismo `fulfilled review requires one fresh verifier after the final discovery batch`. El control negativo de V1 anticipado pasó. Resultado: 3 pruebas, un failure y un error, exit 1; ambos fallos positivos alcanzaron el gate reportado.
+
+Después de corregirlo, `python -B -m unittest -v test_review_execution_policy test_review_closure_consistency` pasó 46/46 en 72.385 s, exit 0, sin omisiones. Incluye:
+
+- Proyección pura para D1 y V1 con actor coordinador, identidad ausente en el original e inmutabilidad de la entrada.
+- Rechazo de un V1 cuyo inicio precede al último discovery, aunque su anotación sea posterior.
+- Retain, validate y close reales con identidad V1 recuperada mediante alias anidado, prefijo de traza intacto y exactamente un inicio y resultado V1.
+
+### Entorno de la suite completa
+
+Se cargan los 791 casos mediante `unittest.defaultTestLoader.discover` desde las rutas absolutas del repositorio y se ejecutan con CWD y TEMP/TMP en un directorio temporal corto propio. Esto también acorta los fixtures de recibos que usan `Path.cwd()`, responsables del `$GIT_DIR too big` observado por el revisor. El observador registra resultados y progreso de subcasos sin alterar la selección, las aserciones ni los skips. Los intentos históricos anteriores conservan sus resultados; no se sustituyen por los de esta corrida.
+
+### Resultado global
+
+La ejecución completa terminó los 791 casos en 1970.371 s, exit 0: **788 aprobados, cero fallos, cero errores y 3 omisiones**. Las regresiones D1/V1 y el rechazo del verificador anticipado pasaron dentro de esa misma selección. También pasaron `CaptureCheckTests.test_capture_accepts_canonical_command_with_literal_newline_and_tab` y la matriz completa `RestartResourceReplayTests.test_unclaimed_workspace_all_adoption_replacements`; no se necesitó repetir ni interrumpir esta corrida.
+
+Las omisiones corresponden exclusivamente al privilegio de symlinks de Windows:
+
+- `ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused`.
+- `LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target`.
+- `LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused`.
+
+El gate amplio del plan queda completado con esas tres limitaciones de entorno declaradas. Los resultados históricos incompletos o con errores siguen registrados arriba; ya no representan el estado de la validación actual. `git diff --check origin/main` se verifica además sobre el diff acumulado antes del commit.

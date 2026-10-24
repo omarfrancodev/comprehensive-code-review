@@ -118,6 +118,8 @@ La gramática pura de la anotación admite claves de alias anidadas seguras, com
 
 La proyección de ejecución completa sólo la identidad del despacho original en memoria y conserva su `sequence`, actor, evidencia y `occurred_at`. Así puede emparejarlo con el resultado original, aunque la anotación se haya registrado después. No se modifica la línea original ni se añade otro resultado. La anotación no cambia perfil, assignments, inputs, timestamps ni estado de cleanup.
 
+Todos los consumidores de inicios en `validate_execution_sources` comparten esa vista: orden de selección de perfil, emparejamiento independiente y verificador del lote final. Tanto D1 como V1 pueden recuperar su identidad. Para V1, el inicio original y su resultado deben seguir siendo posteriores al último discovery; la posición tardía de la anotación no convierte en válido un inicio anticipado.
+
 El nuevo módulo puro `ccr.contracts.dispatch` valida y proyecta estas anotaciones; se registra en el índice de módulos de `scripts/README.md`. Se usa `python <skill>/scripts artifacts record-event` mediante `archive.lifecycle.record_event` bajo sus guards existentes. No se aceptan anotaciones sobre runs completos ni se eluden transacciones pendientes. Los consumidores antiguos seguirán leyendo JSON schema 1, pero necesitan el helper actualizado para reconocer la anotación como procedencia de un resultado independiente.
 
 ## 7. Workflow y comunicación
@@ -142,7 +144,7 @@ El ciclo completo usa `execution.workspaces.prepare` y `archive.resources.cleanu
 | A4 | Un archivo presente sin inventario, alterado, link o ruta insegura no se acepta; fallar no inicia cleanup ni crea un nuevo run. |
 | A5 | Un run ya iniciado con captura directa incompleta y descripción unverified puede verificar sus bytes retenidos; su snapshot y descripción no se reescriben. |
 | A6 | Un despacho independiente nuevo sin executor falla sin añadir eventos; provider_id y tiempos desconocidos siguen null. |
-| A7 | Una sola anotación válida permite usar el despacho y resultado originales; replay idéntico, también con alias en closing, devuelve el evento original sin aumentar la traza y los conflictos fallan. |
+| A7 | Una sola anotación válida permite usar el despacho y resultado originales de discovery o del verificador final; todos los gates consultan el inicio proyectado con su secuencia original. Un inicio anterior al último discovery sigue rechazándose. Replay idéntico, también con alias en closing, devuelve el evento original sin aumentar la traza y los conflictos fallan. |
 | A8 | Una anotación no fabrica dispatch ausente, independencia ni evidencia; en closing rechaza fragmentos inexistentes o ejecutores discrepantes antes de escribir, mantiene el orden y los bytes previos y permite después una anotación correcta. |
 | A9 | Un ciclo sintético completo conserva fuentes tras eliminar su sesión propia y pasa --require-complete con recibos de cleanup auténticos. |
 | A10 | Documentación distingue check, modelo, retención y cierre; no recomienda duplicar hitos, sondear metadata ni borrar recursos tras un fallo. |

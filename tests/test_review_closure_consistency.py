@@ -76,8 +76,9 @@ class ClosureConsistencyTests(unittest.TestCase):
                         late_dispatch: bool = False, capture_dispatch: bool = False,
                         material_alias: bool = False, dispatch_alias: bool = False,
                         annotate_dispatch: bool = True,
-                        dispatch_source: str = 'evidence/dispatch.json#D1',
+                        dispatch_source: str | None = None, late_assignment: str = 'D1',
                         profile: str = 'focused') -> dict:
+        dispatch_source = dispatch_source or 'evidence/dispatch.json#' + late_assignment
         description, notes = b'MR description captured for the fixture', b'External review notes'
         (self.root / 'description.md').write_bytes(description)
         (self.root / 'notes.json').write_bytes(notes)
@@ -94,8 +95,9 @@ class ClosureConsistencyTests(unittest.TestCase):
             index['aliases']['evidence/description.md'] = {
                 'reference': 'evidence/description-copy.md', 'sha256': digest(description)}
         if dispatch_alias:
-            result = record10(profile)['coverage']['execution']['results'][0]
-            dispatch_bytes = json.dumps({'D1': {'executor': {
+            result = next(row for row in record10(profile)['coverage']['execution']['results']
+                          if row['assignment_id'] == late_assignment)
+            dispatch_bytes = json.dumps({late_assignment: {'executor': {
                 'name': result['reviewer_context'], 'provider_id': result['provider_id']}}},
                 sort_keys=True, separators=(',', ':')).encode('utf-8')
             index['aliases'][dispatch_source.partition('#')[0]] = {
@@ -139,7 +141,7 @@ class ClosureConsistencyTests(unittest.TestCase):
         execution['plan'] = copy.deepcopy(record10(profile)['coverage']['execution']['plan'])
         if late_dispatch and not annotate_dispatch:
             execution['status'] = 'degraded'
-            execution['fallbacks'] = [{'assignments': ['D1'], 'reason': 'dispatch_failed',
+            execution['fallbacks'] = [{'assignments': [late_assignment], 'reason': 'dispatch_failed',
                 'detail': 'Historical dispatch omitted executor identity',
                 'source': 'evidence/context.json#dispatch_fallback'}]
             final['coverage']['limitations'] = [{'kind': 'execution', 'material': False,
@@ -164,18 +166,19 @@ class ClosureConsistencyTests(unittest.TestCase):
         lifecycle.register(run, [str(session)] if session is not None else [], context_input=context_path)
         manifest = self.read(run / 'cierre.json')
         dispatch_identity = None
-        d1_start = None
+        dispatch_start = None
         for row, result in zip(execution['plan'], execution['results']):
             identity = {'name': result['reviewer_context'], 'provider_id': result['provider_id']}
             role = row['role']
             start_payload = {
                 'kind': 'agent', 'status': 'started', 'summary': 'Synthetic reviewer started',
-                'executor': None if late_dispatch and row['id'] == 'D1' else identity,
+                'executor': None if late_dispatch and row['id'] == late_assignment else identity,
                 'evidence': [row['reference']]}
-            if late_dispatch and row['id'] == 'D1':
+            if late_dispatch and row['id'] == late_assignment:
+                start_payload['actor'] = {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None}
                 with patch.object(preflight.dispatch, 'validate_dispatch_identity_event', return_value=[]):
                     start_result = lifecycle.record_event(run, self.write('event-start.json', start_payload))
-                d1_start = start_result['event_id']
+                dispatch_start = start_result['event_id']
                 dispatch_identity = identity
             else:
                 lifecycle.record_event(run, self.write('event-start.json', start_payload))
@@ -188,14 +191,14 @@ class ClosureConsistencyTests(unittest.TestCase):
         if late_dispatch:
             dispatch_path = self.write_bytes(
                 'dispatch-retained.json' if dispatch_alias else 'dispatch.json',
-                {'D1': {'executor': dispatch_identity}})
+                {late_assignment: {'executor': dispatch_identity}})
             annotation = {'kind': 'agent', 'status': 'unchanged',
                 'summary': 'Observed identity for original dispatch; no new execution',
                 'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
                 'executor': dispatch_identity,
                 'provenance': {'kind': 'recovered', 'source': dispatch_source},
-                'evidence': ['evidence/briefs.json#D1', dispatch_source],
-                'relations': [{'relation': 'records', 'target': d1_start}],
+                'evidence': ['evidence/briefs.json#' + late_assignment, dispatch_source],
+                'relations': [{'relation': 'records', 'target': dispatch_start}],
                 'authority': None, 'occurred_at': None}
             annotation_path = self.write('dispatch-annotation.json', annotation)
             if annotate_dispatch:
@@ -255,6 +258,32 @@ class ClosureConsistencyTests(unittest.TestCase):
         self.assertEqual(after['description']['status'], 'unverified')
         self.assertEqual(after['description'], self.read(case['record'])['description'])
         self.assertEqual(self.snapshot(case['run']), before)
+
+    def test_late_final_verifier_identity_retains_and_closes_without_new_execution(self):
+        case = self.make_guided_run(complete_capture=True, late_dispatch=True,
+            late_assignment='V1', capture_dispatch=True, dispatch_alias=True,
+            dispatch_source='evidence/harness/dispatch.json#V1', profile='deep')
+        trace_path = case['run'] / 'trazabilidad.jsonl'
+        before = trace_path.read_bytes()
+        events = [json.loads(line) for line in before.splitlines()]
+        original = next(row for row in events if row['kind'] == 'agent' and row['status'] == 'started'
+                        and 'evidence/briefs.json#V1' in row['evidence'])
+        self.assertIsNone(original['executor'])
+        self.assertEqual(original['actor']['kind'], 'coordinator')
+
+        self.retain(case)
+
+        self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+        self.assertTrue(trace_path.read_bytes().startswith(before))
+        after = [json.loads(line) for line in trace_path.read_bytes().splitlines()]
+        starts = [row for row in after if row['kind'] == 'agent' and row['status'] == 'started'
+                  and 'evidence/briefs.json#V1' in row['evidence']]
+        results = [row for row in after if row['kind'] == 'grouped-verification'
+                   and row['status'] == 'completed' and 'evidence/results.json#V1' in row['evidence']]
+        self.assertEqual(starts, [original])
+        self.assertEqual(len(results), 1)
 
     def test_reretain_reuses_inventoried_index_material_and_alias_sources(self):
         case = self.make_guided_run(complete_capture=True, material_alias=True,
