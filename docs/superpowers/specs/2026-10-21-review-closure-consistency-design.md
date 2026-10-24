@@ -55,6 +55,8 @@ La decisión de conservar workspaces cuando falla el gate de retención fue corr
 
 La selección incluye el índice, cada input material y cada destino de alias requerido para validar el índice. Los aliases de resultados no se convierten por eso en inputs iniciales: sólo `inputs` representa fuentes materiales que deben fijarse antes del trabajo.
 
+Al reconstruir los bytes seleccionados, conservar la clave original de cada entrada material aunque también sea un alias. Resolver el destino para sus consumidores no sustituye la entrada original ni sus comprobaciones de digest. Preflight rechaza cualquier índice JSON que no sea objeto, incluso si su hash coincide con el capturado.
+
 El adaptador de archivo cargará cada ruta enumerada únicamente desde los bytes candidatos explícitos o desde una entrada hash-verificada de `cierre.hashes`. La existencia de un archivo sin entrada de inventario no autoriza su lectura como evidencia seleccionada. La captura inicial limita índice más fuentes seleccionadas a 64 archivos y 64 MiB agregados. No se importarán todos los archivos del directorio para ocultar una referencia ausente.
 
 Preflight de retención, retain, validate y close usarán esa misma selección y los validadores semánticos existentes. Para un mismo snapshot e inventario válido debe cumplirse: retain exitoso implica validate --require-retained exitoso. Esto no implica limpieza completa ni garantiza el resultado de un posterior --require-complete.
@@ -108,6 +110,8 @@ Es un patrón semántico explícito, no otro despacho ni una corrección de cont
 
 No aceptar destinos inexistentes, futuros, de asignaciones no independientes, de otra asignación, con identidad ya declarada o anotaciones divergentes. Los runs completos rechazan toda anotación. El replay del mismo payload canónico es idempotente y no añade otro evento. La ausencia de evidencia auténtica mantiene la limitación; no permite fabricar un despacho.
 
+En `closing`, resolver primero el alias con el índice retenido, verificar los bytes inventariados y su digest, resolver el fragmento y cotejar su `executor` antes de escribir. Un fragmento inexistente o una identidad discrepante falla sin cambiar el archivo; después puede registrarse la anotación correcta. El replay idéntico con alias devuelve el ID y sequence de la anotación original sin añadir eventos.
+
 La proyección de ejecución completa sólo la identidad del despacho original en memoria y conserva su `sequence`, actor, evidencia y `occurred_at`. Así puede emparejarlo con el resultado original, aunque la anotación se haya registrado después. No se modifica la línea original ni se añade otro resultado. La anotación no cambia perfil, assignments, inputs, timestamps ni estado de cleanup.
 
 El nuevo módulo puro `ccr.contracts.dispatch` valida y proyecta estas anotaciones; se registra en el índice de módulos de `scripts/README.md`. Se usa `python <skill>/scripts artifacts record-event` mediante `archive.lifecycle.record_event` bajo sus guards existentes. No se aceptan anotaciones sobre runs completos ni se eluden transacciones pendientes. Los consumidores antiguos seguirán leyendo JSON schema 1, pero necesitan el helper actualizado para reconocer la anotación como procedencia de un resultado independiente.
@@ -130,12 +134,12 @@ El ciclo completo usa `execution.workspaces.prepare` y `archive.resources.cleanu
 |---|---|
 | A1 | Un índice con descripción y notas produce un mapa inicial con los tres hashes, sin editar el índice ni las identidades dadas. |
 | A2 | Un input omitido, cambiado o no seleccionado falla antes del primer dispatch; las lecturas y preflight no modifican el run. |
-| A3 | Tras retain, validate --require-retained vuelve a resolver inputs y aliases desde el inventario exacto y pasa sin volver a suministrar --evidence-input. |
+| A3 | Tras retain, validate --require-retained vuelve a resolver inputs y aliases desde el inventario exacto, conserva la entrada material original aunque tenga alias y pasa sin volver a suministrar --evidence-input. |
 | A4 | Un archivo presente sin inventario, alterado, link o ruta insegura no se acepta; fallar no inicia cleanup ni crea un nuevo run. |
 | A5 | Un run ya iniciado con captura directa incompleta y descripción unverified puede verificar sus bytes retenidos; su snapshot y descripción no se reescriben. |
 | A6 | Un despacho independiente nuevo sin executor falla sin añadir eventos; provider_id y tiempos desconocidos siguen null. |
-| A7 | Una sola anotación válida permite usar el despacho y resultado originales; replay idéntico no aumenta la traza y los conflictos fallan. |
-| A8 | Una anotación no fabrica dispatch ausente, independencia ni evidencia; mantiene el orden original y los bytes de la traza previa. |
+| A7 | Una sola anotación válida permite usar el despacho y resultado originales; replay idéntico, también con alias en closing, devuelve el evento original sin aumentar la traza y los conflictos fallan. |
+| A8 | Una anotación no fabrica dispatch ausente, independencia ni evidencia; en closing rechaza fragmentos inexistentes o ejecutores discrepantes antes de escribir, mantiene el orden y los bytes previos y permite después una anotación correcta. |
 | A9 | Un ciclo sintético completo conserva fuentes tras eliminar su sesión propia y pasa --require-complete con recibos de cleanup auténticos. |
 | A10 | Documentación distingue check, modelo, retención y cierre; no recomienda duplicar hitos, sondear metadata ni borrar recursos tras un fallo. |
 

@@ -261,4 +261,3 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
     if issues:
         raise ValueError('; '.join(issue['message'] for issue in issues))
     return event
-

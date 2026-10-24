@@ -258,6 +258,8 @@ def _execution_gate(run, manifest, value, contents):
         except (TypeError, ValueError) as exc:
             raise ValueError('selected reference index source selection is invalid: ' + str(exc)) from exc
         selected_sources[index_reference] = index_bytes
+        for row in reference_index['inputs']:
+            selected_sources[row['reference']] = source(row['reference'])
     for event in events:
         if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
             continue

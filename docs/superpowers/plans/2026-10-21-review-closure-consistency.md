@@ -242,6 +242,8 @@ Expected: el caso con índice no vacío reproduce el rechazo posterior a retain;
 
 En `_execution_gate`, parsear el índice seleccionado, enumerar sus rutas mediante Task 1 e incluirlas en requested antes de formar selected_sources. Resolverlas por source(name), que sólo acepta contents o manifest.hashes, conservando verificación y límites existentes. Aplicar el límite de 64 a la selección reconstruida. No usar rglob ni leer un archivo sólo porque exista.
 
+Al reconstruir `selected_sources`, cargar cada `reference_index.inputs[].reference` bajo su clave original, además del destino canónico que utilicen sus consumidores. El preflight debe pasar cualquier JSON parseado a `validate_reference_index`, incluidos lista, null, booleano y string, antes de permitir register/discovery/retain.
+
 Mantener la validación inicial de descripción y requirements; no añadir captura directa a runs processing/closing. Verificar que close usa la misma selección incluso en replay y que validate no escribe checkpoint por defecto. Documentar que conservar evidencia permite verificarla, pero no certificar retroactivamente su captura inicial. El preflight interno de `archive.lifecycle.register` sólo dispone del contexto serializado; por eso no suplanta la comprobación de bytes. El flujo soportado ejecuta antes `setup context`, adaptador que tiene los bytes de la sesión y exige la captura material en estado prepared. El CLI preflight también exige los bytes explícitos. No presentar la llamada directa al mutador con un contexto fabricado como captura probada.
 
 - [x] **Step 4: Comprobar GREEN y regresiones del índice**
@@ -364,7 +366,7 @@ Expected: fallos nuevos por rechazo del status unchanged en builder, falta de gu
 
 - [x] **Step 3: Integrar sin saltar ownership ni transacciones**
 
-Builder event acepta el patrón de Task 4 además de hitos de trabajo. Record_event verifica shape, target y conflictos bajo el lock existente y después de verificar la traza; sólo un replay del mismo payload normalizado retorna sin append. Una anotación diferente para ese target falla. Conservar recover de transacciones pendientes y prohibiciones de runs completos/superseded; una anotación no inicia processing ni regresa closing a processing.
+Builder event acepta el patrón de Task 4 además de hitos de trabajo. Record_event verifica shape, target y conflictos bajo el lock existente y después de verificar la traza; sólo un replay del mismo payload normalizado retorna sin append. En closing, resolver el alias con el índice retenido, verificar sus bytes/digest y fragmento, y cotejar executor antes de anexar; un replay con alias devuelve el ID y sequence originales. Una anotación diferente para ese target falla. Conservar recover de transacciones pendientes y prohibiciones de runs completos/superseded; una anotación no inicia processing ni regresa closing a processing.
 
 En _execution_gate seleccionar la provenance.source de cada anotación reconocida, resolver su fragmento local y comprobar su retención; no hacer IO contra URLs ni interpretar un resumen como fuente. Verificar consistencia de la identidad declarada con el objeto observado seleccionado: éste contiene `executor: {name, provider_id}` y debe coincidir exactamente. La fuente del harness se captura como ese objeto acotado, conservando su procedencia; no se genera desde el paquete de hallazgos.
 
@@ -390,6 +392,8 @@ Run una sola vez `python -B -m unittest discover -s tests -p 'test_*.py'`.
 
 Estado: se inició y avanzó sin errores visibles, pero dejó de emitir salida durante varios minutos; se interrumpió manualmente y no emitió resumen. No cuenta como suite aprobada ni se marca como terminada.
 
+Seguimiento del PR #30: 151/151 pruebas focalizadas aprobadas. La ampliación observó 759 de 782 casos (752 aprobados, 7 omitidos por el entorno); se detuvo por duración en la matriz de transferencia de recursos de reinicio y quedaron 23 sin resultado. El intento monolítico anterior tampoco emitió resumen; su error de recibos pasó aisladamente. Conservar este gate pendiente y consultar el alcance exacto en `docs/validation/2026-10-21-review-closure-consistency.md`.
+
 - [x] **Step 5: Commit**
 
 ```bash
@@ -402,13 +406,13 @@ git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 | Aceptación | Task / prueba principal |
 |---|---|
 | A1 | 1–2: capture_input_sources y CLI inputs con tres hashes |
-| A2 | 2: prepared_material_capture_fails_before_dispatch |
-| A3 | 3: retain_then_validate_reloads_all_indexed_sources |
+| A2 | 2: prepared_material_capture_fails_before_dispatch; preflight_rejects_non_object_reference_index_with_matching_digest en register/discovery/retain |
+| A3 | 3: retain_then_validate_reloads_all_indexed_sources; material_input_alias_survives_revalidation_and_close conserva las claves materiales originales |
 | A4 | 1–3: aliases/rutas/hashes y uninventoried_or_changed_source_blocks_without_cleanup |
 | A5 | 3: processing_unverified_snapshot_is_preserved |
 | A6 | 4–5: independent_start_requires_executor y rechazo durable directo |
-| A7 | 4–5: late_annotation_keeps_original_order_and_result y replay idempotente |
-| A8 | 4–5: targets/conflictos y preservación del prefijo de traza |
+| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes |
+| A8 | 4–5: targets/conflictos y preservación del prefijo de traza; closing_annotation_rejects_invalid_fragment_and_executor_without_writes, con y sin alias y anotación válida posterior |
 | A9 | 5: annotation_and_sources_survive_real_owned_cleanup |
 | A10 | 2 y 5: ejemplos operativos, checks/modelos y gates de cierre |
 

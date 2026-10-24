@@ -72,6 +72,28 @@ class PreflightTests(unittest.TestCase):
         self.assertIn('evidence/notes.json', {issue['reference'] for issue in result['issues']})
         self.assertEqual((manifest, context, sources), before)
 
+    def test_preflight_rejects_non_object_reference_index_with_matching_digest(self):
+        for value in ([], None, False, 'invalid'):
+            for phase in ('register', 'discovery', 'retain'):
+                with self.subTest(value=value, phase=phase):
+                    manifest, context, record, sources = self._guided_preflight_inputs(
+                        state='processing', captured_notes=True)
+                    raw = json.dumps(value).encode('utf-8')
+                    sources['evidence/reference-index.json'] = raw
+                    context['review_inputs']['sources']['evidence/reference-index.json'] = hashlib.sha256(raw).hexdigest()
+                    record['schema_version'] = 8
+                    before = copy.deepcopy((manifest, context, sources))
+
+                    result = preflight.validate_preflight(
+                        phase=phase, manifest=manifest, logical_scope=manifest['logical_scope'],
+                        selection=None, context=context, record=record, sources=sources)
+
+                    self.assertFalse(result['ready'])
+                    self.assertTrue(any(issue['field'] == 'reference_index'
+                                        and 'must be an object' in issue['message']
+                                        for issue in result['issues']))
+                    self.assertEqual((manifest, context, sources), before)
+
     def test_retain_preflight_reports_index_source_errors(self):
         manifest, context, record, sources = self._guided_preflight_inputs(
             state='processing', captured_notes=True, changed_notes=True)
@@ -260,4 +282,3 @@ class PreflightIntegrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

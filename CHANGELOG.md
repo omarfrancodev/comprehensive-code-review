@@ -6,13 +6,13 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ### Fixed
 
-#### Artefactos y contratos
-
-- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run; impedir que evidencia no capturada inicialmente certifique la identidad de la descripción.
-
 #### Perfiles y ejecución
 
-- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo.
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente también mediante aliases.
+
+#### Artefactos y contratos
+
+- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run, conservando las entradas materiales originales aunque tengan alias; rechazar índices JSON que no sean objetos antes del despacho e impedir que evidencia no capturada inicialmente certifique la identidad de la descripción.
 
 ## 3.0.0 — 2026-10-23
 

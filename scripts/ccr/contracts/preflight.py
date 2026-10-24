@@ -161,6 +161,8 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                     issues.append(_issue('invalid_reference', 'reference_index', index_reference,
                                          'prepared review reference index is not valid UTF-8 JSON',
                                          'the captured reference index'))
+                else:
+                    issues.extend(validate_reference_index(index, sources))
                 captured_sources = (context.get('review_inputs', {}).get('sources')
                                     if isinstance(context.get('review_inputs'), dict) else None)
                 index_digest = hashlib.sha256(index_bytes).hexdigest()
@@ -169,8 +171,6 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                                          'reference index is not bound to the initially captured source digest',
                                          index_digest))
                 if isinstance(index, dict):
-                    from ccr.contracts.reference_index import validate_reference_index
-                    issues.extend(validate_reference_index(index, sources))
                     if (phase in {'register', 'discovery'}
                             and manifest.get('state') == 'prepared'):
                         issues.extend(validate_captured_material_sources(

@@ -53,8 +53,8 @@ from ccr.workflow.builders import initial_selection as _initial_selection
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import dispatch as review_dispatch
 from ccr.contracts import review as review_contract
-from ccr.contracts.references import parse_reference as _parse_reference
-from ccr.contracts.reference_index import validate_selection_reference
+from ccr.contracts.references import parse_reference as _parse_reference, resolve_reference
+from ccr.contracts.reference_index import canonical_reference, validate_selection_reference
 from ccr.contracts.reference_types import INITIAL_PROFILE_HISTORY_REFERENCE
 from ccr.contracts import model_usage as review_model_usage
 from ccr.maintenance import metrics as review_metrics
@@ -135,6 +135,36 @@ def _remove_unowned_prepare_directory(run, marker):
     except (OSError, ValueError, TypeError):
         return
 
+
+def _retained_dispatch_identity(run, manifest, reference):
+    """Resolve a closing annotation against its hash-verified retained source."""
+    hashes = manifest.get('hashes', {})
+    context_reference = 'evidence/context.json'
+    if context_reference not in hashes:
+        raise ValueError('closing review requires an already-retained execution context')
+    context = read_json(safe_path(run / context_reference))
+    if not isinstance(context, dict):
+        raise ValueError('retained execution context must be an object')
+    aliases = {}
+    index_reference = context.get('reference_index')
+    if index_reference is not None:
+        if index_reference != 'evidence/reference-index.json' or index_reference not in hashes:
+            raise ValueError('closing review requires an already-retained reference index')
+        index = read_json(safe_path(run / index_reference))
+        if not isinstance(index, dict):
+            raise ValueError('retained reference index must be a JSON object')
+        aliases = index.get('aliases', {})
+    canonical = canonical_reference(reference, aliases)
+    source_path, _ = _parse_reference(canonical, field='dispatch identity provenance')
+    if source_path not in hashes:
+        raise ValueError('closing review requires an already-retained dispatch identity source')
+    raw = safe_path(run / source_path).read_bytes()
+    alias_path, _ = _parse_reference(reference, field='dispatch identity provenance', allow_alias_key=True)
+    if alias_path in aliases and _digest(raw) != aliases[alias_path]['sha256']:
+        raise ValueError('retained dispatch identity source differs from the alias SHA-256 identity')
+    return resolve_reference(canonical, {source_path: raw}, field='dispatch identity source')
+
+
 @_locked_run
 def record_event(run_dir, event_file, execution_metadata=None):
     """Coordinator-only durable writer for a bounded, structured worker milestone."""
@@ -200,12 +230,9 @@ def record_event(run_dir, event_file, execution_metadata=None):
             raise ValueError('; '.join(issue['message'] for issue in issues))
         if manifest['state'] == 'closing':
             source = event.get('provenance', {}).get('source')
-            try:
-                source_path, _ = _parse_reference(source, field='dispatch identity provenance')
-            except (AttributeError, TypeError, ValueError) as exc:
-                raise ValueError('closing review requires an already-retained dispatch identity source') from exc
-            if source_path not in manifest.get('hashes', {}):
-                raise ValueError('closing review requires an already-retained dispatch identity source')
+            observed = _retained_dispatch_identity(run, manifest, source)
+            if not isinstance(observed, dict) or observed.get('executor') != event['executor']:
+                raise ValueError('dispatch identity source does not match recorded executor')
         target = candidate['relations'][0]['target']
         existing = [row for row in previous_events if row.get('kind') == 'agent'
                     and row.get('status') == 'unchanged'

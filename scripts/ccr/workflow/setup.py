@@ -146,4 +146,3 @@ def run_command(command, input_path, output_path):
     return {'status': 'written', 'output': str(path), 'session_id': workspace_manifest['session_id']}
 
 _run_command = run_command
-
