@@ -93,6 +93,8 @@ Un inicio estático del coordinador (`discovery/started`) no requiere ejecutor e
 
 ### 6.2 Anotación acotada en una traza abierta
 
+El estado `agent/unchanged` por sí solo no identifica una anotación: los hitos genéricos históricos conservan su significado, incluso con executor/source null y sin brief ni relaciones. `is_identity_annotation` reconoce intención de recuperar identidad mediante provenance.kind=recovered o una relación records dirigida al namespace local E. Productor, builder, preflight, proyección, replay y selección/verificación de fuentes comparten ese predicado. Un marcador parcial mantiene la obligación de validar todos los campos; no se ignora una recuperación inválida como si fuera un hito genérico. Las observaciones genéricas no proyectan identidad ni requieren seleccionar su provenance.source como evidencia de despacho.
+
 Para un despacho original existente cuyo `executor` sea null, permitir una anotación con los campos ya válidos de trace schema 1:
 
 ```json
@@ -149,7 +151,7 @@ El ciclo completo usa `execution.workspaces.prepare` y `archive.resources.cleanu
 | A7 | Una sola anotación válida permite usar el despacho y resultado originales de discovery o del verificador final; todos los gates consultan el inicio proyectado con su secuencia original. El resultado independiente se vincula al primer despacho de su identidad completa: un inicio anterior al último discovery sigue rechazándose aunque exista otro started posterior del mismo contexto. El flujo same-session mantiene su inicio de etapa. Replay idéntico, también con alias en closing, devuelve el evento original sin aumentar la traza y los conflictos fallan. |
 | A8 | Una anotación no fabrica dispatch ausente, independencia ni evidencia; en closing rechaza fragmentos inexistentes o ejecutores discrepantes antes de escribir, mantiene el orden y los bytes previos y permite después una anotación correcta. |
 | A9 | Un ciclo sintético completo conserva fuentes tras eliminar su sesión propia y pasa --require-complete con recibos de cleanup auténticos. |
-| A10 | Documentación distingue check, modelo, retención y cierre; no recomienda duplicar hitos, sondear metadata ni borrar recursos tras un fallo. |
+| A10 | Documentación distingue check, modelo, retención y cierre; no recomienda duplicar hitos, sondear metadata ni borrar recursos tras un fallo. Hitos agent/unchanged genéricos siguen admitidos y no se reinterpretan al retener, validar o cerrar; los runs históricos completos se validan sin cambiar bytes. |
 
 Pruebas con unittest y fixtures sintéticos: validadores puros de fuentes/dispatch, CLI inputs/context/preflight, integración retain/validate/close, replay e inmutabilidad. No usar el archivo auditado ni un MR real como fixture. Las pruebas de guard de links conservan los skips de privilegios Windows que ya use el proyecto y los declaran explícitamente.
 

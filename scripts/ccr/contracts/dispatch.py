@@ -17,6 +17,25 @@ def _failure(message: str, reference: str | None = None) -> ReferenceIssue:
                   message, 'an observed independent dispatch or a valid records annotation')
 
 
+def is_identity_annotation(event: object) -> bool:
+    """Recognize recovery intent, including partial claims that must be rejected.
+
+    Status alone never upgrades a historical observation into an identity claim.
+    Either recovered provenance or a records link to the local event namespace
+    expresses that intent; F/C and cross-review links remain ordinary milestones.
+    """
+    if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+        return False
+    provenance = event.get('provenance')
+    if isinstance(provenance, dict) and provenance.get('kind') == 'recovered':
+        return True
+    relations = event.get('relations')
+    return isinstance(relations, list) and any(
+        isinstance(row, dict) and row.get('relation') == 'records'
+        and isinstance(row.get('target'), str) and re.fullmatch(r'E[0-9]+', row['target']) is not None
+        for row in relations)
+
+
 def _identity(value: object) -> bool:
     return (isinstance(value, dict) and set(value) == {'name', 'provider_id'}
             and isinstance(value.get('name'), str) and bool(value['name'].strip())
@@ -120,7 +139,7 @@ def _validate_annotation(event: dict, registry: list[dict],
     if isinstance(target, str):
         prior = [row for row in trace_events if isinstance(row, dict)
                  and row is not event and row.get('event_id') != event.get('event_id')
-                 and row.get('kind') == 'agent' and row.get('status') == 'unchanged'
+                 and is_identity_annotation(row)
                  and isinstance(row.get('relations'), list)
                  and any(isinstance(item, dict) and item.get('relation') == 'records'
                          and item.get('target') == target for item in row['relations'])]
@@ -142,7 +161,7 @@ def validate_dispatch_identity_event(event: dict, registry: list[dict],
             if not _identity(event.get('executor')):
                 return [_failure('independent dispatch must record the observed executor')]
         return []
-    if event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+    if is_identity_annotation(event):
         return _validate_annotation(event, registry, trace_events)
     return []
 
@@ -158,8 +177,7 @@ def project_dispatches(trace_events: list[dict], registry: list[dict]
     by_id = {event.get('event_id'): index for index, event in enumerate(starts)
              if isinstance(event.get('event_id'), str)}
     issues: list[ReferenceIssue] = []
-    annotations = [event for event in trace_events if isinstance(event, dict)
-                   and event.get('kind') == 'agent' and event.get('status') == 'unchanged']
+    annotations = [event for event in trace_events if is_identity_annotation(event)]
     for event in annotations:
         current = validate_dispatch_identity_event(event, registry, trace_events)
         issues.extend(current)

@@ -6,7 +6,7 @@ import os
 import re
 
 from ccr.archive import layout as review_layout, trace as review_trace
-from ccr.contracts import model_usage as review_model_usage, preflight as review_preflight
+from ccr.contracts import dispatch as review_dispatch, model_usage as review_model_usage, preflight as review_preflight
 from ccr.contracts.reference_index import (
     reference_source_paths, validate_reference_selection, validate_selection_reference,
 )
@@ -249,7 +249,7 @@ def build_assignment_event(raw: dict, assignment: dict) -> dict:
     if event['kind'] not in {'agent', 'discovery', 'grouped-verification'}:
         raise ValueError('assignment event kind must identify assigned work')
     if (event['status'] not in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
-            and not (event['kind'] == 'agent' and event['status'] == 'unchanged')):
+            and not review_dispatch.is_identity_annotation(event)):
         raise ValueError('assignment event status must identify an observed work milestone')
     issues = review_preflight.validate_assignment_event(event, [assignment])
     if issues:

@@ -260,7 +260,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                                              if event.get('kind') != 'agent'
                                              and event.get('status') == 'started']
     for event in trace_events:
-        if event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+        if dispatch.is_identity_annotation(event):
             provenance = event.get('provenance')
             source = provenance.get('source') if isinstance(provenance, dict) else None
             if not isinstance(source, str) or source not in retained_references:

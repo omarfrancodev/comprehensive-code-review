@@ -167,3 +167,27 @@ La batería de 16 módulos pasó **199/199 en 190.547 s, exit 0, sin omisiones**
 Los ocho negativos puros ahora rechazan el inicio anticipado sin modificar la entrada. Los dos negativos de retención rechazan antes de escribir y conservan el snapshot completo del run. Pasan además D1/V1 recuperados, retain/validate/close con alias anidado, el inicio de etapa same-session y un V1 recuperado con provider explícito distinto del de un despacho anterior homónimo.
 
 La suite global de 791 casos documentada arriba corresponde a `711e89e`, antes de F009. No se repitió la suite completa para este ajuste acotado del contrato; el resultado nuevo es la batería de 199 casos de sus consumidores y perfiles. No se atribuye la corrida global histórica a este candidato. `git diff --check origin/main` también se comprueba sobre el diff acumulado antes del commit.
+
+## Quinto seguimiento del PR #30 — 2026-10-24
+
+El comentario [F010](https://github.com/omarfrancodev/comprehensive-code-review/pull/30#issuecomment-6389433786), sobre `61681362231b20379daaaa2186304468268abb44`, confirma F008/F009 y señala una incompatibilidad introducida por el PR: seleccionar toda observación `agent/unchanged` como anotación obliga a recuperar una identidad y una fuente que el hito histórico nunca declaró.
+
+### Corrección y reproducción
+
+`is_identity_annotation` centraliza la intención semántica: provenance recovered o relación records al namespace de eventos locales `E` seguido de dígitos. El estado unchanged por sí solo no basta. Builder, preflight, mutador/replay, proyección, comprobación de fuente retenida y las tres fases de selección/verificación durable usan el mismo predicado. Las observaciones genéricas no aportan identidad a un despacho ni añaden una obligación de retener su source. Los marcadores parciales de recuperación siguen activando la validación y el rechazo antes de escribir.
+
+La reproducción inicial ejecutó cinco métodos: seis fallos de subcaso y dos errores funcionales, exit 1, 2.073 s. Fallaron cuatro combinaciones genéricas del contrato de dispatch y los controles de ejecución final schema 8/10. El mutador rechazó el hito por campos de anotación ausentes y la retención histórica falló al canonicalizar source null. El control de anotaciones parciales inválidas pasó. Después de corregir el producto, diez pruebas dirigidas pasaron en 3.555 s, exit 0.
+
+### Compatibilidad entre versiones
+
+Se extrajeron los scripts/tests y el catálogo original de `9c3fd6b` en un temporal propio, sin modificar código del helper base. Se usó el fixture sintético focused con entradas capturadas y sin un alias de salida ajeno a F010, para aislarlo del defecto de relectura de aliases ya documentado. La preparación auxiliar necesitó incorporar ese catálogo y retirar ese alias del fixture antes de obtener el control base válido; esos intentos no se contaron como reproducciones de F010.
+
+El helper original grabó un hito genérico agent/unchanged, retuvo y validó dos archivos archive8/layout2/final10/trace1: uno en closing y otro completo. El helper corregido validó ambos sin cambios en sus snapshots. Después cerró el primero conservando el prefijo completo de su traza original; ambos pasaron require-complete y la segunda validación conservó todos los bytes. No se usó un run real ni se parcheó un gate de ejecución.
+
+### Regresiones y alcance
+
+La batería de los mismos 16 módulos del cuarto seguimiento pasó **206/206 en 189.321 s, exit 0, sin fallos, errores ni omisiones**. Incluye siete métodos nuevos: hitos genéricos en dispatch, ejecución schema8/schema10 y preflight; registro en processing/closing; historia retenida y validación completa inmutable; anotaciones parciales rechazadas en contrato y mutador sin escritura. Las regresiones F008/F009 y los límites de arquitectura también pasan.
+
+La revisión final añadió dos controles de referencias externas cuyo texto empieza con E: fallaron al usar sólo startswith y justificaron acotar el namespace a E seguido de dígitos. Tras ese ajuste se volvió a ejecutar todo `test_review_dispatch`: **7/7, exit 0, 0.002 s**, incluidos los nuevos subcasos y los rechazos de anotaciones inválidas. Este ajuste final no se presenta como otra corrida de los 206 casos.
+
+No se repitió la suite global: los 791 casos históricos siguen correspondiendo a `711e89e`. Spec, plan, referencia de trazas, índice de módulos y changelog se actualizan con el criterio compartido. Se comprueba además `git diff --check origin/main` sobre el diff acumulado antes del commit.

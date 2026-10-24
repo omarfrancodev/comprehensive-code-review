@@ -14,7 +14,7 @@ PHASES = {'prepare', 'register', 'discovery', 'retain'}
 
 WORK_KINDS = {'agent', 'discovery', 'grouped-verification'}
 
-WORK_STATUSES = {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped', 'unchanged'}
+WORK_STATUSES = {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
 
 MAX_ISSUES = 100
 
@@ -30,7 +30,7 @@ def validate_assignment_event(event: dict,
                               registry: list[dict]) -> list[ReferenceIssue]:
     """Require work milestones to name an active required assignment brief."""
     if (not isinstance(event, dict) or event.get('kind') not in WORK_KINDS
-            or event.get('status') not in WORK_STATUSES):
+            or (event.get('status') not in WORK_STATUSES and not dispatch.is_identity_annotation(event))):
         return []
     evidence = event.get('evidence')
     if not isinstance(evidence, list) or not evidence:

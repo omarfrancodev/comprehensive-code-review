@@ -49,6 +49,45 @@ class DispatchTests(unittest.TestCase):
         event['executor'] = {'name': 'worker-a', 'provider_id': None}
         self.assertEqual(dispatch.validate_dispatch_identity_event(event, self.registry), [])
 
+    def test_generic_unchanged_milestones_do_not_project_dispatch_identity(self):
+        for source in (None, 'observed harness notice'):
+            for relations in ([], [{'relation': 'records', 'target': 'C001'}],
+                              [{'relation': 'records', 'target': 'External worker observation'}]):
+                with self.subTest(source=source, relations=relations):
+                    event = self.annotation()
+                    event.update(summary='Worker already active; no new dispatch', executor=None,
+                                 provenance={'kind': 'agent', 'source': source},
+                                 evidence=[], relations=relations)
+                    events = [self.start(), event]
+                    before = copy.deepcopy(events)
+
+                    self.assertEqual(dispatch.validate_dispatch_identity_event(event, self.registry), [])
+                    projected, issues = dispatch.project_dispatches(events, self.registry)
+
+                    self.assertEqual(issues, [])
+                    self.assertIsNone(projected[0]['executor'])
+                    self.assertEqual(events, before)
+
+    def test_partial_identity_intent_is_still_rejected(self):
+        for changes in (
+            {'relations': []},
+            {'provenance': {'kind': 'agent', 'source': None}},
+            {'provenance': {'kind': 'recovered', 'source': None}},
+            {'executor': None},
+        ):
+            with self.subTest(changes=changes):
+                event = self.annotation()
+                event.update(changes)
+                events = [self.start(), event]
+                before = copy.deepcopy(events)
+
+                self.assertTrue(dispatch.validate_dispatch_identity_event(event, self.registry, events))
+                projected, issues = dispatch.project_dispatches(events, self.registry)
+
+                self.assertTrue(issues)
+                self.assertIsNone(projected[0]['executor'])
+                self.assertEqual(events, before)
+
     def test_late_annotation_keeps_original_order_and_result(self):
         original = self.start()
         result = {

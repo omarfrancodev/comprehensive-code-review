@@ -254,6 +254,63 @@ class ClosureConsistencyTests(unittest.TestCase):
                                 unavailable_reason='Fixture has no provider counters',
                                 expected_schema=10)
 
+    def generic_agent_event(self):
+        return {
+            'kind': 'agent', 'status': 'unchanged',
+            'summary': 'Worker already active; no new dispatch',
+            'actor': {'kind': 'agent', 'name': 'worker-notice', 'provider_id': None},
+            'executor': None, 'provenance': {'kind': 'agent', 'source': None},
+            'evidence': [], 'relations': [],
+        }
+
+    def test_generic_agent_event_is_recorded_in_processing_and_closing(self):
+        case = self.make_guided_run(complete_capture=True)
+        event = self.write('generic-event.json', self.generic_agent_event())
+        lifecycle.record_event(case['run'], event)
+        self.retain(case)
+        self.write('generic-event.json', dict(self.generic_agent_event(),
+                   provenance={'kind': 'agent', 'source': 'observed harness notice'}))
+        lifecycle.record_event(case['run'], event)
+
+        self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_historical_generic_event_survives_retention_close_and_immutable_validation(self):
+        case = self.make_guided_run(complete_capture=True)
+        run, manifest, marker = lifecycle._load_run(case['run'])
+        # Use the durable trace writer to represent a pre-annotation historical event.
+        # No execution gate is mocked and the historical trace is never rewritten.
+        event = lifecycle.review_trace.event_input(self.generic_agent_event())
+        lifecycle._append_trace(run, manifest, marker, event, helper=False)
+        trace_path = run / 'trazabilidad.jsonl'
+        historical_trace = trace_path.read_bytes()
+
+        self.retain(case)
+
+        self.assertTrue(lifecycle.validate(run, require_retained=True)['retained'])
+        lifecycle.close(run, cleanup='not_needed')
+        self.assertTrue(trace_path.read_bytes().startswith(historical_trace))
+        before = self.snapshot(run)
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+        self.assertTrue(lifecycle.validate(run, require_retained=True)['retained'])
+        self.assertEqual(self.snapshot(run), before)
+
+    def test_partial_identity_annotation_is_rejected_without_trace_writes(self):
+        case = self.make_guided_run(complete_capture=True, late_dispatch=True,
+                                    annotate_dispatch=False, capture_dispatch=True, profile='deep')
+        annotation = self.read(case['annotation'])
+        before = self.snapshot(case['run'])
+        for changes in ({'relations': []},
+                        {'provenance': {'kind': 'agent', 'source': None}},
+                        {'provenance': {'kind': 'recovered', 'source': None}},
+                        {'executor': None}):
+            with self.subTest(changes=changes):
+                invalid = self.write('partial-annotation.json', dict(annotation, **changes))
+                with self.assertRaises(ValueError):
+                    lifecycle.record_event(case['run'], invalid)
+                self.assertEqual(self.snapshot(case['run']), before)
+
     def test_retain_then_validate_reloads_all_indexed_sources(self):
         case = self.make_guided_run(complete_capture=True)
         self.retain(case)

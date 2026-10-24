@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ccr.archive.coordination import _locked_run
+from ccr.contracts.dispatch import is_identity_annotation
 from ccr.archive.evidence import (
     _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object,
     selected_source_bytes, select_preflight_sources,
@@ -177,7 +178,7 @@ def _execution_gate(run, manifest, value, contents):
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
     for event in events:
-        if isinstance(event, dict) and event.get('kind') == 'agent' and event.get('status') == 'unchanged':
+        if is_identity_annotation(event):
             provenance = event.get('provenance')
             source_reference = provenance.get('source') if isinstance(provenance, dict) else None
             if isinstance(source_reference, str):
@@ -258,7 +259,7 @@ def _execution_gate(run, manifest, value, contents):
         for row in reference_index['inputs']:
             selected_sources[row['reference']] = source(row['reference'])
     for event in events:
-        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+        if not is_identity_annotation(event):
             continue
         provenance = event.get('provenance')
         source_reference = provenance.get('source') if isinstance(provenance, dict) else None
@@ -304,7 +305,7 @@ def _execution_gate(run, manifest, value, contents):
     errors = validate_execution_sources(value, context, events, references,
                                        assignment_registry=manifest.get('assignment_registry'))
     for event in events:
-        if not isinstance(event, dict) or event.get('kind') != 'agent' or event.get('status') != 'unchanged':
+        if not is_identity_annotation(event):
             continue
         provenance = event.get('provenance')
         source_reference = provenance.get('source') if isinstance(provenance, dict) else None

@@ -20,6 +20,11 @@ from recovery_fixtures import (context10, current_inputs, historical_prepare,
 
 
 class PreflightTests(unittest.TestCase):
+    def test_generic_agent_unchanged_does_not_require_assignment(self):
+        event = review_trace.event_input({'kind': 'agent', 'status': 'unchanged',
+            'summary': 'Worker already active; no new dispatch', 'evidence': []})
+        self.assertEqual(preflight.validate_assignment_event(event, []), [])
+
     def test_completed_without_assignment_is_rejected(self):
         event = review_trace.event_input({'kind': 'discovery', 'status': 'completed',
             'summary': 'Observed completion', 'evidence': []})

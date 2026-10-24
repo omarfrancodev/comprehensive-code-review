@@ -15,6 +15,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run, conservando las entradas materiales originales aunque tengan alias e impidiendo que evidencia no capturada inicialmente certifique la identidad de la descripción.
 - Rechazar índices JSON que no sean objetos y selecciones de más de 64 archivos o 64 MiB, incluido el índice, antes de aprobar preflight; compartir la autoridad de selección con el builder.
 - Reutilizar al retener de nuevo los bytes del inventario hash-verificado del run exacto, sin exigir resuministrarlos ni leer archivos meramente presentes; conservar la prioridad y validación de candidatos explícitos también en preflight CLI.
+- Conservar los hitos genéricos agent/unchanged de archivos históricos al registrar, retener, revalidar y cerrar; distinguirlos de las recuperaciones de identidad con un criterio compartido, manteniendo el rechazo de anotaciones incompletas y la inmutabilidad de runs completos.
 
 ## 3.0.0 — 2026-10-23
 

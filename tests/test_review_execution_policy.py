@@ -356,6 +356,35 @@ class ExecutionPolicyTests(unittest.TestCase):
 
         self.assertEqual(events, before)
 
+    def test_generic_unchanged_milestone_preserves_schema8_and_schema10_sources(self):
+        from ccr.archive import trace
+        from recovery_fixtures import context10, record10, source_events
+
+        for schema in (8, 10):
+            with self.subTest(schema=schema):
+                value = record8() if schema == 8 else record10()
+                if schema == 8:
+                    context, events, references = source_fixture(value)
+                else:
+                    context, events = context10(value), source_events(value)
+                    references = {context['profile_reference']}
+                    references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+                    references.update(row['reference'] for row in value['coverage']['execution']['results'])
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+                generic = trace.event_input({
+                    'kind': 'agent', 'status': 'unchanged',
+                    'summary': 'Worker already active; no new dispatch',
+                    'actor': {'kind': 'agent', 'name': 'worker-notice', 'provider_id': None},
+                    'executor': None, 'provenance': {'kind': 'agent', 'source': None},
+                    'evidence': [], 'relations': []})
+                generic.update(sequence=len(events) + 1, event_id=f'E{len(events) + 1:06d}')
+                events.append(generic)
+                before = copy.deepcopy(events)
+
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+                self.assertEqual(events, before)
+
     def test_focused_requires_one_actual_context(self):
         value = record8()
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'

@@ -212,8 +212,7 @@ def record_event(run_dir, event_file, execution_metadata=None):
                 raise ValueError('assignment work cannot start a superseded or non-required brief')
             if event['status'] == 'started' and not references.intersection(event['evidence']):
                 raise ValueError('assignment work must start from an active required brief captured in the execution plan')
-    if (manifest['schema_version'] == 8 and event.get('kind') == 'agent'
-            and event.get('status') == 'unchanged'):
+    if manifest['schema_version'] == 8 and review_dispatch.is_identity_annotation(event):
         if manifest['state'] not in {'processing', 'closing'}:
             raise ValueError('dispatch identity annotation requires an already-open review trace')
         if manifest.get('operation', {}).get('disposition') != 'open':
@@ -234,8 +233,7 @@ def record_event(run_dir, event_file, execution_metadata=None):
             if not isinstance(observed, dict) or observed.get('executor') != event['executor']:
                 raise ValueError('dispatch identity source does not match recorded executor')
         target = candidate['relations'][0]['target']
-        existing = [row for row in previous_events if row.get('kind') == 'agent'
-                    and row.get('status') == 'unchanged'
+        existing = [row for row in previous_events if review_dispatch.is_identity_annotation(row)
                     and any(item.get('relation') == 'records' and item.get('target') == target
                             for item in row.get('relations', []) if isinstance(item, dict))]
         payload = {key: event[key] for key in review_trace.FIELDS}
