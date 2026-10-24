@@ -318,6 +318,8 @@ Importar `validate_dispatch_identity_event` directamente en `contracts.preflight
 
 Regresión F008: ampliar `test_late_dispatch_identity_projects_the_original_independent_start` a D1 y V1 con actor coordinador; comprobar inmutabilidad. Añadir `test_late_verifier_identity_does_not_move_early_dispatch_after_discovery` para rechazar un V1 anterior al último discovery aunque su anotación sea posterior, y `test_late_final_verifier_identity_retains_and_closes_without_new_execution` para comprobar retain/validate/close con alias anidado y un único inicio/resultado original. Reproducir primero los fallos de V1 y después exigir que pasen sin mover el inicio.
 
+Regresión F009: compartir también la correlación del resultado con el primer `agent/started` proyectado del mismo brief, executor.name y provider_id, anterior a la finalización. Para independencia, comparar ese despacho original contra el último discovery; no usar otro hito started ni repetir el mismo contexto para renovar su secuencia. En `test_later_start_cannot_replace_early_independent_dispatch`, combinar identidad explícita/recuperada con etapa tardía, provider distinto, coincidencia sólo por actor y repetición de despacho. En `test_fresh_recovered_verifier_ignores_other_provider_dispatch`, comprobar que un provider distinto no se confunde con el del V1 válido. Preservar el positivo D1/V1 y `test_same_session_final_verifier_accepts_grouped_stage_start`. Añadir `test_retention_rejects_early_verifier_with_later_stage_start_without_writes` con eventos registrados por el mutador real y snapshot intacto tras el rechazo, para identidad explícita y recuperada. Ejecutar primero los negativos contra el código anterior y comprobar su fallo funcional.
+
 - [x] **Step 4: Comprobar GREEN**
 
 Run: comando de Step 2 y `python -B -m unittest discover -s tests -p test_review_execution_policy.py -v`.
@@ -409,6 +411,10 @@ Segundo seguimiento: la suite completa terminó 789 casos en 2191.694 s (785 apr
 
 Tercer seguimiento, 2026-10-24: gate completado mediante una ejecución global de los 791 casos en 1970.371 s, exit 0: 788 aprobados, cero errores/fallos y 3 omisiones por privilegios de symlinks de Windows. Se usaron CWD y TEMP/TMP cortos, con la selección completa y sin modificar aserciones ni skips. Pasaron dentro de esa corrida la regresión F008, el caso de recibos antes afectado por longitud de ruta y la matriz completa de adopción antes afectada por permisos. El historial de los intentos anteriores permanece en el informe; su estado pendiente queda superado por esta corrida.
 
+El resultado global anterior corresponde a `711e89e`. El seguimiento F009 valida de nuevo los módulos afectados, incorporando perfiles y controles de correlación temporal, y declara su alcance por separado en el informe. No presentar la corrida histórica de 791 casos como una ejecución sobre la corrección posterior.
+
+Evidencia F009: 199/199 casos de 16 módulos, 190.547 s, exit 0, sin omisiones. Incluye los ocho negativos puros, los dos negativos de retención sin escritura, el positivo V1 recuperado con provider observado y la verificación same-session. No se repitió la suite global; consultar el cuarto seguimiento del informe para la selección exacta y los fallos previos reproducidos.
+
 - [x] **Step 5: Commit**
 
 ```bash
@@ -426,7 +432,7 @@ git commit -m "fix(cierre): conservar procedencia sin repetir ejecuciones"
 | A4 | 1–3: aliases/rutas/hashes y uninventoried_or_changed_source_blocks_without_cleanup |
 | A5 | 3: processing_unverified_snapshot_is_preserved |
 | A6 | 4–5: independent_start_requires_executor y rechazo durable directo |
-| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes; nested_dispatch_alias_passes_builder_closing_mutator_and_replay; proyección pura D1/V1; late_verifier_identity_does_not_move_early_dispatch_after_discovery; late_final_verifier_identity_retains_and_closes_without_new_execution |
+| A7 | 4–5: late_annotation_keeps_original_order_and_result; closing_annotation_alias_replay_returns_original_event_without_writes; nested_dispatch_alias_passes_builder_closing_mutator_and_replay; proyección pura D1/V1; late_verifier_identity_does_not_move_early_dispatch_after_discovery; late_final_verifier_identity_retains_and_closes_without_new_execution; later_start_cannot_replace_early_independent_dispatch; fresh_recovered_verifier_ignores_other_provider_dispatch; same_session_final_verifier_accepts_grouped_stage_start; retention_rejects_early_verifier_with_later_stage_start_without_writes |
 | A8 | 4–5: targets/conflictos y preservación del prefijo de traza; closing_annotation_rejects_invalid_fragment_and_executor_without_writes, con y sin alias y anotación válida posterior |
 | A9 | 5: annotation_and_sources_survive_real_owned_cleanup |
 | A10 | 2 y 5: ejemplos operativos, checks/modelos y gates de cierre |

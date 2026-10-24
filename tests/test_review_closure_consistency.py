@@ -77,7 +77,7 @@ class ClosureConsistencyTests(unittest.TestCase):
                         material_alias: bool = False, dispatch_alias: bool = False,
                         annotate_dispatch: bool = True,
                         dispatch_source: str | None = None, late_assignment: str = 'D1',
-                        profile: str = 'focused') -> dict:
+                        profile: str = 'focused', early_verifier: bool = False) -> dict:
         dispatch_source = dispatch_source or 'evidence/dispatch.json#' + late_assignment
         description, notes = b'MR description captured for the fixture', b'External review notes'
         (self.root / 'description.md').write_bytes(description)
@@ -167,9 +167,10 @@ class ClosureConsistencyTests(unittest.TestCase):
         manifest = self.read(run / 'cierre.json')
         dispatch_identity = None
         dispatch_start = None
-        for row, result in zip(execution['plan'], execution['results']):
+
+        def record_start(row, result):
+            nonlocal dispatch_start, dispatch_identity
             identity = {'name': result['reviewer_context'], 'provider_id': result['provider_id']}
-            role = row['role']
             start_payload = {
                 'kind': 'agent', 'status': 'started', 'summary': 'Synthetic reviewer started',
                 'executor': None if late_dispatch and row['id'] == late_assignment else identity,
@@ -182,6 +183,21 @@ class ClosureConsistencyTests(unittest.TestCase):
                 dispatch_identity = identity
             else:
                 lifecycle.record_event(run, self.write('event-start.json', start_payload))
+
+        if early_verifier:
+            verifier = next(row for row in execution['plan'] if row['id'] == 'V1')
+            result = next(row for row in execution['results'] if row['assignment_id'] == 'V1')
+            record_start(verifier, result)
+        for row, result in zip(execution['plan'], execution['results']):
+            identity = {'name': result['reviewer_context'], 'provider_id': result['provider_id']}
+            role = row['role']
+            if not early_verifier or row['id'] != 'V1':
+                record_start(row, result)
+            else:
+                lifecycle.record_event(run, self.write('event-stage-start.json', {
+                    'kind': 'grouped-verification', 'status': 'started',
+                    'summary': 'Same reviewer starts final verification stage',
+                    'actor': {'kind': 'agent', **identity}, 'evidence': [row['reference']]}))
             lifecycle.record_event(run, self.write('event-result.json', {
                 'kind': 'discovery' if role == 'discovery' else 'grouped-verification',
                 'status': 'completed', 'summary': 'Synthetic reviewer completed',
@@ -284,6 +300,19 @@ class ClosureConsistencyTests(unittest.TestCase):
                    and row['status'] == 'completed' and 'evidence/results.json#V1' in row['evidence']]
         self.assertEqual(starts, [original])
         self.assertEqual(len(results), 1)
+
+    def test_retention_rejects_early_verifier_with_later_stage_start_without_writes(self):
+        for recovered in (False, True):
+            with self.subTest(recovered=recovered):
+                case = self.make_guided_run(complete_capture=True, early_verifier=True,
+                    late_dispatch=recovered, late_assignment='V1', capture_dispatch=recovered,
+                    profile='deep')
+                before = self.snapshot(case['run'])
+
+                with self.assertRaisesRegex(ValueError, 'one fresh verifier after the final discovery batch'):
+                    self.retain(case)
+
+                self.assertEqual(self.snapshot(case['run']), before)
 
     def test_reretain_reuses_inventoried_index_material_and_alias_sources(self):
         case = self.make_guided_run(complete_capture=True, material_alias=True,

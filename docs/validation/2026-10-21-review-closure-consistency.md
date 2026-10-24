@@ -139,3 +139,31 @@ Las omisiones corresponden exclusivamente al privilegio de symlinks de Windows:
 - `LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused`.
 
 El gate amplio del plan queda completado con esas tres limitaciones de entorno declaradas. Los resultados históricos incompletos o con errores siguen registrados arriba; ya no representan el estado de la validación actual. `git diff --check origin/main` se verifica además sobre el diff acumulado antes del commit.
+
+## Cuarto seguimiento del PR #30 — 2026-10-24
+
+El comentario [F009](https://github.com/omarfrancodev/comprehensive-code-review/pull/30#issuecomment-6388770274), sobre `711e89ee4a8925250c01fcf597b2a629d8d1f4d7`, confirma F008 y detecta un defecto preexistente dentro de A7: un despacho V1 anticipado acredita independencia y otro `grouped-verification/started` tardío acredita frescura. Las dos comprobaciones podían aprobar eventos distintos del mismo contexto.
+
+### Corrección
+
+El emparejamiento independiente y el gate final comparten la selección del primer despacho proyectado del brief y la identidad completa del resultado (`executor.name` y `executor.provider_id`), anterior al hito de finalización correspondiente. El despacho original debe ser posterior al último discovery. Un hito de etapa posterior, otra identidad con el mismo nombre, una coincidencia sólo por actor o repetir el mismo contexto no renuevan ese despacho. Se conserva el inicio de etapa estático/same-session, ordenado antes de su resultado.
+
+No se reescriben eventos ni se generan despachos, resultados o runs adicionales para completar metadata. El spec, el plan y el changelog incorporan la correlación explícita.
+
+### Reproducción previa a la corrección
+
+| Selección | Resultado sobre el producto anterior |
+|---|---|
+| `test_later_start_cannot_replace_early_independent_dispatch` y control positivo same-session | 2 métodos, 8 fallos de subcaso y ningún error, exit 1, 0.010 s. Las variantes combinan identidad explícita/recuperada con etapa tardía, provider distinto, coincidencia sólo por actor y repetición del despacho. Cada negativo obtuvo indebidamente `errors=[]`; el control same-session pasó. |
+| `test_retention_rejects_early_verifier_with_later_stage_start_without_writes` | 1 método, 2 fallos de subcaso, exit 1, 2.298 s. La retención real aceptó tanto la identidad explícita como la recuperada, sin lanzar el rechazo esperado. Los eventos se registraron mediante el mutador real y con secuencias consecutivas. |
+
+### Validación de la corrección
+
+La batería de 16 módulos pasó **199/199 en 190.547 s, exit 0, sin omisiones**. Se cargó con `unittest.defaultTestLoader.loadTestsFromNames`, importando tests/scripts mediante rutas absolutas y usando CWD/TEMP/TMP cortos propios:
+
+- `test_review_trace`, `test_review_closure_consistency`, `test_review_setup`, `test_review_preflight`, `test_review_source_selection`, `test_review_reference_index`, `test_review_dispatch`, `test_review_execution_policy`, `test_review_recovery_followup`, `test_review_profiles` y `test_review_profile_names`.
+- `test_script_dependencies`, `test_script_layout`, `test_script_pure_validation`, `test_script_execution_boundaries` y `test_script_resource_boundaries`.
+
+Los ocho negativos puros ahora rechazan el inicio anticipado sin modificar la entrada. Los dos negativos de retención rechazan antes de escribir y conservan el snapshot completo del run. Pasan además D1/V1 recuperados, retain/validate/close con alias anidado, el inicio de etapa same-session y un V1 recuperado con provider explícito distinto del de un despacho anterior homónimo.
+
+La suite global de 791 casos documentada arriba corresponde a `711e89e`, antes de F009. No se repitió la suite completa para este ajuste acotado del contrato; el resultado nuevo es la batería de 199 casos de sus consumidores y perfiles. No se atribuye la corrida global histórica a este candidato. `git diff --check origin/main` también se comprueba sobre el diff acumulado antes del commit.

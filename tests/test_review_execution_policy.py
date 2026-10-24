@@ -284,6 +284,78 @@ class ExecutionPolicyTests(unittest.TestCase):
         self.assertEqual(events[-1]['sequence'], 8)
         self.assertEqual(events, before)
 
+    def test_later_start_cannot_replace_early_independent_dispatch(self):
+        for recovered in (False, True):
+            for later_start in ('stage', 'wrong_provider', 'actor_only', 'repeated_dispatch'):
+                with self.subTest(recovered=recovered, later_start=later_start):
+                    value, context, events, references, start = self.recovered_dispatch(
+                        'V1', early_verifier=True)
+                    identity = copy.deepcopy(events[-1]['executor'])
+                    if not recovered:
+                        events.pop()
+                        start['executor'] = identity
+                    completion = next(event for event in events
+                                      if event['kind'] == 'grouped-verification')
+                    events.remove(completion)
+                    executor = copy.deepcopy(identity)
+                    if later_start == 'wrong_provider':
+                        executor['provider_id'] = 'another-provider-context'
+                    elif later_start == 'actor_only':
+                        executor['name'] = 'another-reviewer'
+                    events.append(dict(
+                        kind='grouped-verification' if later_start == 'stage' else 'agent',
+                        status='started', actor={'kind': 'agent', **identity},
+                        executor=None if later_start == 'stage' else executor,
+                        evidence=['evidence/briefs.json#V1']))
+                    events.append(completion)
+                    for sequence, event in enumerate(events, 1):
+                        event.update(sequence=sequence, event_id=f'E{sequence:06d}')
+                    before = copy.deepcopy(events)
+
+                    errors = validate_execution_sources(value, context, events, references)
+
+                    self.assertTrue(any('one fresh verifier after the final discovery batch' in error
+                                        for error in errors), errors)
+                    self.assertEqual(start['sequence'], 3)
+                    self.assertEqual(events, before)
+
+    def test_same_session_final_verifier_accepts_grouped_stage_start(self):
+        from recovery_fixtures import context10, record10, source_events
+
+        value = record10('focused')
+        context = context10(value)
+        events = source_events(value)
+        start = next(event for event in events if event.get('status') == 'started'
+                     and 'evidence/briefs.json#V1' in event['evidence'])
+        start.update(kind='grouped-verification', executor=None,
+                     actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None})
+        references = {context['profile_reference']}
+        references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+        references.update(row['reference'] for row in value['coverage']['execution']['results'])
+
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+    def test_fresh_recovered_verifier_ignores_other_provider_dispatch(self):
+        value, context, events, references, start = self.recovered_dispatch('V1')
+        result = next(row for row in value['coverage']['execution']['results']
+                      if row['assignment_id'] == 'V1')
+        result['provider_id'] = 'observed-v1-provider'
+        completion = next(event for event in events if event['kind'] == 'grouped-verification')
+        completion['actor']['provider_id'] = result['provider_id']
+        annotation = events[-1]
+        annotation['executor']['provider_id'] = result['provider_id']
+        earlier = copy.deepcopy(start)
+        earlier['executor'] = {'name': result['reviewer_context'], 'provider_id': None}
+        events.insert(2, earlier)
+        for sequence, event in enumerate(events, 1):
+            event.update(sequence=sequence, event_id=f'E{sequence:06d}')
+        annotation['relations'][0]['target'] = start['event_id']
+        before = copy.deepcopy(events)
+
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+        self.assertEqual(events, before)
+
     def test_focused_requires_one_actual_context(self):
         value = record8()
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'

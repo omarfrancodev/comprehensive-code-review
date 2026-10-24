@@ -8,7 +8,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Perfiles y ejecución
 
-- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente mediante aliases planos o anidados seguros. Aplicar la misma proyección al verificador final conservando la secuencia del inicio original y la exigencia de ejecutarlo después del último discovery.
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente mediante aliases planos o anidados seguros. Vincular el resultado y la frescura del verificador independiente al primer despacho proyectado de su identidad completa, posterior al último discovery; otro hito started no renueva un contexto anticipado. Conservar el inicio de etapa para verificación en la misma sesión.
 
 #### Artefactos y contratos
 
