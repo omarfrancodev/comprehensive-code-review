@@ -219,3 +219,37 @@ El helper base creó y validó ocho archivos del formato vigente: plain, recover
 Los 16 módulos de la batería del cuarto seguimiento pasaron **214/214 en 247.844 s, exit 0, sin fallos, errores ni omisiones**. Incluyen ocho métodos nuevos sobre el candidato anterior: variantes históricas, proyección y rechazo del tipo explícito, historia durable, observaciones nuevas compatibles, prohibición de recuperar identidad desde eventos no marcados y ejemplos documentados ejecutados por el builder. Las regresiones previas, los ejemplos CLI y los límites de arquitectura siguen pasando.
 
 No se repitió la suite global: la corrida histórica de 791 casos permanece ligada a `711e89e`. Esta validación usa el protocolo final explícito y los ocho controles entre versiones; no atribuye al candidato nuevo las corridas anteriores. Se comprueba `git diff --check origin/main` antes del commit.
+
+## Séptimo seguimiento del PR #30 — 2026-10-24
+
+El comentario [F011](https://github.com/omarfrancodev/comprehensive-code-review/pull/30#issuecomment-6391307960), sobre `303b2edd7906e9d55b5500a80533f4a8af33d3fc`, confirma F010 y encuentra otro consumidor que aplicaba retrospectivamente una regla de emisión: register recorría el inicio histórico crudo y exigía su executor, aunque una anotación válida ya hubiese recuperado esa identidad en la vista proyectada.
+
+### Separación de responsabilidades
+
+`validate_assignment_event` conserva la admisión estricta de eventos nuevos. `validate_assignment_history`, usada por register, comprueba las anotaciones contra la traza original y recorre los inicios proyectados con sus secuencias originales. Comparte las comprobaciones de brief sin readmitir los despachos históricos. La entrada no se modifica y ninguna anotación se valida contra una copia cuyo executor original ya haya sido sustituido.
+
+La validación de historia comprueba bindings, enlaces y conflictos antes de planificar claims/escrituras. No convierte register en certificación de fuentes ni de independencia: un executor histórico ausente permanece desconocido; los bytes seleccionados y el cumplimiento/fallback siguen sujetos al gate de retención. La admisión de nuevos despachos conserva sus requisitos de identidad y brief no ambiguo.
+
+### Reproducción y regresiones dirigidas
+
+La reproducción anterior a la corrección ejecutó cuatro métodos en 32.491 s, exit 1: tres fallos de aserción y cuatro errores funcionales. El control normal pasó; los casos recuperados D1/V1, la historia aún no recuperada y el contexto refrescado fallaron por `independent dispatch must record the observed executor`. Dos recuperaciones inválidas con destinos incorrectos fueron admitidas por register; el conflicto se rechazó por la regla de emisión en lugar de validar su relación histórica.
+
+Después de corregir el producto pasaron **15/15 pruebas dirigidas en 57.293 s, exit 0**. Cubren:
+
+- Re-registro normal y posterior a recuperaciones D1/V1, adición de un workspace propio, claim auténtico, retención, validación, cleanup real y cierre completo, con un único inicio y prefijo de traza intacto.
+- Re-registro del contexto actualizado de una transición de perfil, seguido de retención/cierre reales.
+- Historia sin recuperación que puede registrar contexto, conserva su estado degraded y no recibe una identidad fabricada.
+- Destinos no válidos, identidad ya conocida y anotaciones divergentes rechazados sin alterar snapshots del run ni del recurso aún no reclamado.
+- Despachos nuevos sin executor o con brief ambiguo todavía rechazados; los bindings históricos siguen comprobándose y las entradas mal formadas reciben errores estructurados.
+
+### Control con el helper real de la base
+
+Se aislaron scripts/tests y catálogo de `9c3fd6b`, sin modificar el código del helper. El fixture de datos omitió executor en D1 o V1 y dejó fuera un alias de salida ajeno al caso. El productor base admitió ambos inicios y register pudo volver a registrar esos runs abiertos. No se parcheó un gate de admisión, registro, retención ni cierre en esta prueba entre versiones.
+
+El helper corregido registró después una anotación explícita con identidad tomada del resultado observado, volvió a registrar el contexto, retuvo las fuentes y completó validate/close/require-complete en ambos casos. El prefijo de traza base permaneció intacto y cada inicio original siguió siendo único, con executor null y exactamente los mismos bytes. No hubo un nuevo despacho para recuperar metadata.
+
+### Batería actual y límites
+
+Los mismos 16 módulos del seguimiento anterior pasaron **220/220 en 289.942 s, exit 0, sin fallos, errores ni omisiones**. Incluyen los seis métodos nuevos de F011, los controles entre admisión e historia, las regresiones F008–F010, los ejemplos documentados, perfiles, recuperación y límites de arquitectura.
+
+No se repitió la suite global: los 791 casos históricos siguen ligados a `711e89e`. Spec, plan, referencias del archivo/traza, índice de módulos y changelog describen el nuevo consumidor de historia. `git diff --check origin/main` se comprueba sobre el diff acumulado antes del commit. Sólo se usaron repositorios, worktrees y runs sintéticos propios.

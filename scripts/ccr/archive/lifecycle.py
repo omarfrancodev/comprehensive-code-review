@@ -544,11 +544,9 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
                 raise ValueError('execution context review_inputs cannot replace the original captured identities')
         assignment_registry = review_profiles.merge_assignment_registry(
             assignment_registry, context['execution_plan'], manifest['profile_history'], existing_trace)
-        for observed in existing_trace:
-            assignment_issues = review_preflight.validate_assignment_event(
-                observed, assignment_registry)
-            if assignment_issues:
-                raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
+        assignment_issues = review_preflight.validate_assignment_history(existing_trace, assignment_registry)
+        if assignment_issues:
+            raise ValueError('; '.join(issue['message'] for issue in assignment_issues))
         references = {row['reference'] for row in assignment_registry}
         for row in existing_trace:
             if (isinstance(row, dict) and row.get('kind') in {'agent', 'discovery', 'grouped-verification'}

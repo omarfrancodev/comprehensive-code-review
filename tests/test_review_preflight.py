@@ -20,6 +20,31 @@ from recovery_fixtures import (context10, current_inputs, historical_prepare,
 
 
 class PreflightTests(unittest.TestCase):
+    def test_history_validation_does_not_readmit_legacy_dispatches(self):
+        reference = 'evidence/briefs.json#shared'
+        registry = [{'id': name, 'role': 'discovery', 'independent': True, 'required': True,
+                     'reference': reference, 'selection_id': 'S001', 'superseded_by': None}
+                    for name in ('D1', 'D2')]
+        for executor in (None, {'name': 'observed-worker', 'provider_id': None}):
+            with self.subTest(executor=executor):
+                event = review_trace.event_input({'kind': 'agent', 'status': 'started',
+                    'summary': 'Historical dispatch', 'executor': executor, 'evidence': [reference]})
+                event.update(event_id='E000001', sequence=1)
+                before = copy.deepcopy(event)
+
+                self.assertTrue(preflight.validate_assignment_event(event, registry))
+                self.assertEqual(preflight.validate_assignment_history([event], registry), [])
+
+                self.assertEqual(event, before)
+        event['evidence'] = ['evidence/briefs.json#not-registered']
+        self.assertTrue(preflight.validate_assignment_history([event], registry))
+
+    def test_history_validation_rejects_non_event_collections(self):
+        for events in (None, {}, [None], ['not-an-event']):
+            with self.subTest(events=events):
+                issues = preflight.validate_assignment_history(events, [])
+                self.assertEqual(issues[0]['code'], 'invalid_assignment_history')
+
     def test_generic_agent_unchanged_does_not_require_assignment(self):
         event = review_trace.event_input({'kind': 'agent', 'status': 'unchanged',
             'summary': 'Worker already active; no new dispatch', 'evidence': []})

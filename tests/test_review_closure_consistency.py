@@ -357,6 +357,111 @@ class ClosureConsistencyTests(unittest.TestCase):
         lifecycle.close(case['run'], cleanup='not_needed')
         self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
 
+    def test_reregister_recovers_history_and_adds_owned_resource_without_new_execution(self):
+        for recovered, assignment in ((False, 'D1'), (True, 'D1'), (True, 'V1')):
+            with self.subTest(recovered=recovered, assignment=assignment):
+                case = self.make_guided_run(complete_capture=True, late_dispatch=recovered,
+                    late_assignment=assignment, capture_dispatch=recovered, profile='deep')
+                trace_path = case['run'] / 'trazabilidad.jsonl'
+                original_trace = trace_path.read_bytes()
+                lifecycle.register(case['run'], [], context_input=case['context'])
+                session = Path(workspaces.prepare(argparse.Namespace(
+                    repo=str(self.repo), ref='HEAD', mode='commit', role=['review'],
+                    include_untracked=[]))['session_dir'])
+                self.owned_sessions.append({'session': session, 'run': case['run']})
+
+                registered = lifecycle.register(case['run'], [str(session)], context_input=case['context'])
+
+                self.assertEqual(registered['temporary_paths'], [str(session)])
+                self.assertEqual(len(registered['resource_claims']), 1)
+                self.assertTrue(trace_path.read_bytes().startswith(original_trace))
+                events = [json.loads(line) for line in trace_path.read_bytes().splitlines()]
+                starts = [row for row in events if row['kind'] == 'agent' and row['status'] == 'started'
+                          and 'evidence/briefs.json#' + assignment in row['evidence']]
+                self.assertEqual(len(starts), 1)
+                if recovered:
+                    self.assertIsNone(starts[0]['executor'])
+                self.retain(case)
+                self.assertTrue(lifecycle.validate(case['run'], require_retained=True)['retained'])
+                cleanup = resources.cleanup_workspace(argparse.Namespace(
+                    manifest=str(session / 'manifest.json'), run_dir=str(case['run'])))
+                lifecycle.close(case['run'], cleanup='complete', residuals=[],
+                                released_claims=cleanup['released_claims'])
+                self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_unrecovered_history_can_register_without_certifying_independence(self):
+        case = self.make_guided_run(complete_capture=True, late_dispatch=True,
+                                    annotate_dispatch=False, capture_dispatch=True, profile='deep')
+        before_trace = (case['run'] / 'trazabilidad.jsonl').read_bytes()
+
+        lifecycle.register(case['run'], [], context_input=case['context'])
+
+        self.assertTrue((case['run'] / 'trazabilidad.jsonl').read_bytes().startswith(before_trace))
+        self.retain(case)
+        retained = self.read(case['run'] / 'review.json')
+        self.assertEqual(retained['coverage']['execution']['status'], 'degraded')
+        events = [json.loads(line) for line in (case['run'] / 'trazabilidad.jsonl').read_bytes().splitlines()]
+        self.assertFalse(any(row['kind'] == 'dispatch-identity' for row in events))
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_reregister_validates_recovery_history_before_claiming_resources(self):
+        for failure in ('non_dispatch_target', 'already_identified_target', 'conflict'):
+            with self.subTest(failure=failure):
+                recovered = failure == 'conflict'
+                case = self.make_guided_run(complete_capture=True, late_dispatch=recovered,
+                                            capture_dispatch=recovered, profile='deep')
+                run, manifest, marker = lifecycle._load_run(case['run'])
+                events = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
+                start = next(row for row in events if row['kind'] == 'agent' and row['status'] == 'started'
+                             and 'evidence/briefs.json#D1' in row['evidence'])
+                target = events[0]['event_id'] if failure == 'non_dispatch_target' else start['event_id']
+                annotation = {
+                    'kind': 'dispatch-identity', 'status': 'unchanged', 'summary': 'Invalid historical recovery',
+                    'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+                    'executor': {'name': 'another-worker' if recovered else 'D1', 'provider_id': None},
+                    'provenance': {'kind': 'recovered', 'source': 'evidence/dispatch.json#D1'},
+                    'evidence': ['evidence/briefs.json#D1', 'evidence/dispatch.json#D1'],
+                    'relations': [{'relation': 'records', 'target': target}],
+                }
+                lifecycle._append_trace(run, manifest, marker,
+                    lifecycle.review_trace.event_input(annotation), helper=False)
+                session = Path(workspaces.prepare(argparse.Namespace(
+                    repo=str(self.repo), ref='HEAD', mode='commit', role=['review'],
+                    include_untracked=[]))['session_dir'])
+                self.owned_sessions.append({'session': session, 'run': run})
+                before_run, before_session = self.snapshot(run), self.snapshot(session)
+                expected = ('divergent identity annotations' if recovered else
+                            'target must be an earlier executor-less dispatch')
+
+                with self.assertRaisesRegex(ValueError, expected):
+                    lifecycle.register(run, [str(session)], context_input=case['context'])
+
+                self.assertEqual(self.snapshot(run), before_run)
+                self.assertEqual(self.snapshot(session), before_session)
+
+    def test_recovered_history_allows_registration_of_refreshed_profile_context(self):
+        case = self.make_guided_run(complete_capture=True, late_dispatch=True,
+                                    late_assignment='V1', capture_dispatch=True, profile='deep')
+        updated = lifecycle.select_profile(case['run'], self.write('next-profile.json', selection_input(
+            'deep', 'explicit', phase='verification', authority='User preserves the deep profile',
+            reference='evidence/context.json#profile_history/1/profile')))
+        context = self.read(case['context'])
+        context['profile_history'] = copy.deepcopy(updated['profile_history'])
+        context['profile_reference'] = updated['profile_history'][-1]['reference']
+        case['context'] = self.write('refreshed-context.json', context)
+        final = self.read(case['record'])
+        final['coverage']['execution']['profile_history'] = copy.deepcopy(updated['profile_history'])
+        case['record'] = self.write('refreshed-final.json', final)
+        original_trace = (case['run'] / 'trazabilidad.jsonl').read_bytes()
+
+        lifecycle.register(case['run'], [], context_input=case['context'])
+
+        self.assertTrue((case['run'] / 'trazabilidad.jsonl').read_bytes().startswith(original_trace))
+        self.retain(case)
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
     def test_processing_unverified_snapshot_is_preserved(self):
         case = self.make_guided_run(complete_capture=False)
         self.retain(case)

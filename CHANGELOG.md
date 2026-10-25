@@ -17,6 +17,10 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Reutilizar al retener de nuevo los bytes del inventario hash-verificado del run exacto, sin exigir resuministrarlos ni leer archivos meramente presentes; conservar la prioridad y validación de candidatos explícitos también en preflight CLI.
 - Conservar los hitos genéricos agent/unchanged de archivos históricos al registrar, retener, revalidar y cerrar, incluso con recovered o records locales; reservar el tipo explícito dispatch-identity para las recuperaciones nuevas, manteniendo el rechazo de anotaciones incompletas y la inmutabilidad de runs completos. El tipo se añade a trace schema 1 y requiere un helper actualizado para leer las anotaciones nuevas.
 
+#### Workspaces y recursos
+
+- Permitir volver a registrar recursos o contexto después de recuperar una identidad histórica, sin exigir reemitir el despacho ni reescribir su inicio. Validar enlaces y conflictos antes de reclamar recursos; conservar la admisión estricta de despachos nuevos y los gates de evidencia/fallback al retener.
+
 ## 3.0.0 — 2026-10-23
 
 ### Changed

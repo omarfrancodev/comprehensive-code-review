@@ -28,7 +28,12 @@ def _ordered(phase: str, issues: list[ReferenceIssue]) -> dict:
 
 def validate_assignment_event(event: dict,
                               registry: list[dict]) -> list[ReferenceIssue]:
-    """Require work milestones to name an active required assignment brief."""
+    """Admit a new work milestone, including its observed dispatch identity."""
+    return _assignment_event_issues(event, registry, admit_dispatch=True)
+
+
+def _assignment_event_issues(event: dict, registry: list[dict], *, admit_dispatch: bool
+                             ) -> list[ReferenceIssue]:
     if (not isinstance(event, dict) or event.get('kind') not in WORK_KINDS
             or (event.get('status') not in WORK_STATUSES and not dispatch.is_identity_annotation(event))):
         return []
@@ -51,12 +56,35 @@ def validate_assignment_event(event: dict,
               and isinstance(row.get('reference'), str)}
     matched = active.intersection(evidence_refs)
     if matched:
+        if not admit_dispatch and event.get('kind') == 'agent' and event.get('status') == 'started':
+            return []
         return dispatch.validate_dispatch_identity_event(event, assignments)
     code = 'unregistered_assignment' if known.intersection(evidence_refs) or evidence_refs else 'missing_assignment'
     reference = next(iter(sorted(evidence_refs)), None)
     return [_issue(code, 'assignment', reference,
                    'work milestone must identify an active required assignment brief captured in the execution plan',
                    'an active required assignment brief from the durable registry')]
+
+
+def validate_assignment_history(events: list[dict], registry: list[dict]) -> list[ReferenceIssue]:
+    """Validate observed bindings and recoveries without readmitting old starts.
+
+    Annotation relations are checked against the original immutable trace first.
+    Projected starts retain their sequence; absent historical identities remain
+    unknown here and must satisfy completion/fallback gates during retention.
+    """
+    if not isinstance(events, list) or any(not isinstance(event, dict) for event in events):
+        return [_issue('invalid_assignment_history', 'assignment.history', None,
+                       'observed assignment history must be an array of event objects',
+                       'the verified original trace events')]
+    projected, issues = dispatch.project_dispatches(events, registry)
+    if issues:
+        return issues
+    starts = iter(projected)
+    for event in events:
+        observed = next(starts) if event.get('kind') == 'agent' and event.get('status') == 'started' else event
+        issues.extend(_assignment_event_issues(observed, registry, admit_dispatch=False))
+    return issues
 
 def validate_preflight(*, phase: str, manifest: dict | None,
                        logical_scope: dict | None, selection: dict | None,
