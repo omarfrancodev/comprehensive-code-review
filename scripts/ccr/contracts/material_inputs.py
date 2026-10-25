@@ -8,6 +8,54 @@ from ccr.contracts.reference_index import (
 from ccr.contracts.references import parse_reference
 
 
+def _captured_material_matches(captured_sources: dict, reference: str,
+                              expected: str, aliases: dict) -> bool:
+    if not isinstance(reference, str) or not isinstance(expected, str):
+        return False
+    if captured_sources.get(reference) == expected:
+        return True
+    if not isinstance(aliases, dict):
+        return False
+    for captured_reference, digest in captured_sources.items():
+        if not isinstance(captured_reference, str) or digest != expected:
+            continue
+        try:
+            canonical = canonical_reference(captured_reference, aliases)
+            alias_path, fragment = parse_reference(
+                captured_reference, field='captured material', allow_alias_key=True)
+        except (TypeError, ValueError):
+            continue
+        alias = aliases.get(alias_path)
+        if (fragment is None and canonical == reference and isinstance(alias, dict)
+                and alias.get('reference') == reference and alias.get('sha256') == expected):
+            return True
+    return False
+
+def validate_captured_material_sources(captured_inputs: dict, index: dict,
+                                       sources: dict[str, bytes]) -> list[ReferenceIssue]:
+    """Require each indexed material input to be included in captured source hashes."""
+    issues = validate_reference_index(index, sources)
+    captured_sources = (captured_inputs.get('sources')
+                        if isinstance(captured_inputs, dict) else None)
+    if not isinstance(captured_sources, dict):
+        issues.append(_issue('missing_input', 'review_inputs.sources', None,
+                             'captured material source map is missing',
+                             'the index and every material input digest'))
+        captured_sources = {}
+    aliases = index.get('aliases', {}) if isinstance(index, dict) else {}
+    rows = index.get('inputs', []) if isinstance(index, dict) else []
+    for number, row in enumerate(rows if isinstance(rows, list) else []):
+        if not isinstance(row, dict):
+            continue
+        reference, expected = row.get('reference'), row.get('sha256')
+        if (isinstance(reference, str) and _is_sha256(expected)
+                and not _captured_material_matches(captured_sources, reference, expected, aliases)):
+            issues.append(_issue('input_changed', f'review_inputs.sources[{reference}]', reference,
+                                 'material source is not part of the initially captured review inputs',
+                                 expected))
+    return _ordered_issues(issues)
+
+
 def validate_material_inputs(record: dict, context: dict, index: dict,
                              sources: dict[str, bytes]) -> list[ReferenceIssue]:
     """Bind guided material identities to selected, hash-verified retained bytes."""
@@ -29,27 +77,6 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
         captured_sources = {}
     aliases = index.get('aliases', {}) if isinstance(index, dict) else {}
 
-    def captured_material_matches(reference, expected):
-        if not isinstance(reference, str) or not isinstance(expected, str):
-            return False
-        if captured_sources.get(reference) == expected:
-            return True
-        if not isinstance(aliases, dict):
-            return False
-        for captured_reference, digest in captured_sources.items():
-            if not isinstance(captured_reference, str) or digest != expected:
-                continue
-            try:
-                canonical = canonical_reference(captured_reference, aliases)
-                alias_path, fragment = parse_reference(
-                    captured_reference, field='captured material', allow_alias_key=True)
-            except (TypeError, ValueError):
-                continue
-            alias = aliases.get(alias_path)
-            if (fragment is None and canonical == reference and isinstance(alias, dict)
-                    and alias.get('reference') == reference and alias.get('sha256') == expected):
-                return True
-        return False
 
     reference_index = context.get('reference_index')
     if reference_index != 'evidence/reference-index.json':
@@ -104,7 +131,7 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
             entry = candidates[0]
             reference = entry.get('reference')
             expected = entry.get('sha256')
-            if not captured_material_matches(reference, expected):
+            if not _captured_material_matches(captured_sources, reference, expected, aliases):
                 add('input_changed', 'description', reference,
                     'description source is not part of the initially captured review inputs', expected)
             actual_identity = identity_digest(description.get('identity'))
@@ -121,7 +148,7 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
                 'a purpose=requirements input or a disclosed limitation')
         elif len(requirements) == 1:
             ref = requirements[0].get('reference')
-            if not captured_material_matches(ref, requirements[0].get('sha256')):
+            if not _captured_material_matches(captured_sources, ref, requirements[0].get('sha256'), aliases):
                 add('input_changed', 'requirements', ref,
                     'requirements source differs from the initially captured inputs',
                     str(requirements[0].get('sha256')))

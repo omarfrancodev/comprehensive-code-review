@@ -42,6 +42,36 @@ For new executions, create assignment events with `scripts setup event` from an 
 
 The coordinator takes actor/executor names and available provider IDs from existing dispatch/results, while recorder remains review_artifacts. Do not infer identity from a summary, fabricate provider IDs or turn recording order into execution order. The temporal metadata adapter does not substitute a model/role label for an observed identity. Missing executor or provider IDs stay null. Workers do not write the durable trace or acquire additional required packet fields.
 
+## Late identity for an original dispatch
+
+A new `agent/started` for an active independent assignment must record the observed executor name. `provider_id` may be null. A static `discovery/started` by the coordinator does not need an external executor. If a run already has an executor-less dispatch, record the observed fact once instead of dispatching that reviewer again. The annotation is limited to an open archive and names the exact earlier `agent/started`, the same active independent brief and a selected local source from dispatch/result metadata.
+
+```json
+{
+  "kind": "dispatch-identity",
+  "status": "unchanged",
+  "summary": "Observed identity for original dispatch; no new execution",
+  "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+  "executor": {"name": "worker-a", "provider_id": null},
+  "provenance": {"kind": "recovered", "source": "evidence/dispatch.json#D1"},
+  "occurred_at": null,
+  "evidence": ["evidence/briefs.json#D1", "evidence/dispatch.json#D1"],
+  "relations": [{"relation": "records", "target": "E000004"}]
+}
+```
+
+The referenced JSON object must carry the same `{ "executor": {"name", "provider_id"} }` value. The coordinator records the event with `setup event` and `record-event`; durable mutation validates the relation against the existing hash-verified trace under its current lock/transaction. Retention selects the provenance source, verifies its fragment and identity, and keeps its bytes for post-cleanup reads. The annotation has `occurred_at: null` because it does not assert when the old execution occurred. Projection completes only the original start in memory; its sequence, actor, evidence, timestamp and the original result remain in place.
+
+The shared `is_identity_annotation` predicate recognizes only `kind: dispatch-identity`, including incomplete payloads or a wrong status that must fail validation. Historical `agent/unchanged` observations keep their meaning even with recovered provenance, records links to local events, or fields resembling an annotation. They never supply a missing dispatch identity or add source-retention requirements. Producer, builder, preflight, projection, replay and source gates use this explicit distinction; complete archives remain immutable during validation.
+
+`dispatch-identity` is an additive external kind in trace schema 1. Archive 8/layout 2 and final schema 10 remain unchanged. Helpers must understand this new kind before emitting or reading new identity annotations; no historical agent event is converted or rewritten to acquire the new semantics.
+
+Re-registering context or additional owned resources validates recovery links against the original trace and uses the projected history without treating old starts as new emissions. This supports re-registration after identity recovery or a profile-context refresh. An unobserved historical executor stays unknown; registration does not certify independence or bypass retention/fallback gates. Invalid recovery history is rejected before resource claims or registration writes. New independent dispatches still require their observed executor at emission.
+
+Replaying the same normalized annotation returns its original event ID/sequence and appends nothing, including when its source uses a retained alias. A divergent annotation, absent/future/foreign target, already-known identity, unselected or mismatched source, or completed run is rejected. During closing, resolve aliases through the retained reference index and verify the selected bytes, alias digest, fragment and matching executor before appending; the review remains in closing. A rejected annotation preserves the trace and owned resources, permits a later valid annotation and never requests another worker run.
+
+Safe nested alias keys such as `evidence/harness/dispatch.json#D1` use the same grammar as the reference index. The builder and projection accept their syntax; closing mutation still requires a declared one-hop alias to selected flat retained bytes with a matching digest, fragment and executor. Accepting the alias syntax does not authorize reading a nested archive path or an unselected file.
+
 Relations are optional observed links, never edges inferred from adjacent events, matching text or ABCDE letters. Use same-run `E000001`, `F001`, `C001`; for a known other review, use `CR-<run_id>#F001`, `CR-<run_id>#C001` or `CR-<run_id>#E000001`. Preserve existing IDs and bounded legacy/external references without renaming them or manufacturing a CR identity. Existing types and limits (24 relations, 8 KiB event) apply.
 
 Archive schemas 5/6 emission requires a local E plus six-digit target to exist in the previously verified trace. Self/future/missing local events fail before mutation. F/C targets may denote assigned candidates later discarded, so no final finding or extra registry is required. Cross-review links do not trigger automatic archive access. Historical structural validation remains unchanged; hashes and target existence do not prove a relation's semantic truth or require sequential execution.

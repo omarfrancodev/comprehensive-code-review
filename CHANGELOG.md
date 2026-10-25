@@ -2,6 +2,25 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.1.0 — 2026-10-25
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente mediante aliases planos o anidados seguros. Vincular el resultado y la frescura del verificador independiente al primer despacho proyectado de su identidad completa, posterior al último discovery; otro hito started no renueva un contexto anticipado. Conservar el inicio de etapa para verificación en la misma sesión.
+
+#### Artefactos y contratos
+
+- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run, conservando las entradas materiales originales aunque tengan alias e impidiendo que evidencia no capturada inicialmente certifique la identidad de la descripción.
+- Rechazar índices JSON que no sean objetos y selecciones de más de 64 archivos o 64 MiB, incluido el índice, antes de aprobar preflight; compartir la autoridad de selección con el builder.
+- Reutilizar al retener de nuevo los bytes del inventario hash-verificado del run exacto, sin exigir resuministrarlos ni leer archivos meramente presentes; conservar la prioridad y validación de candidatos explícitos también en preflight CLI.
+- Conservar los hitos genéricos agent/unchanged de archivos históricos al registrar, retener, revalidar y cerrar, incluso con recovered o records locales; reservar el tipo explícito dispatch-identity para las recuperaciones nuevas, manteniendo el rechazo de anotaciones incompletas y la inmutabilidad de runs completos. El tipo se añade a trace schema 1 y requiere un helper actualizado para leer las anotaciones nuevas.
+
+#### Workspaces y recursos
+
+- Permitir volver a registrar recursos o contexto después de recuperar una identidad histórica, sin exigir reemitir el despacho ni reescribir su inicio. Validar enlaces y conflictos antes de reclamar recursos; conservar la admisión estricta de despachos nuevos y los gates de evidencia/fallback al retener.
+
 ## 3.0.0 — 2026-10-23
 
 ### Changed

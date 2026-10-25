@@ -1,4 +1,5 @@
 """Validation of observed execution and profile-policy evidence."""
+from ccr.contracts import dispatch
 from ccr.workflow.profiles import (
     _assignment_rows, _assignment_started, _text, _trace_rows, validate_history,
 )
@@ -253,10 +254,20 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             and event.get('kind') in ('agent', 'discovery', 'grouped-verification')
             and event.get('status') in ('started', 'completed', 'passed', 'failed', 'blocked', 'skipped')]
     observed_plan = registry if schema10 and isinstance(registry, list) else execution['plan']
+    projected_dispatches, dispatch_issues = dispatch.project_dispatches(trace_events, observed_plan)
+    errors.extend(prefix + issue['message'] for issue in dispatch_issues)
+    observed_starts = projected_dispatches + [event for event in work
+                                             if event.get('kind') != 'agent'
+                                             and event.get('status') == 'started']
+    for event in trace_events:
+        if dispatch.is_identity_annotation(event):
+            provenance = event.get('provenance')
+            source = provenance.get('source') if isinstance(provenance, dict) else None
+            if not isinstance(source, str) or source not in retained_references:
+                errors.append(prefix + 'dispatch identity source is not retained')
     ordinary_refs = {row['reference'] for row in observed_plan if isinstance(row, dict)
                      and isinstance(row.get('reference'), str) and row.get('role') != 'project_gate'}
-    starts = [event for event in work if event.get('status') == 'started'
-              and isinstance(event.get('evidence'), list)
+    starts = [event for event in observed_starts if isinstance(event.get('evidence'), list)
               and ordinary_refs.intersection(event.get('evidence', []))]
     for index, row in enumerate(history):
         if (not isinstance(row, dict) or (not schema10 and set(row) != {'profile', 'reference'})
@@ -298,6 +309,20 @@ def validate_execution_sources(record, context, trace_events, retained_reference
         for row in observed_plan:
             if isinstance(row, dict) and isinstance(row.get('reference'), str) and row['reference'] not in retained_references:
                 errors.append(prefix + 'captured assignment brief/policy source is not retained: ' + str(row.get('id')))
+
+    def original_dispatch(assignment, result, completion):
+        """Bind a result to its first dispatch with the complete observed identity."""
+        completed_sequence = completion.get('sequence')
+        matches = [event for event in observed_starts if event.get('kind') == 'agent'
+                   and event.get('status') == 'started'
+                   and assignment['reference'] in event.get('evidence', [])
+                   and isinstance(event.get('executor'), dict)
+                   and event['executor'].get('name') == result['reviewer_context']
+                   and event['executor'].get('provider_id') == result['provider_id']
+                   and type(event.get('sequence')) is int and type(completed_sequence) is int
+                   and event['sequence'] < completed_sequence]
+        return min(matches, key=lambda event: event['sequence'], default=None)
+
     for result in execution['results']:
         assignment = next(row for row in execution['plan'] if row['id'] == result['assignment_id'])
         kind = 'discovery' if assignment['role'] == 'discovery' else 'grouped-verification'
@@ -311,13 +336,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             errors.append(prefix + 'completed reviewer result lacks matching observed milestone/source')
             continue
         if assignment['independent'] and assignment['id'] not in {item for row in execution['fallbacks'] for item in row['assignments']}:
-            dispatches = [event for event in trace_events if event.get('kind') == 'agent'
-                          and event.get('status') == 'started' and assignment['reference'] in event.get('evidence', [])
-                          and isinstance(event.get('executor'), dict)
-                          and event['executor'].get('name') == result['reviewer_context']
-                          and event['executor'].get('provider_id') == result['provider_id']
-                          and event.get('sequence', 0) < matches[-1].get('sequence', 0)]
-            if not dispatches:
+            if original_dispatch(assignment, result, matches[-1]) is None:
                 errors.append(prefix + 'independent result lacks observed dispatch')
 
     if schema10:
@@ -380,7 +399,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                            and isinstance(event.get('actor'), dict)
                            and (event.get('actor') or {}).get('name') == result['reviewer_context']
                            and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
-            starts_for_verifier = [event for event in trace_events if isinstance(event, dict)
+            starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
                                    and event.get('status') == 'started'
                                    and event.get('kind') in ('agent', 'grouped-verification')
                                    and isinstance(event.get('evidence'), list)
@@ -389,10 +408,21 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                                          and event['executor'].get('name') == result['reviewer_context'])
                                         or (isinstance(event.get('actor'), dict)
                                             and event['actor'].get('name') == result['reviewer_context']))]
-            if any(type(event.get('sequence')) is int and event['sequence'] > last_discovery
-                   for event in completions) and any(type(event.get('sequence')) is int
-                                                     and event['sequence'] > last_discovery
-                                                     for event in starts_for_verifier):
+            fresh = False
+            for completion in completions:
+                completed_sequence = completion.get('sequence')
+                if type(completed_sequence) is not int or completed_sequence <= last_discovery:
+                    continue
+                if assignment.get('independent') is True:
+                    start = original_dispatch(assignment, result, completion)
+                    fresh = start is not None and start['sequence'] > last_discovery
+                else:
+                    fresh = any(type(event.get('sequence')) is int
+                                and last_discovery < event['sequence'] < completed_sequence
+                                for event in starts_for_verifier)
+                if fresh:
+                    break
+            if fresh:
                 final_candidates.append(assignment)
         if len(final_candidates) != 1:
             if execution.get('status') == 'fulfilled':

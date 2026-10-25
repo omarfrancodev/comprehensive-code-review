@@ -5,7 +5,7 @@ import json
 import stat
 import sys
 from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
-from ccr.archive.evidence import _input_object
+from ccr.archive.evidence import _input_object, select_preflight_sources
 from ccr.archive.inspection import inspect_run
 from ccr.archive.integrity import (CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT,
                                    _evidence_name, verify_files as _verify_files)
@@ -38,6 +38,8 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
                 raise ValueError('duplicate selected preflight evidence name: ' + name)
             sources[name] = path.read_bytes()
         record = read_json(input_file, max_bytes=CHECKPOINT_METADATA_LIMIT) if input_file else None
+        if phase in {'register', 'discovery', 'retain'}:
+            sources = select_preflight_sources(run, manifest, sources, context, record)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         return {'error': str(exc)}, 2
     result = review_preflight.validate_preflight(

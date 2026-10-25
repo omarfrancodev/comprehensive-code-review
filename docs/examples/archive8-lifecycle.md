@@ -42,7 +42,7 @@ python /absolute/skill/scripts artifacts prepare \
   --scope-file /absolute/owned/session/evidence/scope.json \
   --current-inputs /absolute/owned/session/evidence/current-inputs.json \
   --profile-input /absolute/owned/session/evidence/profile-selection.json \
-  --skill-version 3.0.0 --harness unknown \
+  --skill-version 3.1.0 --harness unknown \
   --temporary-path /absolute/owned/session --output-root /absolute/archive
 ```
 
@@ -81,12 +81,14 @@ python /absolute/skill/scripts setup context \
 ```
 
 Run registration preflight, then register the context and owned resources. Before dispatch, ensure the registered plan has an active required assignment and pass discovery preflight.
+Each preflight receives the selected index bytes and every material input declared by that index; add one `--evidence-input` flag for each such file.
 
 ```sh
 # ccr-example: preflight-register
 python /absolute/skill/scripts artifacts preflight \
   --run-dir /absolute/returned/run \
-  --context-input /absolute/owned/session/evidence/context.json --phase register
+  --context-input /absolute/owned/session/evidence/context.json --phase register \
+  --evidence-input /absolute/owned/session/evidence/reference-index.json
 ```
 
 ```sh
@@ -101,7 +103,8 @@ python /absolute/skill/scripts artifacts register \
 # ccr-example: preflight-discovery
 python /absolute/skill/scripts artifacts preflight \
   --run-dir /absolute/returned/run \
-  --context-input /absolute/owned/session/evidence/context.json --phase discovery
+  --context-input /absolute/owned/session/evidence/context.json --phase discovery \
+  --evidence-input /absolute/owned/session/evidence/reference-index.json
 ```
 
 Only after the discovery gate passes, dispatch the assignment. Create an event from the actual observed actor, status, brief and time/provider data. The event builder will not add a missing brief or invent an occurrence time.
@@ -115,6 +118,7 @@ Only after the discovery gate passes, dispatch the assignment. Create an event f
       "status": "started",
       "summary": "Observed reviewer dispatch",
       "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+      "executor": {"name": "review-worker", "provider_id": null},
       "occurred_at": null,
       "evidence": ["evidence/briefs.json#D1"]
     },
@@ -131,6 +135,24 @@ python /absolute/skill/scripts artifacts record-event \
   --run-dir /absolute/returned/run \
   --event-file /absolute/owned/session/evidence/dispatch-event.json
 ```
+
+For an already-recorded independent dispatch whose executor was omitted, do not repeat the review. If the harness has a local dispatch record with the observed identity, record one `dispatch-identity/unchanged` annotation against the original start before retention. This recovery applies only to an active independent assignment; it does not apply to the focused, non-independent assignments above. The referenced JSON fragment must contain the same observed `executor` object, and its file must be selected as evidence for retention.
+
+```json
+{
+  "kind": "dispatch-identity",
+  "status": "unchanged",
+  "summary": "Observed identity for original dispatch; no new execution",
+  "actor": {"kind": "coordinator", "name": "coordinator", "provider_id": null},
+  "executor": {"name": "review-worker", "provider_id": null},
+  "provenance": {"kind": "recovered", "source": "evidence/dispatch.json#D1"},
+  "occurred_at": null,
+  "evidence": ["evidence/briefs.json#D1", "evidence/dispatch.json#D1"],
+  "relations": [{"relation": "records", "target": "E000004"}]
+}
+```
+
+Use the actual original event ID and the identity from the local dispatch record. If that record is unavailable or disagrees with the annotation, preserve the run and report the identity as unknown. When checkpointing or retaining this recovery case, include the dispatch record as an explicit evidence input.
 
 Record each later observed result with both its active brief and result references. Checkpoint selected context/packets and the structurally final record when available. A checkpoint stays provisional; source gates still apply at retention.
 
@@ -150,7 +172,8 @@ python /absolute/skill/scripts artifacts checkpoint \
 python /absolute/skill/scripts artifacts preflight \
   --run-dir /absolute/returned/run \
   --context-input /absolute/owned/session/evidence/context.json \
-  --phase retain --input /absolute/owned/session/evidence/final-review.json
+  --phase retain --input /absolute/owned/session/evidence/final-review.json \
+  --evidence-input /absolute/owned/session/evidence/reference-index.json
 ```
 
 ```sh

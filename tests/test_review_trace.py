@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import test_review_artifacts as fixtures
+from ccr.contracts import preflight as review_preflight
 from ccr.archive import lifecycle as lifecycle_ops, transactions as transaction_ops
 
 artifacts = fixtures.artifacts
@@ -51,6 +52,39 @@ class TraceTests(unittest.TestCase):
                 'provenance': {'kind': 'agent', 'source': None},
                 'evidence': ['C01'], 'relations': [{'relation': 'verifies', 'target': 'F01'}]}
 
+    def dispatch_run(self):
+        from recovery_fixtures import context10, record10, selection_input
+        run = self.prepare(profile_input=selection_input('deep'))
+        manifest = self.read(run / 'cierre.json')
+        record = record10('deep')
+        record['coverage']['execution']['profile_history'] = manifest['profile_history']
+        for row in record['coverage']['execution']['plan']:
+            row['selection_id'] = manifest['profile_history'][-1]['id']
+        context = context10(record)
+        context['review_inputs'] = manifest['review_inputs']
+        artifacts.register(run, [], context_input=self.write('dispatch-context.json', context))
+        assignment = next(row for row in context['execution_plan'] if row['id'] == 'D1')
+        start = {'kind': 'agent', 'status': 'started', 'summary': 'Observed prior dispatch',
+                 'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+                 'executor': None, 'provenance': {'kind': 'tool', 'source': 'old dispatcher'},
+                 'evidence': [assignment['reference']], 'relations': [],
+                 'authority': None, 'occurred_at': None}
+        with patch.object(review_preflight.dispatch, 'validate_dispatch_identity_event', return_value=[]):
+            artifacts.record_event(run, self.write('legacy-dispatch.json', start))
+        target = self.events(run)[-1]['event_id']
+        annotation = {'kind': 'dispatch-identity', 'status': 'unchanged',
+            'summary': 'Observed identity for original dispatch; no new execution',
+            'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            'executor': {'name': 'worker-a', 'provider_id': None},
+            'provenance': {'kind': 'recovered', 'source': 'evidence/dispatch.json#D1'},
+            'evidence': [assignment['reference'], 'evidence/dispatch.json#D1'],
+            'relations': [{'relation': 'records', 'target': target}],
+            'authority': None, 'occurred_at': None}
+        return run, assignment, start, annotation
+
+    def archive_snapshot(self, run):
+        return {path.name: path.read_bytes() for path in run.iterdir() if path.is_file()}
+
     def test_new_archive_records_owned_lifecycle_and_complete_is_immutable(self):
         run = self.prepare()
         self.register_empty(run)
@@ -84,6 +118,50 @@ class TraceTests(unittest.TestCase):
         self.assertEqual(event['evidence'], ['C01'])
         self.assertEqual(event['relations'], [{'relation': 'verifies', 'target': 'F01'}])
         self.assertEqual(event['review_id'], 'CR-' + self.read(run / 'cierre.json')['run_id'])
+
+    def test_independent_dispatch_without_executor_is_rejected_by_mutator(self):
+        run, _, start, _ = self.dispatch_run()
+        before = self.archive_snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'executor'):
+            artifacts.record_event(run, self.write('missing-executor.json', start))
+        self.assertEqual(before, self.archive_snapshot(run))
+
+    def test_dispatch_annotation_replay_is_idempotent(self):
+        run, _, _, annotation = self.dispatch_run()
+        annotation_file = self.write('dispatch-annotation.json', annotation)
+        first = artifacts.record_event(run, annotation_file)
+        after_first = self.archive_snapshot(run)
+
+        replay = artifacts.record_event(run, annotation_file)
+
+        self.assertEqual(replay, first)
+        self.assertEqual(self.archive_snapshot(run), after_first)
+
+    def test_dispatch_annotation_preserves_previous_trace_bytes(self):
+        run, _, _, annotation = self.dispatch_run()
+        trace_path = run / 'trazabilidad.jsonl'
+        before = trace_path.read_bytes()
+
+        artifacts.record_event(run, self.write('dispatch-annotation.json', annotation))
+
+        self.assertTrue(trace_path.read_bytes().startswith(before))
+
+    def test_dispatch_annotation_rejects_complete_run_and_conflict(self):
+        run, _, _, annotation = self.dispatch_run()
+        artifacts.record_event(run, self.write('dispatch-annotation.json', annotation))
+        conflicting = dict(annotation, executor={'name': 'worker-b', 'provider_id': None})
+        before = self.archive_snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'divergent|conflict'):
+            artifacts.record_event(run, self.write('conflicting-annotation.json', conflicting))
+        self.assertEqual(before, self.archive_snapshot(run))
+
+        complete = self.prepare()
+        self.retain(complete)
+        self.close(complete)
+        before_complete = self.archive_snapshot(complete)
+        with self.assertRaisesRegex(ValueError, 'immutable'):
+            artifacts.record_event(complete, self.write('late-annotation.json', annotation))
+        self.assertEqual(before_complete, self.archive_snapshot(complete))
 
     def legacy_run(self, version):
         """Build a historical fixture, including matching ownership/inventory."""
