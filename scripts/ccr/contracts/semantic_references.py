@@ -103,6 +103,7 @@ def validate_semantic_references(record: dict, packets: list[dict],
         if isinstance(check, dict):
             local_reference(check.get('reference'), f'checks[{number}].reference')
             scan_text(check.get('evidence'), f'checks[{number}].evidence')
+            scan_text(check.get('purpose'), f'checks[{number}].purpose')
     for number, finding in enumerate(record.get('findings', []) if isinstance(record.get('findings'), list) else []):
         if isinstance(finding, dict):
             for evidence_number, evidence in enumerate(finding.get('evidence', []) if isinstance(finding.get('evidence'), list) else []):

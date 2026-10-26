@@ -29,7 +29,7 @@ def validate_execution(record):
 
     schema_version = record.get('schema_version')
     execution_fields = {'selection_source', 'status', 'plan', 'results', 'fallbacks'}
-    if schema_version == 10:
+    if schema_version in (10, 11):
         execution_fields.add('profile_history')
     if not isinstance(execution, dict) or set(execution) != execution_fields:
         return [prefix + ': exact execution fields required']
@@ -38,7 +38,7 @@ def validate_execution(record):
     if not isinstance(execution['status'], str) or execution['status'] not in ('fulfilled', 'degraded'):
         fail('invalid status')
     plan_fields = {'id', 'role', 'independent', 'required', 'reference'}
-    if schema_version == 10:
+    if schema_version in (10, 11):
         plan_fields |= {'selection_id', 'superseded_by'}
     plan = rows('plan', plan_fields)
     results = rows('results', {'assignment_id', 'reviewer_context', 'provider_id', 'reference'})
@@ -57,17 +57,17 @@ def validate_execution(record):
         if type(row['independent']) is not bool or type(row['required']) is not bool:
             fail('assignment flags must be booleans')
             continue
-        if schema_version == 10 and (not isinstance(row.get('selection_id'), str)
+        if schema_version in (10, 11) and (not isinstance(row.get('selection_id'), str)
                                      or row.get('superseded_by') is not None
                                      and not isinstance(row.get('superseded_by'), str)):
             fail('assignment selection/supersession IDs must be text or null')
             continue
-        if row['required'] is not True and not (schema_version == 10 and row['required'] is False
+        if row['required'] is not True and not (schema_version in (10, 11) and row['required'] is False
                                                  and isinstance(row.get('superseded_by'), str)):
             fail('planned assignments must be required; omit unnecessary passes')
         if row['role'] == 'project_gate' and row['independent'] is not True:
             fail('project_gate must be independent with a policy reference')
-        if schema_version == 10 and row.get('superseded_by') is not None and row.get('role') == 'project_gate':
+        if schema_version in (10, 11) and row.get('superseded_by') is not None and row.get('role') == 'project_gate':
             fail('project_gate cannot be superseded')
     if errors:
         return errors
@@ -76,7 +76,7 @@ def validate_execution(record):
     verification = [row for row in active_plan if row['role'] == 'verification']
     profile = record.get('profile') if isinstance(record.get('profile'), str) else None
     profile_source = execution['selection_source']
-    if schema_version == 10 and isinstance(execution.get('profile_history'), list):
+    if schema_version in (10, 11) and isinstance(execution.get('profile_history'), list):
         history_by_id = {row.get('id'): row for row in execution['profile_history']
                          if isinstance(row, dict) and isinstance(row.get('id'), str)}
         active_rows = [row for row in plan if row.get('superseded_by') is None]
@@ -94,7 +94,7 @@ def validate_execution(record):
                              if isinstance(row, dict) and row.get('profile') == profile), None)
             if selected is not None:
                 profile_source = selected.get('selection_source', profile_source)
-    if schema_version == 10 and profile == 'extended' and isinstance(execution.get('profile_history'), list):
+    if schema_version in (10, 11) and profile == 'extended' and isinstance(execution.get('profile_history'), list):
         history_by_id = {row.get('id'): row for row in execution['profile_history']
                          if isinstance(row, dict) and isinstance(row.get('id'), str)}
         if any(row.get('superseded_by') is None and isinstance(row.get('selection_id'), str)
@@ -106,7 +106,7 @@ def validate_execution(record):
               'extended': (4, 5) if profile_source == 'automatic' else (2, 5)}
     minimum, maximum = limits.get(profile, (0, 0)) if isinstance(profile, str) else (0, 0)
     qualifying_discovery = ([row for row in discovery if row['independent'] is True]
-                            if schema_version == 10 and profile in ('deep', 'extended') else discovery)
+                            if schema_version in (10, 11) and profile in ('deep', 'extended') else discovery)
     if not minimum <= len(qualifying_discovery) <= maximum:
         fail('discovery cardinality does not match profile/selection')
     independent_profile = profile in ('deep', 'extended')
@@ -117,7 +117,7 @@ def validate_execution(record):
                    if isinstance(coverage.get(key), list))
     needs_fresh = independent_profile or profile == 'standard' and (substantive or material)
     needs_verifier = profile == 'focused' or needs_fresh or coverage.get('verification') not in ('skipped', 'unavailable')
-    if schema_version == 10:
+    if schema_version in (10, 11):
         if needs_verifier and not verification:
             fail('verification requires a grouped assignment when applicable')
         if independent_profile and not any(row['independent'] is True for row in verification):
@@ -131,7 +131,7 @@ def validate_execution(record):
             fail('discovery independence required by profile')
         if needs_fresh and any(row['independent'] is not True for row in verification):
             fail('verification independence required by profile')
-    if profile == 'focused' and (schema_version != 10 or not independent_profile) and any(
+    if profile == 'focused' and (schema_version not in (10, 11) or not independent_profile) and any(
             row['independent'] is not False for row in discovery + verification):
         fail('focused uses one discovery and same-context skeptical verification')
     observed = {}
@@ -182,7 +182,7 @@ def validate_execution(record):
     if execution['status'] == 'degraded':
         # An observed fallback pass does not satisfy the planned fresh context.
         missing.update(impeded)
-    if schema_version == 10:
+    if schema_version in (10, 11):
         latest_verifier = verification[-1] if verification else None
         latest_result = observed.get(latest_verifier['id']) if latest_verifier is not None else None
         effective = ('unavailable' if latest_result is None else 'independent' if
@@ -208,7 +208,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
     if errors:
         return errors
     execution = record['coverage']['execution']
-    schema10 = record.get('schema_version') == 10
+    schema10 = record.get('schema_version') in (10, 11)
     prefix = 'coverage.execution.sources: '
     if not isinstance(context, dict) or context.get('profile') != record.get('profile'):
         return [prefix + 'context profile differs from final profile']
@@ -443,7 +443,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
 def validate_profile_execution(record: dict, trace_events: list[dict] | None = None, *,
                                assignment_registry: list[dict] | None = None) -> list[str]:
     """Validate schema-10 history linkage and obligations that cannot be downgraded away."""
-    if not isinstance(record, dict) or record.get('schema_version') != 10:
+    if not isinstance(record, dict) or record.get('schema_version') not in (10, 11):
         return []
     coverage = record.get('coverage')
     execution = coverage.get('execution') if isinstance(coverage, dict) else None

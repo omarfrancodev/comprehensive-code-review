@@ -26,3 +26,23 @@ def dimension_areas():
                  material=False, finding_ids=[],
                  dimensions=[dimension_row(identifier) for identifier in identifiers])
             for area, identifiers in DIMENSIONS.items()]
+
+
+def record11(profile='focused', source='automatic'):
+    from recovery_fixtures import record10
+    from test_review_traceability_contract import check
+    value = record10(profile, source)
+    value['schema_version'] = 11
+    value['coverage']['areas'] = dimension_areas()
+    value['checks'] = [dict(check(), command='python -V', revision=value['scope']['head'],
+        reference=None, execution={'kind': 'static', 'executor': None},
+        evidence='Resultado observado', purpose=PURPOSE)]
+    return value
+
+
+def set_dimension(record, identifier, **updates):
+    from ccr.contracts.dimensions import dimension_summary
+    area = next(row for row in record['coverage']['areas'] if row['area'] == identifier[0])
+    dimension = next(row for row in area['dimensions'] if row['id'] == identifier)
+    dimension.update(updates)
+    area.update(dimension_summary(area['dimensions']))

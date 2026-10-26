@@ -36,9 +36,10 @@ class ScriptExecutionBoundaryTests(unittest.TestCase):
         from ccr.execution.checks import capture_check
         with tempfile.TemporaryDirectory() as directory:
             request = owned_check_request(Path(directory), exit_code=7)
+            request['purpose'] = 'Verify the observed nonzero exit'
             receipt = capture_check(**request)
             self.assertEqual(receipt['exit_code'], 7)
-            self.assertEqual(receipt['schema_version'], 1)
+            self.assertEqual(receipt['schema_version'], 2)
             self.assertIsNotNone(receipt['finished_at'])
 
 

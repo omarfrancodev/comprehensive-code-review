@@ -227,7 +227,7 @@ def validate_preflight(*, phase: str, manifest: dict | None,
         issues.append(_issue('missing_input', 'record', None,
                              'retain preflight is incomplete without a final candidate',
                              'the structurally final review candidate'))
-    elif phase == 'retain' and record.get('schema_version') in (9, 10):
+    elif phase == 'retain' and record.get('schema_version') in (9, 10, 11):
         issues.extend(validate_record_receipts(
             record, sources, context.get('executors', []) if isinstance(context, dict) else []))
     return _ordered(phase, issues)
