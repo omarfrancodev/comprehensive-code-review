@@ -11,6 +11,12 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Capturar cambios efectivos de MR/PR por rutas, modos y contenido, con sidecars privados de materiales/contexto y límites explícitos; conservar los schemas actuales y los archivos históricos inmutables.
 - Evaluar reutilización mediante `artifacts assess-reuse` y builders `setup changes`, `setup materials` y `setup reuse-context`; verificar fuentes, consumidores y selección histórica antes de ofrecer un resultado.
 
+### Changed
+
+#### Artefactos y contratos
+
+- Acotar la clasificación auxiliar de blobs textuales a un prefijo y reutilizar lecturas por objeto dentro de cada captura; mantener hashes completos para binarios, symlinks y contexto, los descriptores existentes y la compatibilidad con revisiones anteriores.
+
 ### Fixed
 
 #### Perfiles y ejecución

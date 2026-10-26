@@ -32,12 +32,20 @@ def parse_raw(raw):
     return rows
 
 
-def _blob_info(repo, oid):
+def _blob_info(repo, oid, *, require_digest=True):
     digest, prefix = hashlib.sha256(), bytearray()
-    for chunk in iter_git_bytes(repo, 'cat-file', 'blob', oid):
-        digest.update(chunk)
-        if len(prefix) < 8000:
-            prefix.extend(chunk[:8000-len(prefix)])
+    stream = iter_git_bytes(repo, 'cat-file', 'blob', oid)
+    try:
+        for chunk in stream:
+            if len(prefix) < 8000:
+                prefix.extend(chunk[:8000-len(prefix)])
+            if not require_digest and len(prefix) == 8000 and b'\0' not in prefix:
+                # Text patches do not retain a blob digest. Never label this
+                # prefix as a complete hash; binary transitions can request it later.
+                return None, False
+            digest.update(chunk)
+    finally:
+        stream.close()
     return digest.hexdigest(), b'\0' in prefix
 
 
@@ -79,16 +87,21 @@ def collect_effective_changes(repo, scope, *, target_head):
             max_output_bytes=4*1024*1024))
         if len(rows) > MAX_ENTRIES:
             raise ValueError('effective changes exceed entry limit')
-        patch_size = 0
+        patch_size, blobs = 0, {}
+        def blob_info(oid, require_digest=False):
+            if oid not in blobs or (require_digest and blobs[oid][0] is None):
+                blobs[oid] = _blob_info(repo, oid, require_digest=require_digest)
+            return blobs[oid]
         for row in rows:
             paths, hashes, binary = {}, {}, False
+            modes = {row['old_mode'], row['new_mode']}
             for side in ('old', 'new'):
                 exists = row[side+'_mode'] != '000000'
                 paths[side+'_path_b64'] = _b64(row['path']) if exists else None
                 paths[side+'_mode'] = row[side+'_mode'] if exists else None
                 paths[side+'_blob'] = row[side+'_blob'] if exists else None
-                if exists and row[side+'_mode'] != '160000':
-                    digest, is_binary = _blob_info(repo, row[side+'_blob'])
+                if exists and '160000' not in modes:
+                    digest, is_binary = blob_info(row[side+'_blob'], require_digest='120000' in modes)
                     hashes[side+'_sha256'] = digest
                     binary |= is_binary
                 else:
@@ -98,6 +111,9 @@ def collect_effective_changes(repo, scope, *, target_head):
                 kind = 'gitlink'
                 payload = {side+'_commit': paths[side+'_blob'] for side in ('old','new')}
             elif '120000' in modes or binary:
+                for side in ('old', 'new'):
+                    if paths[side+'_blob'] is not None:
+                        hashes[side+'_sha256'] = blob_info(paths[side+'_blob'], require_digest=True)[0]
                 kind, payload = ('symlink' if '120000' in modes else 'binary'), hashes
             else:
                 kind = 'text'
@@ -128,7 +144,7 @@ def collect_effective_changes(repo, scope, *, target_head):
 def collect_context_files(repo, comparison, files):
     if len(files) > MAX_ENTRIES:
         raise ValueError('context inventory exceeds entry limit')
-    trees, result = {}, []
+    trees, digests, result = {}, {}, []
     for row in files:
         side, path = row['side'], decode_path(row['path_b64'])
         if side not in ('base', 'head'):
@@ -146,6 +162,11 @@ def collect_context_files(repo, comparison, files):
         if path not in trees[side]:
             raise ValueError('inspected context path is absent from the pinned tree')
         mode, oid = trees[side][path]
-        digest = hashlib.sha256(oid.encode()).hexdigest() if mode == '160000' else _blob_info(repo, oid)[0]
+        if mode == '160000':
+            digest = hashlib.sha256(oid.encode()).hexdigest()
+        else:
+            if oid not in digests:
+                digests[oid] = _blob_info(repo, oid)[0]
+            digest = digests[oid]
         result.append(dict(side=side, path_b64=row['path_b64'], mode=mode, content_sha256=digest))
     return sorted(result, key=lambda row: (row['side'], decode_path(row['path_b64'])))
