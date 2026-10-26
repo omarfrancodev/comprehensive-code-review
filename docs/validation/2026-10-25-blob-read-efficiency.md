@@ -6,7 +6,7 @@ Fecha local: 2026-10-25, America/Mexico_City. Cambio sobre `8ebb952`; implementa
 
 ## Estado
 
-Implementación y validación completadas: **874 casos en 80 módulos; 871 aprobados, 3 omitidos por privilegio de enlaces simbólicos en Windows, cero fallos y errores**. Revisión estática independiente sin hallazgos accionables. La publicación de la rama mediante PR es el paso posterior autorizado.
+Implementación y validación completadas: **874 casos en 80 módulos; 871 aprobados, 3 omitidos por privilegio de enlaces simbólicos en Windows, cero fallos y errores**. Revisión estática independiente sin hallazgos accionables. Rama publicada y PR #31 creado hacia main.
 
 ## Resultado funcional y de lecturas
 
@@ -61,3 +61,7 @@ Se conserva `ccr-effective-diff-v1`, la estructura del descriptor y los schemas 
 Revisión de solo lectura de `4fab306..0ae6509`, con prioridad al delta de rendimiento `8ebb952..0ae6509`, en contexto fresco configurado con gpt-6-astra/high. Sin hallazgos críticos, importantes o menores, ni comportamientos dejados sin juzgar por alcance. El reviewer no ejecutó pruebas y condicionó la preparación para PR a la suite completa del coordinador.
 
 Comprobó clasificación y promoción de digest, mezclas texto/binario/symlink, gitlinks, objetos repetidos, límites NUL, texto corto/vacío, cierre y errores del stream, cachés locales, contexto compartido, consumidores de reutilización y archivos históricos, límites de memoria y alcance real de la medición. También verificó `git diff --check` del rango. La lista inicial etiquetada como descartes fue aclarada por el reviewer: eran comprobaciones efectuadas, sin comportamientos omitidos del juicio.
+
+## Publicación verificada
+
+Push normal de `docs/review-equivalence-and-coverage` y [PR #31](https://github.com/omarfrancodev/comprehensive-code-review/pull/31) abierto hacia `main`, sin merge ni release. Se leyeron de nuevo el título, cuerpo y referencias desde GitHub: base `4fab306`, head inicial publicado `d58af10`, rama correcta, no draft y sin conflictos observados en esa comprobación. La documentación de cierre se publica después, sin cambiar el código de ejecución probado en `0ae6509`.

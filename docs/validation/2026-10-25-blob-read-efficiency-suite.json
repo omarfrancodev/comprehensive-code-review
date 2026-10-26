@@ -314,5 +314,17 @@
     "failures": 0,
     "errors": 0,
     "skipped": 0
+  },
+  "publication": {
+    "url": "https://github.com/omarfrancodev/comprehensive-code-review/pull/31",
+    "number": 31,
+    "base": "main",
+    "base_sha": "4fab30695bb3c0c47071eb887b38f92328b03ea2",
+    "head": "docs/review-equivalence-and-coverage",
+    "initial_published_head": "d58af10cdbe6b3b0a31495f33875b3069683afa6",
+    "state": "open",
+    "draft": false,
+    "title_body_refs_verified": true,
+    "merged": false
   }
 }
