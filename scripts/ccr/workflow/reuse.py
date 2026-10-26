@@ -143,3 +143,19 @@ def validate_reuse_evidence(scope,index,sources,*,require_context=False):
             raise ValueError('incomplete materials cannot certify complete review context')
     elif require_context:
         raise ValueError('guided reuse evidence needs final review context')
+
+
+def decide_reuse(code,context,*,has_prior,current_scope_ready):
+    if code.get('code_equivalence') not in ('equivalent','different','unknown') or context.get('applicability') not in ('applicable','changed','unknown'):
+        raise ValueError('invalid reuse comparison state')
+    action = ('blocked_current_scope' if not current_scope_ready else
+              'offer_choice' if has_prior and code['code_equivalence']=='equivalent'
+              and context['applicability']=='applicable' else 'new_review')
+    reasons = copy.deepcopy(code.get('reasons',[])+context.get('reasons',[]))
+    if not current_scope_ready:
+        reasons.append(dict(code='current_scope_unknown',detail='Acquire the current scope before review.'))
+    elif not has_prior:
+        reasons.append(dict(code='no_reusable_result',detail='No unambiguous verified previous result.'))
+    return dict(action=action,code_equivalence=code['code_equivalence'],
+        applicability=context['applicability'],reasons=reasons,
+        changed_paths=copy.deepcopy(code.get('changed_paths',[])),metadata_only=code.get('metadata_only',False))
