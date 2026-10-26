@@ -11,6 +11,7 @@ from test_review_reuse_archive import current_sources
 from ccr.archive.reuse import assess_reuse
 from ccr.archive import reuse
 from ccr.archive.layout import logical_scope
+from ccr.contracts.effective_changes import compare_effective_changes
 from ccr.execution.change_scope import collect_effective_changes, collect_context_files
 from ccr.workflow.reuse import build_review_context,CONTEXT
 from recovery_fixtures import selection_input
@@ -203,8 +204,14 @@ class ReuseFlowTests(unittest.TestCase):
                         rebase=False, claimed_parent_id=None):
         from test_review_effective_changes import b64
         template=self.read(self.final)
+        if changed_y:
+            self.git('checkout','target')
         (self.repo/'flow-y.py').write_text('independent flow Y = 1\n')
         self.git('add','flow-y.py'); self.git('commit','-m','flow Y')
+        if changed_y:
+            base=self.git('rev-parse','HEAD')
+            self.git('checkout','feature'); self.git('rebase','target')
+            self.actual_scope=dict(self.actual_scope,base=base)
         self.actual_scope=dict(self.actual_scope,head=self.git('rev-parse','HEAD'))
         self.scope=self.write('scope.json',self.actual_scope)
         def ordinary(record):
@@ -219,8 +226,12 @@ class ReuseFlowTests(unittest.TestCase):
             for name in (b'code.txt',b'flow-y.py')])
         parent_record=self.read(parent/'review.json')
         if changed_y:
+            self.git('checkout','target')
             (self.repo/'flow-y.py').write_text('independent flow Y = 2\n')
             self.git('add','flow-y.py'); self.git('commit','-m','change Y outside follow-up')
+            base=self.git('rev-parse','HEAD')
+            self.git('checkout','feature'); self.git('rebase','target')
+            self.actual_scope=dict(self.actual_scope,base=base)
         if empty_commit:
             self.git('commit','--allow-empty','-m','metadata only')
         if rebase:
@@ -262,7 +273,10 @@ class ReuseFlowTests(unittest.TestCase):
         self.assertEqual(result['action'],'new_review',result)
 
     def test_linked_ordinary_context_y_change_invalidates_x_only_rereview(self):
-        self.linked_rereview(changed_y=True)
+        parent,child=self.linked_rereview(changed_y=True)
+        self.assertEqual(compare_effective_changes(
+            self.read(parent/'evidence/effective-changes.json'),
+            self.read(child/'evidence/effective-changes.json'))['code_equivalence'],'equivalent')
         result=self.assess()
         self.assertEqual(result['action'],'new_review',result)
 
