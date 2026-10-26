@@ -92,3 +92,5 @@ El tercer lote encontró cuatro subcasos fallidos de una única prueba de invent
 
 
 **Mejora menor diferida:** el colector lee/hashea ambos blobs textuales completos al clasificarlos y luego conserva solo hunks; la recaptura actual repite trabajo. Es I/O adicional concreto para archivos grandes. No se midió latencia. Una mejora posterior puede separar prefijos de hashes completos y agrupar consultas, con pruebas de preservación de bytes. No afecta las decisiones conservadoras de esta entrega.
+
+**Seguimiento posterior:** la lectura auxiliar por prefijo y la reutilización por OID dentro de cada captura se implementaron en `0ae6509`. Sus mediciones, pruebas y límites están en la [validación de lecturas eficientes](2026-10-25-blob-read-efficiency.md); el registro anterior conserva los resultados observados antes de esa mejora.
