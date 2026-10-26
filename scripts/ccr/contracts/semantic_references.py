@@ -71,6 +71,11 @@ def validate_semantic_references(record: dict, packets: list[dict],
         for number, area in enumerate(coverage.get('areas', []) if isinstance(coverage.get('areas'), list) else []):
             if isinstance(area, dict):
                 scan_text(area.get('details'), f'coverage.areas[{number}].details')
+                dimensions = area.get('dimensions')
+                for dimension_number, dimension in enumerate(dimensions if isinstance(dimensions, list) else []):
+                    if isinstance(dimension, dict):
+                        scan_text(dimension.get('details'),
+                                  f'coverage.areas[{number}].dimensions[{dimension_number}].details')
         execution = coverage.get('execution')
         if isinstance(execution, dict):
             plans = execution.get('plan', [])
