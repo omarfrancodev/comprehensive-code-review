@@ -1,5 +1,7 @@
 # Mapa de módulos de `scripts/ccr`
 
+- `scripts/ccr/contracts/checks.py`: contrato puro de propósito de checks y recibos nuevos.
+
 - `scripts/ccr/contracts/dimensions.py`: catálogo y coherencia de las 27 dimensiones de final 11, sin IO.
 
 `scripts/__main__.py` es la entrada ejecutable instalada (`python <skill>/scripts ...`). `ccr.cli.main.AREAS` es el registro fijo de las doce áreas. Los parsers y traducciones de errores viven en `ccr.cli`; las operaciones de dominio viven en su propietario por área. El launcher carga sólo el parser solicitado, y la ayuda raíz no inicia servicios.

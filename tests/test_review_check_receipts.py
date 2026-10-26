@@ -24,6 +24,7 @@ from script_test_support import workspace_api
 review_workspace = workspace_api()
 from recovery_fixtures import context10, record10
 from test_review_traceability_contract import check as base_check
+from traceability_fixtures import PURPOSE
 
 
 def valid_receipt():
@@ -200,7 +201,7 @@ class CaptureCheckTests(unittest.TestCase):
                     'import json,sys; print(json.dumps(sys.argv[1:]))',
                     'a b', '$value', '`tick`']
             output_dir = evidence / 'attempt-1'
-            request = {'check_id': 'C001', 'argv': argv, 'cwd': str(cwd),
+            request = {'check_id': 'C001', 'purpose': PURPOSE, 'argv': argv, 'cwd': str(cwd),
                        'command': shlex.join(argv), 'revision': revision, 'executor': 'X1',
                        'executor_workspace': str(cwd),
                        'output_dir': str(output_dir)}
@@ -209,6 +210,8 @@ class CaptureCheckTests(unittest.TestCase):
             receipt = receipts.capture_check(**request)
             stdout_path = output_dir / Path(receipt['stdout']['reference']).name
             self.assertEqual(receipt['argv'], argv)
+            self.assertEqual(receipt['schema_version'], 2)
+            self.assertEqual(receipt['purpose'], PURPOSE)
             self.assertEqual(receipt['exit_code'], 0)
             self.assertEqual(json.loads(stdout_path.read_text(encoding='utf-8')),
                              ['a b', '$value', '`tick`'])
@@ -225,6 +228,7 @@ class CaptureCheckTests(unittest.TestCase):
             failed_dir = evidence / 'attempt-2'
             failed_argv = [sys.executable, '-c', 'raise SystemExit(7)']
             failed = receipts.capture_check(
+                purpose=PURPOSE,
                 check_id='C001', argv=failed_argv, command=shlex.join(failed_argv),
                 cwd=str(cwd), executor_workspace=str(cwd), revision=revision,
                 executor='X1', output_dir=str(failed_dir))
@@ -233,7 +237,7 @@ class CaptureCheckTests(unittest.TestCase):
             request_path = root / 'request.json'
             cli_argv = [sys.executable, '-c', 'raise SystemExit(9)']
             request_path.write_text(json.dumps({
-                'check_id': 'C001',
+                'check_id': 'C001', 'purpose': PURPOSE,
                 'argv': cli_argv, 'command': shlex.join(cli_argv),
                 'cwd': str(cwd), 'executor_workspace': str(cwd),
                 'revision': revision, 'executor': 'X1',
@@ -264,6 +268,7 @@ class CaptureCheckTests(unittest.TestCase):
 
             try:
                 receipt = receipts.capture_check(
+                purpose=PURPOSE,
                     check_id='C001', argv=argv, command=shlex.join(argv), cwd=str(cwd),
                     executor_workspace=str(cwd), revision=revision, executor='X1',
                     output_dir=str(output_dir))
@@ -271,6 +276,8 @@ class CaptureCheckTests(unittest.TestCase):
                 self.fail('capture rejected the canonical literal argv: ' + str(exc))
 
             self.assertEqual(receipt['argv'], argv)
+            self.assertEqual(receipt['schema_version'], 2)
+            self.assertEqual(receipt['purpose'], PURPOSE)
             self.assertEqual(receipt['exit_code'], 0)
             stdout_path = output_dir / Path(receipt['stdout']['reference']).name
             self.assertEqual(stdout_path.read_text(encoding='utf-8'), 'first\nsecond\n')
@@ -284,7 +291,7 @@ class CaptureCheckTests(unittest.TestCase):
             cwd.mkdir()
             with patch.object(checks_ops.subprocess, 'run') as run:
                 with self.assertRaises((ValueError, OSError)):
-                    receipts.capture_check(check_id='C001', argv=[sys.executable, '-V'],
+                    receipts.capture_check(purpose=PURPOSE, check_id='C001', argv=[sys.executable, '-V'],
                                            command=shlex.join([sys.executable, '-V']),
                                            cwd=str(cwd), executor_workspace=str(cwd),
                                            revision='head', executor='X1',
@@ -300,7 +307,7 @@ class CaptureCheckTests(unittest.TestCase):
             argv = [sys.executable, '-c',
                     'from pathlib import Path; Path(__import__("sys").argv[1]).write_text("ran")',
                     str(marker)]
-            common = {'check_id': 'C001', 'argv': argv, 'cwd': str(cwd),
+            common = {'check_id': 'C001', 'purpose': PURPOSE, 'argv': argv, 'cwd': str(cwd),
                       'revision': 'head', 'executor': 'X1',
                       'output_dir': str(root / 'session' / 'evidence' / 'attempt-1')}
 
@@ -346,6 +353,7 @@ class CaptureCheckTests(unittest.TestCase):
                 run.return_value = subprocess.CompletedProcess(['python', '-V'], 0)
                 with self.assertRaisesRegex(ValueError, 'executor X1 is registered to another workspace'):
                     receipts.capture_check(
+                purpose=PURPOSE,
                         check_id='C001', argv=[sys.executable, '-V'],
                         command=shlex.join([sys.executable, '-V']),
                         cwd=str(workspace_b), executor_workspace=str(workspace_b),

@@ -10,6 +10,9 @@ from ccr.execution import workspaces as workspace_ops
 from ccr.execution.checks import _read_request, capture_check
 
 def main(argv=None, *, prog=None):
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, 'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
     run = commands.add_parser('run', help='Run one explicit local check and write a new receipt')
