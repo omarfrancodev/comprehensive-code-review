@@ -13,7 +13,7 @@ from ccr.archive.lifecycle import validate as validate_archive
 from ccr.contracts import review as review_contract, validation
 from ccr.reporting import markdown
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
-from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render as render_record
+from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import contains, safe_path
@@ -230,7 +230,7 @@ def _context_markdown(context, projection):
 def _human(text):
     return re.sub(r'retained:[0-9a-f]{64}(?:\\)?#ref-[0-9a-f]{16}', 'referencia interna no incluida', text)
 
-def _brief(record):
+def _brief(record, *, evidence_by_finding=None):
     scope = record['scope']
     lines = ['## Resumen de revisión', '', '### Veredicto: **' + validation.VERDICTS[record['verdict']] + '**', '',
              markdown.markdown_text(record['verdict_reason']), '',
@@ -264,7 +264,9 @@ def _brief(record):
         for key, label in [('scenario', 'Escenario'), ('impact', 'Impacto'), ('correction', 'Corrección requerida')]:
             lines.append('  - **' + label + ':** ' + markdown.markdown_text(item[key]))
         lines.append('  - **Evidencia:**')
-        lines.extend('  ' + line for line in evidence_lines(evidence_groups(item['evidence'], {c['id']: c for c in record['checks']})))
+        groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None else
+                  evidence_groups(item['evidence'], {c['id']: c for c in record['checks']}))
+        lines.extend('  ' + line for line in evidence_lines(groups))
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
     lines.extend(['', '### Validación', ''])
@@ -347,6 +349,15 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     if destination.exists():
         raise ValueError('delivery destination already exists')
     projection = _Projection(record, manifest, project, source_hash)
+    # Exact-source equality and origin grouping must precede lossy prose
+    # sanitization: distinct private paths can project to the same text.
+    ledger = {check['id']: check for check in record['checks']}
+    evidence_by_finding = {}
+    for finding in record['findings']:
+        groups = evidence_groups(finding['evidence'], ledger)
+        for group in groups:
+            group['details'] = [projection.text(detail) for detail in group['details']]
+        evidence_by_finding[finding['id']] = groups
     portable = projection.value(record)
     errors = review_contract.validate(portable)
     if errors:
@@ -354,8 +365,8 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11) else 'identidad de archivo ' + identifier
     notice = ('\n> Proyección portable de la revisión retenida (' + source_label + '). No es una nueva revisión ni una nueva ejecución. '
               'Comandos y referencias privadas omitidos; la procedencia e integridad se registran en .ccr-delivery.json.\n')
-    files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable)) + notice).encode('utf-8')}
-             if delivery == 'full' else {'resumen.md': (_human(_brief(portable)) + notice).encode('utf-8')})
+    files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable, evidence_by_finding)) + notice).encode('utf-8')}
+             if delivery == 'full' else {'resumen.md': (_human(_brief(portable, evidence_by_finding=evidence_by_finding)) + notice).encode('utf-8')})
     contextual = _context_markdown(context, projection)
     if contextual is not None:
         files['contexto.md'] = _human(contextual.decode('utf-8')).encode('utf-8')

@@ -11,6 +11,42 @@ from traceability_fixtures import record11, publication_contexts, PURPOSE, set_d
 
 
 class DeliveryTraceTests(unittest.TestCase):
+    def test_full_and_brief_group_before_sanitizing_distinct_observations(self):
+        from test_review_contract import finding
+        fixture = archives.Archive11Tests()
+        self.addCleanup(fixture.doCleanups)
+        fixture.setUp()
+        run = fixture.prepare()
+        value = record11()
+        check = value['checks'][0]
+        check.update(evidence=r'Run C:\one\state.txt', reference='https://example.test/checks/1',
+                     execution=dict(kind='external', executor=None))
+        item = finding()
+        item.update(id='F001', evidence=[
+            dict(kind='static', check_id=None, details=r'Static C:\one\state.txt'),
+            dict(kind='static', check_id=None, details=r'Static C:\two\state.txt'),
+            dict(kind='static', check_id=None, details=r'Static C:\one\state.txt'),
+            dict(kind='executed', check_id='C001', details=check['evidence']),
+            dict(kind='executed', check_id='C001', details=r'Run C:\two\state.txt')])
+        value['findings'] = [item]
+        set_dimension(value, 'B01', finding_ids=['F001'])
+        fixture.final = fixture.write('observations11.json', value)
+        fixture.retain(run, expected_schema=11)
+        fixture.close(run)
+        before = fixture.snapshot(run)
+        for mode in ('full', 'brief'):
+            with self.subTest(mode=mode):
+                target = delivery.deliver(run, mode, fixture.repo, fixture.root/mode)
+                text = (target/('informe.md' if mode == 'full' else 'resumen.md')).read_text(encoding='utf-8')
+                findings = text.split('### Validación')[0]
+                self.assertEqual(sum(line.strip().startswith('- **Inspección estática**')
+                                     for line in findings.splitlines()), 2)
+                self.assertIn(r'Run \[ruta privada\]', findings)
+                self.assertIn('**[C001](#C001)**', findings)
+                self.assertNotIn('C:\\one', text)
+                self.assertNotIn('C:\\two', text)
+        self.assertEqual(fixture.snapshot(run), before)
+
     def test_portable_policy_preserves_purpose_ids_and_sanitizes_prose(self):
         value = record11()
         value['checks'][0]['purpose'] = PURPOSE + r' C:\private\notes.txt'

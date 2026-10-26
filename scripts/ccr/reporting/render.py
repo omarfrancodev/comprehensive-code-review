@@ -43,6 +43,18 @@ def confirmed_counts_text(findings):
 
 def render(record, audience='user', publication_context=None, *, check_publication_context=None,
            coverage_publication_context=None):
+    return _render(record, audience, publication_context,
+                   check_publication_context=check_publication_context,
+                   coverage_publication_context=coverage_publication_context)
+
+
+def render_portable(record, evidence_by_finding):
+    """Render a typed portable record with groups formed before prose projection."""
+    return _render(record, evidence_by_finding=evidence_by_finding)
+
+
+def _render(record, audience='user', publication_context=None, *, check_publication_context=None,
+            coverage_publication_context=None, evidence_by_finding=None):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
@@ -117,7 +129,9 @@ def render(record, audience='user', publication_context=None, *, check_publicati
             if location['url']:
                 label = f"[{one_line(label)}]({location['url']})"
             ledger = {check['id']: check for check in record['checks']}
-            evidence = evidence_lines(evidence_groups(item['evidence'], ledger))
+            groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None
+                      else evidence_groups(item['evidence'], ledger))
+            evidence = evidence_lines(groups)
             lines.extend(['', '<a id="' + html.escape(item['id'], quote=True) + '"></a>', '',
                           f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
                           f"#### {ordinal}. {one_line(item['title'])}", '',
