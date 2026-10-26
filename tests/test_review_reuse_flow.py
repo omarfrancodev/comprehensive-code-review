@@ -43,10 +43,11 @@ class ReuseFlowTests(unittest.TestCase):
         inputs,material_map,sources=current_sources(scope,descriptor,materials,extra)
         return dict(current_inputs=inputs,effective_changes=descriptor,current_materials=material_map,current_sources=sources)
 
-    def archive(self,guided=True,complete=True):
+    def archive(self,guided=True,complete=True,kind='review',identities=None):
         capture=self.capture()
         sources=copy.deepcopy(capture['current_sources'])
         inputs=copy.deepcopy(capture['current_inputs'])
+        inputs.update(identities or {})
         if guided:
             files=collect_context_files(self.repo,capture['effective_changes']['comparison'],[
                 dict(side='head',path_b64='Y29kZS50eHQ='),dict(side='head',path_b64='Y29uc3VtZXIucHk=')])
@@ -59,6 +60,10 @@ class ReuseFlowTests(unittest.TestCase):
         run=Path(archive_tests.artifacts.prepare(self.repo,self.scope,'3.1.0','codex',
             output_root=self.output,profile_input=selection_input(),current_inputs=inputs))
         if complete:
+            if kind!='review':
+                final=self.read(self.final)
+                final['presentation']['kind']=kind
+                self.final=self.write('partial-final.json',final)
             paths=[]
             for ref,raw in sources.items():
                 path=self.root/Path(ref).name
@@ -131,6 +136,28 @@ class ReuseFlowTests(unittest.TestCase):
         result=self.assess(capture)
         self.assertEqual(result['action'],'new_review',result)
         self.assertIn('profile_changed',{r['code'] for r in result['reasons']})
+
+    def test_partial_complement_is_not_reused_as_ordinary_mr_review(self):
+        self.archive(kind='complement')
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+        self.assertIn('previous_scope_partial',{r['code'] for r in result['reasons']})
+
+    def test_opaque_configuration_identity_change_starts_review(self):
+        self.archive(identities={'configuration_identity':'deployment-A'})
+        capture=self.capture()
+        capture['current_inputs']['configuration_identity']='deployment-B'
+        result=self.assess(capture)
+        self.assertEqual(result['action'],'new_review',result)
+        self.assertIn('material_identity_changed',{r['code'] for r in result['reasons']})
+
+    def test_omitted_known_configuration_identity_is_not_equivalent(self):
+        self.archive(identities={'configuration_identity':'deployment-A'})
+        capture=self.capture()
+        capture['current_inputs'].pop('configuration_identity')
+        result=self.assess(capture)
+        self.assertEqual(result['action'],'new_review',result)
+        self.assertEqual(result['applicability'],'unknown')
 
 
 if __name__=='__main__':

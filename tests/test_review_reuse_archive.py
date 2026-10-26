@@ -11,6 +11,7 @@ from ccr.archive import reuse
 from ccr.archive.layout import logical_scope
 from ccr.execution.change_scope import collect_effective_changes,collect_context_files
 from ccr.workflow.reuse import build_material_map,build_review_context,CHANGES,MATERIALS,CONTEXT
+from recovery_fixtures import record10
 
 
 def current_sources(scope,descriptor,materials=None,extra=None):
@@ -37,9 +38,11 @@ class ReuseArchiveTests(unittest.TestCase):
         inputs,materials,sources=current_sources(self.scope,descriptor)
         files=collect_context_files(self.repo,descriptor['comparison'],[dict(side='head',path_b64='ZmlsZS50eHQ=')])
         context=build_review_context(self.scope,files,[],logical_scope_identity=logical_scope(self.scope)['identity'],complete=True,diagnostics=[])
-        archive=Path(self.temp.name)/'archive'
+        self.fixture_count=getattr(self,'fixture_count',0)+1
+        archive=Path(self.temp.name)/('archive-'+str(self.fixture_count))
         (archive/'evidence').mkdir(parents=True)
-        old_sources={**sources,CONTEXT:json.dumps(context).encode()}
+        record=record10('deep'); record['scope']=copy.deepcopy(self.scope)
+        old_sources={**sources,CONTEXT:json.dumps(context).encode(),'review.json':json.dumps(record).encode()}
         for ref,raw in old_sources.items():
             (archive/ref).write_bytes(raw)
         manifest=dict(scope=copy.deepcopy(self.scope),review_inputs=copy.deepcopy(inputs),
@@ -89,13 +92,7 @@ class ReuseArchiveTests(unittest.TestCase):
             self.assertEqual(self.assess(self.fixture_unique(),dict(status=status,selected=None))['action'],'new_review')
 
     def fixture_unique(self):
-        # Same fixture content; remove only the exact test-owned directory through TemporaryDirectory cleanup.
-        path=Path(self.temp.name)/'archive/evidence'
-        if path.exists():
-            for p in path.iterdir():
-                p.unlink()
-            path.rmdir()
-            path.parent.rmdir()
+        # Distinct owned paths avoid cleanup assumptions about retained evidence.
         return self.fixture()
 
     def test_candidate_changed_before_return_is_not_reused(self):
@@ -134,6 +131,7 @@ class ReuseArchiveTests(unittest.TestCase):
         manifest=fixture[-2]
         manifest['review_inputs']['sources']={k:hashlib.sha256(v).hexdigest() for k,v in old_sources.items()}
         manifest['hashes']={k:hashlib.sha256(v).hexdigest() for k,v in old_sources.items()}
+        manifest['hashes']['review.json']=hashlib.sha256((Path(fixture[-1]['run_dir'])/'review.json').read_bytes()).hexdigest()
         for ref,raw in old_sources.items():
             (Path(fixture[-1]['run_dir'])/ref).write_bytes(raw)
         self.assertEqual(self.assess(fixture)['action'],'offer_choice')

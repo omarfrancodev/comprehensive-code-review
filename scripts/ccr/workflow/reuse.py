@@ -122,6 +122,22 @@ def compare_review_context(retained,current):
                 [dict(code='material_context_changed',detail='A consumed file or material requirement changed.')])
 
 
+def compare_material_identities(retained,current):
+    """Opaque observed identities matter even when the selected bytes match."""
+    reasons=[]
+    statuses=[]
+    for field in ('description_identity','requirements_identity','plan_identity','configuration_identity'):
+        if field not in retained and field not in current:
+            continue  # The complete semantic map remains authoritative for these callers.
+        if field not in retained or field not in current:
+            statuses.append('unknown')
+            reasons.append(dict(code='material_identity_unknown',detail=field+' was not observed on both sides.'))
+        elif retained[field]!=current[field]:
+            statuses.append('changed')
+            reasons.append(dict(code='material_identity_changed',detail=field+' differs from the reviewed identity.'))
+    return dict(applicability='changed' if 'changed' in statuses else 'unknown' if statuses else 'applicable',reasons=reasons)
+
+
 def validate_reuse_evidence(scope,index,sources,*,require_context=False):
     """Optional sidecars extend evidence, never the archive/review schema."""
     if not any(name in sources for name in GENERATED | {CONTEXT}):

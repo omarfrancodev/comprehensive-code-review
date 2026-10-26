@@ -16,7 +16,7 @@ from ccr.shared.json_io import read_bounded
 from ccr.workflow.inputs import normalize_inputs
 from ccr.workflow.reuse import (CHANGES,MATERIALS,CONTEXT,build_material_map,normalize_material_map,
     normalize_review_context,build_review_context,compare_review_context,decide_reuse,
-    validate_material_map,validate_reuse_evidence)
+    validate_material_map,validate_reuse_evidence,compare_material_identities)
 
 LIMIT=64*1024*1024
 INDEX='evidence/reference-index.json'
@@ -127,6 +127,14 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
         if (manifest.get('review_inputs') or {}).get('source_set_complete') is not True:
             raise ValueError('previous material source completeness is unknown')
         initial_hashes=copy.deepcopy(manifest['hashes'])
+        record=json.loads(_source(run,manifest,'review.json'))
+        coverage=record.get('coverage') or {}
+        kind=(record.get('presentation') or {}).get('kind')
+        if kind=='complement':
+            return finish(context=dict(applicability='changed',reasons=[dict(code='previous_scope_partial',
+                detail='The latest complement does not establish ordinary full-MR coverage.')]))
+        if kind not in ('review','rereview') or coverage.get('adequate') is not True or coverage.get('stale') is not False:
+            return finish(reason='The previous result does not establish complete applicable requested coverage.')
         sources=_retained_sources(run,manifest)
         old_scope=manifest['scope']
         old=(normalize_effective_changes(json.loads(sources[CHANGES])) if CHANGES in sources else
@@ -152,6 +160,10 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
             complete=old_context['complete'] and materials['complete'] and inputs.get('source_set_complete') is True,
             diagnostics=[])
         context=compare_review_context(old_context,current_context)
+        identities=compare_material_identities(manifest['review_inputs'],inputs)
+        states=[context['applicability'],identities['applicability']]
+        context=dict(applicability='changed' if 'changed' in states else 'unknown' if 'unknown' in states else 'applicable',
+                     reasons=context['reasons']+identities['reasons'])
         if inputs.get('profile') is not None and inputs['profile']!=candidate.get('profile'):
             context=dict(applicability='changed',reasons=[dict(code='profile_changed',detail='Requested profile differs from previous review.')])
         _,final_manifest,_=load_run(candidate['run_dir'])
