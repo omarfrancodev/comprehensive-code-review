@@ -1,6 +1,11 @@
 {
   "base": "d119fbc781312bd15c2eaf5e04f3768f542de7cc",
-  "ratification": "pending",
+  "ratification": {
+    "status": "user_confirmed",
+    "authority": "Direct human reply in this chat",
+    "text": "Ratifico las referencias tras revisarlas",
+    "recorded_at_utc": "2026-10-26T20:46:10.502Z"
+  },
   "acceptance_custody": "Separate fresh-context author; concrete inputs/reference and baseline acceptance responses withheld from guide author before freeze",
   "observed_model": null,
   "configured_model": "inherited session default; exact model not exposed by dispatch result",

@@ -31,6 +31,8 @@ location: path/line/url/section (text/null except positive integer/null line). C
 
 evidence: nonempty array with kind static/executed, details text, check_id (null for static; included ID for executed). Confirmation requires decisive static flow or actual supporting execution; fixture/environment failures alone cannot prove a product defect. Structural relationships do not establish truth.
 
+For new confirmed findings, existing impact also contains a concise consequence-based priority justification under [priority calibration](priority-calibration.md): damage, scope, recovery and the relevant boundary. This is a producer instruction, not a new field or parser inference. Do not put it in check purpose/result or require it retroactively in historical records.
+
 ## Checks
 
 Fields: id, purpose (required in schema 11: behavior/condition/hypothesis declared before execution), command, revision (actual execution head/base/snapshot, or prior revision for justified reuse), status passed/failed/blocked/not_run, failure_kind (product/fixture/environment if failed; otherwise null), evidence (text; nullable only if not_run), reused (boolean), reuse_reason (nonempty text if reused, otherwise null), rerun_reason (text/null).

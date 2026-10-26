@@ -20,6 +20,8 @@ Read changed hunks, affected symbols and required producer/consumer boundaries i
 
 ## Verification
 
+Apply [priority calibration](../contracts/priority-calibration.md) in this pass. Use existing updates.priority and updates.impact for the consequence-based judgment; no new required packet fields. The coordinator completes justification in final impact if a delta omits it. Discovery remains ungraded; purpose and receipt-bound check IDs remain unchanged.
+
 Add decisions: array of {id, status: confirmed/rejected/unresolved, evidence, optional updates}. One decision per assigned candidate. Unchanged scenario/impact need no repetition. Updates may supply changed location/scenario/impact or explicit priority/origin/title/correction/blocking/blocking_reason; blockers need confirmation and a reason. Preserve distinct scenarios in grouped causes; identify necessary splits for the coordinator.
 
 Check claims/material questions against requirements, raw code, baseline and consumers. Decisive static flow is sufficient; run a targeted check for inadequate evidence. Fixture/environment failures cannot confirm a defect. Return new questions to the coordinator; this batch does not restart general discovery. Continuations need new evidence or an uncompleted gate. Missing information yields unresolved status/material coverage, not speculative retries.

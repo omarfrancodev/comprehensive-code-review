@@ -10,7 +10,7 @@ Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-na
 
 Confirmed findings appear as findings; unresolved claims/material limits appear as uncertainties. Rejected candidates stay internal unless withdrawing prior claims. Omit empty conditional sections, full logs, duplicate findings tables and speculative defects. Give observable corrections, not an unsolicited patch. Finding evidence is concise decisive static evidence or linked check IDs; Validación adds the existing meaningful check output/results, skipped checks, blockage and retained log references instead of copying scenario/impact paragraphs.
 
-Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante; 🔵 P3 — Menor. Translate labels as needed, preserve circle/code. P0 is demonstrated immediate severe compromise/outage/corruption; P1 serious credible failure; P2 concrete correctness defect; P3 limited consequence. Blocking and origin are separate. Conditions come from actual blockers/nonblocking reservations, never silent acceptance of material unknown behavior.
+Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante; 🔵 P3 — Menor. Translate labels as needed, preserve circle/code. Apply the canonical [priority calibration](../contracts/priority-calibration.md), preserving its separate confirmation, origin and blocking decisions. New confirmed findings justify the chosen boundary once in existing Impacto, not in check purpose/result. Conditions come from actual blockers/nonblocking reservations, never silent acceptance of material unknown behavior.
 
 ## Canonical title
 
