@@ -12,6 +12,7 @@ from ccr.archive.layout import logical_scope
 from ccr.execution.change_scope import collect_effective_changes, collect_context_files
 from ccr.workflow.reuse import build_review_context,CONTEXT
 from recovery_fixtures import selection_input
+from test_review_contract import finding
 
 
 class ReuseFlowTests(unittest.TestCase):
@@ -43,15 +44,16 @@ class ReuseFlowTests(unittest.TestCase):
         inputs,material_map,sources=current_sources(scope,descriptor,materials,extra)
         return dict(current_inputs=inputs,effective_changes=descriptor,current_materials=material_map,current_sources=sources)
 
-    def archive(self,guided=True,complete=True,kind='review',identities=None):
-        capture=self.capture()
+    def archive(self,guided=True,complete=True,kind='review',identities=None,
+                capture=None,final_update=None):
+        capture=capture or self.capture()
         sources=copy.deepcopy(capture['current_sources'])
         inputs=copy.deepcopy(capture['current_inputs'])
         inputs.update(identities or {})
         if guided:
             files=collect_context_files(self.repo,capture['effective_changes']['comparison'],[
                 dict(side='head',path_b64='Y29kZS50eHQ='),dict(side='head',path_b64='Y29uc3VtZXIucHk=')])
-            context=build_review_context(self.actual_scope,files,[],
+            context=build_review_context(self.actual_scope,files,capture['current_materials']['entries'],
                 logical_scope_identity=logical_scope(self.actual_scope)['identity'],complete=True,diagnostics=[])
             sources[CONTEXT]=json.dumps(context).encode()
         else:
@@ -60,9 +62,11 @@ class ReuseFlowTests(unittest.TestCase):
         run=Path(archive_tests.artifacts.prepare(self.repo,self.scope,'3.1.0','codex',
             output_root=self.output,profile_input=selection_input(),current_inputs=inputs))
         if complete:
-            if kind!='review':
+            if kind!='review' or final_update is not None:
                 final=self.read(self.final)
                 final['presentation']['kind']=kind
+                if final_update is not None:
+                    final_update(final)
                 self.final=self.write('partial-final.json',final)
             paths=[]
             for ref,raw in sources.items():
@@ -158,6 +162,79 @@ class ReuseFlowTests(unittest.TestCase):
         result=self.assess(capture)
         self.assertEqual(result['action'],'new_review',result)
         self.assertEqual(result['applicability'],'unknown')
+
+    def pending_area(self, record, status='partial', material=True):
+        record['coverage']['areas'][0].update(status=status,material=material,
+            details='Required producer coverage remains pending')
+        if material:
+            record['verdict']='insufficient_evidence'
+
+    def test_material_partial_area_requires_new_review(self):
+        self.archive(final_update=self.pending_area)
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_material_not_evaluated_area_requires_new_review(self):
+        self.archive(final_update=lambda r:self.pending_area(r,'not_evaluated'))
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_material_limitation_requires_new_review(self):
+        def update(record):
+            record['coverage']['limitations']=[dict(kind='validation',detail='Required check remains pending',
+                material=True,public_summary=None)]
+            record['verdict']='insufficient_evidence'
+        self.archive(final_update=update)
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_bounded_rereview_without_full_coverage_is_not_ordinary_review(self):
+        self.archive(kind='rereview',final_update=lambda r:self.pending_area(r,'not_evaluated',False))
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_full_rereview_remains_reusable(self):
+        self.archive(kind='rereview')
+        self.assertEqual(self.assess()['action'],'offer_choice')
+
+    def test_nonmaterial_reservations_do_not_disqualify_complete_review(self):
+        def update(record):
+            record['coverage']['limitations']=[dict(kind='validation',detail='Optional platform not executed',
+                material=False,public_summary=None)]
+            record['reservations']=['Optional platform coverage remains limited']
+            record['verdict']='approvable_with_reservations'
+        self.archive(final_update=update)
+        self.assertEqual(self.assess()['action'],'offer_choice')
+
+    def blocker(self, record):
+        row=finding(blocking=True)
+        row['id']='F001'
+        row['location']['path']='code.txt'
+        record['findings']=[row]
+        record['verdict']='not_approvable'
+
+    def test_confirmed_blocker_alone_does_not_disqualify_complete_review(self):
+        self.archive(final_update=self.blocker)
+        self.assertEqual(self.assess()['action'],'offer_choice')
+
+    def test_confirmed_blocker_does_not_hide_material_coverage_gap(self):
+        def update(record):
+            self.pending_area(record)
+            self.blocker(record)
+        self.archive(final_update=update)
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_64_indexed_sources_plus_derived_context_remain_reusable(self):
+        extra={f'evidence/source-{n:02}.txt':f'material {n}'.encode() for n in range(61)}
+        rows=[dict(key=ref,purpose='other',reference=ref,sha256=hashlib.sha256(raw).hexdigest())
+              for ref,raw in extra.items()]
+        capture=self.capture(materials=rows,extra=extra)
+        self.assertEqual(len(capture['current_sources']),64)
+        run=self.archive(capture=capture)
+        self.assertIn(CONTEXT,self.read(run/'cierre.json')['hashes'])
+        result=self.assess(capture)
+        self.assertEqual(result['action'],'offer_choice',result)
 
 
 if __name__=='__main__':

@@ -16,7 +16,7 @@ from ccr.shared.json_io import read_bounded
 from ccr.workflow.inputs import normalize_inputs
 from ccr.workflow.reuse import (CHANGES,MATERIALS,CONTEXT,build_material_map,normalize_material_map,
     normalize_review_context,build_review_context,compare_review_context,decide_reuse,
-    validate_material_map,validate_reuse_evidence,compare_material_identities)
+    validate_material_map,validate_reuse_evidence,compare_material_identities,coverage_reuse_issue)
 
 LIMIT=64*1024*1024
 INDEX='evidence/reference-index.json'
@@ -42,7 +42,9 @@ def _retained_sources(run,manifest):
     for ref in (CHANGES,MATERIALS,CONTEXT):
         if ref in manifest['hashes']:
             sources[ref]=_source(run,manifest,ref)
-    if len(sources)>64 or sum(map(len,sources.values()))>LIMIT:
+    # reference_source_paths already enforces 64 indexed files including INDEX.
+    # Derived context is outside that selection, but remains in the byte budget.
+    if sum(map(len,sources.values()))>LIMIT:
         raise ValueError('previous selected evidence exceeds reuse limits')
     return sources
 
@@ -128,13 +130,9 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
             raise ValueError('previous material source completeness is unknown')
         initial_hashes=copy.deepcopy(manifest['hashes'])
         record=json.loads(_source(run,manifest,'review.json'))
-        coverage=record.get('coverage') or {}
-        kind=(record.get('presentation') or {}).get('kind')
-        if kind=='complement':
-            return finish(context=dict(applicability='changed',reasons=[dict(code='previous_scope_partial',
-                detail='The latest complement does not establish ordinary full-MR coverage.')]))
-        if kind not in ('review','rereview') or coverage.get('adequate') is not True or coverage.get('stale') is not False:
-            return finish(reason='The previous result does not establish complete applicable requested coverage.')
+        coverage_issue=coverage_reuse_issue(record)
+        if coverage_issue is not None:
+            return finish(context=dict(applicability='changed',reasons=[coverage_issue]))
         sources=_retained_sources(run,manifest)
         old_scope=manifest['scope']
         old=(normalize_effective_changes(json.loads(sources[CHANGES])) if CHANGES in sources else

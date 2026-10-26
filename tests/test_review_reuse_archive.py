@@ -136,6 +136,33 @@ class ReuseArchiveTests(unittest.TestCase):
             (Path(fixture[-1]['run_dir'])/ref).write_bytes(raw)
         self.assertEqual(self.assess(fixture)['action'],'offer_choice')
 
+    def test_derived_context_still_counts_in_aggregate_byte_limit(self):
+        fixture=self.fixture()
+        run=Path(fixture[-1]['run_dir'])
+        manifest=fixture[-2]
+        selected={ref:raw for ref,raw in fixture[3].items()}
+        selected[CONTEXT]=(run/CONTEXT).read_bytes()
+        with patch.object(reuse,'LIMIT',sum(map(len,selected.values()))-1):
+            with self.assertRaisesRegex(ValueError,'exceeds reuse limits'):
+                reuse._retained_sources(run,manifest)
+
+    def test_more_than_64_indexed_sources_are_still_rejected(self):
+        fixture=self.fixture()
+        run=Path(fixture[-1]['run_dir'])
+        manifest=fixture[-2]
+        index=json.loads((run/'evidence/reference-index.json').read_bytes())
+        for n in range(62):
+            ref=f'evidence/extra-{n:02}.txt'
+            raw=f'source {n}'.encode()
+            (run/ref).write_bytes(raw)
+            manifest['hashes'][ref]=hashlib.sha256(raw).hexdigest()
+            index['inputs'].append(dict(reference=ref,purpose='other',sha256=hashlib.sha256(raw).hexdigest()))
+        raw=json.dumps(index).encode()
+        (run/'evidence/reference-index.json').write_bytes(raw)
+        manifest['hashes']['evidence/reference-index.json']=hashlib.sha256(raw).hexdigest()
+        with self.assertRaisesRegex(ValueError,'at most 64'):
+            reuse._retained_sources(run,manifest)
+
 
 if __name__=='__main__':
     unittest.main()

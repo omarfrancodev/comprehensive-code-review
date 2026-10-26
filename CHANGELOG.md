@@ -27,6 +27,12 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 - Iniciar automáticamente una revisión ordinaria cuando los cambios efectivos o sus insumos difieran o no pueda demostrarse equivalencia; ofrecer repetir/consultar solo ante equivalencia verificada, admitiendo merges vacíos y rebases equivalentes. La consulta explícita del último resultado y los gates exactos de recuperación mantienen su semántica.
 
+#### Artefactos y contratos
+
+- Exigir cobertura ordinaria completa y ausencia de gaps o limitaciones materiales para reutilizar un resultado, incluido un re-review; los findings confirmados y reservas no materiales conservan su semántica y los informes insuficientes siguen siendo consultables.
+- Impedir lazy fetch y adquisición de objetos en las consultas Git de captura, contexto y comparación, incluso en partial clones; neutralizar `GIT_DIFF_OPTS` para preservar la identidad del descriptor.
+- Obtener patches textuales por objetos exactos en transiciones archivo/directorio, conservando altas/bajas vacías, CR y marcadores de newline; contar las 64 fuentes sobre la selección indexada y mantener el contexto derivado dentro del presupuesto agregado de bytes.
+
 ## 3.1.0 — 2026-10-25
 
 ### Fixed

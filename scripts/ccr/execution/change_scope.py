@@ -1,7 +1,6 @@
 """Read immutable Git objects without modifying the checkout or invoking filters."""
 import base64
 import hashlib
-import os
 import re
 
 from ccr.archive.layout import logical_scope
@@ -62,6 +61,32 @@ def _patch(raw):
     return bytes(output)
 
 
+def _text_patch(repo, old_blob, new_blob, max_bytes):
+    if old_blob is not None and new_blob is not None:
+        return _patch(git_bytes(repo, 'diff', '--text', '--no-ext-diff', '--no-textconv',
+            '--no-color', '--no-renames', '--full-index', '--no-indent-heuristic',
+            '--diff-algorithm=myers', '--unified=3', '--inter-hunk-context=0',
+            '--ignore-submodules=none', old_blob, new_blob, max_output_bytes=max_bytes))
+    # A whole-file addition/deletion has exactly one normalized hunk (or none
+    # for an empty file). Avoid recursive pathspecs and writing an empty blob.
+    content = git_bytes(repo, 'cat-file', 'blob', old_blob or new_blob,
+                        max_output_bytes=max_bytes)
+    if not content:
+        return b''
+    sign = b'-' if old_blob is not None else b'+'
+    output = bytearray(b'@@\n')
+    lines = content.split(b'\n')
+    for number, line in enumerate(lines):
+        if number == len(lines)-1 and not line:
+            break
+        output.extend(sign + line + b'\n')
+        if number == len(lines)-1:
+            output.extend(b'\\ No newline at end of file\n')
+        if len(output) > max_bytes:
+            raise ValueError('Git patch exceeds byte limit')
+    return bytes(output)
+
+
 def collect_effective_changes(repo, scope, *, target_head):
     require_scope(scope)
     if scope['mode'] not in ('mr', 'pr'):
@@ -117,12 +142,7 @@ def collect_effective_changes(repo, scope, *, target_head):
                 kind, payload = ('symlink' if '120000' in modes else 'binary'), hashes
             else:
                 kind = 'text'
-                raw = git_bytes(repo, 'diff', '--text', '--no-ext-diff', '--no-textconv',
-                    '--no-color', '--no-renames', '--full-index', '--no-indent-heuristic',
-                    '--diff-algorithm=myers', '--unified=3', '--inter-hunk-context=0',
-                    '--ignore-submodules=none', scope['base'], scope['head'], '--',
-                    os.fsdecode(row['path']), max_output_bytes=MAX_PATCH_BYTES-patch_size)
-                patch = _patch(raw)
+                patch = _text_patch(repo, paths['old_blob'], paths['new_blob'], MAX_PATCH_BYTES-patch_size)
                 patch_size += len(patch)
                 payload = {'patch_b64': _b64(patch)}
             value['entries'].append(dict(**paths, kind=kind, payload=payload))

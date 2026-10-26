@@ -161,6 +161,25 @@ def validate_reuse_evidence(scope,index,sources,*,require_context=False):
         raise ValueError('guided reuse evidence needs final review context')
 
 
+def coverage_reuse_issue(record):
+    """Return why a verified result cannot cover an ordinary full-scope request."""
+    kind=(record.get('presentation') or {}).get('kind')
+    if kind=='complement':
+        return dict(code='previous_scope_partial',
+            detail='The latest complement does not establish ordinary full-MR coverage.')
+    coverage=record.get('coverage') or {}
+    if kind not in ('review','rereview') or coverage.get('adequate') is not True or coverage.get('stale') is not False:
+        return dict(code='previous_coverage_incomplete',detail='Previous coverage is unknown, inadequate or stale.')
+    areas=coverage.get('areas')
+    if (not isinstance(areas,list) or len(areas)!=5
+            or {r.get('area') for r in areas}!=set('ABCDE')
+            or any(r.get('material') is True or r.get('status') not in ('covered','not_applicable') for r in areas)
+            or any(r.get('material') is True for r in coverage.get('limitations',[]))):
+        return dict(code='previous_coverage_incomplete',
+            detail='The result has pending coverage or material uncertainty; lineage alone cannot establish inherited coverage.')
+    return None
+
+
 def decide_reuse(code,context,*,has_prior,current_scope_ready):
     if code.get('code_equivalence') not in ('equivalent','different','unknown') or context.get('applicability') not in ('applicable','changed','unknown'):
         raise ValueError('invalid reuse comparison state')

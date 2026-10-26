@@ -2,6 +2,7 @@
 import copy
 from contextlib import contextmanager
 import hashlib
+import os
 import subprocess
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ from test_review_effective_changes import b64, compare_effective_changes
 from ccr.execution.change_scope import collect_effective_changes, collect_context_files, parse_raw
 from ccr.execution import change_scope
 from ccr.shared.git import git_bytes
+from ccr.shared.git import git as query_git
 
 
 class ChangeScopeTests(unittest.TestCase):
@@ -306,6 +308,130 @@ class ChangeScopeTests(unittest.TestCase):
         self.assertEqual(value['entries'], [])
         self.assertEqual(value['diagnostics'][0]['code'], 'capture_incomplete')
         self.assertTrue(closed)
+
+    def test_git_diff_opts_cannot_change_descriptor_identity(self):
+        expected=self.capture()
+        with patch.dict(os.environ,{'GIT_DIFF_OPTS':'--unified=0'}):
+            actual=self.capture()
+        self.assertTrue(actual['complete'],actual['diagnostics'])
+        self.assertEqual(actual,expected)
+
+    def test_file_to_directory_has_separate_complete_patches(self):
+        self.put('node',b'old node\n')
+        self.commit()
+        base=self.git('rev-parse','HEAD')
+        (self.repo/'node').unlink()
+        self.put('node/child.txt',b'new child\n')
+        self.commit()
+        scope=dict(self.scope,base=base,head=self.git('rev-parse','HEAD'))
+        value=self.capture(scope,base)
+        self.assertTrue(value['complete'],value['diagnostics'])
+        rows={r['old_path_b64'] or r['new_path_b64']:r for r in value['entries']}
+        self.assertEqual(rows[b64(b'node')]['payload'],{'patch_b64':b64(b'@@\n-old node\n')})
+        self.assertEqual(rows[b64(b'node/child.txt')]['payload'],{'patch_b64':b64(b'@@\n+new child\n')})
+        self.assertEqual(compare_effective_changes(value,self.capture(scope,base))['code_equivalence'],'equivalent')
+
+    def test_directory_to_file_has_separate_complete_patches(self):
+        self.put('node/child.txt',b'old child\r\n')
+        self.commit()
+        base=self.git('rev-parse','HEAD')
+        (self.repo/'node/child.txt').unlink()
+        (self.repo/'node').rmdir()
+        self.put('node',b'new node')
+        self.commit()
+        scope=dict(self.scope,base=base,head=self.git('rev-parse','HEAD'))
+        value=self.capture(scope,base)
+        self.assertTrue(value['complete'],value['diagnostics'])
+        rows={r['old_path_b64'] or r['new_path_b64']:r for r in value['entries']}
+        self.assertEqual(rows[b64(b'node/child.txt')]['payload'],{'patch_b64':b64(b'@@\n-old child\r\n')})
+        self.assertEqual(rows[b64(b'node')]['payload'],{'patch_b64':b64(b'@@\n+new node\n\\ No newline at end of file\n')})
+
+    def partial_clone(self):
+        self.git('config','uploadpack.allowFilter','true')
+        clone=self.repo/'partial-clone'
+        result=subprocess.run(['git','clone','--filter=blob:none','--no-checkout',
+            self.repo.as_uri(),str(clone)],capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr.decode(errors='replace'))
+        return clone
+
+    def missing_objects(self, repo):
+        result=subprocess.run(['git','rev-list','--objects','--all','--missing=print'],
+            cwd=repo,capture_output=True,check=True)
+        return sorted(line for line in result.stdout.splitlines() if line.startswith(b'?'))
+
+    def object_snapshot(self, repo):
+        root=repo/'.git/objects'
+        return {p.relative_to(root).as_posix():p.read_bytes() for p in root.rglob('*') if p.is_file()}
+
+    def test_partial_clone_capture_does_not_acquire_blobs_or_packs(self):
+        clone=self.partial_clone()
+        missing=self.missing_objects(clone)
+        self.assertTrue(missing)
+        before=self.object_snapshot(clone)
+        value=collect_effective_changes(clone,self.scope,target_head=self.base)
+        self.assertEqual(self.missing_objects(clone),missing)
+        self.assertEqual(self.object_snapshot(clone),before)
+        self.assertFalse(value['complete'])
+
+    def test_partial_clone_scalar_query_does_not_acquire_missing_blob(self):
+        clone=self.partial_clone()
+        missing=self.missing_objects(clone)
+        self.assertTrue(missing)
+        before=self.object_snapshot(clone)
+        with self.assertRaises(ValueError):
+            query_git(clone,'cat-file','-e',missing[0][1:].decode())
+        self.assertEqual(self.object_snapshot(clone),before)
+        self.assertEqual(self.missing_objects(clone),missing)
+
+    def test_partial_clone_context_does_not_acquire_missing_blob(self):
+        clone=self.partial_clone()
+        missing=self.missing_objects(clone)
+        self.assertTrue(missing)
+        before=self.object_snapshot(clone)
+        comparison=dict(diff_base=self.base,head=self.scope['head'])
+        with self.assertRaises(ValueError):
+            collect_context_files(clone,comparison,[dict(side='head',path_b64=b64(b'file.txt'))])
+        self.assertEqual(self.object_snapshot(clone),before)
+        self.assertEqual(self.missing_objects(clone),missing)
+
+    def test_text_add_delete_preserves_empty_cr_and_missing_newline(self):
+        base=self.git('rev-parse','HEAD')
+        fixtures={
+            'empty.txt':(b'',b'',b''),
+            'cr.txt':(b'one\r\ntwo\n',b'@@\n+one\r\n+two\n',b'@@\n-one\r\n-two\n'),
+            'no-newline.txt':(b'last',b'@@\n+last\n\\ No newline at end of file\n',
+                              b'@@\n-last\n\\ No newline at end of file\n')}
+        for name,(content,_,_) in fixtures.items():
+            self.put(name,content)
+        self.commit()
+        added_head=self.git('rev-parse','HEAD')
+        added=self.capture(dict(self.scope,base=base,head=added_head),base)
+        self.assertTrue(added['complete'],added['diagnostics'])
+        for name in fixtures:
+            (self.repo/name).unlink()
+        self.commit()
+        deleted=self.capture(dict(self.scope,base=added_head,head=self.git('rev-parse','HEAD')),added_head)
+        self.assertTrue(deleted['complete'],deleted['diagnostics'])
+        added_rows={r['new_path_b64']:r for r in added['entries']}
+        deleted_rows={r['old_path_b64']:r for r in deleted['entries']}
+        for name,(_,plus,minus) in fixtures.items():
+            with self.subTest(path=name):
+                self.assertEqual(added_rows[b64(name.encode())]['payload'],{'patch_b64':b64(plus)})
+                self.assertEqual(deleted_rows[b64(name.encode())]['payload'],{'patch_b64':b64(minus)})
+
+    def test_equal_prefix_with_change_after_two_megabytes_remains_different(self):
+        prefix=b'unchanged line\n'*150000
+        scope,base=self.large_scope(prefix+b'base\n',prefix+b'reviewed\n')
+        previous=self.capture(scope,base)
+        for name in ('large.txt','copy.txt'):
+            self.put(name,prefix+b'new tail\n')
+        self.commit()
+        current=self.capture(dict(scope,head=self.git('rev-parse','HEAD')),base)
+        self.assertTrue(previous['complete'] and current['complete'])
+        self.assertEqual(compare_effective_changes(previous,current)['code_equivalence'],'different')
+        for row in current['entries']:
+            self.assertEqual(row['payload'],{'patch_b64':b64(
+                b'@@\n unchanged line\n unchanged line\n unchanged line\n-base\n+new tail\n')})
 
 
 if __name__ == '__main__':

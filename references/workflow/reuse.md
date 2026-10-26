@@ -35,6 +35,8 @@ The helper reads only the selected repository/logical group, fully scans up to 1
 
 A partial complement cannot stand in for an ordinary complete MR review. Inadequate or stale prior coverage also requires a new review. Supplemental observed description/requirements/plan/configuration identities remain material, including opaque labels: changed labels require review, and omitted known identities remain unknown.
 
+Ordinary reuse requires all five applicable coverage rows to be covered or explicitly not applicable, with no material area gaps or material limitations, independently of the verdict. Confirmed findings (including blockers) and nonmaterial reservations do not by themselves disqualify an otherwise complete result. A bounded rereview with partial/not-evaluated rows cannot inherit ordinary coverage merely from a verified lineage identity; without complete applicable coverage evidence, start a new review. Historical consultation remains available.
+
 An empty commit, no-change merge or equivalent rebase can reuse a result. New edits, removed edits, file/mode/binary/gitlink changes or target changes that alter the patch require review. So do changed requirements, relevant notes, requested profiles or consumed files even when the hunks remain equivalent. Description-only impact can be a new bounded review, with explicit reasons for reusing unaffected evidence.
 
 Reacquire source/target references from the provider before acting on a delayed choice or publishing. The helper validates the supplied immutable objects; it cannot establish remote freshness without the coordinator's observation. A later scope invalidates the earlier admission decision.
@@ -45,8 +47,12 @@ Explicit **new review** bypasses the offer. Explicit **show latest** remains his
 
 The change descriptor uses algorithm `ccr-effective-diff-v1`: ordered raw Git paths, modes and content/hunks; whitespace, newline and binary content remain significant. Transport headers, hunk coordinates and commit OIDs do not by themselves define equivalence. `patch-id`, changed-file lists, HEAD, mtime and successful test counts alone are insufficient.
 
+Capture obtains text modifications from exact blob pairs and whole-file additions/deletions from their single blob, preserving normalized hunks without recursive pathspec matches. Git queries disable lazy fetch and deny transports; missing promisor objects yield incomplete/unknown capture and require explicit acquisition by the coordinator. The caller's `GIT_DIFF_OPTS` cannot change retained context. These settings apply to helper subprocesses, not the coordinator's explicit fetch.
+
 During discovery, each owner returns the compact inventory of complete Git files actually consumed (base/head, byte path, mode and content digest). Consolidate that inventory and the initial material map using `setup reuse-context` into `evidence/review-context.json`. The builder checks the original owning run/inputs and pinned Git objects; it cannot introduce external requirements after discovery. Select and hash this derived evidence at retention. No extra review.json/trace schema or command-per-line trace is needed.
 
 Initial sidecars are in `review_inputs.sources`; final review-context is derived evidence, not a late input. Unknown completeness stays false. Sources retain the 64-file/64 MiB selection bounds; the diff also has 10,000-entry, 32 MiB patch and 64 MiB serialized limits. Read failures/limits never certify a partial capture as complete.
+
+The 64-file count applies to the same indexed selection used by producers, including the reference index; derived review-context is outside that count. Its bytes still count in the reader's aggregate 64 MiB budget. The indexed limit is enforced by the shared reference selector, including alias targets.
 
 Old archives remain immutable/readable. Reconstruct only an evidenced exact base/head range and complete materials; never assume an arbitrary `delta.diff` is the full MR patch. Without a complete consumed-file inventory, matching whole base/head trees plus verified materials may establish equivalence. Otherwise start a new review. Unsupported layouts remain historical consultation; corrupt/ambiguous runs do not become operational previous-run links. Pending resource transactions are preserved, not adopted or cleaned automatically.
