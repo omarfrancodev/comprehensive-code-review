@@ -1,5 +1,7 @@
 import copy
 import unittest
+
+from publication_fixtures import coverage_classification
 from test_review_contract import clean_record, finding, contract
 
 
@@ -40,7 +42,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record = record6()
         record['checks'] = [check()]
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)
             self.assertIn('### Hallazgos', output)
             self.assertIn('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0', output)
             self.assertIn('Consumer returned expected id', output)
@@ -49,19 +51,19 @@ class TraceabilityContractTests(unittest.TestCase):
         self.assertIn('SECRET', contract.render(record, 'user'))
         record['checks'][0]['evidence'] += ' at C:\\private\\file; command python C:\\private\\regression.py --token SECRET'
         with self.assertRaisesRegex(ValueError, 'check publication context'):
-            contract.render(record, 'comment')
+            contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         context = check_classification(record)
         context['checks'][0]['evidence'] = 'Consumer returned expected id'
-        public = contract.render(record, 'comment', check_publication_context=context)
+        public = contract.render(record, 'comment', check_publication_context=context, coverage_publication_context=coverage_classification(record))
         self.assertNotIn('SECRET', public)
         self.assertNotIn('C:\\private', public)
         self.assertNotIn('python ', public)
         record['checks'][0]['evidence'] = 'Expected result stored at /srv/private/result.log'
         with self.assertRaisesRegex(ValueError, 'check publication context'):
-            contract.render(record, 'comment')
+            contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         context = check_classification(record)
         context['checks'][0]['evidence'] = 'Expected result observed'
-        public = contract.render(record, 'comment', check_publication_context=context)
+        public = contract.render(record, 'comment', check_publication_context=context, coverage_publication_context=coverage_classification(record))
         self.assertNotIn('/srv/private', public)
         self.assertIn('https://example.test/pr/12', public)
 
@@ -74,7 +76,7 @@ class TraceabilityContractTests(unittest.TestCase):
             previous_review_id='CR-' + 'b' * 20, previous_reference='https://example.test/reviews/old', previous_finding_id='F-01', previous_title='Contrato anterior',
             previous_url='https://example.test/reviews/old#F-01', check_ids=[])]
         self.assertEqual(contract.validate(record), [])
-        output = contract.render(record, 'comment')
+        output = contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         self.assertIn('Contrato anterior', output)
         self.assertIn('F-01', output)
         self.assertIn('no reevaluado', output)
@@ -171,7 +173,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['description'].update(status='not_applicable', identity=None, details='')
         record['change_authors'] = [dict(name='Ana', username='ana', verified=True,
                                           source='commit metadata', commits=['sha256:captured'])]
-        public = contract.render(record, 'comment')
+        public = contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         self.assertIn('Autores del cambio', public)
         self.assertIn('@ana', public)
         handoff = contract.render_handoff(record)
@@ -206,10 +208,10 @@ class TraceabilityContractTests(unittest.TestCase):
         record = record6()
         record['checks'] = [check(), check('C002')]
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)
             for identifier in ('C001', 'C002'):
                 self.assertIn('\n\n<a id="' + identifier + '"></a>\n\n- **' + identifier + '**:', output)
-            self.assertIn('\n  - **Evidencia:** Consumer returned expected id', output)
+            self.assertIn('\n  - **Resultado:** Consumer returned expected id', output)
 
     def test_unresolved_labels_are_bold_without_interpreting_finding_text(self):
         record = record6()
@@ -217,7 +219,7 @@ class TraceabilityContractTests(unittest.TestCase):
         item.update(id='F001', status='unresolved', title='<script>unsafe</script> **claim**')
         record['findings'] = [item]
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)
             self.assertIn('- **F001**:', output)
             self.assertIn('&lt;script&gt;', output)
             self.assertNotIn('<script>', output)
@@ -248,7 +250,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['checks'][0]['evidence'] = '[All checks passed](https://evil.example/claim) <script>alert(1)</script>'
         for audience in ('user', 'comment'):
             options = {'check_publication_context': check_classification(record)} if audience == 'comment' else {}
-            output = contract.render(record, audience, **options)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None, **options)
             self.assertNotIn('[All checks passed](', output)
             self.assertNotIn('<script>', output)
             self.assertIn('&lt;script&gt;', output)
@@ -265,7 +267,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['previous_reviews'] = [dict(review_id='CR-' + 'b' * 20,
             reference='https://example.test/reviews/prior', verified=True)]
         for audience in ('user', 'comment'):
-            for output in (contract.render(record, audience), contract.render_handoff(record, audience=audience)):
+            for output in (contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None), contract.render_handoff(record, audience=audience)):
                 self.assertIn('ID de revisión', output)
                 self.assertIn('Revisiones previas', output)
                 self.assertIn('https://example.test/reviews/prior', output)
@@ -279,7 +281,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['rereview'] = [dict(id='F001', status='resolved', details='Resuelto',
             previous_review_id=prior_id, previous_reference=prior_reference, previous_finding_id='F001',
             previous_title='Título anterior', previous_url=None, check_ids=[])]
-        for output in (contract.render(record, 'comment'), contract.render_handoff(record, audience='comment')):
+        for output in (contract.render(record, 'comment', coverage_publication_context=coverage_classification(record)), contract.render_handoff(record, audience='comment')):
             self.assertIn(prior_id, output)
             self.assertNotIn(prior_reference, output)
         self.assertIn(prior_reference, contract.render(record, 'user'))

@@ -43,8 +43,9 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
     checks = record.get('checks') if isinstance(record, dict) else None
     if not isinstance(checks, list):
         raise ValueError('checks must be an array for public projection')
+    current = record.get('schema_version') == 11
     if classification is None:
-        if any(_needs_check_classification(check) for check in checks if isinstance(check, dict)):
+        if (current and checks) or any(_needs_check_classification(check) for check in checks if isinstance(check, dict)):
             raise ValueError('check publication context required for free-text reasons or internal evidence')
         rows = None
     else:
@@ -56,7 +57,7 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
             raise ValueError('check publication context does not match the source record')
         rows = {}
         for row in classification['checks']:
-            if (not isinstance(row, dict) or set(row) != CHECK_PUBLICATION_FIELDS
+            if (not isinstance(row, dict) or set(row) != CHECK_PUBLICATION_FIELDS | ({'purpose'} if current else set())
                     or not isinstance(row.get('id'), str) or row['id'] in rows):
                 raise ValueError('check publication context requires exact unique check rows')
             rows[row['id']] = row
@@ -101,6 +102,8 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
 
         if evidence is not None and (not isinstance(evidence, str) or not evidence.strip()):
             raise ValueError('public check evidence must be nonempty text or null')
+        if current and (not isinstance(row.get('purpose'), str) or not row['purpose'].strip()):
+            raise ValueError('check publication context requires a nonempty public purpose')
         selected.append({
             'id': check['id'],
             'revision': check['revision'],
@@ -111,12 +114,34 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
             'reuse_reason': reuse_reason,
             'rerun_reason': rerun_reason,
             'reference': reference,
+            **({'purpose': row['purpose']} if current else {}),
         })
     return selected
 
+def public_coverage(record: dict, classification: dict | None = None) -> list[str]:
+    """Require an editorial summary for every source flow, bound by digest/index."""
+    flows = record['coverage']['flows']
+    if classification is None:
+        if flows:
+            raise ValueError('coverage publication context required for source flows')
+        return []
+    if (not isinstance(classification, dict) or set(classification) != {'source_sha256', 'flows'}
+            or classification['source_sha256'] != publication_digest(record)
+            or not isinstance(classification['flows'], list) or len(classification['flows']) != len(flows)):
+        raise ValueError('coverage publication context does not match the source record')
+    indexed = {}
+    for row in classification['flows']:
+        if (not isinstance(row, dict) or set(row) != {'index', 'summary'}
+                or type(row['index']) is not int or not 0 <= row['index'] < len(flows)
+                or row['index'] in indexed or not isinstance(row['summary'], str) or not row['summary'].strip()):
+            raise ValueError('coverage publication context requires each index and nonempty summary exactly once')
+        indexed[row['index']] = row['summary']
+    return [indexed[i] for i in range(len(flows))]
+
+
 def public_limitations(record, classification=None):
     original = record['coverage']['limitations']
-    if record['schema_version'] in (8, 9, 10):
+    if record['schema_version'] in (8, 9, 10, 11):
         if classification is not None:
             raise ValueError('schemas 8–10 already contain limitation classification')
         rows = original

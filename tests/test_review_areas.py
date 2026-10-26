@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from publication_fixtures import coverage_classification
+
 from test_review_contract import MODULE_PATH, clean_record, contract, finding
 
 
@@ -126,7 +128,7 @@ class ReviewAreaRenderingTests(unittest.TestCase):
         from ccr.reporting.projections import publication_digest
         output = contract.render(record, audience='comment', publication_context={
             'source_sha256': publication_digest(record),
-            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
+            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]}, coverage_publication_context=coverage_classification(record))
         self.assertEqual(output.count(detail), 1)
         self.assertIn(detail + ' [material]', output)
         self.assertEqual(record, snapshot)
@@ -138,15 +140,15 @@ class ReviewAreaRenderingTests(unittest.TestCase):
         self.assertIn('Inspected producer responsibilities', output)
         self.assertLess(output.index('### Validación'), output.index('### Matriz ABCDE'))
         self.assertNotIn('Riesgo del cambio', output)
-        self.assertEqual(contract.render(record, audience='comment'),
-                         contract.render(clean_record(), audience='comment'))
+        self.assertEqual(contract.render(record, audience='comment', coverage_publication_context=coverage_classification(record)),
+                         contract.render(clean_record(), audience='comment', coverage_publication_context=coverage_classification(clean_record())))
 
     def test_area_gap_still_appears_in_public_uncertainties(self):
         record = area_record()
         detail = 'Required transaction recovery remains unverified'
         record['coverage']['areas'][3].update(status='partial', material=True, details=detail)
         record['verdict'] = 'insufficient_evidence'
-        output = contract.render(record, audience='comment')
+        output = contract.render(record, audience='comment', coverage_publication_context=coverage_classification(record))
         self.assertIn(detail, output)
         self.assertNotIn('### Matriz ABCDE', output)
 
@@ -168,8 +170,11 @@ class ReviewAreaCLITests(unittest.TestCase):
             record = area_record()
             path.write_text(json.dumps(record), encoding='utf-8')
             prefix = [sys.executable, '-B', str(MODULE_PATH), 'contract']
+            coverage_path = Path(directory) / 'coverage.json'
+            coverage_path.write_text(json.dumps(coverage_classification(record)), encoding='utf-8')
             for audience, present in (('render-user', True), ('render-comment', False)):
-                result = subprocess.run(prefix + [audience, '--input', str(path)],
+                extra = ['--coverage-publication-context', str(coverage_path)] if audience == 'render-comment' else []
+                result = subprocess.run(prefix + [audience, '--input', str(path)] + extra,
                                         capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual('### Matriz ABCDE' in result.stdout, present)

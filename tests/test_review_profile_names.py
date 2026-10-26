@@ -99,13 +99,17 @@ class ProfileNameTests(unittest.TestCase):
             self.assertTrue(any(field in error for error in contract.validate(invalid)))
 
     def test_schema7_cli_and_public_projection(self):
+        from publication_fixtures import coverage_classification
         with tempfile.TemporaryDirectory(prefix='ccr-names-') as directory:
             path = Path(directory) / 'review.json'
             value = record7('focused')
             path.write_text(json.dumps(value), encoding='utf-8')
             for command in ('validate', 'render-user', 'render-comment'):
+                coverage_path = Path(directory) / 'coverage.json'
+                coverage_path.write_text(json.dumps(coverage_classification(value)), encoding='utf-8')
+                extra = ['--coverage-publication-context', str(coverage_path)] if command == 'render-comment' else []
                 result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract',
-                                         command, '--input', str(path)], capture_output=True, text=True, encoding='utf-8')
+                                         command, '--input', str(path)] + extra, capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if command == 'render-user':
                     self.assertIn('focused', result.stdout)

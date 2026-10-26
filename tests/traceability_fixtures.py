@@ -46,3 +46,13 @@ def set_dimension(record, identifier, **updates):
     dimension = next(row for row in area['dimensions'] if row['id'] == identifier)
     dimension.update(updates)
     area.update(dimension_summary(area['dimensions']))
+
+
+def publication_contexts(record):
+    from publication_fixtures import check_classification, coverage_classification
+    checks = check_classification(record)
+    for row, source in zip(checks['checks'], record['checks']):
+        if record['schema_version'] == 11:
+            row['purpose'] = source['purpose']
+    return dict(check_publication_context=checks,
+                coverage_publication_context=coverage_classification(record))

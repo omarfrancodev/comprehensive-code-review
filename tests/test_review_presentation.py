@@ -2,6 +2,8 @@
 import copy
 import unittest
 
+from publication_fixtures import coverage_classification
+
 from test_review_areas import area_record
 from test_review_contract import contract, finding
 
@@ -51,7 +53,7 @@ class AttributionTests(unittest.TestCase):
 
     def test_assignee_never_becomes_author_and_unmapped_names_do_not_become_mentions(self):
         for audience in ('user', 'comment'):
-            output = contract.render(current_record(), audience)
+            output = contract.render(current_record(), audience, coverage_publication_context=coverage_classification(current_record()) if audience == 'comment' else None)
             self.assertIn('- **Responsable del MR/PR:** @omar', output)
             self.assertIn('- **Autores del cambio:** @ana; Luis', output)
             self.assertNotIn('@Luis', output)
@@ -60,13 +62,13 @@ class AttributionTests(unittest.TestCase):
     def test_unverified_account_is_never_mentioned(self):
         record = current_record()
         record['change_authors'][0]['verified'] = False
-        self.assertNotIn('@ana', contract.render(record, 'comment'))
+        self.assertNotIn('@ana', contract.render(record, 'comment', coverage_publication_context=coverage_classification(record)))
 
     def test_verified_account_mentions_preserve_platform_username_characters(self):
         record = current_record()
         record['responsible']['username'] = 'Omar_Franco'
         record['change_authors'][0]['username'] = 'ana_dev'
-        output = contract.render(record, 'comment')
+        output = contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         self.assertIn('**Responsable del MR/PR:** @Omar_Franco', output)
         self.assertIn('**Autores del cambio:** @ana_dev; Luis', output)
 
@@ -84,7 +86,7 @@ class PortableMarkdownTests(unittest.TestCase):
     def test_metadata_are_separate_list_blocks_for_both_audiences(self):
         record = area_record()
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)
             header = output.split('No se confirmaron')[0]
             for label in ('Alcance', 'Versión', 'Destino', 'Responsable del MR/PR', 'MR/PR', 'Descripción'):
                 self.assertTrue(any(line.startswith('- **' + label + ':**')
@@ -102,7 +104,7 @@ class PortableMarkdownTests(unittest.TestCase):
         self.assertIn('- **Verificación:** independiente', output)
         self.assertIn('- **Descripción:** No aplica; revisión local', output)
         self.assertIn('- **Responsable:** @omar', output)
-        public = contract.render(record, 'comment')
+        public = contract.render(record, 'comment', coverage_publication_context=coverage_classification(record))
         self.assertNotIn('**Perfil:**', public)
         self.assertNotIn('**Verificación:**', public)
         self.assertNotIn('Matriz ABCDE', public)
@@ -120,7 +122,7 @@ class PortableMarkdownTests(unittest.TestCase):
         record = area_record()
         record['findings'] = [finding()]
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            output = contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)
             for label in ('Ubicación', 'Escenario', 'Impacto', 'Evidencia', 'Corrección requerida', 'Bloqueante'):
                 self.assertIn('\n- **' + label + ':**', output)
 

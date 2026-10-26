@@ -19,6 +19,7 @@ def main(argv=None, *, prog=None):
     parser.add_argument('--context', help='Optional explicitly collected handoff provenance JSON')
     parser.add_argument('--publication-context', help='Ephemeral source-bound historical limitation classification for render-comment')
     parser.add_argument('--check-publication-context', help='Ephemeral source-bound public check summaries for render-comment')
+    parser.add_argument('--coverage-publication-context', help='Ephemeral source-bound public coverage summaries for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
     args = parser.parse_args(argv)
     try:
@@ -26,9 +27,13 @@ def main(argv=None, *, prog=None):
             raise ValueError('--publication-context is only applicable to render-comment')
         if args.check_publication_context and args.command != 'render-comment':
             raise ValueError('--check-publication-context is only applicable to render-comment')
+        if args.coverage_publication_context and args.command != 'render-comment':
+            raise ValueError('--coverage-publication-context is only applicable to render-comment')
         publication_context = json.loads(Path(args.publication_context).read_text(encoding='utf-8')) if args.publication_context else None
         check_publication_context = (json.loads(Path(args.check_publication_context).read_text(encoding='utf-8'))
                                      if args.check_publication_context else None)
+        coverage_publication_context = (json.loads(Path(args.coverage_publication_context).read_text(encoding='utf-8'))
+                                        if args.coverage_publication_context else None)
         value = json.loads(Path(args.input).read_text(encoding='utf-8'))
         if args.command == 'validate':
             errors = validate(value)
@@ -48,7 +53,8 @@ def main(argv=None, *, prog=None):
             print(render_handoff(value, context=context), end='')
         elif args.command == 'render-comment':
             print(render(value, 'comment', publication_context,
-                         check_publication_context=check_publication_context), end='')
+                         check_publication_context=check_publication_context,
+                         coverage_publication_context=coverage_publication_context), end='')
         else:
             print(render(value, 'user', publication_context), end='')
         return 0

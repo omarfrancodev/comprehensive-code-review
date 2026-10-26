@@ -13,7 +13,7 @@ from ccr.contracts.validation import (
 )
 from ccr.reporting.markdown import markdown_text, one_line, reference_text, table_cell
 from ccr.reporting.projections import (
-    public_checks, public_limitations, public_projection, public_reservations, public_url,
+    public_checks, public_coverage, public_limitations, public_projection, public_reservations, public_url,
 )
 
 
@@ -41,7 +41,8 @@ def confirmed_counts_text(findings):
         f"{sum(item['status'] == 'confirmed' and item['priority'] == priority for item in findings)}"
         for priority, label in PRIORITIES.items())
 
-def render(record, audience='user', publication_context=None, *, check_publication_context=None):
+def render(record, audience='user', publication_context=None, *, check_publication_context=None,
+           coverage_publication_context=None):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
@@ -51,6 +52,10 @@ def render(record, audience='user', publication_context=None, *, check_publicati
         raise ValueError('publication context is only applicable to public rendering')
     if check_publication_context is not None and audience != 'comment':
         raise ValueError('check publication context is only applicable to public rendering')
+    if coverage_publication_context is not None and audience != 'comment':
+        raise ValueError('coverage publication context is only applicable to public rendering')
+    flows = (public_coverage(record, coverage_publication_context) if audience == 'comment'
+             else record['coverage']['flows'])
     public_check_rows = (public_checks(record, check_publication_context)
                          if audience == 'comment' else None)
     scope = record['scope']
@@ -145,8 +150,7 @@ def render(record, audience='user', publication_context=None, *, check_publicati
                 lines.append('  - **Referencia de ejecución:** ' + reference_text(display['reference']))
     else:
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
-    if audience == 'user':
-        lines.extend(['', *coverage_lines(record['coverage']['flows'])])
+    lines.extend(['', *coverage_lines(flows)])
     areas = record['coverage'].get('areas', [])
     if audience == 'user' and areas:
         lines.extend(['', '### Matriz ABCDE', '',

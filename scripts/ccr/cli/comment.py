@@ -18,6 +18,7 @@ def main(argv=None, *, prog=None):
     prepare.add_argument('--output', required=True)
     prepare.add_argument('--publication-context')
     prepare.add_argument('--check-publication-context')
+    prepare.add_argument('--coverage-publication-context')
     verify = commands.add_parser('verify', help='Verify exact local or observed remote comment bytes')
     verify.add_argument('--input', required=True)
     verify.add_argument('--draft', required=True)
@@ -31,6 +32,8 @@ def main(argv=None, *, prog=None):
                                    if args.publication_context else None)
             check_context = (_read_json(args.check_publication_context, 'check publication context')
                              if args.check_publication_context else None)
+            coverage_context = (_read_json(args.coverage_publication_context, 'coverage publication context')
+                                if args.coverage_publication_context else None)
             session_dir, _, workspace_manifest = owned_session(args.session)
         except (OSError, ValueError, TypeError, KeyError, workspace_ops.ReviewError) as exc:
             print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
@@ -38,7 +41,8 @@ def main(argv=None, *, prog=None):
         try:
             draft = prepare_public_comment(
                 record, publication_context=publication_context,
-                check_publication_context=check_context)
+                check_publication_context=check_context,
+                coverage_publication_context=coverage_context)
         except (ValueError, TypeError) as exc:
             print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
             return 1
