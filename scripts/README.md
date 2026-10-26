@@ -1,5 +1,7 @@
 # Mapa de módulos de `scripts/ccr`
 
+- `scripts/ccr/contracts/dimensions.py`: catálogo y coherencia de las 27 dimensiones de final 11, sin IO.
+
 `scripts/__main__.py` es la entrada ejecutable instalada (`python <skill>/scripts ...`). `ccr.cli.main.AREAS` es el registro fijo de las doce áreas. Los parsers y traducciones de errores viven en `ccr.cli`; las operaciones de dominio viven en su propietario por área. El launcher carga sólo el parser solicitado, y la ayuda raíz no inicia servicios.
 
 Las dependencias siguen responsabilidades observables: `shared` proporciona primitivas; `contracts` valida valores sin leer ni escribir archivos; `workflow` normaliza entradas y construye candidatos; `execution` observa procesos y opera sesiones temporales; `archive` lee o cambia el archivo durable; `reporting` forma proyecciones y entregas; `maintenance` resume mediciones. `archive` puede coordinar operaciones de `execution`; `execution` no invoca mutadores de `archive`. Los módulos de implementación no importan `ccr.cli`. `tests/test_script_dependencies.py` comprueba imports absolutos, relativos y locales, carga diferida registrada y ciclos, incluidos imports dentro de funciones.
