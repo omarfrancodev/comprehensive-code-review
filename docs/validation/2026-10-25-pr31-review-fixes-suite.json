@@ -315,5 +315,15 @@
       "test": "test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused",
       "reason": "Windows symlink privilege unavailable, WinError 1314"
     }
-  ]
+  ],
+  "publication": {
+    "url": "https://github.com/omarfrancodev/comprehensive-code-review/pull/31",
+    "initial_published_fix_head": "9efde515cf243057358daf780a7f56b11ec9160a",
+    "head_branch": "docs/review-equivalence-and-coverage",
+    "base": "main",
+    "base_sha": "4fab30695bb3c0c47071eb887b38f92328b03ea2",
+    "head_and_body_verified": true,
+    "state": "open",
+    "merged": false
+  }
 }

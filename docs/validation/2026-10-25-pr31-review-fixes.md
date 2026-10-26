@@ -4,7 +4,7 @@ Revisión atendida: [comentario F001–F005](https://github.com/omarfrancodev/co
 
 ## Estado
 
-Los cinco escenarios se reprodujeron y corrigieron. Validación completa: **893 casos en 80 módulos, 890 aprobados y 3 omitidos por permisos Windows, cero fallos y errores**. También aprobaron 55 casos focalizados y la revisión estática independiente no encontró hallazgos. Publicación del ajuste pendiente a continuación.
+Los cinco escenarios se reprodujeron y corrigieron. Validación completa: **893 casos en 80 módulos, 890 aprobados y 3 omitidos por permisos Windows, cero fallos y errores**. También aprobaron 55 casos focalizados y la revisión estática independiente no encontró hallazgos. Ajustes publicados en el PR #31 y descripción actualizada, sin merge.
 
 ## Diagnóstico y correcciones
 
@@ -64,3 +64,7 @@ Revisión estática de solo lectura de `993c3c0..52aa200`, con el paquete de la 
 | Desactivar lazy fetch y transportes en helpers | Adquisición explícita a cargo del coordinador; un fetch intencional debe ejecutarse fuera del helper |
 | Pares de blobs y formato propio de alta/baja | Evitar pathspec recursivo sin escribir objetos; exige preservar exactamente CR/newline y hunks normalizados |
 | Inventario completo en tres procesos | Todos los módulos/casos heredados incluidos; no se añade una corrida de orden monolítico |
+
+## Publicación
+
+Push normal de la rama existente y actualización de la descripción del [PR #31](https://github.com/omarfrancodev/comprehensive-code-review/pull/31). Se verificaron desde GitHub el head inicial del ajuste 9efde51, la base main/4fab306, la rama y el cuerpo actualizado. PR abierto y sin conflictos observados; no se publicó respuesta ni se alteró el comentario original. El cierre documental posterior no cambia el código de ejecución probado en 52aa200.

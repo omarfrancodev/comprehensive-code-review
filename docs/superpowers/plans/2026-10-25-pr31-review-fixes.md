@@ -46,6 +46,8 @@
 
 - [x] Revisión final independiente del ajuste; resolver hallazgos importantes si aparecen con regresión RED→GREEN.
 - [x] Ejecutar todo el inventario unittest en tres lotes disjuntos, conservar skips de capacidad e informe reproducible.
-- [ ] Actualizar changelog/referencias y evidencia; commit, push normal, verificar HEAD y descripción del PR #31. No publicar respuestas al comentario sin autorización explícita.
+- [x] Actualizar changelog/referencias y evidencia; commit, push normal, verificar HEAD y descripción del PR #31. No publicar respuestas al comentario sin autorización explícita.
 
 **Validación:** [893 casos completos, 890 aprobados/3 omitidos, sin fallos](../../validation/2026-10-25-pr31-review-fixes.md).
+
+**Publicación comprobada:** ajustes y validación publicados en [PR #31](https://github.com/omarfrancodev/comprehensive-code-review/pull/31), con referencias y descripción verificadas; sin merge.
