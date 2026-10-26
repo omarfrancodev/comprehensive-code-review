@@ -2,6 +2,21 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## unreleased
+
+### Added
+
+#### Artefactos y contratos
+
+- Exigir propósito por check en final 11 y conservarlo desde la captura en recibos 2; registrar las 27 dimensiones con evidencia o motivo y agregados coherentes, manteniendo contratos históricos y criterios de review.
+
+### Changed
+
+#### Reportes y entregas
+
+- Presentar propósito y resultado separados, evidencias por origen/check y cobertura como sublistas en informe, comentario y entregas; conservar observaciones distintas sin repetir resultados.
+- Vincular resúmenes públicos de propósito y cobertura a cada fuente mediante contextos editoriales y draft 2 verificable; preservar drafts 1 y prepararlos de nuevo desde resultados vigentes sin reejecución.
+
 ## 3.2.0 — 2026-10-26
 
 ### Added

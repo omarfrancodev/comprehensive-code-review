@@ -2,6 +2,9 @@
 import copy
 import unittest
 
+from script_test_support import enable_package_imports
+enable_package_imports()
+
 from ccr.reporting import blocks, render as renderer
 from ccr.contracts.dimensions import DIMENSIONS
 from traceability_fixtures import record11

@@ -1,6 +1,9 @@
 """Canonical public goals and coverage remain bound to their source."""
 import copy
 import unittest
+from script_test_support import enable_package_imports
+enable_package_imports()
+
 from ccr.reporting import comment as comments, projections
 from traceability_fixtures import record11, publication_contexts
 

@@ -3,6 +3,9 @@ import copy
 from pathlib import Path
 import unittest
 import test_review_traceability_archive as archives
+from script_test_support import enable_package_imports
+enable_package_imports()
+
 from ccr.reporting import delivery, render as renderer
 from traceability_fixtures import record11, publication_contexts, PURPOSE, set_dimension
 

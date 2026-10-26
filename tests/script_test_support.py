@@ -485,6 +485,7 @@ def owned_check_request(root: Path, *, exit_code: int = 0) -> dict:
         'executors': [{'executor': 'X1', 'workspace': str(cwd)}]
     }), encoding='utf-8')
     argv = [sys.executable, '-c', f'raise SystemExit({int(exit_code)})']
-    return {'check_id': 'C001', 'argv': argv, 'command': shlex.join(argv),
+    return {'check_id': 'C001', 'purpose': 'Verify capture preserves the observed process exit code.',
+            'argv': argv, 'command': shlex.join(argv),
             'cwd': str(cwd), 'executor_workspace': str(cwd), 'revision': revision,
             'executor': 'X1', 'output_dir': str(evidence_dir / 'attempt-1')}
