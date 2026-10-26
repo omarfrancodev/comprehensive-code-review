@@ -13,3 +13,5 @@ Load this reference when the changed flow crosses a trust boundary, handles conc
 - **Performance:** inspect a concrete workload/path and the operation that grows with it. Report a performance concern only when a credible scenario and consequence are evidenced; use measured data when claiming measured impact.
 
 In the existing brief, name the threat/operational boundary, triggering condition, expected invariant and evidence. Keep uncertainty explicit when the deployment or workload is unknown.
+
+For validation, follow every nested call before concluding that credentials precede state/role/device checks; inspect request-visible responses, sensitive cost differences and audit classifications without claiming timing measurements that were not taken. For a new index/cache, inspect every deletion path and natural expiry as well as creation. For compatibility, consider data written by the previous producer during rollout. For repeated reads, count evidenced operations per request/batch; credible growth can establish a limited concern without a benchmark, while severity still needs the actual consequence.

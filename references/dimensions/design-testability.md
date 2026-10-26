@@ -19,3 +19,5 @@ Load this reference when the selected scope contains a material architecture/des
 - **User-visible outcome:** connect the triggering input to the response/state a caller sees. Use a short before/after example when it makes a behavior defect reproducible.
 
 Record the relevant aspect names, flow, invariant and decisive source/check in existing brief and evidence fields. Keep findings tied to a concrete trigger and consequence.
+
+For test seams, also compare the assertion's expected behavior with the requirement: a green test may explicitly require the wrong order, audit classification or fallback. For state changes, include a permitted state other than the nominal pair and a failure after an irreversible side effect. For new/default parameters, verify current call sites and omission consequences; a hypothetical future misuse alone is a recommendation, not a confirmed defect.
