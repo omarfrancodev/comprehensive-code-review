@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-import review_inputs
+from ccr.workflow import inputs as review_inputs
 
 from recovery_fixtures import record10
 

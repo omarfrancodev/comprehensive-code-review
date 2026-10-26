@@ -47,7 +47,7 @@ def native_record(scenario):
     This is synthetic test construction, never a migration of retained bytes.
     Historical contract/projection tests continue to use their original records.
     """
-    import review_profiles
+    from ccr.workflow import profiles as review_profiles
     value = record10(review_profiles._canonical(scenario['profile']))
     for field, item in scenario.items():
         if field not in {'schema_version', 'profile', 'coverage'}:
@@ -66,7 +66,7 @@ def context10(record):
     execution = record['coverage']['execution']
     history = copy.deepcopy(execution['profile_history'])
     try:
-        import review_layout
+        from ccr.archive import layout as review_layout
         logical_identity = review_layout.logical_scope(record['scope'])['identity']
     except (ImportError, TypeError, ValueError):
         logical_identity = None
@@ -124,7 +124,7 @@ def source_events(record):
             'kind': 'discovery' if row['role'] == 'discovery' else 'grouped-verification',
             'status': 'completed',
             'actor': identity,
-            'evidence': [result['reference']],
+            'evidence': [row['reference'], result['reference']],
         })
     return events
 
@@ -143,7 +143,7 @@ def legacy_prepare(artifacts, repo, scope, **kwargs):
 def historical_prepare(artifacts, repo, scope, **kwargs):
     """Create an archive-6 fixture for read-only deprecation tests."""
     from pathlib import Path
-    from review_trace import FIELDS, append
+    from ccr.archive.trace import FIELDS, append
     version = kwargs.pop('skill_version', '2.11.0')
     harness = kwargs.pop('harness', 'codex')
     run = Path(artifacts.prepare(repo, scope, version, harness,

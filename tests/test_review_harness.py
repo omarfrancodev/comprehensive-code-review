@@ -1,26 +1,23 @@
 """Canonical harness identity is declared once, never inferred from model/provider."""
 import copy
-import importlib.util
 import json
 import os
-from pathlib import Path
 import subprocess
+from unittest.mock import patch
+from pathlib import Path
 import sys
 import unittest
-from unittest.mock import patch
 
 import test_review_artifacts as fixtures
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-spec = importlib.util.spec_from_file_location('review_harness', SCRIPTS / 'review_harness.py') if (SCRIPTS / 'review_harness.py').exists() else None
-harness = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(harness)
+sys.path.insert(0, str(SCRIPTS))
+from ccr.execution import harness
 
 
 class HarnessTests(unittest.TestCase):
     def setUp(self):
-        self.assertIsNotNone(harness, 'canonical harness resolver is missing')
+        self.assertTrue(harness.CATALOG.is_file(), 'canonical harness catalog is missing')
 
     def resolve(self, name, **kwargs):
         return harness.resolve(name, environ=kwargs.pop('environ', {}), **kwargs)
@@ -161,6 +158,22 @@ class HarnessTests(unittest.TestCase):
             with self.subTest(key=key), self.assertRaises(ValueError):
                 harness.validate_identity(altered)
 
+    def test_model_observations_do_not_change_harness_identity(self):
+        from ccr.contracts import model_usage as review_model_usage
+        identity = self.resolve('Codex Desktop')
+        before = copy.deepcopy(identity)
+        observation = review_model_usage.observation_from_metadata(
+            {'observed_model': 'model-version-observed', 'model_source': {
+                'kind': 'platform', 'reference': 'call-17'}},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': 'ctx-1'},
+            phase='discovery', activity='coordination')
+        ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + 'a' * 20, harness_id=identity['harness_id'])
+        harness.validate_identity(identity)
+        self.assertEqual(identity, before)
+        self.assertEqual(ledger['harness_id'], identity['harness_id'])
+        self.assertNotIn('model', identity)
+
 
 class ArchiveHarnessTests(unittest.TestCase):
     setUp = fixtures.ArchiveTests.setUp
@@ -183,7 +196,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         self.assertEqual(initial['harness'], raw)
         self.assertEqual(initial['harness_id'], 'claude-code-desktop')
         with patch.dict(os.environ, {'CCR_HARNESS_ID': 'codex-cli'}):
-            fixtures.artifacts.record_event(run, self.write('event.json', dict(kind='discovery', status='started', summary='Inspected flow')))
+            fixtures.artifacts.record_event(run, self.write('event.json', dict(kind='check', status='started', summary='Harness identity persistence check')))
             self.assertEqual(fixtures.artifacts.validate(run)['state'], 'processing')
             self.retain(run)
             self.close(run)
@@ -220,7 +233,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         from recovery_fixtures import selection_input
         source = self.write('source.json', {'kind': 'user', 'reference': 'Desktop session declaration'})
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Claude Code', '--output-root', str(self.output), '--profile-input', str(profile),
                 '--harness-id', 'claude-code-desktop',
@@ -244,7 +257,7 @@ class ArchiveHarnessTests(unittest.TestCase):
     def test_cli_unencodable_source_is_rejected_before_creating_archive_directories(self):
         from recovery_fixtures import selection_input
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Codex', '--harness-id', 'codex-desktop', '--output-root', str(self.output),
                 '--profile-input', str(profile)]
@@ -265,7 +278,7 @@ class ArchiveHarnessTests(unittest.TestCase):
         from recovery_fixtures import selection_input
         source = self.write('null-source.json', None)
         profile = self.write('profile.json', selection_input())
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'prepare',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'prepare',
                 '--repo', str(self.repo), '--scope-file', str(self.scope), '--skill-version', '2.10.0',
                 '--harness', 'Codex', '--output-root', str(self.output), '--harness-source-file', str(source),
                 '--profile-input', str(profile)]

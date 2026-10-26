@@ -26,3 +26,5 @@ Mark a pending gap material when it prevents establishing required affected beha
 Use canonical finding IDs as cross-references. A cause spanning areas may be referenced in multiple rows; retain one finding block. Description consistency remains its existing check, not five new checks. Re-review refreshes only affected rows with justified evidence reuse.
 
 The user report includes the matrix. Public comments include the existing findings/validation and material uncertainty needed to explain the verdict; they omit the matrix, area labels and classifications. Covered means inspected, not defect-free or a production guarantee.
+
+Derive covered rows from inspected scenarios, not the assignment's area list or test count. State relevant accepted/rejected/fallback states, failure transitions, compatibility windows and resource lifecycle boundaries when the change owns them. The existing packet flow notes and limitation fields are sufficient; no new matrix columns, automatic five-agent topology or quality score is introduced.

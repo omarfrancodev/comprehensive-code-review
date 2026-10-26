@@ -11,15 +11,18 @@ from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_artifacts as artifacts
-import review_contract
-import review_history
+from script_test_support import archive_api
+artifacts = archive_api()
+from script_test_support import contract_api
+review_contract = contract_api()
+from ccr.archive import history as review_history
+from ccr.archive import history as history_ops
 from recovery_fixtures import record10
 
 
 class HistoryTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
+        self.temp = tempfile.TemporaryDirectory(dir=Path(tempfile.gettempdir()).resolve())
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / 'archive'
         self.identity = 'origin:https://git.example/acme/service.git'
@@ -114,7 +117,7 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('→', self.report_bytes.decode('utf-8'))
         env = dict(os.environ, PYTHONIOENCODING='cp1252', PYTHONUTF8='0')
         process = subprocess.run([sys.executable, '-B', '-X', 'utf8=0',
-            str(SCRIPTS / 'review_history.py'), 'show', '--history-dir', result['history_dir']],
+            str(SCRIPTS), 'history', 'show', '--history-dir', result['history_dir']],
             capture_output=True, env=env)
         self.assertEqual(process.returncode, 0, process.stderr.decode('utf-8', errors='replace'))
         self.assertEqual(process.stdout.decode('utf-8').replace('\r\n', '\n'),
@@ -196,7 +199,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(set(self.snapshot(destination)), {'informe.md', 'consulta.json', '.ccr-history.json'})
 
     def test_source_change_between_reads_blocks_publication(self):
-        original = review_history._source_snapshot
+        original = history_ops._source_snapshot
         calls = 0
         def change_after_first(path):
             nonlocal calls
@@ -205,7 +208,7 @@ class HistoryTests(unittest.TestCase):
             if calls == 1:
                 (self.run / 'informe.md').write_bytes(b'concurrent change')
             return value
-        with patch.object(review_history, '_source_snapshot', side_effect=change_after_first):
+        with patch.object(history_ops, '_source_snapshot', side_effect=change_after_first):
             with self.assertRaisesRegex(ValueError, 'hash'):
                 review_history.port_review(self.run, Path(self.temp.name) / 'history')
         self.assertFalse((Path(self.temp.name) / 'history').exists())
@@ -227,12 +230,12 @@ class HistoryTests(unittest.TestCase):
     def test_show_rejects_report_changed_after_package_verification(self):
         result = review_history.port_review(self.run, Path(self.temp.name) / 'history')
         directory = Path(result['history_dir'])
-        original = review_history.verify_history
+        original = history_ops.verify_history
         def changed_after_verification(path):
             value = original(path)
             (directory / 'informe.md').write_bytes(b'concurrently changed report')
             return value
-        with patch.object(review_history, 'verify_history', changed_after_verification):
+        with patch.object(history_ops, 'verify_history', changed_after_verification):
             with self.assertRaisesRegex(ValueError, 'changed|modified'):
                 review_history.show_history(directory)
 

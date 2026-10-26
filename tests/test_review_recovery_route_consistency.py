@@ -10,6 +10,7 @@ import test_review_recovery_exit_guidance as guidance
 import test_review_recovery_diagnostics as diagnostics
 
 artifacts = guidance.artifacts
+from ccr.archive import restart as restart_ops
 recovery = guidance.recovery
 claims = guidance.claims
 workspace = diagnostics.review_workspace
@@ -96,7 +97,7 @@ class RecoveryRouteConsistencyTests(unittest.TestCase):
             role=['review'], include_untracked=[]))['session_dir'])
         artifacts.register(source, [str(first), str(second)], context_input=context)
         request = self.restart_request(source, transfer_paths=[str(first), str(second)])
-        with patch.object(artifacts, 'transfer_resources', side_effect=KeyboardInterrupt('prepared before transfer')):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=KeyboardInterrupt('prepared before transfer')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         successor = Path(artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))['successor_run_dir'])

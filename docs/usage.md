@@ -67,7 +67,7 @@ Las afirmaciones pertinentes de otros revisores se contrastan después del descu
 
 ## Continuar o repetir una revisión
 
-Si una petición puede corresponder a una revisión anterior del mismo MR/PR o alcance local, primero consulta candidatos con el helper `review_artifacts.py lookup`. La consulta se limita al repositorio y a una referencia/target/snapshot estable; devuelve páginas de hasta 100, con cursor si hay más. No recorre otros repositorios, no lee las evidencias completas, no modifica archivos y no elige por fecha. Si el resultado indica `truncated`, la página no representa todos los candidatos.
+Si una petición puede corresponder a una revisión anterior del mismo MR/PR o alcance local, primero consulta candidatos con el helper `scripts artifacts lookup`. La consulta se limita al repositorio y a una referencia/target/snapshot estable; devuelve páginas de hasta 100, con cursor si hay más. No recorre otros repositorios, no lee las evidencias completas, no modifica archivos y no elige por fecha. Si el resultado indica `truncated`, la página no representa todos los candidatos.
 
 Una revisión completa, íntegra y vigente puede mostrarse o repetirse; una interrumpida se inspecciona por su ruta exacta antes de decidir continuar, recuperar o reiniciar. `inspect` separa integridad, disponibilidad y vigencia de las entradas. Recuperar significa reanudar la operación durable exacta con sus bytes reservados; no reutilizarla con entradas nuevas. Si base, head, descripción, requisitos, plan, configuración o fuentes cambiaron, o su identidad/completitud es `unknown`, no se continúa como si el snapshot siguiera vigente: se conserva el origen y, si procede, se inicia una revisión vinculada. Una fuente ausente sin recibo de limpieza permanece `missing_unknown`; no se interpreta como limpia. `lookup` no elige por fecha y mostrar un reporte no inicia trabajo, publica ni limpia. Las decisiones y comandos seguros están en [recovery.md](../references/archive/recovery.md).
 
@@ -103,9 +103,12 @@ El layout es `<raíz>/<proyecto>-<id-repositorio>/<alcance>/<fecha>-<id-ejecucio
 | `cierre.json` | Identidad de ejecución, alcance, recursos registrados, integridad y limpieza observada. |
 | `trazabilidad.jsonl` | Hitos compactos de alcance, perfil, asignaciones, checks, verificación, conservación y cierre. |
 | `evidence/` | Evidencia seleccionada necesaria para reproducir o auditar el resultado. |
+| `evidence/model-usage.json` | Registro privado, opcional y acotado del modelo configurado u observado por actividad; valores no expuestos quedan desconocidos. |
 | `measurements.json` | Contadores disponibles para una evaluación de coste solicitada. |
 
-Antes de preparar otro run para el mismo alcance, el helper `lookup` lista candidatos de forma acotada. Para una revisión incompleta, `inspect` informa fase, integridad, fuentes, recursos y acciones posibles; recuperar o continuar requiere seleccionar el run exacto. Estos comandos no inician agentes ni checks. Consulta [recovery.md](../references/archive/recovery.md).
+Antes de preparar otro run para el mismo alcance, el helper `lookup` lista candidatos de forma acotada. Para una revisión incompleta, `inspect` informa fase, integridad, fuentes, recursos y acciones posibles; en un run nativo íntegro añade disposición, fase, sucesor durable, limpieza y publicación observada. Recuperar o continuar requiere seleccionar el run exacto. Estos comandos no inician agentes ni checks. Consulta [recovery.md](../references/archive/recovery.md).
+
+Tras registrar asignaciones, ejecutar `preflight --phase discovery` antes del primer dispatch; al construir el resultado, `preflight --phase retain` valida candidato y evidencia seleccionada. Si falla solo una proyección `candidate.*` y las entradas capturadas siguen vigentes, se corrige el candidato del mismo run y se repite el preflight de retención, sin redescubrir ni verificar de nuevo. Entradas cambiadas o desconocidas y gates incompletos conservan el origen y requieren decidir una revisión vinculada. Un origen histórico o paquete HP no puede usarse como `--previous-run`; el lineage operativo exige una fuente nativa verificada schema 8/layout 2.
 
 El cierre de los archivos nuevos distingue `prepared` (preparación), `processing` (trabajo iniciado), `retaining` (retención en curso), `closing` (cierre pendiente) y `complete` (cierre observado y verificado). Un hito real de descubrimiento, dispatch o resultado cambia automáticamente prepared a processing; la selección de perfil o planificación no lo hace. Processing no demuestra que un proceso siga vivo. Las escrituras pendientes impiden afirmar un estado validado hasta la recuperación. Los archivos históricos conservan sus estados y esquema. El perfil se selecciona y registra antes del trabajo. Los eventos no sustituyen `review.json` ni `informe.md`: se distingue el juicio del review, la retención y la limpieza. Un cierre completo requiere el gate de solo lectura `validate --require-complete`; ante fallo se conservan los recursos y se informa la fase pendiente.
 
@@ -120,6 +123,8 @@ Una revisión cerrada es inmutable. Correcciones, otra revisión, publicación o
 ## Comentarios públicos
 
 Solo se publican con autorización explícita. Comparten el título, veredicto, ID, alcance, versión, hallazgos confirmados y validación del informe; incorporan la consistencia de la descripción y las incertidumbres pertinentes. Omiten la matriz ABCDE, selección de perfil, rutas del archivo interno y mecánica de los revisores.
+
+El comentario lo produce `scripts comment prepare` a partir del registro conservado y el contexto público estructurado. Verificar el cuerpo outbound exacto antes de enviarlo; si una clasificación o detalle es incorrecto, corregir el contexto y volver a generar el borrador. No editar manualmente el texto renderizado después de verificarlo. `verify --remote` permite comparar CRLF con LF; cualquier otra diferencia queda para inspección antes de reintentar y evitar duplicados. Los datos privados del modelo/harness nunca se incluyen.
 
 El responsable del MR/PR y los autores del cambio se declaran por separado usando fuentes verificadas. La asignación, creación del MR/PR y autoría de commits no son equivalentes. Los nombres o correos de Git no se convierten en menciones sin verificar su cuenta; las identidades no disponibles se declaran como no identificadas. Antes de publicar se comprueba la vigencia de código, descripción y atribución. Consulta [report-format.md](../references/reporting/report-format.md) y [publication.md](../references/reporting/publication.md).
 
@@ -138,17 +143,29 @@ La agrupación facilita mantener las reglas; cada rol sigue consultando solo las
 
 ## Helpers y validación
 
-La lectura de instrucciones no requiere ejecutar helpers. Todos usan Python 3.10+ y biblioteca estándar. Se invocan mediante intérprete y ruta absoluta; consulta `--help` para la interfaz exacta. Las convenciones de la petición al agente no sustituyen sus argumentos.
+La lectura de instrucciones no requiere ejecutar helpers. Todos usan Python 3.10+ y biblioteca estándar. Los comandos comparten una sola entrada, invocable desde cualquier directorio con una copia completa de la skill:
 
-| Helper | Propósito |
+```bash
+python /ruta/skill/scripts --help
+python /ruta/skill/scripts artifacts --help
+```
+
+La raíz lista las doce áreas sin cargar sus servicios. El [mapa de módulos](../scripts/README.md) identifica responsabilidades, efectos, contratos y pruebas. Consulta la [guía de migración](script-migration.md) para los equivalentes y la ruptura de imports. Las convenciones de la petición al agente no sustituyen los argumentos del CLI.
+
+| Área | Propósito |
 |---|---|
-| `scripts/review_contract.py` | Validar registros, asignar IDs y generar informes y comentarios en español. |
-| `scripts/review_packets.py` | Validar y combinar candidatos y decisiones incrementales sin inventar conclusiones. |
-| `scripts/review_artifacts.py` | Preparar, registrar, conservar, validar y cerrar el archivo interno sin eliminar recursos. |
-| `scripts/review_delivery.py` | Generar la entrega solicitada desde un resultado conservado. |
-| `scripts/review_workspace.py` | Preparar y limpiar snapshots temporales con comprobaciones de propiedad; requiere Git. |
-| `scripts/review_runner.py` | Ejecutar un adaptador CLI previamente configurado; no selecciona ni configura el proveedor. |
-| `scripts/review_metrics.py` | Registrar y agregar contadores suministrados para una evaluación explícita de coste. |
+| `artifacts` | Preparar, registrar, conservar, validar y cerrar el archivo interno sin eliminar recursos; incluye preflight y lookup. |
+| `contract` | Validar registros, asignar IDs y generar informes/comentarios en español. |
+| `delivery` | Generar la entrega solicitada desde un resultado conservado. |
+| `history` | Verificar, portar o mostrar paquetes históricos de consulta. |
+| `metrics` | Registrar y agregar contadores suministrados para una evaluación explícita de coste. |
+| `packets` | Validar y combinar candidatos y decisiones incrementales sin inventar conclusiones. |
+| `recovery` | Diagnosticar y continuar la recuperación para un run explícito. |
+| `runner` | Ejecutar un adaptador CLI previamente configurado; no selecciona ni configura el proveedor. |
+| `workspace` | Preparar, inspeccionar y limpiar snapshots temporales con comprobaciones de propiedad; requiere Git. |
+| `setup` | Construir entradas de perfil, contexto y eventos a partir de datos explícitos. |
+| `checks` | Ejecutar un comando de check explícito y capturar recibo/logs sin shell. |
+| `comment` | Preparar y verificar el borrador de comentario público; no lo publica. |
 
 El helper de artifacts es obligatorio cuando puede ejecutarse dentro de los permisos disponibles. Una alternativa nativa por indisponibilidad comprueba el mismo contrato; un fallo de validación no justifica eludir el gate. Para entregar se usa el helper de delivery cuando puede ejecutarse, con alternativa nativa equivalente si está indisponible. Los demás helpers son opcionales. Un validador estructural no determina si un hallazgo es verdadero. Consulta [result-contract.md](../references/contracts/result-contract.md), [artifacts.md](../references/archive/artifacts.md) y [delivery.md](../references/reporting/delivery.md).
 

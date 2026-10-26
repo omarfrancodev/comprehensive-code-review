@@ -11,6 +11,7 @@ from unittest.mock import patch
 import test_review_recovery_diagnostics as diagnostics
 
 artifacts = diagnostics.artifacts
+from ccr.archive import restart as restart_ops
 recovery = diagnostics.recovery
 claims = diagnostics.claims
 
@@ -72,7 +73,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
             self.assertEqual(action['intent_path'], active['intent_path'])
             self.assertEqual(action['operation_id'], active['operation_id'])
             self.assertTrue(action['requires_explicit_authority'])
-        command = [sys.executable, '-B', str(Path(artifacts.__file__)), 'recover', '--run-dir', str(source),
+        command = [sys.executable, '-B', str(Path(artifacts.__file__).parent), 'artifacts', 'recover', '--run-dir', str(source),
             '--controller-input', str(self.write('controller-guidance.json', self.controller())),
             '--authority-input', str(self.write('authority-guidance.json', request['authority'])),
             '--current-inputs', str(self.write('current-guidance.json', request['current_inputs']))]
@@ -115,7 +116,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
 
     def test_missing_unclaimed_session_still_completes_the_exact_restart(self):
         source, session, request = self.resource_fixture(False)
-        with patch.object(artifacts, 'register', side_effect=KeyboardInterrupt('before any adoption claim')):
+        with patch.object(restart_ops, 'register', side_effect=KeyboardInterrupt('before any adoption claim')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         self.assertTrue(session.is_relative_to(self.root))
@@ -130,7 +131,7 @@ class RecoveryExitGuidanceTests(unittest.TestCase):
     def test_missing_claim_with_case_alias_still_offers_abandonment(self):
         source, session, request = self.resource_fixture(True)
         request['transfer_paths'] = [str(session).upper()]
-        with patch.object(artifacts, 'transfer_resources', side_effect=KeyboardInterrupt('prepared alias before transfer')):
+        with patch.object(restart_ops, 'transfer_resources', side_effect=KeyboardInterrupt('prepared alias before transfer')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         self.assertTrue(session.is_relative_to(self.root))

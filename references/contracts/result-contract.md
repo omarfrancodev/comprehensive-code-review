@@ -41,6 +41,8 @@ Schemas 9/10 also require execution: {kind: local/static/external/reused, execut
 
 Local IDs bind to context.executors and cierre.executors with the actual head/base or pinned snapshot. An executor with a snapshot requires check.revision equal to that snapshot identity; clean baseline uses its actual base HEAD and snapshot null, never local snapshot evidence. Retention verifies registered workspace Git provenance before disposal. Subsequent validation uses retained sources after cleanup, without requiring deleted worktrees. Portable records preserve execution IDs/kinds; private workspace provenance remains in the source archive, outside public comments.
 
+An optional local command receipt is referenced as `evidence/<attempt>-<check-id>-receipt.json`. It has schema 1 and binds exact argv, workspace cwd, revision, executor, observed start/finish/exit, and stdout/stderr descriptors. The source check's `command` must equal `shlex.join(argv)`, and receipt `cwd` must equal the registered executor's `workspace`; capture and retained validation enforce both bindings. Select the receipt and both log files as evidence separately; each stream reference is flat, such as `evidence/<attempt>-<check-id>-out.log`. Retain preflight and the final source gate validate the receipt bytes, hashes, check ID, executor and revision. Empty logs are valid when their observed hashes and byte counts match. A missing exit code cannot support passed/failed. Each retry uses a new attempt directory and new flat filenames, preserving the earlier receipt and logs.
+
 The shared ledger additionally keeps executor and fixture/configuration identities; worker packets use this compact projection. Reuse identifies unchanged relevant inputs/configuration and keeps the original revision; it never relabels old execution as current. Reruns record reason. Baseline evidence refers to actual base, not new-head execution. Static-only review legitimately has no checks.
 
 ## Final-only fields
@@ -58,7 +60,7 @@ The durable run/skill version, file inventory and closure belong in cierre.json 
 
 ## Mechanical tools
 
-Run python /absolute/skill/scripts/review_contract.py validate --input /absolute/record.json. render-user/render-comment produce Spanish Markdown; read errors and repair the record, not product code. Without Python/filesystem, enforce the same contract through supported structured tools or an in-chat record; honor no-create instructions.
+Run python /absolute/skill/scripts contract validate --input /absolute/record.json. render-user/render-comment produce Spanish Markdown; read errors and repair the record, not product code. Without Python/filesystem, enforce the same contract through supported structured tools or an in-chat record; honor no-create instructions.
 
 Optional deduplicate consumes a findings array plus --groups containing explicitly selected same-cause ID arrays. It preserves all scenarios. Coordinator/verifier decides equivalence; matching titles do not.
 
@@ -80,3 +82,13 @@ In schema 10 each plan row also includes `selection_id` for the profile that aut
 Focused: one discovery and one same-context skeptical pass. Standard: one discovery and a fresh grouped verifier for substantive code candidates/material questions; clean closure or purely mechanical description may use the existing exception. Deep: two/three justified fresh discoveries and one fresh verifier even without findings. Extended automatic: four/five justified fresh discoveries; explicit: two to five, plus one fresh grouped verifier. Project gates are separate required assignments with verified policy source, outside discovery limits.
 
 Fulfilled satisfies the plan and independence. Degraded documents fallback for every unmet requirement; a coordinator fallback can record a skeptical pass without claiming independence. Focused's shared-context requirement applies only to ordinary discovery/verification; required independent project gates remain separate. Coverage.verification describes completed ordinary verification, not project gates/planned passes. Unmet project gates require material coverage gaps. Retention verifies existing sources under [artifacts.md](../archive/artifacts.md); hashes/labels do not prove review truth.
+
+## Guided retained reference index
+
+New guided runs may select `evidence/reference-index.json` with schema 1 `{schema_version, aliases, inputs}`. This private sidecar binds renamed sources and material inputs to retained bytes; it does not add fields to schema-10 `review.json` or the three-file HP history package.
+
+`aliases` maps one original local evidence path to one flat retained evidence path and the SHA-256 observed for the original bytes. The destination bytes must match that digest. Aliases cannot target another alias, form a cycle, self-reference, contain a URL, or grant access to an unselected path. A nested original path is permitted only as an alias key; the canonical destination remains a selectable flat evidence file.
+
+`inputs` records selected `{reference, purpose, sha256}` rows. Purposes are `description`, `requirements`, `notes`, `plan`, `configuration`, or `other`. The index is selected and hashed through `review_inputs.sources`, but never lists itself as one of its inputs. A guided context declares `reference_index="evidence/reference-index.json"`; validation checks the captured digest and selected bytes. Aligned or updated descriptions require exactly one selected `purpose=description` input whose content hash matches both the index and `description.identity` (hex or `sha256:<hex>`).
+
+Three guarantees remain separate: archive integrity confirms retained files match their closure hashes; the guided reference index verifies declared aliases and selected material inputs; semantic checks validate typed IDs and explicit links in the record and selected briefs/results. A valid hash does not prove that a review claim is true. Runs without the sidecar keep the existing native 8/2 integrity contract; they do not receive the new semantic audit. Historical readers and HP package contents remain unchanged.

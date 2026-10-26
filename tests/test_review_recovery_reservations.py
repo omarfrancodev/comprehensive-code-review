@@ -10,8 +10,11 @@ from unittest.mock import patch
 import test_review_restart_resources as resource_tests
 import test_review_artifacts as archive
 from recovery_fixtures import legacy_prepare, selection_input
-import review_recovery as recovery
-import review_resource_claims as claims
+from script_test_support import recovery_api
+recovery = recovery_api()
+from ccr.execution import claims as claims
+from ccr.archive import restart as restart_ops, checkpoints as checkpoint_ops
+from ccr.archive import lifecycle as lifecycle_ops
 
 artifacts = resource_tests.artifacts
 
@@ -41,7 +44,7 @@ class RecoveryReservationTests(unittest.TestCase):
     def test_abandon_reconstructs_missing_intent_from_exact_active_descriptor(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_write_restart_intent', side_effect=KeyboardInterrupt('after descriptor')):
+        with patch.object(restart_ops, '_write_restart_intent', side_effect=KeyboardInterrupt('after descriptor')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -125,7 +128,7 @@ class RecoveryReservationTests(unittest.TestCase):
                                            current_inputs=request['current_inputs'])
                     self.assertEqual(self.snapshot(source), before)
                     continue
-                with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('before prepare')):
+                with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('before prepare')):
                     with self.assertRaises(KeyboardInterrupt):
                         artifacts.restart(source, **request)
                 result = artifacts.recover(source, controller=self.controller(), authority=request['authority'],
@@ -138,7 +141,7 @@ class RecoveryReservationTests(unittest.TestCase):
     def test_changed_restart_inputs_do_not_replay_an_unknown_intent(self):
         source = self.prepare7(capture_inputs=False)
         request = self.restart_request(source)
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('before prepare')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('before prepare')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         changed = copy.deepcopy(request['current_inputs'])
@@ -174,7 +177,7 @@ class RecoveryReservationTests(unittest.TestCase):
 
     def adoption_conflict(self):
         source, session, request = self.resource_fixture(False)
-        with patch.object(artifacts, 'register', side_effect=KeyboardInterrupt('before adoption')):
+        with patch.object(restart_ops, 'register', side_effect=KeyboardInterrupt('before adoption')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -271,13 +274,16 @@ class RecoveryReservationTests(unittest.TestCase):
                 self.output = self.root / ('archive-' + case)
                 source, successor, session, foreign, _, kwargs = self.adoption_conflict()
                 if case == 'started':
+                    # A check can start without adopting the foreign-claimed session.
                     artifacts.record_event(successor, self.write('work-started.json',
-                        {'kind': 'discovery', 'status': 'started', 'summary': 'Observed actual discovery start'}))
+                        {'kind': 'check', 'status': 'started', 'summary': 'Observed validation check start'}))
+                    self.assertEqual(self.read(successor / 'cierre.json')['state'], 'processing')
                 else:
                     (successor / 'evidence').mkdir()
                     (successor / 'evidence' / 'worker.md').write_text('Preserve actual work', encoding='utf-8')
                 before = tuple(self.snapshot(run) for run in (source, successor, foreign, session))
-                with self.assertRaises(ValueError):
+                expected = 'with work or claims' if case == 'started' else 'contains evidence'
+                with self.assertRaisesRegex(ValueError, expected):
                     artifacts.abandon_restart(source, **kwargs)
                 self.assertEqual(tuple(self.snapshot(run) for run in (source, successor, foreign, session)), before)
                 self.assertEqual(claims.verify_claim(session, foreign)['run_id'], self.read(foreign / 'cierre.json')['run_id'])
@@ -356,7 +362,7 @@ class RecoveryReservationTests(unittest.TestCase):
         receipt = artifacts.abandon_restart(source, **kwargs)
         request['profile_input']['reason'] = 'A different user-authorized restart'
         request['transfer_paths'] = []
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('new active restart')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=KeyboardInterrupt('new active restart')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -375,7 +381,7 @@ class RecoveryReservationTests(unittest.TestCase):
 
     def test_foreign_owner_pending_work_does_not_block_safe_cancellation(self):
         source, successor, session, foreign, _, kwargs = self.adoption_conflict()
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('foreign checkpoint interrupted')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('foreign checkpoint interrupted')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(foreign, context_input=self.write('foreign-pending-context.json', self.context(foreign)), phase='discovery')
         before = self.snapshot(foreign), self.snapshot(session)

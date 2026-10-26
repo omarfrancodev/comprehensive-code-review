@@ -7,11 +7,15 @@ import unittest
 from unittest.mock import patch
 
 import test_review_recovery_followup as followup
-import review_recovery as recovery
-import review_resource_claims as claims
-import review_workspace
+from ccr.archive import checkpoints as checkpoint_ops, resources as resource_ops
+from script_test_support import recovery_api
+recovery = recovery_api()
+from ccr.execution import claims as claims
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = followup.artifacts
+from ccr.archive import resources as resource_ops, restart as restart_ops
 
 
 class RestartResourceReplayTests(unittest.TestCase):
@@ -93,7 +97,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         sidecar = session / claims.CLAIM_NAME
         sidecar_before = sidecar.read_bytes() if sidecar.exists() else None
         helper_name = 'transfer_resources' if claimed else 'register'
-        helper = getattr(artifacts, helper_name)
+        helper = getattr(restart_ops, helper_name)
         replace = artifacts.os.replace
         writes = []
         enabled = False
@@ -111,7 +115,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                 writes.append(Path(target).name)
             return replace(stage, target)
 
-        with patch.object(artifacts, helper_name, side_effect=wrapped), \
+        with patch.object(restart_ops, helper_name, side_effect=wrapped), \
                 patch.object(artifacts.os, 'replace', side_effect=observed):
             artifacts.restart(source, **request)
         self.assertIn(claims.CLAIM_NAME, writes)
@@ -142,7 +146,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                                 raise KeyboardInterrupt('after durable replacement')
                             return result
 
-                        with patch.object(artifacts, helper_name, side_effect=wrapped), \
+                        with patch.object(restart_ops, helper_name, side_effect=wrapped), \
                                 patch.object(artifacts.os, 'replace', side_effect=interrupted):
                             with self.assertRaises(KeyboardInterrupt):
                                 artifacts.restart(source, **request)
@@ -172,7 +176,7 @@ class RestartResourceReplayTests(unittest.TestCase):
             if enabled and Path(target).name == 'trazabilidad.jsonl' and Path(target).parent != source:
                 raise KeyboardInterrupt('successor trace not committed to closure yet')
             return result
-        with patch.object(artifacts, 'transfer_resources', side_effect=wrapped), \
+        with patch.object(restart_ops, 'transfer_resources', side_effect=wrapped), \
                 patch.object(artifacts.os, 'replace', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.restart(source, **request)
@@ -189,7 +193,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         try:
             self.assertTrue(acquired.wait(5))
             before = self.snapshot(successor)
-            from review_run_lock import LockConflictError
+            from ccr.execution.locks import LockConflictError
             with self.assertRaisesRegex(LockConflictError, 'mutation lock conflict'):
                 artifacts.restart(source, **request)
             self.assertEqual(self.snapshot(successor), before)
@@ -215,7 +219,7 @@ class RestartResourceReplayTests(unittest.TestCase):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(data)
             raise KeyboardInterrupt('interrupted checkpoint commit')
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=interrupted):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=context, phase='discovery')
         successor = Path(artifacts.restart(source, **self.restart_request(source)))
@@ -271,7 +275,7 @@ class RestartResourceReplayTests(unittest.TestCase):
 
     def test_superseded_checkpoint_keeps_remaining_claim_cleanup_usable(self):
         source, session, context = self.registered_session()
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=self.write('pending-claimed-context.json', context),
                                      phase='discovery')
@@ -281,7 +285,7 @@ class RestartResourceReplayTests(unittest.TestCase):
         for result in (recovery.inspect_run(source), artifacts.recover(source,
                 controller=self.controller(), authority='Inspect historical source', current_inputs=self.current(source))):
             self.assertIn('cleanup', [row['action'] for row in result['actions']])
-        with patch('review_artifacts._finish_resource_cleanup_locked', side_effect=KeyboardInterrupt('after removal')):
+        with patch.object(resource_ops, '_finish_resource_cleanup_locked', side_effect=KeyboardInterrupt('after removal')):
             with self.assertRaises(KeyboardInterrupt):
                 review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(source)))
         self.assertFalse(session.exists())
@@ -294,7 +298,7 @@ class RestartResourceReplayTests(unittest.TestCase):
 
     def test_pending_checkpoint_workspace_transfer_recovers_without_promoting_inputs(self):
         source, session, context = self.registered_session()
-        with patch.object(artifacts, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
+        with patch.object(checkpoint_ops, '_checkpoint_commit', side_effect=KeyboardInterrupt('before staging')):
             with self.assertRaises(KeyboardInterrupt):
                 artifacts.checkpoint(source, context_input=self.write('pending-transfer-context.json', context),
                                      phase='discovery')

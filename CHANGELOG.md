@@ -2,6 +2,110 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.2.0 — 2026-10-26
+
+### Added
+
+#### Artefactos y contratos
+
+- Capturar cambios efectivos de MR/PR por rutas, modos y contenido, con sidecars privados de materiales/contexto y límites explícitos; conservar los schemas actuales y los archivos históricos inmutables.
+- Evaluar reutilización mediante `artifacts assess-reuse` y builders `setup changes`, `setup materials` y `setup reuse-context`; verificar fuentes, consumidores y selección histórica antes de ofrecer un resultado.
+
+### Changed
+
+#### Artefactos y contratos
+
+- Acotar la clasificación auxiliar de blobs textuales a un prefijo y reutilizar lecturas por objeto dentro de cada captura; mantener hashes completos para binarios, symlinks y contexto, los descriptores existentes y la compatibilidad con revisiones anteriores.
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Contrastar las expectativas de las pruebas con el contrato y revisar efectos adyacentes de correcciones, transiciones permitidas, compatibilidad y limpieza; conservar observaciones confirmadas no bloqueantes y limitaciones relevantes sin inventar mediciones.
+
+#### Ciclo de vida y recuperación
+
+- Iniciar automáticamente una revisión ordinaria cuando los cambios efectivos o sus insumos difieran o no pueda demostrarse equivalencia; ofrecer repetir/consultar solo ante equivalencia verificada, admitiendo merges vacíos y rebases equivalentes. La consulta explícita del último resultado y los gates exactos de recuperación mantienen su semántica.
+
+#### Artefactos y contratos
+
+- Acreditar la cobertura ordinaria heredada de un re-review mediante su cadena nativa explícita y la aplicabilidad completa de sus antecedentes, incluidos consumidores fuera del seguimiento; revalidar la prueba antes de ofrecer reutilización sin modificar archivos históricos.
+- Delimitar los OID de commits y blobs en los diffs para que rutas locales con esos nombres no alteren una captura fijada.
+- Exigir cobertura ordinaria completa y ausencia de gaps o limitaciones materiales para reutilizar un resultado, incluido un re-review; los findings confirmados y reservas no materiales conservan su semántica y los informes insuficientes siguen siendo consultables.
+- Impedir lazy fetch y adquisición de objetos en las consultas Git de captura, contexto y comparación, incluso en partial clones; neutralizar `GIT_DIFF_OPTS` para preservar la identidad del descriptor.
+- Obtener patches textuales por objetos exactos en transiciones archivo/directorio, conservando altas/bajas vacías, CR y marcadores de newline; contar las 64 fuentes sobre la selección indexada y mantener el contexto derivado dentro del presupuesto agregado de bytes.
+
+## 3.1.0 — 2026-10-25
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Exigir la identidad observada del ejecutor al registrar un despacho independiente nuevo y permitir una anotación respaldada por evidencia para corregir una omisión histórica sin repetir trabajo; resolver la fuente retenida y su fragmento antes de escribir la anotación, con replay idempotente mediante aliases planos o anidados seguros. Vincular el resultado y la frescura del verificador independiente al primer despacho proyectado de su identidad completa, posterior al último discovery; otro hito started no renueva un contexto anticipado. Conservar el inicio de etapa para verificación en la misma sesión.
+
+#### Artefactos y contratos
+
+- Usar la misma selección del índice de referencias al preparar, retener y volver a validar un run, conservando las entradas materiales originales aunque tengan alias e impidiendo que evidencia no capturada inicialmente certifique la identidad de la descripción.
+- Rechazar índices JSON que no sean objetos y selecciones de más de 64 archivos o 64 MiB, incluido el índice, antes de aprobar preflight; compartir la autoridad de selección con el builder.
+- Reutilizar al retener de nuevo los bytes del inventario hash-verificado del run exacto, sin exigir resuministrarlos ni leer archivos meramente presentes; conservar la prioridad y validación de candidatos explícitos también en preflight CLI.
+- Conservar los hitos genéricos agent/unchanged de archivos históricos al registrar, retener, revalidar y cerrar, incluso con recovered o records locales; reservar el tipo explícito dispatch-identity para las recuperaciones nuevas, manteniendo el rechazo de anotaciones incompletas y la inmutabilidad de runs completos. El tipo se añade a trace schema 1 y requiere un helper actualizado para leer las anotaciones nuevas.
+
+#### Workspaces y recursos
+
+- Permitir volver a registrar recursos o contexto después de recuperar una identidad histórica, sin exigir reemitir el despacho ni reescribir su inicio. Validar enlaces y conflictos antes de reclamar recursos; conservar la admisión estricta de despachos nuevos y los gates de evidencia/fallback al retener.
+
+## 3.0.0 — 2026-10-23
+
+### Changed
+
+- Unificar el acceso a los helpers como `python <ruta-de-la-skill>/scripts <área> ...` y retirar los 27 archivos `scripts/review_*.py`. Los imports Python con esos nombres también dejan de estar soportados; consulta la [guía de migración](docs/script-migration.md). Los datos de archivo y resultados conservan sus esquemas.
+- Organizar los helpers en 73 módulos de `scripts/ccr`, con doce áreas de CLI, carga diferida y límites explícitos entre contratos, ejecución, archivo y reportes.
+
+### Fixed
+
+- Resolver explícitamente las rutas de scripts y fixtures en los procesos hijos de las pruebas de concurrencia, coordinación CLI y recuperación tras salida abrupta, sin depender de `PYTHONPATH`.
+
+### Compatibilidad
+
+- Esta versión mayor requiere migrar comandos e imports legacy. Se conservan archive 8/layout 2, final review schema 10, trace schema 1 y packet version 1; no se reescriben los archivos históricos.
+
+## 2.14.0 — 2026-10-21
+
+### Added
+
+#### Ciclo de vida y recuperación
+
+- Proyectar en `inspect` el estado operativo verificado y las opciones de recuperación exacta, reconstrucción del candidato, continuación, reinicio enlazado, historia y preservación.
+
+#### Artefactos y contratos
+
+- Capturar un índice privado de referencias e insumos materiales, con aliases explícitos y digests verificados para descripción, requisitos y evidencia seleccionada.
+- Vincular los recibos de checks al argv literal, comando canónico, revisión, workspace del executor y hashes de logs; admitir argumentos con saltos de línea y tabuladores cuando coinciden con `shlex.join(argv)`.
+
+#### Harness e integraciones
+
+- Registrar de forma privada el modelo configurado y el observado por actividad cuando el harness expone esa metadata, conservando su ausencia como desconocida y sin probes adicionales.
+
+### Changed
+
+#### Perfiles y ejecución
+
+- Exigir preflight de registro, discovery y retención para validar perfiles, asignaciones, planes y entradas antes del trabajo correspondiente.
+
+#### Ciclo de vida y recuperación
+
+- Orientar la reconstrucción de candidatos no retenidos en el mismo run cuando sus entradas siguen vigentes; conservar la historia cerrada inmutable y limitar `--previous-run` a un origen nativo verificado.
+
+#### Reportes y entregas
+
+- Separar los resúmenes públicos de la evidencia privada y verificar el comentario publicado contra el borrador canónico; corregir el contexto y volver a renderizar cuando haga falta ajustar el contenido.
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Conservar el valor histórico de la selección inicial al cambiar de perfil, con referencias estables para S001/S002 y compatibilidad con referencias legacy de runs abiertos.
+
 ## 2.13.0 — 2026-10-19
 
 ### Added

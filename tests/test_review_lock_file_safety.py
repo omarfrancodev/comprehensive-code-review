@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import test_review_run_lock as locks_fixture
-import review_run_lock as locks
+from script_test_support import enable_package_imports
+enable_package_imports()
+
+import ccr.execution.locks as locks
 
 
 class LockFileSafetyTests(unittest.TestCase):
@@ -51,7 +53,10 @@ class LockFileSafetyTests(unittest.TestCase):
     def test_final_hardlink_is_refused_before_writing_foreign_bytes(self):
         run, target = self.fixture()
         _, lock_path = locks._lock_identity(run)
-        os.link(target, lock_path)
+        try:
+            os.link(target, lock_path)
+        except OSError as exc:
+            self.skipTest('hardlink privilege unavailable: ' + str(exc))
         with self.assertRaises(ValueError):
             with locks.run_locks([run]):
                 self.fail('foreign inode acquired')

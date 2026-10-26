@@ -17,4 +17,6 @@ Discovery ends with inspected flows, evidence-backed candidates and gaps. Before
 
 Standard normally uses one discovery pass and one verification batch per scope when required. Focused keeps these phases in one session; deep/extended retain distinct flow owners within their justified assignment limits. P3 code candidates still require standard verification. Extra investigation records changed inputs/new evidence or an uncompleted gate. Repeating unchanged blocked checks cannot resolve their gap.
 
+After registering the active required assignments, run `preflight --phase discovery` before the first dispatch. If final-candidate preflight finds only a `candidate.*` construction or serialization issue while captured inputs remain applicable, rebuild the unretained candidate in that same run and rerun retain preflight; do not repeat discovery or verification for a presentation-only correction. Changed inputs, new evidence or an incomplete review gate may justify a targeted follow-up and must be recorded as such.
+
 Stop when evidence settles a claim or required missing information cannot be obtained with available capabilities. Retain material uncertainty and existing insufficient-evidence verdict rules. Soft checkpoints cannot waive gates, hide findings or claim approval from exhausted budget. Profiles do not configure model effort/token limits.

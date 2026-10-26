@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 import test_review_authority_and_claim_safety as safety
+from ccr.execution import claims as claim_ops, workspaces as workspace_ops
 
 workspace = safety.resources.review_workspace
 claims = safety.claims
@@ -30,20 +31,20 @@ class SessionOperationTests(unittest.TestCase):
     held_session = safety.SessionClaimSafetyTests.held_session
 
     def test_claim_lifecycle_works_without_git_path_format_option(self):
-        real_out = workspace.out
+        real_git = claim_ops._git
         for absolute in (False, True):
             with self.subTest(absolute=absolute):
                 session = self.workspace_session()
                 source, successor = self.create_run(), self.create_run()
 
-                def portable_out(repo, *args):
+                def portable_git(repo, *args):
                     if any(arg.startswith('--path-format') for arg in args):
-                        raise workspace.ReviewError('Git rev-parse failed: unknown option --path-format')
+                        raise ValueError('Git rev-parse failed: unknown option --path-format')
                     if args == ('rev-parse', '--git-common-dir'):
-                        return str(self.repo / '.git').encode('utf-8') if absolute else b'.git\n'
-                    return real_out(repo, *args)
+                        return str(self.repo / '.git') if absolute else '.git'
+                    return real_git(repo, *args)
 
-                with patch.object(workspace, 'out', side_effect=portable_out):
+                with patch.object(claim_ops, '_git', side_effect=portable_git):
                     self.register(source, session, 'portable-context.json')
                     artifacts.transfer_resources(source, successor, [str(session)],
                         authority='User requests transfer', controller=self.controller())
@@ -75,7 +76,7 @@ class SessionOperationTests(unittest.TestCase):
         session = self.workspace_session()
         first = self.fixture(session, 'first.py')
         second = self.fixture(session, 'second.py')
-        original_load = workspace.load
+        original_load = workspace_ops.load
         initial_read = True
 
         def another_writer_commits(path):
@@ -86,7 +87,7 @@ class SessionOperationTests(unittest.TestCase):
                 workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(first)))
             return value
 
-        with patch.object(workspace, 'load', side_effect=another_writer_commits):
+        with patch.object(workspace_ops, 'load', side_effect=another_writer_commits):
             workspace.record_artifact(argparse.Namespace(manifest=str(session / 'manifest.json'), path=str(second)))
         entries = self.read(session / 'manifest.json')['artifacts']
         self.assertEqual({entry['path'] for entry in entries}, {str(first), str(second)})
@@ -101,10 +102,12 @@ class SessionOperationTests(unittest.TestCase):
 from pathlib import Path
 import argparse, json, sys, time
 from unittest.mock import patch
-sys.path.insert(0, sys.argv[1])
-import review_workspace as workspace
-manifest, artifact, ready, release = map(Path, sys.argv[2:6])
-original = workspace.save
+sys.path[:0] = sys.argv[1:3]
+from script_test_support import workspace_api
+workspace = workspace_api()
+from ccr.execution import workspaces as workspace_ops
+manifest, artifact, ready, release = map(Path, sys.argv[3:7])
+original = workspace_ops.save
 def delayed_save(value):
     ready.touch()
     deadline = time.monotonic() + 30
@@ -113,11 +116,12 @@ def delayed_save(value):
             raise RuntimeError('artifact release timed out')
         time.sleep(0.02)
     return original(value)
-with patch.object(workspace, 'save', side_effect=delayed_save):
+with patch.object(workspace_ops, 'save', side_effect=delayed_save):
     print(json.dumps(workspace.record_artifact(argparse.Namespace(manifest=str(manifest), path=str(artifact)))), flush=True)
 '''
         child = subprocess.Popen([sys.executable, '-B', '-X', 'utf8', '-c', code,
-            str(safety.resources.SCRIPTS), str(session / 'manifest.json'), str(first), str(ready), str(release)],
+            str(safety.resources.SCRIPTS), str(Path(__file__).resolve().parent),
+            str(session / 'manifest.json'), str(first), str(ready), str(release)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8')
         try:
             deadline = time.monotonic() + 30

@@ -1,5 +1,4 @@
 """Real usage stays distinct from estimates; runner output capture must not imply truth."""
-import importlib.util
 import json
 from pathlib import Path
 import subprocess
@@ -7,13 +6,9 @@ import sys
 import tempfile
 import unittest
 
-
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
-spec = importlib.util.spec_from_file_location('review_metrics', SCRIPTS / 'review_metrics.py') if (SCRIPTS / 'review_metrics.py').exists() else None
-metrics = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(metrics)
-
+sys.path.insert(0, str(SCRIPTS))
+from ccr.maintenance import metrics
 
 class UsageTests(unittest.TestCase):
     def setUp(self):
@@ -66,7 +61,7 @@ class RunnerCaptureTests(unittest.TestCase):
                                                                      '{output_dir}', '{prompt_file}', '{workspace}']}), encoding='utf-8')
         prompt = root / 'prompt.md'
         prompt.write_text('Bounded verification', encoding='utf-8')
-        result = subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_runner.py'),
+        result = subprocess.run([sys.executable, '-B', str(SCRIPTS), 'runner',
                                  '--config', str(config), '--prompt-file', str(prompt), '--workspace', str(root),
                                  '--output-dir', str(root / 'out'), '--role', 'verifier', '--phase', 'verification'],
                                 capture_output=True, text=True, encoding='utf-8')

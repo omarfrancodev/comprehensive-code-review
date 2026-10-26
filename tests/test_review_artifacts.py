@@ -1,6 +1,5 @@
 """Durable review archives preserve scope, real usage and observed closure."""
 import copy
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -8,16 +7,30 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager, ExitStack
 from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-spec = importlib.util.spec_from_file_location('review_artifacts', SCRIPTS / 'review_artifacts.py') if (SCRIPTS / 'review_artifacts.py').exists() else None
-artifacts = importlib.util.module_from_spec(spec) if spec else None
-if spec:
-    spec.loader.exec_module(artifacts)
+from script_test_support import archive_api
+artifacts = archive_api()
+
+from ccr.archive import checkpoints as archive_checkpoints
+from ccr.archive import lifecycle as archive_lifecycle
+from ccr.archive import retention as archive_retention
+from ccr.archive import transactions as archive_transactions
+
+
+@contextmanager
+def patch_archive_atomic_write(side_effect):
+    """Inject write failures at the archive owners used by these tests."""
+    with ExitStack() as stack:
+        for module in (archive_checkpoints, archive_lifecycle,
+                       archive_retention, archive_transactions):
+            stack.enter_context(patch.object(module, 'atomic_write', side_effect=side_effect))
+        yield
 
 
 def record():
@@ -51,7 +64,7 @@ class ArchiveTests(unittest.TestCase):
                             original(path, data)
                         raise OSError('owned close manifest interrupted')
                     original(path, data)
-                with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+                with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
                     self.close(run)
                 before = self.snapshot(run)
                 with self.assertRaises(ValueError):
@@ -72,7 +85,7 @@ class ArchiveTests(unittest.TestCase):
             if Path(path).name == 'cierre.json':
                 raise OSError('owned close manifest interrupted')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
             self.close(run)
         value = self.read(run / 'cierre.json')
         value['updated_at'] = 'foreign modification'
@@ -87,7 +100,7 @@ class ArchiveTests(unittest.TestCase):
 
     def test_trace_without_final_result_cannot_pass_complete_gate(self):
         run = self.prepare()
-        artifacts.record_event(run, self.write('event.json', dict(kind='discovery', status='completed', summary='Static review completed')))
+        artifacts.record_event(run, self.write('event.json', dict(kind='check', status='completed', summary='Static check completed')))
         before = self.snapshot(run)
         with self.assertRaises(ValueError):
             artifacts.validate(run, require_complete=True)
@@ -115,7 +128,7 @@ class ArchiveTests(unittest.TestCase):
             if Path(path).name == 'informe.md':
                 raise OSError('interrupted')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
             self.retain(run)
         before = self.snapshot(run)
         with self.assertRaises(ValueError):
@@ -153,7 +166,7 @@ class ArchiveTests(unittest.TestCase):
     def test_complete_cli_and_expected_schema_cli(self):
         run = self.prepare()
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', *map(str, args)],
                                   capture_output=True, text=True, encoding='utf-8')
         refused = invoke('retain', '--run-dir', run, '--input', self.final, '--expected-schema', 9)
         self.assertEqual(refused.returncode, 1, refused.stderr)
@@ -169,7 +182,6 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)['state'], 'complete')
 
     def setUp(self):
-        self.assertIsNotNone(artifacts, 'persistent archive helper is missing')
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name).resolve()
@@ -251,7 +263,8 @@ class ArchiveTests(unittest.TestCase):
                 artifacts.record_event(run, self.write(f'event-result-{index}.json', {
                     'kind': 'discovery' if role == 'discovery' else 'grouped-verification',
                     'status': 'completed', 'summary': 'Synthetic assignment completed',
-                    'actor': {'kind': 'agent', **identity}, 'evidence': [result['reference']]}))
+                    'actor': {'kind': 'agent', **identity},
+                    'evidence': [assignment['reference'], result['reference']]}))
         if 'unavailable_reason' not in kwargs and not kwargs.get('measurement_inputs'):
             kwargs['unavailable_reason'] = 'Provider exposes no counters'
         return artifacts.retain(run, self.write('final-current.json', final),
@@ -484,7 +497,7 @@ class ArchiveTests(unittest.TestCase):
                 if calls == 2:
                     raise OSError('interrupted final marker write')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
             self.retain(run)
         self.retain(run)
         self.close(run)
@@ -634,7 +647,7 @@ class ArchiveTests(unittest.TestCase):
             if Path(path).parent.name == 'evidence':
                 raise OSError('interrupted evidence copy')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
             self.retain(run, evidence_inputs=[source])
         with self.assertRaises(ValueError):
             self.close(run)
@@ -719,7 +732,7 @@ class ArchiveTests(unittest.TestCase):
             if Path(path).name == 'informe.md':
                 raise OSError('interrupted')
             original(path, data)
-        with patch.object(artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch_archive_atomic_write(interrupt), self.assertRaises(OSError):
             self.retain(run)
         self.assertEqual(self.read(run / 'cierre.json')['cleanup'], 'pending')
         with self.assertRaises(ValueError):
@@ -730,7 +743,7 @@ class ArchiveTests(unittest.TestCase):
     def test_cli_prepare_retain_close_and_invalid_input_are_json(self):
         from recovery_fixtures import selection_input
         def invoke(*args):
-            return subprocess.run([sys.executable, '-B', str(SCRIPTS / 'review_artifacts.py'), *map(str, args)],
+            return subprocess.run([sys.executable, '-B', str(SCRIPTS), 'artifacts', *map(str, args)],
                                   capture_output=True, text=True, encoding='utf-8')
         profile = self.write('profile.json', selection_input())
         result = invoke('prepare', '--repo', self.repo, '--scope-file', self.scope,
@@ -760,7 +773,7 @@ class Archive7Tests(unittest.TestCase):
 
     def profile_input(self, profile='focused', source='automatic', **updates):
         from recovery_fixtures import selection_input
-        value = selection_input(profile, source, reference='evidence/context.json#profile_history/0/profile')
+        value = selection_input(profile, source, reference='evidence/context.json#profile')
         value.update(updates)
         return value
 
@@ -810,7 +823,7 @@ class Archive7Tests(unittest.TestCase):
 
                 unrecoverable = ((filename == artifacts.MARKER and target_write == 1)
                                  or (filename == 'cierre.json' and timing == 'before'))
-                with patch.object(artifacts, 'atomic_write', side_effect=interrupt):
+                with patch_archive_atomic_write(interrupt):
                     if unrecoverable:
                         with self.assertRaises(OSError):
                             artifacts.prepare(self.repo, self.scope, '2.12.0', 'codex',
@@ -875,6 +888,7 @@ class Archive7Tests(unittest.TestCase):
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
                    'execution_plan': copy.deepcopy(final['coverage']['execution']['plan']),
+                   'review_inputs': manifest['review_inputs'],
                    'executors': [{'executor': 'X1', 'method': 'authorized-copy', 'workspace': str(workspace),
                        'revision': final['scope']['head'], 'snapshot': None, 'manifest': None,
                        'dependencies': 'none', 'dependency_reason': 'Synthetic isolated fixture',
@@ -895,7 +909,7 @@ class Archive7Tests(unittest.TestCase):
         history = self.read(run / 'cierre.json')['profile_history']
         context = {'profile': 'focused', 'selection_source': 'automatic',
                    'profile_reference': history[0]['reference'], 'profile_history': history,
-                   'executors': []}
+                   'executors': [], 'review_inputs': self.read(run / 'cierre.json')['review_inputs']}
         with self.assertRaisesRegex(ValueError, 'execution_plan'):
             artifacts.register(run, [], context_input=self.write('missing-plan.json', context))
         self.assertEqual(self.snapshot(run), before)

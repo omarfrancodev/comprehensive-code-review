@@ -6,7 +6,7 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 GROUPS = {
-    'workflow': ('scopes', 'profiles', 'capabilities', 'reading-strategy', 're-review', 'review-areas'),
+    'workflow': ('scopes', 'profiles', 'capabilities', 'reading-strategy', 're-review', 'review-areas', 'reuse'),
     'dimensions': ('design-testability', 'contracts-data', 'security-operation'),
     'execution': ('reviewers', 'worker-packets', 'workspaces', 'external-cli'),
     'contracts': ('result-contract', 'identifiers'),

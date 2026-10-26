@@ -35,6 +35,8 @@ class TraceabilityContractTests(unittest.TestCase):
         self.assertTrue(any('unknown field' in error for error in contract.validate(record)))
 
     def test_projections_have_counts_check_evidence_and_no_public_secrets(self):
+        from publication_fixtures import check_classification
+
         record = record6()
         record['checks'] = [check()]
         for audience in ('user', 'comment'):
@@ -46,12 +48,20 @@ class TraceabilityContractTests(unittest.TestCase):
             self.assertIn('<a id="C001"></a>', output)
         self.assertIn('SECRET', contract.render(record, 'user'))
         record['checks'][0]['evidence'] += ' at C:\\private\\file; command python C:\\private\\regression.py --token SECRET'
-        public = contract.render(record, 'comment')
+        with self.assertRaisesRegex(ValueError, 'check publication context'):
+            contract.render(record, 'comment')
+        context = check_classification(record)
+        context['checks'][0]['evidence'] = 'Consumer returned expected id'
+        public = contract.render(record, 'comment', check_publication_context=context)
         self.assertNotIn('SECRET', public)
         self.assertNotIn('C:\\private', public)
         self.assertNotIn('python ', public)
         record['checks'][0]['evidence'] = 'Expected result stored at /srv/private/result.log'
-        public = contract.render(record, 'comment')
+        with self.assertRaisesRegex(ValueError, 'check publication context'):
+            contract.render(record, 'comment')
+        context = check_classification(record)
+        context['checks'][0]['evidence'] = 'Expected result observed'
+        public = contract.render(record, 'comment', check_publication_context=context)
         self.assertNotIn('/srv/private', public)
         self.assertIn('https://example.test/pr/12', public)
 
@@ -231,11 +241,14 @@ class TraceabilityContractTests(unittest.TestCase):
                 self.assertEqual(record, original)
 
     def test_check_evidence_is_literal_text_not_tool_supplied_markdown_or_html(self):
+        from publication_fixtures import check_classification
+
         record = record6()
         record['checks'] = [check()]
         record['checks'][0]['evidence'] = '[All checks passed](https://evil.example/claim) <script>alert(1)</script>'
         for audience in ('user', 'comment'):
-            output = contract.render(record, audience)
+            options = {'check_publication_context': check_classification(record)} if audience == 'comment' else {}
+            output = contract.render(record, audience, **options)
             self.assertNotIn('[All checks passed](', output)
             self.assertNotIn('<script>', output)
             self.assertIn('&lt;script&gt;', output)

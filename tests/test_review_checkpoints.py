@@ -14,7 +14,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 from recovery_fixtures import context10, record10, selection, source_events
-import review_delivery
+from ccr.reporting import delivery as review_delivery
+from ccr.contracts import model_usage as review_model_usage
 
 
 class CheckpointTests(unittest.TestCase):
@@ -98,7 +99,8 @@ class CheckpointTests(unittest.TestCase):
     def test_packet_checkpoint_without_verdict(self):
         run, context = self.start_run()
         artifacts.record_event(run, self.write('work-start.json',
-            {'kind': 'discovery', 'status': 'started', 'summary': 'Discovery started'}))
+            {'kind': 'discovery', 'status': 'started', 'summary': 'Discovery started',
+             'evidence': ['evidence/briefs.json#D1']}))
         packets = self.packet_files()
         checkpoint = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                           phase='discovery')
@@ -143,6 +145,55 @@ class CheckpointTests(unittest.TestCase):
         self.assertTrue(retained['retained'])
         self.assertTrue((run / 'review.json').is_file())
         self.assertEqual(artifacts.validate(run, require_retained=True)['retained'], True)
+
+    def test_private_model_usage_sidecar_is_selected_and_retained_by_link(self):
+        run, context_file, packets = self.prepare_promotable_checkpoint()
+        manifest = self.read(run / 'cierre.json')
+        observation = review_model_usage.observation_from_metadata(
+            {'model': 'configured-coordinator'},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            phase='report', activity='reporting')
+        ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + manifest['run_id'],
+            harness_id=manifest['harness_id'])
+        context = self.read(context_file)
+        context['model_usage_reference'] = 'evidence/model-usage.json'
+        linked_context = self.write('model-context.json', context)
+        model_usage_file = self.write('model-usage.json', ledger)
+
+        artifacts.checkpoint(run, context_input=linked_context,
+            evidence_inputs=packets + [model_usage_file],
+            input_record=run / 'pending' / 'review.json', phase='report')
+        pending = self.read(run / 'cierre.json')
+        self.assertIn('pending/evidence/model-usage.json', pending['pending_hashes'])
+        pending_context = self.read(run / 'pending' / 'context.json')
+        self.assertEqual(pending_context['model_usage_reference'], 'evidence/model-usage.json')
+        self.assertNotIn('model-usage', pending_context['review_inputs']['sources'])
+
+        artifacts.retain(run)
+        retained = self.read(run / 'cierre.json')
+        self.assertIn('evidence/model-usage.json', retained['hashes'])
+        self.assertEqual(self.read(run / 'evidence' / 'model-usage.json'), ledger)
+
+    def test_model_usage_link_with_wrong_review_binding_fails_before_checkpoint_write(self):
+        run, context_file = self.start_run()
+        context = self.read(context_file)
+        context['model_usage_reference'] = 'evidence/model-usage.json'
+        linked_context = self.write('wrong-model-context.json', context)
+        manifest = self.read(run / 'cierre.json')
+        observation = review_model_usage.observation_from_metadata(
+            {'model': 'configured-coordinator'},
+            actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            phase='discovery', activity='coordination')
+        wrong_ledger = review_model_usage.append_model_observation(
+            None, observation, review_id='CR-' + 'b' * 20,
+            harness_id=manifest['harness_id'])
+        sidecar = self.write('model-usage.json', wrong_ledger)
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'another review'):
+            artifacts.checkpoint(run, context_input=linked_context,
+                evidence_inputs=[sidecar], phase='discovery')
+        self.assertEqual(self.snapshot(run), before)
 
     def test_captured_external_source_hash_is_checked_before_retention(self):
         requirements = self.write('requirements.md', {'revision': 'current'})
@@ -222,7 +273,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint boundary')
                         original(path, data, **kwargs)
 
-                    with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                    with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                         artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
                                              input_record=final_file, phase='verification')
                     result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets,
@@ -253,7 +304,7 @@ class CheckpointTests(unittest.TestCase):
                             raise OSError('injected checkpoint ownership boundary')
                     original(path, data, **kwargs)
 
-                with patch.object(artifacts, 'atomic_write', side_effect=fail_once), self.assertRaises(OSError):
+                with archive.patch_archive_atomic_write(fail_once), self.assertRaises(OSError):
                     artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 result = artifacts.checkpoint(run, context_input=context, evidence_inputs=packets, phase='discovery')
                 self.assertEqual(result['id'], 'K001')
@@ -312,7 +363,7 @@ class CheckpointTests(unittest.TestCase):
     def test_cli_checkpoint_accepts_context_packets_phase_and_diagnostics(self):
         run, context = self.start_run()
         diagnostic = self.write('diagnostic.json', {'gate_errors': ['synthetic source gate unavailable']})
-        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS / 'review_artifacts.py'), 'checkpoint',
+        args = [sys.executable, '-B', '-X', 'utf8', str(SCRIPTS), 'artifacts', 'checkpoint',
                 '--run-dir', str(run), '--context-input', str(context), '--phase', 'verification',
                 '--diagnostic-input', str(diagnostic)]
         for evidence in self.packet_files():

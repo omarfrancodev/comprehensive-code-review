@@ -1,5 +1,6 @@
 """Regressions from the second independent review of PR 19."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -14,11 +15,14 @@ import test_review_artifacts as archive
 import test_review_checkpoints as checkpoint_tests
 import test_review_recovery as recovery_tests
 from recovery_fixtures import context10, legacy_prepare, record10, selection_input
-import review_profiles
-import review_recovery as recovery
-import review_workspace
+from ccr.contracts import execution as review_execution
+from script_test_support import recovery_api
+recovery = recovery_api()
+from script_test_support import workspace_api
+review_workspace = workspace_api()
 
 artifacts = archive.artifacts
+from ccr.archive import lifecycle as lifecycle_ops, restart as restart_ops, transactions as transactions_ops
 
 
 class RecoveryFollowupTests(unittest.TestCase):
@@ -77,8 +81,8 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(coverage=coverage):
                 malformed = self.write('malformed.json', {'schema_version': 10, 'coverage': coverage})
                 before = self.snapshot(run)
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__)),
-                    'retain', '--run-dir', str(run), '--input', str(malformed)],
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(Path(artifacts.__file__).parent),
+                    'artifacts', 'retain', '--run-dir', str(run), '--input', str(malformed)],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 1)
                 self.assertIn('error', json.loads(result.stderr))
@@ -90,7 +94,7 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(identifier=identifier):
                 record = record10('extended')
                 record['coverage']['execution']['plan'][0]['id'] = identifier
-                self.assertTrue(review_profiles.validate_profile_execution(record))
+                self.assertTrue(review_execution.validate_profile_execution(record))
                 self.assertTrue(artifacts.review_contract.validate(record))
 
     def test_historical_record_cannot_supply_native_context_as_selected_evidence(self):
@@ -135,12 +139,14 @@ class RecoveryFollowupTests(unittest.TestCase):
             with self.subTest(boundary=boundary):
                 source = self.prepare7()
                 request = self.restart_request(source)
-                original = artifacts.atomic_write
+                owner_ops = (lifecycle_ops if boundary == '.review-restart-reservation.json'
+                             else transactions_ops)
+                original = owner_ops.atomic_write
                 def interrupt(path, data, **kwargs):
                     if Path(path).name == boundary and Path(path).parent != source:
                         raise KeyboardInterrupt('simulated process exit')
                     return original(path, data, **kwargs)
-                with patch.object(artifacts, 'atomic_write', side_effect=interrupt):
+                with patch.object(owner_ops, 'atomic_write', side_effect=interrupt):
                     with self.assertRaises(KeyboardInterrupt):
                         artifacts.restart(source, **request)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -153,7 +159,7 @@ class RecoveryFollowupTests(unittest.TestCase):
     def test_recover_pending_restart_takes_source_lock_before_prepare(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         original_lock = artifacts._restart_lock
@@ -171,8 +177,8 @@ class RecoveryFollowupTests(unittest.TestCase):
         def assert_locked(path):
             self.assertTrue(held, 'recover prepared the reserved run outside the source lock')
             return original_prepare(path)
-        with patch.object(artifacts, '_restart_lock', side_effect=observed_lock), \
-                patch.object(artifacts, '_prepare_from_restart_intent', side_effect=assert_locked):
+        with patch.object(restart_ops, '_restart_lock', side_effect=observed_lock), \
+                patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=assert_locked):
             result = artifacts.recover(source, controller=self.controller(), authority=request['authority'],
                                        current_inputs=request['current_inputs'])
         self.assertEqual(result['status'], 'restarted')
@@ -182,7 +188,7 @@ class RecoveryFollowupTests(unittest.TestCase):
         request = self.restart_request(source)
         request['current_inputs']['sources'] = {'docs/spec.md': 'a' * 64}
         before = self.snapshot(source)
-        with self.assertRaisesRegex(ValueError, 'evidence/'):
+        with self.assertRaisesRegex(ValueError, 'retained local evidence'):
             artifacts.restart(source, **request)
         self.assertEqual(self.snapshot(source), before)
         self.assertFalse((source.parent / '.restart-intents').exists())
@@ -231,13 +237,14 @@ class RecoveryFollowupTests(unittest.TestCase):
         code = '''
 import json, os, sys
 from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-import review_artifacts as a
-source = Path(sys.argv[2])
-request = json.loads(Path(sys.argv[3]).read_text(encoding='utf-8'))
+sys.path[:0] = sys.argv[1:3]
+from script_test_support import archive_api
+a = archive_api()
+source = Path(sys.argv[3])
+request = json.loads(Path(sys.argv[4]).read_text(encoding='utf-8'))
 replace = os.replace
 def interrupted(stage, target):
-    if Path(target).name == sys.argv[4] and Path(target).parent != source:
+    if Path(target).name == sys.argv[5] and Path(target).parent != source:
         os._exit(73)
     return replace(stage, target)
 os.replace = interrupted
@@ -249,7 +256,8 @@ a.restart(source, **request)
                 request = self.restart_request(source)
                 request_path = self.write('hard-exit-request.json', request)
                 process = subprocess.run([sys.executable, '-B', '-X', 'utf8', '-c', code,
-                    str(Path(artifacts.__file__).parent), str(source), str(request_path), boundary],
+                    str(Path(artifacts.__file__).parent), str(Path(__file__).resolve().parent),
+                    str(source), str(request_path), boundary],
                     capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(process.returncode, 73, process.stderr)
                 active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -262,7 +270,7 @@ a.restart(source, **request)
     def test_abandon_unprepared_restart_is_authorized_durable_and_idempotent(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
+        with patch.object(restart_ops, '_prepare_from_restart_intent', side_effect=OSError('before prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -284,7 +292,7 @@ a.restart(source, **request)
 
     def test_abandon_cannot_orphan_prepared_successor(self):
         source = self.prepare7()
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('after prepare')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('after prepare')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **self.restart_request(source))
         active = artifacts._active_restart_operation(source, self.read(source / 'cierre.json'))
@@ -297,7 +305,7 @@ a.restart(source, **request)
     def test_pending_restart_is_visible_in_inspect_and_lookup(self):
         source = self.prepare7()
         request = self.restart_request(source)
-        with patch.object(artifacts, '_link_restart', side_effect=OSError('interrupted')):
+        with patch.object(restart_ops, '_link_restart', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):
                 artifacts.restart(source, **request)
         inspected = recovery.inspect_run(source, current_inputs=self.current(source))
@@ -356,7 +364,8 @@ a.restart(source, **request)
         source, session, context = self.registered_session()
         reference = context['execution_plan'][0]['reference']
         artifacts.record_event(source, self.write('started.json', {'kind': 'agent', 'status': 'started',
-            'summary': 'Observed dispatch', 'evidence': [reference]}))
+            'summary': 'Observed dispatch', 'executor': {'name': 'observed-worker', 'provider_id': None},
+            'evidence': [reference]}))
         candidate = selection_input('standard', phase='discovery', affected_assignments=['D1'],
             reason='Only one independent flow remains in the verified scope', reference='evidence/scope.md#decision')
         before = self.snapshot(source)
@@ -367,8 +376,9 @@ a.restart(source, **request)
 
     def test_superseded_assignment_cannot_start(self):
         source, session, context = self.registered_session()
-        candidate = selection_input('standard', phase='discovery', affected_assignments=['D2'],
-            reason='Only one independent flow remains in the verified scope', reference='evidence/scope.md#decision')
+        candidate = selection_input('standard', 'explicit', phase='discovery', affected_assignments=['D2'],
+            reason='Only one independent flow remains in the verified scope',
+            reference='evidence/context.json#profile_history/1/profile')
         manifest = artifacts.select_profile(source, candidate)
         context['profile'] = 'standard'
         context['profile_history'] = manifest['profile_history']
@@ -382,8 +392,11 @@ a.restart(source, **request)
             for evidence in ([row['reference']], [active_reference, row['reference']]):
                 with self.subTest(status=status, evidence=evidence):
                     with self.assertRaisesRegex(ValueError, 'superseded|active|required'):
-                        artifacts.record_event(source, self.write('inactive-start.json', {'kind': 'agent', 'status': status,
-                            'summary': 'Rejected assignment work', 'evidence': evidence}))
+                        event = {'kind': 'agent', 'status': status,
+                                 'summary': 'Rejected assignment work', 'evidence': evidence}
+                        if status == 'started':
+                            event['executor'] = {'name': 'observed-worker', 'provider_id': None}
+                        artifacts.record_event(source, self.write('inactive-start.json', event))
                     self.assertEqual(self.snapshot(source), before)
         review_workspace.cleanup(argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(source)))
 
@@ -400,6 +413,12 @@ a.restart(source, **request)
             return path
         write('scope.json', self.read(self.scope))
         write('profile-selection.json', self.profile_input('standard'))
+        index_path = write('reference-index.json', {'schema_version': 1, 'aliases': {}, 'inputs': []})
+        write('current-inputs.json', {
+            'scope': self.read(self.scope),
+            'sources': {'evidence/reference-index.json': hashlib.sha256(index_path.read_bytes()).hexdigest()},
+            'source_set_complete': True,
+        })
         substitutions = {'/absolute/skill': skill, '/absolute/project': self.repo,
                          '/absolute/owned/session': session, '/absolute/archive': self.output}
         def execute(name):
@@ -428,15 +447,12 @@ a.restart(source, **request)
             final['coverage']['execution']['profile_history'] = self.read(source / 'cierre.json')['profile_history']
             context = context10(final)
             context['review_inputs'] = self.read(source / 'cierre.json')['review_inputs']
+            context['reference_index'] = 'evidence/reference-index.json'
             write('context.json', context)
         refresh_context()
+        execute('preflight-register')
         execute('register')
-        write('selection-change.json', selection_input('standard', 'explicit', phase='discovery',
-            reason='User confirmed the same review profile after scoping',
-            reference='evidence/context.json#profile_history/1/profile'))
-        execute('select-profile')
-        refresh_context()
-        execute('register-updated')
+        execute('preflight-discovery')
         from recovery_fixtures import source_events
         for event in source_events(final):
             if event['kind'] == 'profile':
@@ -448,13 +464,14 @@ a.restart(source, **request)
                 raw['actor'] = dict(event['actor'], kind='agent')
             if event.get('executor'):
                 raw['executor'] = event['executor']
-            write('event.json', raw)
+            write('dispatch-event.json', raw)
             execute('record-event')
         write('briefs.json', {row['id']: {'question': 'Check invariant'} for row in final['coverage']['execution']['plan']})
         write('results.json', {row['id']: {'result': 'reviewed'} for row in final['coverage']['execution']['plan']})
         write('final-review.json', final)
         checkpoint = execute('checkpoint')
         self.assertEqual(checkpoint['gate_errors'], [])
+        execute('preflight-retain')
         execute('retain')
         execute('validate-retained')
         shutil.rmtree(session)
@@ -465,7 +482,7 @@ a.restart(source, **request)
         skill = Path(artifacts.__file__).resolve().parents[1]
         document = (skill / 'references/archive/recovery.md').read_text(encoding='utf-8')
         command = next(block for block in re.findall(r'```(?:text|sh)\n(.*?)\n```', document, re.S)
-                       if block.splitlines()[0].startswith('python /absolute/skill/scripts/review_artifacts.py restart ')
+                       if block.splitlines()[0].startswith('python /absolute/skill/scripts artifacts restart ')
                        and '--harness-source-input' in block)
         self.assertNotIn('\\\\\n', command)
         source = self.prepare7()
