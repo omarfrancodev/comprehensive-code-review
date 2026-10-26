@@ -1,0 +1,194 @@
+[
+  {
+    "id": "PC01",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Violación demostrada del límite de datos sensibles con escritura ajena.",
+    "pair": "PAIR01",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC02",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Misma consecuencia que PC01; el origen antiguo no reduce el daño.",
+    "pair": "PAIR01",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC03",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Alteración persistente del inventario completo de una entidad y reconciliación necesaria.",
+    "pair": "PAIR02",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC04",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Reconocer el riesgo no cambia contrato ni consecuencia de PC03.",
+    "pair": "PAIR02",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC05",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Bloqueo de despliegue soportado; atomicidad evita corrupción pero no el fallo serio.",
+    "pair": "PAIR03",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC06",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "La reproducción añade evidencia sin cambiar la consecuencia demostrada de PC05.",
+    "pair": "PAIR03",
+    "invariant": "same_priority"
+  },
+  {
+    "id": "PC07",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Se pierde actualización obligatoria del flujo principal sin replay.",
+    "pair": "PAIR04",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC08",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P2"
+    ],
+    "rationale": "Incumplimiento funcional acotado en vista secundaria y recuperación automática comprobada.",
+    "pair": "PAIR04",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC09",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "Acceso sensible demostrado acotado; sin compromiso global esencial.",
+    "pair": "PAIR05",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC10",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P3"
+    ],
+    "rationale": "Información ya pública adicional, discrepancia limitada del error.",
+    "pair": "PAIR05",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC11",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P0"
+    ],
+    "rationale": "Pérdida inmediata de todo el estado esencial al activar, sin barrera/restauración.",
+    "pair": "PAIR06",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC12",
+    "expected_status": "rejected",
+    "accepted_priorities": [],
+    "rationale": "El guard evita la operación y no queda un efecto incorrecto residual.",
+    "pair": "PAIR06",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC13",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P1"
+    ],
+    "rationale": "La cadena de escritura ajena está demostrada pese a guards inspeccionados.",
+    "pair": "PAIR07",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC14",
+    "expected_status": "unresolved",
+    "accepted_priorities": [],
+    "rationale": "El guard desconocido determina la existencia misma del bypass.",
+    "pair": "PAIR07",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC15",
+    "expected_status": "rejected",
+    "accepted_priorities": [],
+    "rationale": "El fallback permitido preserva la marca parcial; no hay obligación incumplida.",
+    "pair": "PAIR08",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC16",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P2"
+    ],
+    "rationale": "Éxito completo incorrecto, acotado y regenerable; sin daño serio adicional demostrado.",
+    "pair": "PAIR08",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC17",
+    "expected_status": "rejected",
+    "accepted_priorities": [],
+    "rationale": "Ausencia de prueba sin defecto o gate incumplido no confirma un fallo.",
+    "pair": "PAIR09",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC18",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P2"
+    ],
+    "rationale": "El resultado funcional incorrecto sí es concreto aunque falte prueba.",
+    "pair": "PAIR09",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC19",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P3"
+    ],
+    "rationale": "Errata secundaria sin efecto en datos o validación.",
+    "pair": "PAIR10",
+    "invariant": "contrast"
+  },
+  {
+    "id": "PC20",
+    "expected_status": "confirmed",
+    "accepted_priorities": [
+      "P2"
+    ],
+    "rationale": "Filtro secundario roto para un valor válido; alternativas y datos intactos.",
+    "pair": "PAIR10",
+    "invariant": "contrast"
+  }
+]

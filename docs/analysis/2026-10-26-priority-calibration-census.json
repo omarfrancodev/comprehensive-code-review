@@ -1,0 +1,378 @@
+{
+  "purpose": "Historical descriptive census, not archive validation or current-scope selection",
+  "baseCommit": "559fc5c0f8eb2e9677ff738ed86c703017b4bf17",
+  "sourceSetSha256": "e87ec97addf6bec30fe3180480c5f5f2edfc0d8dc65bc1d9e732f2e036b00b99",
+  "filesOutsidePublicationCopies": 99,
+  "diagnostics": {
+    "withoutAdjacentClosure": 3,
+    "parseErrors": 0,
+    "skippedLinks": 0
+  },
+  "closureStates": {
+    "closing": 1,
+    "complete": 95
+  },
+  "complete": {
+    "runs": 95,
+    "runsWithConfirmedFindings": 65,
+    "confirmedAppearances": 239,
+    "priorities": {
+      "P0": 0,
+      "P1": 25,
+      "P2": 117,
+      "P3": 97
+    },
+    "statuses": {
+      "confirmed": 239,
+      "rejected": 14,
+      "unresolved": 4
+    },
+    "blocking": {
+      "P0": {
+        "yes": 0,
+        "no": 0
+      },
+      "P1": {
+        "yes": 25,
+        "no": 0
+      },
+      "P2": {
+        "yes": 62,
+        "no": 55
+      },
+      "P3": {
+        "yes": 0,
+        "no": 97
+      }
+    }
+  },
+  "integrity": {
+    "reviewHashMatches": 95,
+    "reportHashMatches": 95,
+    "note": "Compared only review.json and informe.md against adjacent cierre.json hashes; no signature or full lifecycle validation"
+  },
+  "repositoryCount": 11,
+  "logicalScopeCount": 44,
+  "exactGitScopeGroups": 94,
+  "repeatedExactGitScopeGroups": 1,
+  "chronology": {
+    "invalidTimestampGroups": 0,
+    "firstTimestampTies": 0,
+    "lastTimestampTies": 0
+  },
+  "firstChronologicalRecordPerScope": {
+    "runs": 44,
+    "runsWithConfirmedFindings": 32,
+    "confirmedAppearances": 134,
+    "priorities": {
+      "P0": 0,
+      "P1": 21,
+      "P2": 61,
+      "P3": 52
+    },
+    "statuses": {
+      "confirmed": 134,
+      "rejected": 6,
+      "unresolved": 3
+    },
+    "blocking": {
+      "P0": {
+        "yes": 0,
+        "no": 0
+      },
+      "P1": {
+        "yes": 21,
+        "no": 0
+      },
+      "P2": {
+        "yes": 34,
+        "no": 27
+      },
+      "P3": {
+        "yes": 0,
+        "no": 52
+      }
+    }
+  },
+  "lastChronologicalRecordPerScope": {
+    "runs": 44,
+    "runsWithConfirmedFindings": 18,
+    "confirmedAppearances": 59,
+    "priorities": {
+      "P0": 0,
+      "P1": 15,
+      "P2": 30,
+      "P3": 14
+    },
+    "statuses": {
+      "confirmed": 59,
+      "rejected": 9,
+      "unresolved": 1
+    },
+    "blocking": {
+      "P0": {
+        "yes": 0,
+        "no": 0
+      },
+      "P1": {
+        "yes": 15,
+        "no": 0
+      },
+      "P2": {
+        "yes": 15,
+        "no": 15
+      },
+      "P3": {
+        "yes": 0,
+        "no": 14
+      }
+    }
+  },
+  "byDeclaredSkillVersion": {
+    "2.12.1": {
+      "runs": 9,
+      "runsWithConfirmedFindings": 5,
+      "confirmedAppearances": 12,
+      "priorities": {
+        "P0": 0,
+        "P1": 0,
+        "P2": 8,
+        "P3": 4
+      },
+      "statuses": {
+        "confirmed": 12
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 0,
+          "no": 0
+        },
+        "P2": {
+          "yes": 6,
+          "no": 2
+        },
+        "P3": {
+          "yes": 0,
+          "no": 4
+        }
+      }
+    },
+    "2.13.0": {
+      "runs": 16,
+      "runsWithConfirmedFindings": 14,
+      "confirmedAppearances": 80,
+      "priorities": {
+        "P0": 0,
+        "P1": 10,
+        "P2": 27,
+        "P3": 43
+      },
+      "statuses": {
+        "confirmed": 80,
+        "rejected": 1,
+        "unresolved": 3
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 10,
+          "no": 0
+        },
+        "P2": {
+          "yes": 8,
+          "no": 19
+        },
+        "P3": {
+          "yes": 0,
+          "no": 43
+        }
+      }
+    },
+    "2.14.0": {
+      "runs": 34,
+      "runsWithConfirmedFindings": 25,
+      "confirmedAppearances": 86,
+      "priorities": {
+        "P0": 0,
+        "P1": 5,
+        "P2": 40,
+        "P3": 41
+      },
+      "statuses": {
+        "confirmed": 86,
+        "rejected": 4,
+        "unresolved": 1
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 5,
+          "no": 0
+        },
+        "P2": {
+          "yes": 16,
+          "no": 24
+        },
+        "P3": {
+          "yes": 0,
+          "no": 41
+        }
+      }
+    },
+    "3.0.0": {
+      "runs": 22,
+      "runsWithConfirmedFindings": 12,
+      "confirmedAppearances": 31,
+      "priorities": {
+        "P0": 0,
+        "P1": 6,
+        "P2": 24,
+        "P3": 1
+      },
+      "statuses": {
+        "confirmed": 31,
+        "rejected": 5
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 6,
+          "no": 0
+        },
+        "P2": {
+          "yes": 16,
+          "no": 8
+        },
+        "P3": {
+          "yes": 0,
+          "no": 1
+        }
+      }
+    },
+    "3.1.0": {
+      "runs": 7,
+      "runsWithConfirmedFindings": 3,
+      "confirmedAppearances": 8,
+      "priorities": {
+        "P0": 0,
+        "P1": 0,
+        "P2": 4,
+        "P3": 4
+      },
+      "statuses": {
+        "confirmed": 8,
+        "rejected": 3
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 0,
+          "no": 0
+        },
+        "P2": {
+          "yes": 4,
+          "no": 0
+        },
+        "P3": {
+          "yes": 0,
+          "no": 4
+        }
+      }
+    },
+    "3.2.0": {
+      "runs": 7,
+      "runsWithConfirmedFindings": 6,
+      "confirmedAppearances": 22,
+      "priorities": {
+        "P0": 0,
+        "P1": 4,
+        "P2": 14,
+        "P3": 4
+      },
+      "statuses": {
+        "confirmed": 22,
+        "rejected": 1
+      },
+      "blocking": {
+        "P0": {
+          "yes": 0,
+          "no": 0
+        },
+        "P1": {
+          "yes": 4,
+          "no": 0
+        },
+        "P2": {
+          "yes": 12,
+          "no": 2
+        },
+        "P3": {
+          "yes": 0,
+          "no": 4
+        }
+      }
+    }
+  },
+  "creationRangeUtc": [
+    "2026-10-19T05:54:34.726Z",
+    "2026-10-26T17:28:35.914Z"
+  ],
+  "selectedCaseSources": [
+    {
+      "reviewId": "CR-049d6d2daa954740834f",
+      "reviewSha256": "431a1d82ec44932b05e283edbb172fb9cdfaa2974646909aadd981bcede441e5",
+      "skillVersion": "2.13.0"
+    },
+    {
+      "reviewId": "CR-83f0422a6be6486aa147",
+      "reviewSha256": "67c90093185cc34300788129e3eb9c11271d57c3d4fb1c135247dc49f1fcdaaf",
+      "skillVersion": "2.13.0"
+    },
+    {
+      "reviewId": "CR-24f3526a12c74347bfe9",
+      "reviewSha256": "2442e74c69c79d9fc9c856fd4f10e0403706a79c440e66e8d8b12b738b310557",
+      "skillVersion": "2.13.0"
+    },
+    {
+      "reviewId": "CR-646b7d7accdd438ca36e",
+      "reviewSha256": "bae84b79944c60181e1b4771d3b76c29d45f51e1f81cefd271722a6a52668398",
+      "skillVersion": "2.14.0"
+    },
+    {
+      "reviewId": "CR-6c6e27ae88284511a9fb",
+      "reviewSha256": "d1f10ca8c622a14be790e0beb01543ed2d5c01ce4c032669c3c2553e27d3ab01",
+      "skillVersion": "2.13.0"
+    },
+    {
+      "reviewId": "CR-dd305a6e426c46e3862f",
+      "reviewSha256": "89855e79d1c42b5dfac9849b33cd782691951ef5bac94f8b0da28e6d40a52773",
+      "skillVersion": "3.0.0"
+    },
+    {
+      "reviewId": "CR-d857fbf306f947098456",
+      "reviewSha256": "2f78ae831cf2ac5a44da7cf6387aa00aecf6ef69e10c9120f04b82b23aa6631c",
+      "skillVersion": "2.13.0"
+    },
+    {
+      "reviewId": "CR-2d2ef29e245840f683af",
+      "reviewSha256": "f10d2463f7351adb00e61c85c913c667c1b4f7b145ea0308785da267b655c9d9",
+      "skillVersion": "3.2.0"
+    }
+  ]
+}

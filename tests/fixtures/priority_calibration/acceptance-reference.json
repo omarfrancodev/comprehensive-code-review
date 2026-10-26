@@ -1,0 +1,66 @@
+[
+  {
+    "id": "PC21",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P0"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. La activación permite a cualquier solicitante obtener inmediatamente administración raíz y ejecutar operaciones sobre los activos esenciales de todos los espacios. La cadena de emisión, aceptación y uso está demostrada y no hay barrera previa al daño; cerrar la ruta no retira las credenciales ya emitidas y se requiere contención inmediata.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC22",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P0"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. Activar la tabla interrumpe inmediatamente todo el servicio esencial y todos sus accesos soportados, sin comprobación, fallback ni contención automática. Que un operador pueda restaurar el servicio doce minutos después no evita la interrupción catastrófica ni elimina la necesidad de contención urgente.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC23",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P1"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. La corrupción persistente de las asignaciones altera seriamente la función principal y las órdenes que genera para un lote material. La reconstrucción manual desde los pedidos limita el alcance y permite recuperar, pero no convierte en menor el fallo de integridad demostrado; no hay destrucción inmediata de todos los activos esenciales.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC24",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P1"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. Un timeout soportado provoca la pérdida irreversible del original relevante de un expediente. La condición de dependencia no reduce la consecuencia demostrada; el alcance de una sola entidad y la ausencia de propagación no sostienen el nivel catastrófico del almacén esencial completo.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC25",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P2"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. La exportación incumple completitud y anuncia éxito incorrecto, pero el efecto probado se limita a un archivo auxiliar incompleto. Las fuentes permanecen intactas y la alternativa ensayada recupera todas las filas sin daño serio sustentado.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC26",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P2"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. El formato de versión 1 sigue bajo un contrato vigente y la opción secundaria de importación falla para entradas válidas. Hay un impedimento funcional concreto, con recuperación comprobada y sin pérdida del archivo o del documento; la consecuencia no es solo informativa ni demuestra daño serio.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC27",
+    "expected_status": "confirmed",
+    "accepted_priorities": ["P3"],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. Hay una discrepancia demostrada con la obligación de nomenclatura de la ayuda, limitada a identificar una opción por su nombre anterior. El menú, el icono y el atajo correctos mantienen la acción funcional y el texto no alimenta ninguna operación; no hay daño funcional relevante.",
+    "pair": null,
+    "invariant": null
+  },
+  {
+    "id": "PC28",
+    "expected_status": "unresolved",
+    "accepted_priorities": [],
+    "rationale": "Propuesta del evaluador pendiente de ratificación humana. La política desconocida de un control externo aplicable determina si el lector puede activar la escritura y, por tanto, si existe el defecto de autorización. La ausencia de guard local y una invocación directa del handler no prueban el bypass del despliegue; no corresponde confirmar ni asignar una gravedad al supuesto acceso.",
+    "pair": null,
+    "invariant": null
+  }
+]
