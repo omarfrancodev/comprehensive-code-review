@@ -44,6 +44,8 @@
 
 ## Task 3: Validar y actualizar PR
 
-- [ ] Revisión final independiente del ajuste; resolver hallazgos importantes si aparecen con regresión RED→GREEN.
-- [ ] Ejecutar todo el inventario unittest en tres lotes disjuntos, conservar skips de capacidad e informe reproducible.
+- [x] Revisión final independiente del ajuste; resolver hallazgos importantes si aparecen con regresión RED→GREEN.
+- [x] Ejecutar todo el inventario unittest en tres lotes disjuntos, conservar skips de capacidad e informe reproducible.
 - [ ] Actualizar changelog/referencias y evidencia; commit, push normal, verificar HEAD y descripción del PR #31. No publicar respuestas al comentario sin autorización explícita.
+
+**Validación:** [893 casos completos, 890 aprobados/3 omitidos, sin fallos](../../validation/2026-10-25-pr31-review-fixes.md).
