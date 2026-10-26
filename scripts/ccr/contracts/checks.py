@@ -5,4 +5,8 @@ def purpose_errors(value: object, field: str) -> list[str]:
     if (not isinstance(value, str) or not value.strip() or len(value) > 4000
             or any(ord(character) < 32 for character in value)):
         return [field + ': nonempty purpose (maximum 4000 characters, no controls) required']
+    try:
+        value.encode('utf-8')
+    except UnicodeEncodeError:
+        return [field + ': purpose must be encodable as UTF-8']
     return []

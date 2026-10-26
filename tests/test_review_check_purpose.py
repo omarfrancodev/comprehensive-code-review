@@ -11,6 +11,30 @@ from traceability_fixtures import receipt2_bundle, PURPOSE
 
 
 class PurposeTests(unittest.TestCase):
+    def test_unencodable_purpose_never_creates_attempt_or_runs_process(self):
+        import tempfile
+        from pathlib import Path
+        for value in ('Verify \ud800', 'Verify \udfff'):
+            with self.subTest(value=ascii(value)), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                target = root / 'attempt'
+                with patch.object(capture, '_validate_owned_workspace', return_value=(root, target)) as owned:
+                    with patch.object(capture.subprocess, 'run') as process:
+                        process.return_value.returncode = 0
+                        observed_error = None
+                        try:
+                            capture.capture_check(check_id='C001', purpose=value, argv=['python', '-V'],
+                                command='python -V', cwd=str(root), executor_workspace=str(root),
+                                revision='head', executor='X1', output_dir=str(target))
+                        except ValueError as error:
+                            observed_error = error
+                        process.assert_not_called()
+                        owned.assert_not_called()
+                        self.assertFalse(target.exists())
+                        self.assertIsInstance(observed_error, ValueError)
+                        self.assertIn('purpose', str(observed_error))
+        self.assertEqual(purpose_errors('Verify Unicode \U0001f600', 'purpose'), [])
+
     def test_purpose_validation_precedes_any_process_or_attempt(self):
         for value in (None, '', ' ', 'x' * 4001, 'objetivo\nresultado', 'a\tb'):
             self.assertTrue(purpose_errors(value, 'purpose'))
