@@ -4,4 +4,5 @@
 *.yaml text eol=lf
 
 # Frozen evaluation prompts/responses retain the bytes bound by their hashes.
-/docs/validation/priority-calibration-evidence/* -text
+# Original CRLF and terminal blank lines are valid in this byte-bound evidence.
+/docs/validation/priority-calibration-evidence/* -text whitespace=blank-at-eol,space-before-tab,cr-at-eol,-blank-at-eof
