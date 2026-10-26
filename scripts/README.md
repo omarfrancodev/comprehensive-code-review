@@ -118,6 +118,7 @@ Cada fila indica el contrato principal que consume código vecino, el efecto que
 |---|---|---|---|
 | `scripts/ccr/reporting/comment.py` | Preparar y verificar bytes exactos de comentario; no publica. | `prepare_public_comment`, `verify_public_comment`; comprueba digest/cuerpo. | `test_review_comment.py` |
 | `scripts/ccr/reporting/delivery.py` | Entregar proyecciones portables de un resultado retenido. | `deliver`; escribe destino nuevo con manifiesto de entrega. | `test_review_delivery.py` |
+| `scripts/ccr/reporting/blocks.py` | Agrupar evidencias por origen y presentar cobertura por elemento, sin duplicar resultados; puro. | `evidence_groups`, `evidence_lines`, `coverage_lines`. | `test_review_traceability_rendering.py` |
 | `scripts/ccr/reporting/markdown.py` | Proporcionar escapes, celdas y referencias seguras para renderers; puro. | `one_line`, `table_cell`, `markdown_text`, `reference_text`. | `test_review_presentation.py`, `test_review_delivery.py` |
 | `scripts/ccr/reporting/projections.py` | Proyectar datos por audiencia y aplicar límites de publicación. | `public_projection`, `public_checks`, `public_limitations`, `publication_digest`; puro. | `test_review_publication_policy.py`, `test_review_presentation.py` |
 | `scripts/ccr/reporting/render.py` | Componer informe de usuario y handoff público desde registros validados. | `render`, `render_handoff`; sólo produce texto. | `test_review_presentation.py`, `test_review_contract.py` |
