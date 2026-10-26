@@ -338,7 +338,7 @@ def _execution_gate(run, manifest, value, contents):
                     continue
         errors.extend(validate_reference_semantics(
             value, context, reference_index, selected_sources, packets))
-    if value.get('schema_version') in (9, 10):
+    if value.get('schema_version') in (9, 10, 11):
         errors.extend(validate_check_sources(value, context.get('executors'),
                                              receipt_sources=selected_sources))
         errors.extend(validate_check_sources(value, manifest.get('executors', []),
@@ -511,13 +511,13 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if not isinstance(value, dict):
         raise ValueError('final review input must be a JSON object')
     if expected_schema is not None:
-        if type(expected_schema) is not int or expected_schema not in range(1, 11):
-            raise ValueError('expected schema must be a supported integer 1–10')
+        if type(expected_schema) is not int or expected_schema not in range(1, 12):
+            raise ValueError('expected schema must be a supported integer 1–11')
         if not isinstance(value, dict) or value.get('schema_version') != expected_schema:
             raise ValueError('expected schema ' + str(expected_schema) + ' differs from final review schema')
     if manifest['schema_version'] == 8:
-        if value.get('schema_version') != 10:
-            raise ValueError('archive 8 requires final review schema 10')
+        if value.get('schema_version') not in (10, 11):
+            raise ValueError('archive 8 requires final review schema 10 or 11')
         coverage = value.get('coverage')
         execution = coverage.get('execution') if isinstance(coverage, dict) else None
         if not isinstance(execution, dict):
@@ -533,7 +533,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
-    if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+    if value.get('schema_version') in (6, 7, 8, 9, 10, 11) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
     if manifest['schema_version'] == 8:
         context = _input_object(context_input, 'execution context') if context_input is not None else None
@@ -568,9 +568,9 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
     contents.update(_evidence_contents(run, manifest, evidence_inputs,
-        create_directory=value.get('schema_version') not in (8, 9, 10), reserve_context=context_input is not None,
+        create_directory=value.get('schema_version') not in (8, 9, 10, 11), reserve_context=context_input is not None,
         context_input=context_input))
-    if value.get('schema_version') in (8, 9, 10):
+    if value.get('schema_version') in (8, 9, 10, 11):
         if context_input is not None:
             _check_evidence_target(run, manifest, 'evidence/context.json')
             context_bytes = _json_bytes(read_json(context_input, max_bytes=PENDING_CONTEXT_LIMIT))

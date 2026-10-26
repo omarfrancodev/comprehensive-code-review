@@ -174,7 +174,7 @@ def main(argv=None, *, prog=None):
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', help='Final review JSON; omit only when promoting the archive-owned final checkpoint')
-    keep.add_argument('--expected-schema', type=int, choices=range(1, 11), help='Require the caller-selected final contract before retention')
+    keep.add_argument('--expected-schema', type=int, choices=range(1, 12), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')

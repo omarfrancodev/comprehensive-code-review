@@ -734,11 +734,11 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9, 10) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9, 10, 11) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 8 and value.get('schema_version') != 10:
-            raise ValueError('archive 8 requires final review schema 10')
-        if value.get('schema_version') in (8, 9, 10):
+        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11):
+            raise ValueError('archive 8 requires final review schema 10 or 11')
+        if value.get('schema_version') in (8, 9, 10, 11):
             _execution_gate(run, manifest, value, {})
     if require_complete:
         if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
