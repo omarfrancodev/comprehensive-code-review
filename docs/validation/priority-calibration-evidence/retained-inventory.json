@@ -1,0 +1,29 @@
+{
+  "hash_algorithm": "SHA-256",
+  "normalization": "none; retained evidence excluded from Git text conversion",
+  "files": {
+    "acceptance-assessment.json": "2d482fe9b3ce517b1e415f95dde76ce60c4cc8c778e4a5789d84bb66a1878fa5",
+    "baseline-acceptance.json": "ae7a37ee0686574ce33ab759f40b88123ba95667ca2c4ac4011931b982d00779",
+    "baseline-development-assessment.json": "4b654b5f55babc81c0fe00fc8d1560d3fe13c3244151824bfa14465356b1e0ad",
+    "baseline-development.json": "a56b43085a209f985857f8ef2593b368324a688b6a612fb727d30f1bfc893f12",
+    "baseline-instructions.md": "5816711a1affcd8832c8c236a965f96a8f584d84fe47547bce3362d2642cfad1",
+    "baseline-manifest.json": "24b9ec94a276129ed90a7c1a27128eab86bd5510c56a77319092c523951b607e",
+    "baseline-reverse.json": "31835dc3ba939adf21307cab0a65f331be8f84b8f11f41fe64a1d806daed6b6c",
+    "candidate-acceptance.json": "ebfe76b3b1de53cc3839669f88b08de4469b9334d29c0b025586ad48c1b0852d",
+    "candidate-development-assessment.json": "886c333d5889a6a1a61091e6aa5111845c26164fa75d8d5fc272b5f326c234eb",
+    "candidate-development.json": "ad1169693475058c3bf60c3323cbf459bd454e19bf78490b5157136cd3cc8666",
+    "candidate-instructions.md": "d9ef9e61fd22f3cf25ecb305869b12e987d52a482581500acbf672c3f6f806c8",
+    "candidate-manifest.json": "889ffb36d5b2b9bd20ebca15c4c5ad5fe8dfc094ab84556ecaf61bc81c96005e",
+    "candidate-reverse.json": "a4efcbdbd79a7f33fd368170b44ca375d55847e9e3f09fcec696699247e90b70",
+    "final-review.md": "073632c5333785e6381e16957ab41192ce95ff8d12ad32a9207d0b4dda879fb2",
+    "input-manifest.json": "60d6e009b6c85cd1cdfa3ac8587e74d14443d77aed589ed132edcfd34adcd91c",
+    "reverse-assessment.json": "55b550d6959a203e4e77c1ed3d64a944e30c9ae07b205e4b4d2fd13fb807c740",
+    "reverse-cases.json": "8c309028fce424e70d8a8ca12248821622b8b223ba48ca5098a07957caced841",
+    "test-output-contract.log": "f8d67eb2d627a958292e5d1877899181d30aab52740857fd5f8fd89b30bdf3a7",
+    "test-output-packets.log": "3174a4fb03132ad3161a22a73121319abe952a40ea7a3d3eaf3298881255a8d4",
+    "test-output-priority.log": "46639a2f8899428a88841f0fe178049c0a279edecd2efffc1a62724899eaab75",
+    "test-output-purpose.log": "0d1a20161b4beedad61d0f600b858f23ad4706e550ce7ee09c7c8ec93c2b4d92",
+    "test-output-traceability.log": "0ce4b062161476bbfae5e3c0313ce998559403ea18843b177e17a193b47de580",
+    "validation-results.json": "a7a055ad2fca45d895cca66ba06bde50bb536d821bb00c020378e80e19ea945b"
+  }
+}

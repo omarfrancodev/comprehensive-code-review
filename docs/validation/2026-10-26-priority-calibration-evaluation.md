@@ -45,3 +45,11 @@ El custodio encontró justificaciones fieles en aceptación y dos matices: el us
 La propuesta pasó los criterios de esta muestra ratificada, con candidato congelado antes de abrir aceptación y contextos nuevos por condición. No prueba calibración general, rendimiento en producción o capacidad de descubrir defectos. La inversión usa cuatro casos en vez del lote de veinte: describe estabilidad observada de esas parejas, no aísla estadísticamente todos los efectos de orden/contexto. El modelo efectivo no fue expuesto por la plataforma; no puede verificarse independientemente igualdad de versión de modelo aunque todas las clasificaciones heredaron la configuración de sesión sin override.
 
 La implementación permanece en la rama y el worktree solicitados, con changelog unreleased. No se publicó, instaló ni integró a main. La revisión independiente final de implementación se registra tras su ejecución.
+
+## Revisión final y conservación
+
+[Revisión independiente](priority-calibration-evidence/final-review.md): no hubo problemas materiales ni menores accionables en el rango de implementación. El autor mantiene los límites que el revisor separó de su juicio: precisión general/discovery/producción no medidos, productos históricos sin reclasificar, modelo efectivo no expuesto e integración/publicación no solicitadas. No se requieren cambios de política ni una nueva ronda de evaluación.
+
+Se retuvieron los cinco logs satisfactorios, las seis salidas originales de clasificadores y sus entradas/instrucciones pertinentes. [Inventario SHA-256 de evidencia retenida](priority-calibration-evidence/retained-inventory.json), sin auto-referencia. Los logs de fallos de entorno y material auxiliar del plan se trataron como scratch; sus resultados están resumidos arriba.
+
+Seguimiento: no existe API de todo en esta sesión; se usó el fallback inline permitido y ledger por tarea. El worktree y la rama del usuario se conservan. La excepción Git solo preserva bytes de evidencia; no modifica las reglas generales de saltos de línea.

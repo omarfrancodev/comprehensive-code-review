@@ -7,35 +7,40 @@
       "command": "python -B -m unittest discover -s tests -p 'test_review_priority_*.py' -v",
       "tests": 14,
       "result": "passed",
-      "full_output_sha256": "46639a2f8899428a88841f0fe178049c0a279edecd2efffc1a62724899eaab75"
+      "full_output_sha256": "46639a2f8899428a88841f0fe178049c0a279edecd2efffc1a62724899eaab75",
+      "full_output_reference": "test-output-priority.log"
     },
     {
       "suite": "packets",
       "command": "python -B -m unittest discover -s tests -p 'test_review_packets.py' -v",
       "tests": 11,
       "result": "passed",
-      "full_output_sha256": "3174a4fb03132ad3161a22a73121319abe952a40ea7a3d3eaf3298881255a8d4"
+      "full_output_sha256": "3174a4fb03132ad3161a22a73121319abe952a40ea7a3d3eaf3298881255a8d4",
+      "full_output_reference": "test-output-packets.log"
     },
     {
       "suite": "contract",
       "command": "python -B -m unittest discover -s tests -p 'test_review_contract.py' -v",
       "tests": 34,
       "result": "passed",
-      "full_output_sha256": "f8d67eb2d627a958292e5d1877899181d30aab52740857fd5f8fd89b30bdf3a7"
+      "full_output_sha256": "f8d67eb2d627a958292e5d1877899181d30aab52740857fd5f8fd89b30bdf3a7",
+      "full_output_reference": "test-output-contract.log"
     },
     {
       "suite": "traceability",
       "command": "python -B -m unittest discover -s tests -p 'test_review_traceability_*.py' -v",
       "tests": 62,
       "result": "passed",
-      "full_output_sha256": "0ce4b062161476bbfae5e3c0313ce998559403ea18843b177e17a193b47de580"
+      "full_output_sha256": "0ce4b062161476bbfae5e3c0313ce998559403ea18843b177e17a193b47de580",
+      "full_output_reference": "test-output-traceability.log"
     },
     {
       "suite": "purpose",
       "command": "python -B -m unittest discover -s tests -p 'test_review_check_purpose.py' -v",
       "tests": 4,
       "result": "passed",
-      "full_output_sha256": "0d1a20161b4beedad61d0f600b858f23ad4706e550ce7ee09c7c8ec93c2b4d92"
+      "full_output_sha256": "0d1a20161b4beedad61d0f600b858f23ad4706e550ce7ee09c7c8ec93c2b4d92",
+      "full_output_reference": "test-output-purpose.log"
     }
   ],
   "sandbox_attempts": {

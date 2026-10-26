@@ -1,0 +1,16 @@
+test_amended_claims_keep_the_previous_scenario_for_consolidation (test_review_packets.PacketTests.test_amended_claims_keep_the_previous_scenario_for_consolidation) ... ok
+test_clean_scope_can_omit_verification_but_candidates_and_material_gaps_cannot (test_review_packets.PacketTests.test_clean_scope_can_omit_verification_but_candidates_and_material_gaps_cannot) ... ok
+test_cli_merge_emits_a_bundle_that_requires_final_consolidation (test_review_packets.PacketTests.test_cli_merge_emits_a_bundle_that_requires_final_consolidation) ... ok
+test_cross_context_unknown_ids_and_role_id_collisions_are_rejected (test_review_packets.PacketTests.test_cross_context_unknown_ids_and_role_id_collisions_are_rejected) ... ok
+test_delta_updates_are_explicit_and_cannot_change_the_candidate_identity (test_review_packets.PacketTests.test_delta_updates_are_explicit_and_cannot_change_the_candidate_identity) ... ok
+test_fixture_failure_cannot_be_the_verifiers_confirmation_evidence (test_review_packets.PacketTests.test_fixture_failure_cannot_be_the_verifiers_confirmation_evidence) ... ok
+test_malformed_packets_locations_and_evidence_fail_without_crashing (test_review_packets.PacketTests.test_malformed_packets_locations_and_evidence_fail_without_crashing) ... ok
+test_merge_keeps_scenario_and_evidence_without_guessing_final_judgments (test_review_packets.PacketTests.test_merge_keeps_scenario_and_evidence_without_guessing_final_judgments) ... ok
+test_merging_requires_an_explicit_decision_for_each_candidate (test_review_packets.PacketTests.test_merging_requires_an_explicit_decision_for_each_candidate) ... ok
+test_minimal_discovery_and_decision_delta_are_valid (test_review_packets.PacketTests.test_minimal_discovery_and_decision_delta_are_valid) ... ok
+test_referenced_checks_keep_actual_revision_and_require_ledger_entries (test_review_packets.PacketTests.test_referenced_checks_keep_actual_revision_and_require_ledger_entries) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.514s
+
+OK
