@@ -207,7 +207,8 @@ def render(record, audience='user', publication_context=None, *, check_publicati
     output = '\n'.join(lines) + '\n'
     return public_projection(output, record) if audience == 'comment' else output
 
-def render_handoff(record, context=None, audience='user', publication_context=None):
+def render_handoff(record, context=None, audience='user', publication_context=None, *,
+                   check_publication_context=None, coverage_publication_context=None):
     """Render an explicitly requested contextual index, never an authorization."""
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -216,6 +217,10 @@ def render_handoff(record, context=None, audience='user', publication_context=No
         raise ValueError('audience must be user or comment')
     if publication_context is not None and audience != 'comment':
         raise ValueError('publication context is only applicable to public rendering')
+    if audience != 'comment' and (check_publication_context is not None or coverage_publication_context is not None):
+        raise ValueError('check/coverage publication context is only applicable to public rendering')
+    checks = (public_checks(record, check_publication_context) if audience == 'comment' else record['checks'])
+    flows = public_coverage(record, coverage_publication_context) if audience == 'comment' else record['coverage']['flows']
     limitations = (public_limitations(record, publication_context) if audience == 'comment' else
                    record['coverage']['limitations'])
     context = context or {}
@@ -247,6 +252,8 @@ def render_handoff(record, context=None, audience='user', publication_context=No
             correction_reference = ' · [Corrección ' + markdown_text(item['id']) + '](' + quote(target, safe='/:#?&=%-._~') + ')'
         lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · "
                      + markdown_text(item['title']) + ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference)
+        lines.append('  - **Evidencia:**')
+        lines.extend('  ' + line for line in evidence_lines(evidence_groups(item['evidence'], {c['id']: c for c in record['checks']})))
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
     uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
@@ -262,15 +269,19 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     lines.extend('- ' + markdown_text(item) for item in dict.fromkeys(uncertainties + pending + reservations))
     if not uncertainties and not pending and not reservations:
         lines.append('- Ninguna registrada.')
-    lines.extend(['', '### Comprobaciones y referencias', ''])
-    for check in record['checks']:
+    lines.extend(['', '### Validación', ''])
+    for check in checks:
+        lines.extend(['', '<a id="' + html.escape(check['id'], quote=True) + '"></a>', ''])
         evidence_ref = (' · referencia: ' + reference_text(check['reference']) if check.get('reference') else
                         ' · [Evidencia ' + check['id'] + '](' + quote(context['source_report'].split('#')[0] + '#' + check['id'], safe='/:#?&=%-._~') + ')' if context.get('source_report') else
                         ' · evidencia: véase Validación del informe fuente')
         lines.append(f"- {check['id']} · {CHECK_STATUS[check['status']]} · versión {markdown_text(check['revision'])}" +
                      evidence_ref)
+        lines.append('  - **Propósito:** ' + markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
+        lines.append('  - **Resultado:** ' + markdown_text(check['evidence'] or 'Sin ejecución'))
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
+    lines.extend(['', *coverage_lines(flows)])
     for key, label in [('requirements', 'Requisitos y especificaciones'), ('plan', 'Plan')]:
         entries = context.get(key, [])
         if not isinstance(entries, list):

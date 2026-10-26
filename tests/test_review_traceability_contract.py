@@ -267,7 +267,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['previous_reviews'] = [dict(review_id='CR-' + 'b' * 20,
             reference='https://example.test/reviews/prior', verified=True)]
         for audience in ('user', 'comment'):
-            for output in (contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None), contract.render_handoff(record, audience=audience)):
+            for output in (contract.render(record, audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None), contract.render_handoff(record, audience=audience, coverage_publication_context=coverage_classification(record) if audience == 'comment' else None)):
                 self.assertIn('ID de revisión', output)
                 self.assertIn('Revisiones previas', output)
                 self.assertIn('https://example.test/reviews/prior', output)
@@ -281,7 +281,7 @@ class TraceabilityContractTests(unittest.TestCase):
         record['rereview'] = [dict(id='F001', status='resolved', details='Resuelto',
             previous_review_id=prior_id, previous_reference=prior_reference, previous_finding_id='F001',
             previous_title='Título anterior', previous_url=None, check_ids=[])]
-        for output in (contract.render(record, 'comment', coverage_publication_context=coverage_classification(record)), contract.render_handoff(record, audience='comment')):
+        for output in (contract.render(record, 'comment', coverage_publication_context=coverage_classification(record)), contract.render_handoff(record, audience='comment', coverage_publication_context=coverage_classification(record))):
             self.assertIn(prior_id, output)
             self.assertNotIn(prior_reference, output)
         self.assertIn(prior_reference, contract.render(record, 'user'))

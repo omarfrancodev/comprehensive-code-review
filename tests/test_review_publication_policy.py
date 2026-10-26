@@ -157,7 +157,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 before = copy.deepcopy(value)
                 self.assertEqual(contract.validate(value), [])
                 for renderer in (contract.render, contract.render_handoff):
-                    output = renderer(value, audience='comment', publication_context=context, **({'coverage_publication_context': coverage_classification(value)} if renderer is contract.render else {}))
+                    output = renderer(value, audience='comment', publication_context=context, coverage_publication_context=coverage_classification(value))
                     self.assertNotIn(detail, output)
                     self.assertEqual(output.count(summary), 1)
                     self.assertEqual(output.count(condition), 1)
@@ -177,7 +177,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 context = classification(value, 'execution', summary) if legacy else None
                 before = copy.deepcopy(value)
                 for renderer in (contract.render, contract.render_handoff):
-                    output = renderer(value, audience='comment', publication_context=context, **({'coverage_publication_context': coverage_classification(value)} if renderer is contract.render else {}))
+                    output = renderer(value, audience='comment', publication_context=context, coverage_publication_context=coverage_classification(value))
                     self.assertNotIn(detail, output)
                     self.assertEqual(output.count(summary), 1)
                 self.assertEqual(value, before)
@@ -190,17 +190,17 @@ class PublicationPolicyTests(unittest.TestCase):
         value['verdict'] = 'insufficient_evidence'
         for renderer in (contract.render, contract.render_handoff):
             with self.assertRaises(ValueError):
-                renderer(value, audience='comment', **({'coverage_publication_context': coverage_classification(value)} if renderer is contract.render else {}))
+                renderer(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
     def test_public_handoff_uses_same_policy(self):
         value = record8()
         value['coverage']['limitations'] = [limit(detail='Worker tool denied by local harness')]
-        self.assertNotIn('Worker tool denied', contract.render_handoff(value, audience='comment'))
+        self.assertNotIn('Worker tool denied', contract.render_handoff(value, audience='comment', coverage_publication_context=coverage_classification(value)))
         self.assertIn('Worker tool denied', contract.render_handoff(value))
         value = record7()
         value['coverage']['limitations'] = [dict(detail='Unclassified', material=False)]
         with self.assertRaises(ValueError):
-            contract.render_handoff(value, audience='comment')
+            contract.render_handoff(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
     def test_cli_classification_is_explicit_and_bound(self):
         value = record7()
