@@ -107,3 +107,10 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para el formato de descripciones de 
 ## Licencia
 
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
+
+
+## Desarrollo pendiente de publicación: reutilización por equivalencia
+
+La rama de desarrollo incorpora [admisión por cambios efectivos](references/workflow/reuse.md). Para una petición ordinaria de MR/PR, cambios de contenido o contexto y evidencia insuficiente inician una nueva revisión sin confirmación adicional. Un merge vacío o rebase puede reutilizar el resultado cuando el diff y sus insumos materiales son equivalentes; HEAD por sí solo no decide. `artifacts assess-reuse` es de solo lectura y la consulta explícita del último informe conserva su carácter histórico.
+
+Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). Estas capacidades figuran como unreleased; la versión publicada 3.1.0 no se reetiqueta.
