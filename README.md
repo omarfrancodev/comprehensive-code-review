@@ -88,7 +88,7 @@ Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<repositor
 
 El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada permanece inmutable; otra revisión crea un registro enlazado y una entrega posterior conserva el vínculo con el original. Las mediciones son optativas, solo para una evaluación de coste solicitada. Consulta [archivo y ejecución](docs/usage.md#archivo-interno-y-ejecución).
 
-Antes de repetir un alcance ya revisado, CCR pregunta si debe iniciar otra revisión o mostrar la última verificada, salvo que la petición ya lo indique. La selección explícita compara vigencia y puede devolver empate o búsqueda incompleta; nunca decide por el orden de carpetas. Los resultados históricos incompatibles se preservan y pueden portarse como consulta mínima. Consulta [recuperación y continuidad](references/archive/recovery.md).
+Antes de ofrecer repetir o consultar un resultado anterior, CCR verifica que los cambios efectivos, el contexto y los materiales sigan siendo equivalentes. Los cambios reales o la evidencia insuficiente inician una revisión nueva sin confirmación adicional. La selección explícita compara vigencia y puede devolver empate o búsqueda incompleta; nunca decide por el orden de carpetas. Los resultados históricos incompatibles se preservan y pueden portarse como consulta mínima. Consulta [recuperación y continuidad](references/archive/recovery.md).
 
 ## Guías y versiones
 
@@ -98,7 +98,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 3.1.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.1.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Última release publicada: 3.2.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.2.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 
@@ -109,8 +109,8 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para el formato de descripciones de 
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
 
 
-## Desarrollo pendiente de publicación: reutilización por equivalencia
+## Reutilización por equivalencia en 3.2.0
 
-La rama de desarrollo incorpora [admisión por cambios efectivos](references/workflow/reuse.md). Para una petición ordinaria de MR/PR, cambios de contenido o contexto y evidencia insuficiente inician una nueva revisión sin confirmación adicional. Un merge vacío o rebase puede reutilizar el resultado cuando el diff y sus insumos materiales son equivalentes; HEAD por sí solo no decide. `artifacts assess-reuse` es de solo lectura y la consulta explícita del último informe conserva su carácter histórico.
+La versión 3.2.0 incorpora [admisión por cambios efectivos](references/workflow/reuse.md). Para una petición ordinaria de MR/PR, cambios de contenido o contexto y evidencia insuficiente inician una nueva revisión sin confirmación adicional. Un merge vacío o rebase puede reutilizar el resultado cuando el diff y sus insumos materiales son equivalentes; HEAD por sí solo no decide. `artifacts assess-reuse` es de solo lectura y la consulta explícita del último informe conserva su carácter histórico.
 
-Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). Estas capacidades figuran como unreleased; la versión publicada 3.1.0 no se reetiqueta.
+Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). La reutilización de un re-review exige acreditar cobertura ordinaria completa y aplicable mediante su cadena nativa explícita; una matriz de seguimiento cubierta no basta.
