@@ -223,10 +223,10 @@ class ArchiveTests(unittest.TestCase):
         from recovery_fixtures import context10, record10
         source_final = self.read(self.final) if Path(self.final).is_file() else record10()
         manifest = self.read(Path(run) / 'cierre.json')
-        final = copy.deepcopy(source_final) if source_final.get('schema_version') == 10 else source_final
-        context_record = copy.deepcopy(final) if final.get('schema_version') == 10 else record10()
-        if context_record.get('schema_version') == 10:
-            targets = (final, context_record) if final.get('schema_version') == 10 else (context_record,)
+        final = copy.deepcopy(source_final) if source_final.get('schema_version') in (10, 11) else source_final
+        context_record = copy.deepcopy(final) if final.get('schema_version') in (10, 11) else record10()
+        if context_record.get('schema_version') in (10, 11):
+            targets = (final, context_record) if final.get('schema_version') in (10, 11) else (context_record,)
             for target in targets:
                 target['scope'] = manifest['scope']
                 target['review_id'] = 'CR-' + manifest['run_id']
@@ -250,7 +250,7 @@ class ArchiveTests(unittest.TestCase):
             context.update(self.read(Path(custom_context)))
         evidence_inputs = list(kwargs.pop('evidence_inputs', []))
         evidence_inputs.extend([self.write('briefs.json', briefs), self.write('results.json', results)])
-        if (kwargs.get('expected_schema') in (None, 10)
+        if (kwargs.get('expected_schema') in (None, 10, 11)
                 and manifest.get('state') in ('prepared', 'processing')):
             artifacts.register(run, [], context_input=self.write('context-register.json', context))
             for index, (assignment, result) in enumerate(zip(context_record['coverage']['execution']['plan'],

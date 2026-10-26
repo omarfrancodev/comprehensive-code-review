@@ -35,7 +35,7 @@ def canonicalize_ids(record, reserved_ids=None):
     Return a fresh record and source maps; caller must retain these maps as evidence.
     Existing canonical IDs and explicitly disclosed historical IDs remain unchanged.
     """
-    if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8, 9, 10):
+    if not isinstance(record, dict) or record.get('schema_version') not in (6, 7, 8, 9, 10, 11):
         raise ValueError('canonical ID allocation requires schema 6–10')
     errors = [error for error in validate(record) if 'expected canonical' not in error]
     if errors:
@@ -94,6 +94,8 @@ def canonicalize_ids(record, reserved_ids=None):
         item['id'] = mapped(check_map, item['id'])
     for area in result.get('coverage', {}).get('areas', []):
         area['finding_ids'] = [mapped(finding_map, identifier) for identifier in area.get('finding_ids', [])]
+        for dimension in area.get('dimensions', []):
+            dimension['finding_ids'] = [mapped(finding_map, identifier) for identifier in dimension['finding_ids']]
     for row in result.get('rereview', []):
         row['id'] = mapped(finding_map, row['id'])
         row['check_ids'] = [mapped(check_map, identifier) for identifier in row.get('check_ids', [])]

@@ -13,7 +13,7 @@ from ccr.reporting.projections import publication_digest
 from ccr.reporting.render import render as render_record
 
 DRAFT_FIELDS = {'schema_version', 'source_sha256', 'publication_context',
-                'check_publication_context', 'body', 'body_sha256'}
+                'check_publication_context', 'coverage_publication_context', 'body', 'body_sha256'}
 MAX_JSON_BYTES = 16 * 1024 * 1024
 MAX_BODY_BYTES = 2 * 1024 * 1024
 
@@ -24,17 +24,20 @@ def _digest_text(value):
         raise ValueError('body_mismatch: body must be valid UTF-8 text') from exc
 
 def prepare_public_comment(record: dict, *, publication_context: dict | None = None,
-                           check_publication_context: dict | None = None) -> dict:
+                           check_publication_context: dict | None = None,
+                           coverage_publication_context: dict | None = None) -> dict:
     """Render one deterministic draft with source and body hashes."""
     source_hash = publication_digest(record)
     body = render_record(
         record, audience='comment', publication_context=publication_context,
-        check_publication_context=check_publication_context)
+        check_publication_context=check_publication_context,
+        coverage_publication_context=coverage_publication_context)
     return {
-        'schema_version': 1,
+        'schema_version': 2,
         'source_sha256': source_hash,
         'publication_context': copy.deepcopy(publication_context),
         'check_publication_context': copy.deepcopy(check_publication_context),
+        'coverage_publication_context': copy.deepcopy(coverage_publication_context),
         'body': body,
         'body_sha256': _digest_text(body),
     }
@@ -42,9 +45,12 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
 def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False) -> dict:
     """Verify an exact outbound body or an observed remote body against a fresh render."""
     source_hash = publication_digest(record)
+    if (isinstance(draft, dict) and type(draft.get('schema_version')) is int
+            and draft['schema_version'] == 1 and set(draft) == DRAFT_FIELDS - {'coverage_publication_context'}):
+        raise ValueError('stale_draft: preserve schema 1 draft and prepare a new draft from the same source')
     if not isinstance(draft, dict) or set(draft) != DRAFT_FIELDS \
-            or type(draft.get('schema_version')) is not int or draft.get('schema_version') != 1:
-        raise ValueError('invalid_draft: exact schema 1 fields required')
+            or type(draft.get('schema_version')) is not int or draft.get('schema_version') != 2:
+        raise ValueError('invalid_draft: exact schema 2 fields required')
     if draft.get('source_sha256') != source_hash:
         raise ValueError('source_mismatch: draft is bound to another source record')
     if not isinstance(draft.get('body'), str):
@@ -60,7 +66,8 @@ def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool 
         raise ValueError('body_mismatch: draft body hash differs from its bytes')
     expected = render_record(
         record, audience='comment', publication_context=draft['publication_context'],
-        check_publication_context=draft['check_publication_context'])
+        check_publication_context=draft['check_publication_context'],
+        coverage_publication_context=draft['coverage_publication_context'])
     if expected != draft['body']:
         raise ValueError('body_mismatch: draft differs from a fresh canonical render')
     if not isinstance(body, str):

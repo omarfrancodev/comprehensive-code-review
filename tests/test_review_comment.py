@@ -11,6 +11,8 @@ import sys
 import tempfile
 import unittest
 
+from publication_fixtures import coverage_classification
+
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,11 +29,11 @@ class PublicCommentTests(unittest.TestCase):
         record = publication_record()
         original = copy.deepcopy(record)
         context = check_classification(record)
-        draft = comments.prepare_public_comment(record, check_publication_context=context)
+        draft = comments.prepare_public_comment(record, check_publication_context=context, coverage_publication_context=coverage_classification(record))
         self.assertEqual(draft, comments.prepare_public_comment(
-            record, check_publication_context=context))
+            record, check_publication_context=context, coverage_publication_context=coverage_classification(record)))
         self.assertEqual(draft['body'], contract.render(
-            record, audience='comment', check_publication_context=context))
+            record, audience='comment', check_publication_context=context, coverage_publication_context=coverage_classification(record)))
         self.assertEqual(draft['body_sha256'], hashlib.sha256(
             draft['body'].encode('utf-8')).hexdigest())
         self.assertTrue(comments.verify_public_comment(
@@ -43,7 +45,7 @@ class PublicCommentTests(unittest.TestCase):
     def test_crlf_is_only_allowed_for_remote_transport(self):
         record = publication_record()
         draft = comments.prepare_public_comment(
-            record, check_publication_context=check_classification(record))
+            record, check_publication_context=check_classification(record), coverage_publication_context=coverage_classification(record))
         remote_body = draft['body'].replace('\n', '\r\n')
         with self.assertRaisesRegex(ValueError, 'body_mismatch'):
             comments.verify_public_comment(record, draft, remote_body)
@@ -53,7 +55,7 @@ class PublicCommentTests(unittest.TestCase):
     def test_source_context_status_and_body_hash_tampering_fail_without_mutation(self):
         record = publication_record()
         context = check_classification(record)
-        draft = comments.prepare_public_comment(record, check_publication_context=context)
+        draft = comments.prepare_public_comment(record, check_publication_context=context, coverage_publication_context=coverage_classification(record))
         original_record, original_draft = copy.deepcopy(record), copy.deepcopy(draft)
 
         bad = copy.deepcopy(draft)
@@ -117,12 +119,27 @@ class PublicCommentCliTests(unittest.TestCase):
             context_path = root / 'check-publication.json'
             context_path.write_text(json.dumps(context, ensure_ascii=False), encoding='utf-8')
             draft_path = evidence / 'public-comment.json'
+            coverage_path = root / 'coverage-publication.json'
+            coverage_path.write_text(json.dumps(coverage_classification(record)), encoding='utf-8')
             helper = SCRIPTS
             prepare = run([sys.executable, str(helper), 'comment', 'prepare', '--input', str(record_path),
                            '--session', str(manifest['manifest']), '--output', str(draft_path),
-                           '--check-publication-context', str(context_path)])
+                           '--check-publication-context', str(context_path),
+                           '--coverage-publication-context', str(coverage_path)])
             self.assertEqual(prepare.returncode, 0, prepare.stderr)
             draft = json.loads(draft_path.read_text(encoding='utf-8'))
+            rendered = run([sys.executable, str(helper), 'contract', 'render-comment', '--input', str(record_path),
+                            '--check-publication-context', str(context_path),
+                            '--coverage-publication-context', str(coverage_path)])
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            self.assertEqual(rendered.stdout, draft['body'])
+            coverage_path.write_text(json.dumps(dict(coverage_classification(record), flows=[])), encoding='utf-8')
+            invalid = run([sys.executable, str(helper), 'comment', 'prepare', '--input', str(record_path),
+                           '--session', str(manifest['manifest']), '--output', str(evidence / 'invalid.json'),
+                           '--check-publication-context', str(context_path),
+                           '--coverage-publication-context', str(coverage_path)])
+            self.assertEqual(invalid.returncode, 1)
+            self.assertFalse((evidence / 'invalid.json').exists())
             body_path = root / 'body.md'
             body_path.write_text(draft['body'], encoding='utf-8', newline='')
             before = {str(path.relative_to(session)): path.read_bytes()

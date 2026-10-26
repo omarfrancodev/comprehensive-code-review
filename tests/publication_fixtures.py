@@ -5,10 +5,10 @@ import sys
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 from ccr.reporting import projections as review_publication
-from recovery_fixtures import record10
 
 
 def publication_record() -> dict:
+    from recovery_fixtures import record10
     record = record10('focused', 'explicit')
     head, base = record['scope']['head'], record['scope']['base']
     record['checks'] = [
@@ -55,3 +55,8 @@ def check_classification(record: dict) -> dict:
         })
     return {'source_sha256': review_publication.publication_digest(record),
             'checks': checks}
+
+
+def coverage_classification(record: dict) -> dict:
+    return {'source_sha256': review_publication.publication_digest(record),
+            'flows': [dict(index=i, summary=flow) for i, flow in enumerate(record['coverage']['flows'])]}

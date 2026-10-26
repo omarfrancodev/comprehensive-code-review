@@ -20,6 +20,7 @@ from ccr.contracts.receipts import (
     validate_receipt, validate_record_receipts,
 )
 from ccr.execution import workspaces as workspace_ops
+from ccr.contracts.checks import purpose_errors
 
 def _validate_owned_workspace(*, check_id, argv, command, cwd, executor_workspace,
                               revision, executor, output_dir):
@@ -112,10 +113,13 @@ def _file_identity(path):
             size += len(chunk)
     return digest.hexdigest(), size
 
-def capture_check(*, check_id: str, argv: list[str], command: str, cwd: str,
+def capture_check(*, check_id: str, purpose: str, argv: list[str], command: str, cwd: str,
                   executor_workspace: str, revision: str, executor: str,
                   output_dir: str) -> dict:
     """Run one explicit argv in an owned workspace and retain a new attempt receipt."""
+    errors = purpose_errors(purpose, 'purpose')
+    if errors:
+        raise ValueError('; '.join(errors))
     worktree, target = _validate_owned_workspace(
         check_id=check_id, argv=argv, command=command, cwd=cwd,
         executor_workspace=executor_workspace, revision=revision,
@@ -142,7 +146,8 @@ def capture_check(*, check_id: str, argv: list[str], command: str, cwd: str,
         stdout_digest, stdout_size = _file_identity(target / stdout_name)
         stderr_digest, stderr_size = _file_identity(target / stderr_name)
         receipt = {
-            'schema_version': 1,
+            'schema_version': 2,
+            'purpose': purpose,
             'check_id': check_id,
             'argv': list(argv),
             'cwd': str(worktree),
@@ -181,8 +186,11 @@ def _read_request(path):
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError('check request is not readable UTF-8 JSON') from exc
     fields = {'check_id', 'argv', 'command', 'cwd', 'executor_workspace',
-              'revision', 'executor'}
+              'revision', 'executor', 'purpose'}
     if not isinstance(request, dict) or set(request) != fields:
         raise ValueError('check request requires exactly check_id, argv, command, cwd, '
-                         'executor_workspace, revision and executor')
+                         'executor_workspace, revision, executor and purpose')
+    errors = purpose_errors(request['purpose'], 'purpose')
+    if errors:
+        raise ValueError('; '.join(errors))
     return request

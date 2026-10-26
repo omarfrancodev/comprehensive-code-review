@@ -9,6 +9,7 @@ import re
 import shlex
 from ccr.contracts.reference_types import ReferenceIssue
 from ccr.contracts.references import parse_reference
+from ccr.contracts.checks import purpose_errors
 
 RECEIPT_FIELDS = {'schema_version', 'check_id', 'argv', 'cwd', 'revision', 'executor',
                   'started_at', 'finished_at', 'exit_code', 'stdout', 'stderr'}
@@ -59,11 +60,17 @@ def validate_receipt(receipt: dict, sources: dict[str, bytes], *,
     def fail(field, reference, message, expected):
         issues.append(_issue(field, reference, message, expected))
 
-    if not isinstance(receipt, dict) or set(receipt) != RECEIPT_FIELDS:
+    expected_fields = RECEIPT_FIELDS | ({'purpose'} if isinstance(receipt, dict) and receipt.get('schema_version') == 2 else set())
+    if not isinstance(receipt, dict) or set(receipt) != expected_fields:
         return [_issue('receipt', None, 'receipt has missing or unknown fields',
-                       'exactly ' + ', '.join(sorted(RECEIPT_FIELDS)))]
-    if type(receipt.get('schema_version')) is not int or receipt['schema_version'] != 1:
-        fail('schema_version', None, 'unsupported receipt schema', 'schema_version 1')
+                       'exactly ' + ', '.join(sorted(expected_fields)))]
+    if type(receipt.get('schema_version')) is not int or receipt['schema_version'] not in (1, 2):
+        fail('schema_version', None, 'unsupported receipt schema', 'schema_version 1 or 2')
+    if receipt.get('schema_version') == 2:
+        for message in purpose_errors(receipt.get('purpose'), 'purpose'):
+            fail('purpose', None, message, 'declared purpose before execution')
+        if isinstance(check, dict) and check.get('purpose') != receipt.get('purpose'):
+            fail('purpose', None, 'receipt purpose differs from the source check', 'identical purpose')
     check_id = receipt.get('check_id')
     if not isinstance(check_id, str) or CHECK_ID.fullmatch(check_id) is None:
         fail('check_id', None, 'invalid check ID', 'bounded safe check identity')
@@ -212,7 +219,7 @@ def is_receipt_reference(reference, check_id) -> bool:
 def validate_record_receipts(record: dict, sources: dict[str, bytes],
                              executors: list[dict]) -> list[ReferenceIssue]:
     """Validate only checks that explicitly reference a named receipt artifact."""
-    if not isinstance(record, dict) or record.get('schema_version') not in (9, 10):
+    if not isinstance(record, dict) or record.get('schema_version') not in (9, 10, 11):
         return []
     checks = record.get('checks')
     if not isinstance(checks, list):
@@ -242,5 +249,10 @@ def validate_record_receipts(record: dict, sources: dict[str, bytes],
             issues.append(_issue(field, reference, 'selected check receipt is not UTF-8 JSON',
                                  'a schema 1 check receipt'))
             continue
+        if (record.get('schema_version') == 11 and check.get('reused') is False
+                and isinstance(check.get('execution'), dict) and check['execution'].get('kind') == 'local'
+                and (not isinstance(receipt, dict) or receipt.get('schema_version') != 2)):
+            issues.append(_issue(field, reference, 'new local check requires a purpose-bound schema 2 receipt',
+                                 'schema 2 receipt with the original purpose'))
         issues.extend(validate_receipt(receipt, sources, check=check, executors=executors))
     return issues[:100]

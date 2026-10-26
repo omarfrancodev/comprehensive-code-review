@@ -62,8 +62,14 @@ Los 27 módulos anteriores se dividieron por responsabilidad. Esta tabla ubica s
 Los imports Python directos de `review_*`, las rutas de archivo de esos módulos y los alias de módulos en `sys.modules` se retiraron. Para actualizar un consumidor, usa el módulo `ccr.*` propietario indicado arriba; consulta [el índice de módulos](../scripts/README.md) para su responsabilidad, efectos, contratos y pruebas. Los datos persistidos y sus esquemas no cambian.
 
 
-## Admisión por equivalencia (unreleased)
+## Admisión por equivalencia (3.2.0)
 
 Se añaden `setup changes`, `setup materials`, `setup reuse-context` y `artifacts assess-reuse`. Los tres builders mantienen el envelope `{session, arguments}` y salida nueva dentro de evidence de una sesión propia. `assess-reuse` añade `--repo`, `--scope-file`, `--current-inputs`, `--effective-changes`, `--current-materials` y `--session`; no muta el archive. Consulta [reuse.md](../references/workflow/reuse.md) para el orden de bootstrap y acciones.
 
 No se retiran comandos existentes. `lookup --select latest` sigue permitiendo consulta histórica explícita y no certifica aplicabilidad por sí solo. `compare_inputs`, resume/recover, ownership, fuentes y dispatch-identity conservan sus contratos exactos. Los nuevos sidecars son opcionales para lectores de archives anteriores; su ausencia impide certificar reutilización salvo reconstrucción verificable.
+
+## Traceability contract update (3.3.0)
+
+Current guided producers complete final 11 and retain with --expected-schema 11. `checks run` requires purpose in its exact request before process launch and emits receipt 2; existing receipt 1 readers retain historical semantics. `packets merge` uses context.check_schema_version=11 for purpose-bearing checks, with legacy default 2. Packet version remains 1.
+
+`contract render-comment` and `comment prepare` accept --coverage-publication-context in addition to the existing limitation/check contexts. Every source flow needs one indexed source-bound summary; final-11 check contexts also require purpose. New canonical drafts are schema 2; verify reports stale_draft for historical draft 1. Full/brief/handoff share evidence-origin and coverage blocks. These changes do not restore removed CLI/import paths or authorize publication. Archive 8/layout 2, trace 1 and delivery receipt 1 are unchanged; older final readers may require an update for final 11. No independent viewer change is included.

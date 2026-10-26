@@ -4,6 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+
+from publication_fixtures import coverage_classification
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
@@ -142,7 +144,7 @@ class ModelUsageTests(unittest.TestCase):
         from publication_fixtures import check_classification, publication_record
         record = publication_record()
         comment = review_contract.render(record, audience='comment',
-                                         check_publication_context=check_classification(record))
+                                         check_publication_context=check_classification(record), coverage_publication_context=coverage_classification(record))
         self.assertNotIn('model-usage', comment)
         self.assertNotIn('configured_model', comment)
 

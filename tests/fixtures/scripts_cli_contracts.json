@@ -2021,7 +2021,7 @@
                 "type": null
               },
               {
-                "choices": "range(1, 11)",
+                "choices": "range(1, 12)",
                 "const": null,
                 "default": null,
                 "dest": "expected_schema",
@@ -2640,6 +2640,22 @@
                 ],
                 "required": false,
                 "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "coverage_publication_context",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--coverage-publication-context"
+                ],
+                "required": false,
+                "type": null
               }
             ],
             "defaults": {},
@@ -2858,6 +2874,22 @@
         "nargs": null,
         "options": [
           "--check-publication-context"
+        ],
+        "required": false,
+        "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "coverage_publication_context",
+        "help": "Ephemeral source-bound public coverage summaries for render-comment",
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--coverage-publication-context"
         ],
         "required": false,
         "type": null

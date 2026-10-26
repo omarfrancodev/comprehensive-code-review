@@ -129,8 +129,8 @@ def _checkpoint_input_files(run, manifest, context_input, evidence_inputs, input
                 if not errors:
                     diagnostics.append('final structure: stage must be final')
             else:
-                if final.get('schema_version') != 10:
-                    diagnostics.append('final structure: archive 8 checkpoints require review schema 10')
+                if final.get('schema_version') not in (10, 11):
+                    diagnostics.append('final structure: archive 8 checkpoints require review schema 10 or 11')
                 else:
                     if final.get('review_id') != 'CR-' + manifest['run_id']:
                         diagnostics.append('archive identity gate: review ID differs from the run')

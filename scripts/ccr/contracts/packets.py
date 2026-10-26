@@ -3,6 +3,7 @@ import copy
 
 from ccr.contracts.review import validate as validate_review
 from ccr.contracts.validation import PRIORITIES
+from ccr.contracts.provenance import validate_check_execution
 
 
 def validate(packet, *, reference_index=None, reference_sources=None,
@@ -140,9 +141,14 @@ def merge(context, discoveries, verification=None, *, reference_index=None,
     """Return a consolidation bundle, NOT a final/canonical record. Preserve inputs."""
     if not isinstance(context, dict) or not isinstance(context.get('context_id'), str) or not context['context_id'].strip():
         raise ValueError('context requires a nonempty context_id')
-    neutral = {'schema_version': 2, 'stage': 'discovery', 'scope': context.get('scope'),
+    check_schema = context.get('check_schema_version', 2)
+    if type(check_schema) is not int or check_schema not in (2, 11):
+        raise ValueError('check_schema_version must be 2 or 11')
+    neutral = {'schema_version': check_schema, 'stage': 'discovery', 'scope': context.get('scope'),
                'findings': [], 'checks': context.get('checks', []), 'coverage': {'flows': [], 'limitations': []}}
     errors = validate_review(neutral)
+    if check_schema == 11:
+        errors.extend(validate_check_execution(neutral))
     if errors:
         raise ValueError('invalid scope/check ledger: ' + '; '.join(errors))
     if not isinstance(discoveries, list) or not discoveries:

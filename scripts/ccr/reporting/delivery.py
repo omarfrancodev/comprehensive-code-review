@@ -1,6 +1,7 @@
 """Explicitly deliver a portable projection of a retained review; never review again."""
 import argparse
 import hashlib
+import html
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,8 @@ from urllib.parse import urlsplit
 from ccr.archive.lifecycle import validate as validate_archive
 from ccr.contracts import review as review_contract, validation
 from ccr.reporting import markdown
-from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render as render_record
+from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
+from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import contains, safe_path
@@ -45,6 +47,8 @@ class _Projection:
         checks[].execution.kind checks[].execution.executor
         coverage.verification coverage.areas[].area coverage.areas[].status
         coverage.areas[].finding_ids[] coverage.limitations[].kind
+        coverage.areas[].dimensions[].id coverage.areas[].dimensions[].status
+        coverage.areas[].dimensions[].finding_ids[]
         coverage.execution.selection_source coverage.execution.status
         coverage.execution.plan[].id coverage.execution.plan[].role
         coverage.execution.plan[].selection_id coverage.execution.plan[].superseded_by
@@ -65,9 +69,9 @@ class _Projection:
     PROSE = set('''profile_reason verdict_reason reservations[]
         findings[].title findings[].scenario findings[].impact findings[].correction
         findings[].blocking_reason findings[].evidence[].details findings[].location.section
-        checks[].evidence checks[].reuse_reason checks[].rerun_reason
+        checks[].purpose checks[].evidence checks[].reuse_reason checks[].rerun_reason
         coverage.flows[] coverage.limitations[].detail coverage.limitations[].public_summary
-        coverage.areas[].details coverage.execution.fallbacks[].detail
+        coverage.areas[].details coverage.areas[].dimensions[].details coverage.execution.fallbacks[].detail
         coverage.execution.profile_history[].reason coverage.execution.profile_history[].authority
         responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
@@ -226,7 +230,7 @@ def _context_markdown(context, projection):
 def _human(text):
     return re.sub(r'retained:[0-9a-f]{64}(?:\\)?#ref-[0-9a-f]{16}', 'referencia interna no incluida', text)
 
-def _brief(record):
+def _brief(record, *, evidence_by_finding=None):
     scope = record['scope']
     lines = ['## Resumen de revisión', '', '### Veredicto: **' + validation.VERDICTS[record['verdict']] + '**', '',
              markdown.markdown_text(record['verdict_reason']), '',
@@ -235,7 +239,7 @@ def _brief(record):
              + markdown.markdown_text(scope['head'] or scope['snapshot']),
              '- **Verificación:** ' + validation.VERIFICATION[record['coverage']['verification']],
              '- **Cobertura obsoleta:** ' + ('sí' if record['coverage']['stale'] else 'no')]
-    if record['schema_version'] in (8, 9, 10):
+    if record['schema_version'] in (8, 9, 10, 11):
         status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
         lines.append('- **Ejecución del perfil:** ' + status)
     if scope['snapshot']:
@@ -259,12 +263,19 @@ def _brief(record):
                      + markdown.markdown_text(label) + ' · bloqueante: ' + ('sí' if item['blocking'] else 'no'))
         for key, label in [('scenario', 'Escenario'), ('impact', 'Impacto'), ('correction', 'Corrección requerida')]:
             lines.append('  - **' + label + ':** ' + markdown.markdown_text(item[key]))
+        lines.append('  - **Evidencia:**')
+        groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None else
+                  evidence_groups(item['evidence'], {c['id']: c for c in record['checks']}))
+        lines.extend('  ' + line for line in evidence_lines(groups))
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
-    lines.extend(['', '### Comprobaciones', ''])
+    lines.extend(['', '### Validación', ''])
     for check in record['checks']:
+        lines.extend(['', '<a id="' + html.escape(check['id'], quote=True) + '"></a>', ''])
         lines.append('- **' + check['id'] + '** · ' + validation.CHECK_STATUS[check['status']] + ' · versión: '
-                     + markdown.markdown_text(check['revision']) + ' · ' + markdown.markdown_text(check['evidence'] or 'Sin ejecución'))
+                     + markdown.markdown_text(check['revision']))
+        lines.append('  - **Propósito:** ' + markdown.markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
+        lines.append('  - **Resultado:** ' + markdown.markdown_text(check['evidence'] or 'Sin ejecución'))
         if check.get('reference'):
             lines.append('  - Referencia: ' + markdown.reference_text(check['reference']))
         if check['reused']:
@@ -273,6 +284,13 @@ def _brief(record):
             lines.append('  - Clasificación: ' + validation.FAILURE_KINDS[check['failure_kind']])
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
+    lines.extend(['', *coverage_lines(record['coverage']['flows'])])
+    if record['schema_version'] == 11:
+        lines.extend(['', '### Dimensiones de cobertura', ''])
+        for area in record['coverage']['areas']:
+            for row in area['dimensions']:
+                detail = ' — ' + markdown.markdown_text(row['details']) if row['status'] != 'covered' else ''
+                lines.append('- **' + row['id'] + '** · ' + validation.AREA_STATUS[row['status']] + detail)
     uncertainties = ['**' + item['id'] + '**: ' + markdown.markdown_text(item['title'] + ' · ' + item['scenario'])
                      for item in record['findings'] if item['status'] == 'unresolved']
     uncertainties.extend(markdown.markdown_text(item['detail']) for item in record['coverage']['limitations'])
@@ -322,7 +340,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     source = (run / 'review.json').read_bytes()
     record = read_json(run / 'review.json')
     source_hash = _hash(source)
-    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10) else manifest.get('run_id', run.name.rpartition('-')[2])
+    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11) else manifest.get('run_id', run.name.rpartition('-')[2])
     if not isinstance(identifier, str) or not re.fullmatch(r'(?:CR-)?[0-9a-f]{20}', identifier):
         raise ValueError('known review/run identity required')
     destination = safe_path(root / run.parent.name / identifier)
@@ -331,20 +349,29 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     if destination.exists():
         raise ValueError('delivery destination already exists')
     projection = _Projection(record, manifest, project, source_hash)
+    # Exact-source equality and origin grouping must precede lossy prose
+    # sanitization: distinct private paths can project to the same text.
+    ledger = {check['id']: check for check in record['checks']}
+    evidence_by_finding = {}
+    for finding in record['findings']:
+        groups = evidence_groups(finding['evidence'], ledger)
+        for group in groups:
+            group['details'] = [projection.text(detail) for detail in group['details']]
+        evidence_by_finding[finding['id']] = groups
     portable = projection.value(record)
     errors = review_contract.validate(portable)
     if errors:
         raise ValueError('portable record is invalid: ' + '; '.join(errors))
-    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10) else 'identidad de archivo ' + identifier
+    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11) else 'identidad de archivo ' + identifier
     notice = ('\n> Proyección portable de la revisión retenida (' + source_label + '). No es una nueva revisión ni una nueva ejecución. '
               'Comandos y referencias privadas omitidos; la procedencia e integridad se registran en .ccr-delivery.json.\n')
-    files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable)) + notice).encode('utf-8')}
-             if delivery == 'full' else {'resumen.md': (_human(_brief(portable)) + notice).encode('utf-8')})
+    files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable, evidence_by_finding)) + notice).encode('utf-8')}
+             if delivery == 'full' else {'resumen.md': (_human(_brief(portable, evidence_by_finding=evidence_by_finding)) + notice).encode('utf-8')})
     contextual = _context_markdown(context, projection)
     if contextual is not None:
         files['contexto.md'] = _human(contextual.decode('utf-8')).encode('utf-8')
     files['.ccr-delivery.json'] = _json({'schema_version': 1, 'delivery': delivery, 'source_id': identifier,
-        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10) else 'run_id',
+        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11) else 'run_id',
         'source_hash': source_hash, 'source_schema_version': record['schema_version'], 'projection': 'portable',
         'projected_fields': projection.changed, 'hashes': {name: _hash(data) for name, data in files.items()}})
     # Finish every read/validation/render before creating anything. Validate again

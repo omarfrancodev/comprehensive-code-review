@@ -4,6 +4,8 @@ import importlib
 import inspect
 import unittest
 
+from publication_fixtures import coverage_classification
+
 from recovery_fixtures import record10, selection, selection_input
 from test_review_contract import contract
 from test_review_traceability_contract import check
@@ -30,7 +32,7 @@ class ReviewProfileTests(unittest.TestCase):
         value['profile_reason'] = 'User explicitly narrowed the requested profile'
 
         report = contract.render(value, audience='user')
-        comment = contract.render(value, audience='comment')
+        comment = contract.render(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
         self.assertIn('**Perfil inicial:** profundo', report)
         self.assertIn('**Perfil efectivo:** standard (estándar)', report)
