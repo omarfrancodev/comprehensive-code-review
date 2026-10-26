@@ -66,14 +66,16 @@ def collect_effective_changes(repo, scope, *, target_head):
         logical_scope_identity=logical_scope(scope)['identity'], complete=False, entries=[], diagnostics=[],
         comparison=dict(kind='merge-base-to-head', base=scope['base'], head=scope['head'],
             target_head=target_head, diff_base=scope['base'], object_format=fmt))
+    scope_ready=False
     try:
         for commit in (scope['base'], scope['head'], target_head):
             git(repo, 'cat-file', '-e', commit+'^{commit}')
         bases = git(repo, 'merge-base', '--all', target_head, scope['head']).splitlines()
         if bases != [scope['base']]:
             raise ValueError('effective diff base is ambiguous or differs from the pinned scope')
+        scope_ready=True
         rows = parse_raw(git_bytes(repo, 'diff', '--raw', '-z', '--no-abbrev', '--no-renames',
-            '--no-ext-diff', '--no-textconv', scope['base'], scope['head'],
+            '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', scope['base'], scope['head'],
             max_output_bytes=4*1024*1024))
         if len(rows) > MAX_ENTRIES:
             raise ValueError('effective changes exceed entry limit')
@@ -101,7 +103,8 @@ def collect_effective_changes(repo, scope, *, target_head):
                 kind = 'text'
                 raw = git_bytes(repo, 'diff', '--text', '--no-ext-diff', '--no-textconv',
                     '--no-color', '--no-renames', '--full-index', '--no-indent-heuristic',
-                    '--diff-algorithm=myers', '--unified=3', scope['base'], scope['head'], '--',
+                    '--diff-algorithm=myers', '--unified=3', '--inter-hunk-context=0',
+                    '--ignore-submodules=none', scope['base'], scope['head'], '--',
                     os.fsdecode(row['path']), max_output_bytes=MAX_PATCH_BYTES-patch_size)
                 patch = _patch(raw)
                 patch_size += len(patch)
@@ -111,7 +114,8 @@ def collect_effective_changes(repo, scope, *, target_head):
                                              decode_path(r['new_path_b64']) if r['new_path_b64'] else b''))
         value['complete'] = True
     except (OSError, ValueError, UnicodeError) as exc:
-        value.update(complete=False, entries=[], diagnostics=[dict(code='capture_incomplete', detail=str(exc)[:2000])])
+        value.update(complete=False, entries=[], diagnostics=[dict(
+            code='capture_incomplete' if scope_ready else 'current_scope_unknown', detail=str(exc)[:2000])])
     value['changes_sha256'] = change_digest(value)
     try:
         return normalize_effective_changes(value)

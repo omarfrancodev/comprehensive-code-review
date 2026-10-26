@@ -47,3 +47,7 @@ Use previous PRs or blame only to settle a named open question about origin, an 
 Before concluding, re-fetch remote metadata or compare local HEAD, patches and selected file hashes. If the version changed, either refresh affected analysis or report the exact older version and withhold approval of the current version. When repeated changes prevent completion, stop after a reasonable bounded attempt and disclose the last reviewed version. Never keep restarting indefinitely.
 
 For MR/PR reviews, also recheck the captured description identity. If only its text changed, refresh the description-consistency result using version-matched code evidence; do not repeat unaffected code discovery.
+
+## Reuse compares the effective change
+
+For MR/PR admission use [reuse.md](reuse.md). Pin source and target commits and a unique effective diff base; compare the full base-to-source change, including content/hunks, modes and binary/gitlink identities. HEAD changes alone neither force nor permit reuse. A target change can require review with identical HEAD. If effective changes or consumed inputs differ or cannot be proven equivalent, an ordinary request starts a new review automatically. Exact scope fields remain unchanged and continue binding recovery, checks and archives.

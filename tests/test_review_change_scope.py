@@ -171,6 +171,17 @@ class ChangeScopeTests(unittest.TestCase):
             [{'side':'head', 'path_b64':b64(b'file.txt')}])
         self.assertEqual(rows[0]['content_sha256'], hashlib.sha256(b'one\nchanged\nthree\n').hexdigest())
 
+    def test_user_diff_configuration_cannot_hide_gitlink(self):
+        self.git('update-index','--add','--cacheinfo','160000',self.base,'module')
+        self.git('commit','-m','module added')
+        scope=dict(self.scope,head=self.git('rev-parse','HEAD'))
+        expected=self.capture(scope)
+        self.git('config','diff.ignoreSubmodules','all')
+        self.git('config','diff.interHunkContext','100')
+        actual=self.capture(scope)
+        self.assertEqual(compare_effective_changes(expected,actual)['code_equivalence'],'equivalent')
+        self.assertIn('gitlink',{r['kind'] for r in actual['entries']})
+
 
 if __name__ == '__main__':
     unittest.main()

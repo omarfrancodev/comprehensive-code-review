@@ -253,6 +253,11 @@ def _execution_gate(run, manifest, value, contents):
             raise ValueError('selected reference index aliases must be an object')
         try:
             requested.update(reference_source_paths(reference_index))
+            # Final derived context is deliberately not an initially captured input.
+            # Still resolve it through the selected/retained inventory on every gate.
+            if any(row.get('reference') in ('evidence/effective-changes.json','evidence/reuse-materials.json')
+                   for row in reference_index.get('inputs', [])):
+                requested.add('evidence/review-context.json')
         except (TypeError, ValueError) as exc:
             raise ValueError('selected reference index source selection is invalid: ' + str(exc)) from exc
         selected_sources[index_reference] = index_bytes

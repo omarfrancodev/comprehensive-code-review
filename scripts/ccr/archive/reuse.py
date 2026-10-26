@@ -108,11 +108,14 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
         raise ValueError('current descriptor no longer matches its Git objects')
     unknown_code=dict(code_equivalence='unknown',changed_paths=[],metadata_only=False,reasons=[])
     unknown_context=dict(applicability='unknown',reasons=[])
+    scope_ready=not any(r['code']=='current_scope_unknown' for r in descriptor['diagnostics'])
     def finish(code=unknown_code,context=unknown_context,prior=None,reason=None):
-        result=decide_reuse(code,context,has_prior=prior is not None,current_scope_ready=True)
+        result=decide_reuse(code,context,has_prior=prior is not None,current_scope_ready=scope_ready)
         if reason:
             result['reasons'].append(dict(code='previous_result_unknown',detail=str(reason)[:2000]))
         return dict(schema_version=1,prior_run=prior,**result)
+    if not scope_ready:
+        return finish(reason='Current Git objects or effective base are unavailable.')
     selected=latest_verified_candidate(repo,scope,current_inputs=inputs,
         logical_scope_input=logical_scope_input,archive_root=archive_root,max_scan=max_scan)
     if selected['status']!='selected':
@@ -155,6 +158,11 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
         verify_files(run,final_manifest)
         if final_manifest['hashes']!=initial_hashes or final_manifest['scope']!=old_scope:
             raise ValueError('previous result changed during assessment')
+        final_selection=latest_verified_candidate(repo,scope,current_inputs=inputs,
+            logical_scope_input=logical_scope_input,archive_root=archive_root,max_scan=max_scan)
+        if (final_selection.get('status')!='selected'
+                or any(final_selection['selected'].get(k)!=candidate.get(k) for k in ('run_dir','run_id','created_at'))):
+            raise ValueError('latest verified selection changed during assessment')
         return finish(code,context,dict(run_dir=candidate['run_dir'],review_id=candidate['review_id']))
     except (OSError,ValueError,TypeError,KeyError,UnicodeError) as exc:
         return finish(reason=exc)

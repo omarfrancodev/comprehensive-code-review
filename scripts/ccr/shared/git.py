@@ -26,7 +26,8 @@ def iter_git_bytes(repo, *args):
     environment.update(GIT_ATTR_NOSYSTEM='1', GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
     with tempfile.TemporaryFile() as errors:
         process = subprocess.Popen(['git', '-c', 'safe.directory=' + str(repo),
-            '-c', 'core.attributesFile=' + os.devnull, '--literal-pathspecs', *args], cwd=repo,
+            '-c', 'core.attributesFile=' + os.devnull, '-c','diff.suppressBlankEmpty=false',
+            '--literal-pathspecs', *args], cwd=repo,
             env=environment, stdout=subprocess.PIPE, stderr=errors)
         try:
             while chunk := process.stdout.read(65536):

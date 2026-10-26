@@ -101,6 +101,17 @@ class ReuseArchiveTests(unittest.TestCase):
     def test_candidate_changed_before_return_is_not_reused(self):
         self.assertEqual(self.assess(self.fixture(),change_manifest=True)['action'],'new_review')
 
+    def test_newer_review_during_assessment_invalidates_selection(self):
+        descriptor,inputs,materials,sources,manifest,selected=self.fixture()
+        newer=dict(selected,run_dir=selected['run_dir']+'-new',run_id='b'*20)
+        with patch.object(reuse,'latest_verified_candidate',side_effect=[dict(status='selected',selected=selected),
+                dict(status='selected',selected=newer)]), \
+             patch.object(reuse,'load_run',return_value=(Path(selected['run_dir']),manifest,{})), \
+             patch.object(reuse,'verify_files'):
+            result=reuse.assess_reuse(self.repo,inputs['scope'],current_inputs=inputs,effective_changes=descriptor,
+                current_materials=materials,current_sources=sources)
+        self.assertEqual(result['action'],'new_review',result)
+
     def test_absent_context_and_unproven_delta_are_unknown(self):
         fixture=self.fixture()
         path=Path(fixture[-1]['run_dir'])/CONTEXT

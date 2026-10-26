@@ -147,6 +147,50 @@ class ReuseSetupTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             setup._read_input(path)
         self.assertIsInstance(setup._read_input(path,max_bytes=64*1024*1024),dict)
+        with path.open('w') as stream:
+            stream.truncate(64*1024*1024+1)
+        with self.assertRaises(ValueError):
+            setup._read_input(path,max_bytes=64*1024*1024)
+
+    def test_final_context_requires_real_claim_and_initial_materials(self):
+        from ccr.archive.lifecycle import prepare,register
+        from ccr.execution.change_scope import collect_effective_changes,collect_context_files
+        from recovery_fixtures import selection_input
+        from test_review_reuse_archive import current_sources
+        scripts=Path(__file__).resolve().parents[1]/'scripts'
+        run=subprocess.run([sys.executable,'-B',str(scripts),'workspace','prepare','--repo',str(self.repo),
+                            '--role','review'],capture_output=True,text=True)
+        self.assertEqual(run.returncode,0,run.stderr)
+        workspace=json.loads(run.stdout)
+        session=Path(workspace['session_dir']); (session/'evidence').mkdir()
+        descriptor=collect_effective_changes(self.repo,self.scope,target_head=self.base)
+        inputs,materials,sources=current_sources(self.scope,descriptor)
+        for ref,raw in sources.items(): (session/ref).write_bytes(raw)
+        files=collect_context_files(self.repo,descriptor['comparison'],[dict(side='head',path_b64=b64(b'file.txt'))])
+        args=dict(scope=self.scope,logical_scope_identity=descriptor['logical_scope_identity'],
+                  files=files,materials=[],complete=True,diagnostics=[])
+        envelope=self.repo/'context-envelope.json'
+        def build():
+            envelope.write_text(json.dumps(dict(session=workspace['manifest'],arguments=args)))
+            return setup.run_command('reuse-context',envelope,session/'evidence/review-context.json')
+        with self.assertRaises(ValueError): build()
+        archive=prepare(self.repo,self.scope,'3.1.0','codex',output_root=self.repo/'archive',
+                temporary_paths=[session],profile_input=selection_input(),current_inputs=inputs)
+        manifest=json.loads((Path(archive)/'cierre.json').read_bytes())
+        context=setup.build_context(manifest,execution_plan=[],executors=[],
+            review_inputs=manifest['review_inputs'],reference_index=dict(reference='evidence/reference-index.json',
+                sha256=inputs['sources']['evidence/reference-index.json']))
+        context_path=session/'evidence/context.json'
+        context_path.write_text(json.dumps(context))
+        register(archive,[session],context_input=context_path)
+        args['files'][0]['content_sha256']='f'*64
+        with self.assertRaises(ValueError): build()
+        args['files']=files=collect_context_files(self.repo,descriptor['comparison'],files)
+        args['materials']=[dict(key='late',purpose='requirements',reference=None,sha256=None)]
+        with self.assertRaises(ValueError): build()
+        args['materials']=[]
+        build()
+        self.assertEqual(json.loads((session/'evidence/review-context.json').read_bytes())['files'],files)
 
 
 if __name__ == '__main__':
