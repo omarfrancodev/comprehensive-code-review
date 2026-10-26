@@ -306,7 +306,13 @@ def find_candidates(repo, scope, *, archive_root=None, limit=20, cursor=None, cu
             'truncated': has_more or history_truncated, 'search_complete': search_complete}
 
 def select_latest(repo, scope, *, current_inputs, logical_scope_input=None, archive_root=None, max_scan=10000):
-    """Select only an explicitly requested, fully scanned, verified native result."""
+    """Explicit historical consultation; selection does not establish applicability."""
+    return latest_verified_candidate(repo,scope,current_inputs=current_inputs,
+        logical_scope_input=logical_scope_input,archive_root=archive_root,max_scan=max_scan)
+
+
+def latest_verified_candidate(repo, scope, *, current_inputs, logical_scope_input=None, archive_root=None, max_scan=10000):
+    """Shared read-only selection for historical consultation and reuse assessment."""
     if isinstance(max_scan, bool) or not isinstance(max_scan, int) or not 1 <= max_scan <= 10000:
         raise ValueError('max_scan must be an integer from 1 through 10000')
     logical = review_layout.logical_scope(scope, logical_scope_input)
