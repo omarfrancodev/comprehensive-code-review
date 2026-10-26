@@ -433,6 +433,20 @@ class ChangeScopeTests(unittest.TestCase):
             self.assertEqual(row['payload'],{'patch_b64':b64(
                 b'@@\n unchanged line\n unchanged line\n unchanged line\n-base\n+new tail\n')})
 
+    def test_blob_oid_named_local_paths_cannot_change_capture(self):
+        expected=self.capture()
+        self.assertTrue(expected['complete'],expected['diagnostics'])
+        oids={side:expected['entries'][0][side] for side in ('old_blob','new_blob')}
+        oids.update(base_commit=self.scope['base'],head_commit=self.scope['head'])
+        for side,oid in oids.items():
+            with self.subTest(side=side):
+                self.put(oid,b'untracked unrelated file\n')
+                try:
+                    current=self.capture()
+                    self.assertEqual(current,expected)
+                finally:
+                    (self.repo/oid).unlink()
+
 
 if __name__ == '__main__':
     unittest.main()

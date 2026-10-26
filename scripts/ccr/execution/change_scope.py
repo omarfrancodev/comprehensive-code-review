@@ -66,7 +66,7 @@ def _text_patch(repo, old_blob, new_blob, max_bytes):
         return _patch(git_bytes(repo, 'diff', '--text', '--no-ext-diff', '--no-textconv',
             '--no-color', '--no-renames', '--full-index', '--no-indent-heuristic',
             '--diff-algorithm=myers', '--unified=3', '--inter-hunk-context=0',
-            '--ignore-submodules=none', old_blob, new_blob, max_output_bytes=max_bytes))
+            '--ignore-submodules=none', old_blob, new_blob, '--', max_output_bytes=max_bytes))
     # A whole-file addition/deletion has exactly one normalized hunk (or none
     # for an empty file). Avoid recursive pathspecs and writing an empty blob.
     content = git_bytes(repo, 'cat-file', 'blob', old_blob or new_blob,
@@ -108,7 +108,7 @@ def collect_effective_changes(repo, scope, *, target_head):
             raise ValueError('effective diff base is ambiguous or differs from the pinned scope')
         scope_ready=True
         rows = parse_raw(git_bytes(repo, 'diff', '--raw', '-z', '--no-abbrev', '--no-renames',
-            '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', scope['base'], scope['head'],
+            '--no-ext-diff', '--no-textconv', '--ignore-submodules=none', scope['base'], scope['head'], '--',
             max_output_bytes=4*1024*1024))
         if len(rows) > MAX_ENTRIES:
             raise ValueError('effective changes exceed entry limit')

@@ -161,7 +161,7 @@ def validate_reuse_evidence(scope,index,sources,*,require_context=False):
         raise ValueError('guided reuse evidence needs final review context')
 
 
-def coverage_reuse_issue(record):
+def coverage_reuse_issue(record, *, ordinary_coverage_verified=False):
     """Return why a verified result cannot cover an ordinary full-scope request."""
     kind=(record.get('presentation') or {}).get('kind')
     if kind=='complement':
@@ -177,6 +177,9 @@ def coverage_reuse_issue(record):
             or any(r.get('material') is True for r in coverage.get('limitations',[]))):
         return dict(code='previous_coverage_incomplete',
             detail='The result has pending coverage or material uncertainty; lineage alone cannot establish inherited coverage.')
+    if kind=='rereview' and not ordinary_coverage_verified:
+        return dict(code='ordinary_coverage_unproven',
+            detail='A rereview matrix covers its follow-up scope; applicable ordinary coverage needs separate native evidence.')
     return None
 
 

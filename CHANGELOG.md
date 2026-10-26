@@ -29,6 +29,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Artefactos y contratos
 
+- Acreditar la cobertura ordinaria heredada de un re-review mediante su cadena nativa explícita y la aplicabilidad completa de sus antecedentes, incluidos consumidores fuera del seguimiento; revalidar la prueba antes de ofrecer reutilización sin modificar archivos históricos.
+- Delimitar los OID de commits y blobs en los diffs para que rutas locales con esos nombres no alteren una captura fijada.
 - Exigir cobertura ordinaria completa y ausencia de gaps o limitaciones materiales para reutilizar un resultado, incluido un re-review; los findings confirmados y reservas no materiales conservan su semántica y los informes insuficientes siguen siendo consultables.
 - Impedir lazy fetch y adquisición de objetos en las consultas Git de captura, contexto y comparación, incluso en partial clones; neutralizar `GIT_DIFF_OPTS` para preservar la identidad del descriptor.
 - Obtener patches textuales por objetos exactos en transiciones archivo/directorio, conservando altas/bajas vacías, CR y marcadores de newline; contar las 64 fuentes sobre la selección indexada y mantener el contexto derivado dentro del presupuesto agregado de bytes.

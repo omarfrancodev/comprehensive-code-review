@@ -4,10 +4,12 @@ import hashlib
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import test_review_artifacts as archive_tests
 from test_review_reuse_archive import current_sources
 from ccr.archive.reuse import assess_reuse
+from ccr.archive import reuse
 from ccr.archive.layout import logical_scope
 from ccr.execution.change_scope import collect_effective_changes, collect_context_files
 from ccr.workflow.reuse import build_review_context,CONTEXT
@@ -45,13 +47,13 @@ class ReuseFlowTests(unittest.TestCase):
         return dict(current_inputs=inputs,effective_changes=descriptor,current_materials=material_map,current_sources=sources)
 
     def archive(self,guided=True,complete=True,kind='review',identities=None,
-                capture=None,final_update=None):
+                capture=None,final_update=None,previous_run=None,context_files=None):
         capture=capture or self.capture()
         sources=copy.deepcopy(capture['current_sources'])
         inputs=copy.deepcopy(capture['current_inputs'])
         inputs.update(identities or {})
         if guided:
-            files=collect_context_files(self.repo,capture['effective_changes']['comparison'],[
+            files=collect_context_files(self.repo,capture['effective_changes']['comparison'],context_files or [
                 dict(side='head',path_b64='Y29kZS50eHQ='),dict(side='head',path_b64='Y29uc3VtZXIucHk=')])
             context=build_review_context(self.actual_scope,files,capture['current_materials']['entries'],
                 logical_scope_identity=logical_scope(self.actual_scope)['identity'],complete=True,diagnostics=[])
@@ -60,7 +62,7 @@ class ReuseFlowTests(unittest.TestCase):
             sources={'evidence/reference-index.json':json.dumps(dict(schema_version=1,aliases={},inputs=[])).encode()}
             inputs['sources']={k:hashlib.sha256(v).hexdigest() for k,v in sources.items()}
         run=Path(archive_tests.artifacts.prepare(self.repo,self.scope,'3.1.0','codex',
-            output_root=self.output,profile_input=selection_input(),current_inputs=inputs))
+            output_root=self.output,profile_input=selection_input(),current_inputs=inputs,previous_run=previous_run))
         if complete:
             if kind!='review' or final_update is not None:
                 final=self.read(self.final)
@@ -194,8 +196,112 @@ class ReuseFlowTests(unittest.TestCase):
         self.assertEqual(result['action'],'new_review',result)
 
     def test_full_rereview_remains_reusable(self):
-        self.archive(kind='rereview')
+        self.linked_rereview()
         self.assertEqual(self.assess()['action'],'offer_choice')
+
+    def linked_rereview(self, parent_gap=False, changed_y=False, empty_commit=False,
+                        rebase=False, claimed_parent_id=None):
+        from test_review_effective_changes import b64
+        template=self.read(self.final)
+        (self.repo/'flow-y.py').write_text('independent flow Y = 1\n')
+        self.git('add','flow-y.py'); self.git('commit','-m','flow Y')
+        self.actual_scope=dict(self.actual_scope,head=self.git('rev-parse','HEAD'))
+        self.scope=self.write('scope.json',self.actual_scope)
+        def ordinary(record):
+            record['coverage']['flows']=['Flow X','Independent flow Y']
+            for row in record['coverage']['areas']:
+                row.update(status='covered',material=False,details='Ordinary MR scope X and Y inspected')
+            if parent_gap:
+                record['coverage']['areas'][1].update(status='partial',material=True,
+                    details='Independent flow Y remains pending')
+                record['verdict']='insufficient_evidence'
+        parent=self.archive(final_update=ordinary,context_files=[dict(side='head',path_b64=b64(name))
+            for name in (b'code.txt',b'flow-y.py')])
+        parent_record=self.read(parent/'review.json')
+        if changed_y:
+            (self.repo/'flow-y.py').write_text('independent flow Y = 2\n')
+            self.git('add','flow-y.py'); self.git('commit','-m','change Y outside follow-up')
+        if empty_commit:
+            self.git('commit','--allow-empty','-m','metadata only')
+        if rebase:
+            self.git('checkout','target')
+            (self.repo/'unrelated.txt').write_text('unrelated upstream change\n')
+            self.git('add','unrelated.txt'); self.git('commit','-m','upstream')
+            base=self.git('rev-parse','HEAD')
+            self.git('checkout','feature'); self.git('rebase','target')
+            self.actual_scope=dict(self.actual_scope,base=base)
+        self.actual_scope=dict(self.actual_scope,head=self.git('rev-parse','HEAD'))
+        self.scope=self.write('scope.json',self.actual_scope)
+        self.final=self.write('follow-up-template.json',template)
+        def followup(record):
+            record['previous_reviews']=[dict(review_id=claimed_parent_id or parent_record['review_id'],
+                reference=str(parent/'review.json'),verified=True)]
+            record['coverage']['flows']=['Only flow X reassessed']
+            for row in record['coverage']['areas']:
+                row.update(status='covered',material=False,details='Inspected within flow X follow-up')
+        child=self.archive(kind='rereview',previous_run=parent,final_update=followup,
+            context_files=[dict(side='head',path_b64=b64(b'code.txt'))])
+        self.assertEqual(self.read(child/'cierre.json')['previous_run'],str(parent))
+        self.assertEqual(self.read(child/'review.json')['previous_reviews'][0]['review_id'],
+                         claimed_parent_id or parent_record['review_id'])
+        archive_tests.artifacts.validate(parent,require_complete=True)
+        archive_tests.artifacts.validate(child,require_complete=True)
+        return parent,child
+
+    def test_linked_x_only_rereview_cannot_inherit_pending_y(self):
+        parent,child=self.linked_rereview(parent_gap=True)
+        before={str(p):p.read_bytes() for root in (parent,child) for p in root.rglob('*') if p.is_file()}
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+        self.assertEqual(before,{str(p):p.read_bytes() for root in (parent,child)
+            for p in root.rglob('*') if p.is_file()})
+
+    def test_unlinked_rereview_matrix_alone_cannot_prove_ordinary_coverage(self):
+        self.archive(kind='rereview')
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_linked_ordinary_context_y_change_invalidates_x_only_rereview(self):
+        self.linked_rereview(changed_y=True)
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_linked_ordinary_coverage_survives_metadata_only_head(self):
+        self.linked_rereview(empty_commit=True)
+        result=self.assess()
+        self.assertEqual(result['action'],'offer_choice',result)
+
+    def test_linked_ordinary_coverage_survives_equivalent_rebase(self):
+        self.linked_rereview(rebase=True)
+        result=self.assess()
+        self.assertEqual(result['action'],'offer_choice',result)
+
+    def test_native_link_and_declared_previous_review_must_agree(self):
+        self.linked_rereview(claimed_parent_id='CR-'+'f'*20)
+        result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_ordinary_proof_changed_during_final_selection_is_not_reused(self):
+        parent,_=self.linked_rereview()
+        original=reuse.latest_verified_candidate
+        calls=[]
+        def selected(*args,**kwargs):
+            value=original(*args,**kwargs)
+            calls.append(True)
+            if len(calls)==2:
+                report=parent/'informe.md'
+                report.write_bytes(report.read_bytes()+b'\nchanged after proof verification\n')
+            return value
+        with patch.object(reuse,'latest_verified_candidate',side_effect=selected):
+            result=self.assess()
+        self.assertEqual(len(calls),2)
+        self.assertEqual(result['action'],'new_review',result)
+
+    def test_ordinary_lineage_budget_exhaustion_requires_new_review(self):
+        self.linked_rereview()
+        with patch.object(reuse,'MAX_LINEAGE_DEPTH',0):
+            result=self.assess()
+        self.assertEqual(result['action'],'new_review',result)
 
     def test_nonmaterial_reservations_do_not_disqualify_complete_review(self):
         def update(record):
