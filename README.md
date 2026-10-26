@@ -98,7 +98,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 3.2.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.2.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Última release publicada: 3.3.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.3.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 
@@ -115,7 +115,7 @@ La versión 3.2.0 incorpora [admisión por cambios efectivos](references/workflo
 
 Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). La reutilización de un re-review exige acreditar cobertura ordinaria completa y aplicable mediante su cadena nativa explícita; una matriz de seguimiento cubierta no basta.
 
-## Trazabilidad explícita — unreleased
+## Trazabilidad explícita en 3.3.0
 
 Los resultados nuevos usan final schema 11: cada check declara propósito antes de ejecutarse, la captura lo conserva en recibo 2 y las cinco áreas muestran sus 27 dimensiones con evidencia o motivo. El informe y los comentarios usan sublistas para evidencias y cobertura; cada evidencia enlaza su check real o conserva su origen estático. Propósito, resultado e impacto del hallazgo se presentan por separado.
 

@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## unreleased
+## 3.3.0 — 2026-10-26
 
 ### Added
 

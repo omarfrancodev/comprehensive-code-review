@@ -128,6 +128,6 @@ Cada fila indica el contrato principal que consume código vecino, el efecto que
 
 La copia de la skill debe conservar completo `scripts/`, incluidos `scripts/__main__.py` y todos los paquetes `scripts/ccr`. No se admiten imports desde `review_*.py`; la ruptura y equivalencias están en [la guía de migración](../docs/script-migration.md). Los contratos CLI registrados, la copia instalada en una ruta con espacios y el grafo se verifican en `tests/test_script_cli.py`, `tests/test_script_layout.py` y `tests/test_script_dependencies.py`.
 
-## Contratos de trazabilidad vigentes (unreleased)
+## Contratos de trazabilidad vigentes (3.3.0)
 
 `contracts/checks.py` valida purpose no vacío/sin controles antes de captura; `execution/checks.py` conserva request → receipt 2; findings/receipts/preflight validan igualdad y final 11. `contracts/dimensions.py` valida 27 decisiones/agregados puros. `reporting/blocks.py` comparte origen/delta y listas de cobertura; projections exige contextos editoriales por digest/índice, comment prepara/verifica draft 2. Delivery clasifica purpose/details como PROSE e IDs como STRUCTURAL. Los productores finales usan 11; los contratos históricos y archivo 8/layout 2 conservan sus versiones.
