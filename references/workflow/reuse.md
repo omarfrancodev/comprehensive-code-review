@@ -33,6 +33,8 @@ The helper reads only the selected repository/logical group, fully scans up to 1
 | `new_review` | Automatically start the authorized new CCR with the current scope. No confirmation merely because an earlier run exists. Explain whether code, context, materials or missing evidence caused the new review |
 | `blocked_current_scope` | Acquire the missing current scope; never claim a review of an unknown range |
 
+A partial complement cannot stand in for an ordinary complete MR review. Inadequate or stale prior coverage also requires a new review. Supplemental observed description/requirements/plan/configuration identities remain material, including opaque labels: changed labels require review, and omitted known identities remain unknown.
+
 An empty commit, no-change merge or equivalent rebase can reuse a result. New edits, removed edits, file/mode/binary/gitlink changes or target changes that alter the patch require review. So do changed requirements, relevant notes, requested profiles or consumed files even when the hunks remain equivalent. Description-only impact can be a new bounded review, with explicit reasons for reusing unaffected evidence.
 
 Reacquire source/target references from the provider before acting on a delayed choice or publishing. The helper validates the supplied immutable objects; it cannot establish remote freshness without the coordinator's observation. A later scope invalidates the earlier admission decision.

@@ -1,6 +1,6 @@
 # Equivalencia de revisiones y cobertura de CCR
 
-Estado: propuesta para revisión; implementación no iniciada. Fecha: 2026-10-25, America/Mexico_City.
+Estado: implementación y validación integradas completadas en el worktree; 868 casos, 865 aprobados y 3 omitidos por privilegio Windows, sin publicación. Fecha: 2026-10-25, America/Mexico_City.
 
 Base: CCR 3.1.0, `main` en `4fab30695bb3c0c47071eb887b38f92328b03ea2`.
 
@@ -14,7 +14,7 @@ Para una solicitud ordinaria de CCR de MR/PR, comparar el alcance actual con el 
 
 También se mejoran las preguntas de descubrimiento y la disposición de observaciones a partir del MR 97. No se implementan arreglos de aquel proyecto, migración de archives, cambios de modelos, agentes adicionales por defecto, publicación remota ni medición de costos. No se retocan los gates de cierre e identidad de dispatch publicados en 3.1.0.
 
-Esta entrega diseña el cambio. Las decisiones técnicas marcadas aquí son propuestas; el usuario no ha aprobado todavía su implementación.
+El usuario autorizó implementar este spec y plan en el worktree. La evidencia y los límites de validación se conservan en el [registro de implementación](../../validation/2026-10-25-review-equivalence-and-coverage.md).
 
 ## 2. Enfoque
 
@@ -30,7 +30,7 @@ No se cambian archive 8/layout 2, final review schema 10, trace schema 1 ni pack
 2. **Cambio efectivo:** rutas, clases/modos de archivo y hunks/contenido realmente revisados. Puede ser igual con base/head distintos.
 3. **Aplicabilidad:** además del cambio efectivo, comprueba requisitos, descripción, instrucciones, configuración, contexto consumido y alcance autorizado. Un mismo diff no prueba que un consumidor modificado siga siendo seguro.
 
-Un resultado reutilizado conserva su ID, base/head, ubicaciones y revisiones de checks originales. Se comunica «cambios equivalentes a la revisión X» y la versión actual comparada, sin editar el informe histórico ni afirmar que se ejecutaron pruebas en el nuevo HEAD. La publicación remota sigue necesitando autorización y su verificación actual.
+Un complemento acotado no acredita una revisión ordinaria completa del MR; tampoco una cobertura insuficiente u obsoleta. En esos casos se inicia una revisión nueva. Un resultado reutilizado conserva su ID, base/head, ubicaciones y revisiones de checks originales. Se comunica «cambios equivalentes a la revisión X» y la versión actual comparada, sin editar el informe histórico ni afirmar que se ejecutaron pruebas en el nuevo HEAD. La publicación remota sigue necesitando autorización y su verificación actual.
 
 ## 4. Alcance Git autoritativo
 
@@ -112,6 +112,8 @@ La salida contiene `{schema_version:1, action, code_equivalence, applicability, 
 | Falta evidencia anterior, captura incompleta, empate o integridad inválida | `new_review`, sin reutilizar el resultado ni inventar previous-run |
 | Alcance actual ni siquiera puede fijarse | `blocked_current_scope`: explicar adquisición faltante; no fingir que se revisó un alcance desconocido |
 
+Las identidades observadas de descripción, requisitos, plan y configuración se comparan también cuando son etiquetas opacas: cambiar una etiqueta es cambio material; omitir una identidad conocida deja aplicabilidad desconocida. No basta que sus bytes seleccionados coincidan.
+
 Un cambio solo de descripción/requisito/nota material genera una revisión enlazada acotada a ese impacto; el código y checks intactos pueden reutilizarse con razones explícitas. No se exige un review completo adicional solo por cambiar metadata generada, aliases, timestamp, responsables o mensajes de commit. Metadata pública se vuelve a comprobar al mostrar/publicar.
 
 «Haz nueva revisión» siempre inicia una nueva. «Muéstrame la última» conserva consulta histórica explícita: mostrar el resultado verificado con su vigencia/limitación, sin iniciar otro CCR por sorpresa. La nueva decisión automática se aplica a solicitudes ordinarias de revisión, no a consultas históricas.
@@ -154,4 +156,4 @@ No publicar todos los candidatos ni aceptar literalmente todo comentario externo
 5. Archives completos, antiguos reconstruibles, antiguos insuficientes, corrupción, empate, límite y run abierto tienen decisiones explícitas sin mutaciones.
 6. Captura, retención y lectura verifican los sidecars y las fuentes indexadas; datos desconocidos y pruebas no ejecutadas no se convierten en cobertura ni en resultados nuevos.
 7. Casos de política inspirados en MR 97 distinguen defecto no bloqueante, limitación relevante y propuesta refutada; usan fixtures sintéticos y no copian código o datos privados del proyecto.
-8. La suite actual de recuperación, contratos, referencias, publicación, perfiles y cierre sigue válida. La entrega documental no afirma que estas capacidades ya estén implementadas.
+8. La suite actual de recuperación, contratos, referencias, publicación, perfiles y cierre sigue válida. La implementación y sus resultados observados se detallan en el registro de validación, sin atribuir ejecuciones nuevas a revisiones históricas.
