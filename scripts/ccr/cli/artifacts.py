@@ -19,6 +19,7 @@ from ccr.archive.restart import (_RestartCancellationUnavailable, abandon_restar
 from ccr.shared.encoding import archive_bytes as _json_bytes
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import safe_path
+from ccr.execution.workspace_manifest import ReviewError as WorkspaceError
 from ccr.contracts import preflight as review_preflight
 from ccr.workflow import profiles as review_profiles
 
@@ -98,6 +99,12 @@ def main(argv=None, *, prog=None):
     lookup.add_argument('--logical-scope-input', help='Existing JSON selector required for module/feature or partial local lookup')
     lookup.add_argument('--include-history', action='store_true', help='Include explicitly ported historical consultation packages')
     lookup.add_argument('--select', choices=('latest',), help='Explicitly select latest verified result; never shown automatically')
+    assess = commands.add_parser('assess-reuse', help='Read-only admission by effective changes and verified context')
+    for flag in ('repo','scope-file','current-inputs','effective-changes','current-materials','session'):
+        assess.add_argument('--'+flag,required=True)
+    assess.add_argument('--archive-root')
+    assess.add_argument('--logical-scope-input')
+    assess.add_argument('--max-scan',type=int,default=10000)
     pause_command = commands.add_parser('pause', help='Record an explicit user-directed review pause')
     pause_command.add_argument('--run-dir', required=True)
     pause_command.add_argument('--authority-input', required=True,
@@ -231,6 +238,22 @@ def main(argv=None, *, prog=None):
                 input_file=args.input, evidence_inputs=args.evidence_input)
             print(json.dumps(result, ensure_ascii=False, allow_nan=False))
             return exit_code
+        elif args.command == 'assess-reuse':
+            from ccr.archive.reuse import assess_reuse, LIMIT
+            from ccr.workflow.setup import load_current_sources
+            from ccr.execution.workspace_manifest import owned_session
+            from pathlib import Path
+            _,_,session = owned_session(args.session)
+            if Path(args.repo).resolve()!=Path(session['repo']).resolve():
+                raise ValueError('reuse assessment must use the owned repository')
+            current = read_json(args.current_inputs,max_bytes=LIMIT)
+            sources = load_current_sources(args.session,current)
+            result = assess_reuse(args.repo,read_json(args.scope_file,max_bytes=131072),
+                current_inputs=current,
+                effective_changes=read_json(args.effective_changes,max_bytes=LIMIT),
+                current_materials=read_json(args.current_materials,max_bytes=LIMIT),
+                current_sources=sources,archive_root=args.archive_root,max_scan=args.max_scan,
+                logical_scope_input=read_json(args.logical_scope_input,max_bytes=65536) if args.logical_scope_input else None)
         elif args.command == 'lookup':
             current = read_json(args.current_inputs) if args.current_inputs else None
             requested_scope = read_json(args.scope_file)
@@ -283,7 +306,7 @@ def main(argv=None, *, prog=None):
                            residuals=args.residual, released_claims=receipts)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0
-    except (OSError, ValueError, TypeError, KeyError) as exc:
+    except (OSError, ValueError, TypeError, KeyError, WorkspaceError) as exc:
         detail = {'error': str(exc)}
         if isinstance(exc, _RestartCancellationUnavailable):
             detail['cancellation_denial'] = exc.diagnostic()

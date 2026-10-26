@@ -44,3 +44,9 @@ The coordinator uses `scripts setup profile` before prepare and `scripts setup c
 For an independent `agent/started`, the coordinator records the observed executor name; an unknown provider ID stays null. If an earlier dispatch was already run without an executor identity, the coordinator may add one `dispatch-identity/unchanged` annotation tied to the original start and a selected local dispatch/result metadata object. Workers do not add packets or repeat work to recover that identity. The annotation does not create another start or result, and the same replay is a no-op.
 
 Workers keep provisional check ownership/observed execution facts in packets; the coordinator maps them to final schemas 9/10 check.execution and registered executor identities. A role or trace actor is not automatically a writing executor. No new required worker field or workspace per worker.
+
+## Scenario evidence and reuse context
+
+Use existing flow notes and limitations to distinguish the scenario inspected from the letter assigned. Challenge a test expectation against the requirement and actual sequence; inspect effects introduced by a correction, neighboring consumers and resource cleanup. A passing test is evidence only for its assertions. Return limited but evidenced behavior/resource defects as candidates even when likely nonblocking; assess priority separately during verification. Keep speculative future callers and unmeasured outage claims out of confirmed findings.
+
+When the coordinator is preparing reusable MR/PR evidence, preserve the list of complete pinned Git files consumed in the assigned evidence context, including producer/consumer, instruction, configuration and test files. The coordinator consolidates it with setup reuse-context; this is not a new packet schema, command trace or permission to add external inputs after discovery.

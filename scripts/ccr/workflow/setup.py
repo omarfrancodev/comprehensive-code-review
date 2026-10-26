@@ -1,5 +1,6 @@
 """Build validated review preparation candidates inside an owned evidence session."""
 import argparse
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -13,6 +14,7 @@ from ccr.execution import workspaces as workspace_ops
 from ccr.execution.candidates import write_new_json
 from ccr.execution.workspace_manifest import owned_session as _owned_session
 from ccr.shared.encoding import compact_bytes as _json_bytes
+from ccr.shared.json_io import read_json
 from ccr.workflow.builders import (
     _issues_message, build_assignment_event, build_context, build_model_usage_update,
     build_profile_selection, build_review_inputs,
@@ -25,12 +27,12 @@ MAX_SELECTED_SOURCE_BYTES = 64 * 1024 * 1024
 SHA256 = re.compile(r'[0-9a-f]{64}')
 _write_new_json = write_new_json
 
-def _read_input(path):
+def _read_input(path, *, max_bytes=MAX_INPUT_BYTES):
     path = Path(path)
-    if path.stat().st_size > MAX_INPUT_BYTES:
+    if path.stat().st_size > max_bytes:
         raise ValueError('setup input exceeds the bounded size')
     try:
-        value = json.loads(path.read_text(encoding='utf-8'))
+        value = read_json(path, max_bytes=max_bytes)
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError('setup input is not readable UTF-8 JSON') from exc
     if not isinstance(value, dict) or set(value) != {'session', 'arguments'}:
@@ -103,10 +105,53 @@ def _validate_session_reference_index(session_dir, descriptor, captured_inputs, 
     return index
 
 def run_command(command, input_path, output_path):
-    payload = _read_input(input_path)
+    payload = _read_input(input_path, max_bytes=MAX_SELECTED_SOURCE_BYTES
+                          if command in ('materials','reuse-context') else MAX_INPUT_BYTES)
     session_dir, session_manifest_path, workspace_manifest = _owned_session(payload['session'])
     args = payload['arguments']
-    if command == 'profile':
+    if command == 'changes':
+        from ccr.execution.change_scope import collect_effective_changes
+        if set(args) != {'repo','scope','target_head'} or Path(args['repo']).resolve() != Path(workspace_manifest['repo']).resolve():
+            raise ValueError('changes requires the owned repository, scope and target_head')
+        result = collect_effective_changes(args['repo'],args['scope'],target_head=args['target_head'])
+    elif command == 'materials':
+        from ccr.workflow.reuse import build_material_map, validate_material_map
+        if set(args) != {'materials','complete','diagnostics','reference_index'}:
+            raise ValueError('invalid materials arguments')
+        descriptor = args['reference_index']
+        index = _validate_session_reference_index(session_dir,descriptor,
+            {'sources':{REFERENCE_INDEX:descriptor.get('sha256') if isinstance(descriptor,dict) else None}})
+        sources = _read_selected_session_sources(session_dir,index,
+            _session_evidence_file(session_dir,REFERENCE_INDEX).read_bytes())
+        result = build_material_map(args['materials'],complete=args['complete'],diagnostics=args['diagnostics'])
+        validate_material_map(result,index,sources)
+    elif command == 'reuse-context':
+        from ccr.execution.claims import CLAIM_NAME, verify_claim
+        from ccr.execution.change_scope import collect_context_files
+        from ccr.workflow.reuse import build_review_context, MATERIALS, CHANGES, validate_reuse_evidence
+        required = {'scope','logical_scope_identity','files','materials','complete','diagnostics'}
+        if set(args) != required:
+            raise ValueError('invalid reuse-context arguments')
+        claim = read_json(workspace_ops.no_links(session_dir/CLAIM_NAME),max_bytes=MAX_INPUT_BYTES)
+        if claim.get('status') != 'owned':
+            raise ValueError('final reuse context requires a registered run')
+        verify_claim(session_dir,claim['archive_path'])
+        _,manifest,_ = load_run(claim['archive_path'])
+        if manifest['scope'] != args['scope']:
+            raise ValueError('reuse context scope differs from registered inputs')
+        captured = manifest['review_inputs']
+        sources = load_current_sources(payload['session'],captured)
+        index = json.loads(sources[REFERENCE_INDEX])
+        validate_reuse_evidence(args['scope'],index,sources)
+        if sorted(args['materials'],key=lambda r:r['key']) != json.loads(sources[MATERIALS])['entries']:
+            raise ValueError('reuse context cannot introduce new material inputs')
+        files = collect_context_files(workspace_manifest['repo'],json.loads(sources[CHANGES])['comparison'],args['files'])
+        if files != sorted(args['files'],key=lambda r:(r['side'],base64.b64decode(r['path_b64']))):
+            raise ValueError('context hashes do not match pinned Git objects')
+        if args['complete'] and not json.loads(sources[MATERIALS])['complete']:
+            raise ValueError('incomplete material map cannot certify context')
+        result = build_review_context(**args)
+    elif command == 'profile':
         result = build_profile_selection(args)
     elif command == 'event':
         if set(args) != {'event', 'assignment'}:
@@ -128,6 +173,8 @@ def run_command(command, input_path, output_path):
         result = build_review_inputs(
             args['scope'], selected_sources[REFERENCE_INDEX], selected_sources,
             source_set_complete=args['source_set_complete'], identities=args['identities'])
+        from ccr.workflow.reuse import validate_reuse_evidence
+        validate_reuse_evidence(args['scope'],index,selected_sources)
     elif command == 'context':
         required = {'run_dir', 'execution_plan', 'executors', 'review_inputs', 'reference_index'}
         if set(args) != required:
@@ -144,5 +191,19 @@ def run_command(command, input_path, output_path):
         raise ValueError('unsupported setup builder')
     path = write_new_json(session_dir, output_path, result)
     return {'status': 'written', 'output': str(path), 'session_id': workspace_manifest['session_id']}
+
+
+def load_current_sources(session, current_inputs):
+    """Read the captured final index only inside the verified caller session."""
+    session_dir, _, _ = _owned_session(session)
+    from ccr.workflow.inputs import normalize_inputs
+    current_inputs = normalize_inputs(current_inputs)
+    descriptor = dict(reference=REFERENCE_INDEX,sha256=current_inputs['sources'].get(REFERENCE_INDEX))
+    index = _validate_session_reference_index(session_dir,descriptor,current_inputs,require_material=True)
+    sources = _read_selected_session_sources(session_dir,index,
+        _session_evidence_file(session_dir,REFERENCE_INDEX).read_bytes())
+    if hashlib.sha256(sources[REFERENCE_INDEX]).hexdigest() != descriptor['sha256']:
+        raise ValueError('current reference index changed during capture')
+    return sources
 
 _run_command = run_command

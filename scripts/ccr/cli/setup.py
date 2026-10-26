@@ -9,7 +9,7 @@ from ccr.workflow.setup import run_command
 def main(argv=None, *, prog=None):
     parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     sub = parser.add_subparsers(dest='command', required=True)
-    for command in ('profile', 'context', 'event', 'inputs'):
+    for command in ('profile', 'context', 'event', 'inputs', 'changes', 'materials', 'reuse-context'):
         item = sub.add_parser(command)
         item.add_argument('--input', required=True)
         item.add_argument('--output', required=True)

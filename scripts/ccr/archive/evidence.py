@@ -59,6 +59,13 @@ def select_preflight_sources(run, manifest, contents, context, record=None):
             if size > REFERENCE_SOURCE_BYTES_LIMIT:
                 raise ValueError('selected reference sources exceed the 64 MiB input limit')
             selected[name] = raw
+        if record is not None and any(row.get('reference') in (
+                'evidence/effective-changes.json','evidence/reuse-materials.json')
+                for row in index.get('inputs', [])):
+            name='evidence/review-context.json'
+            selected[name]=selected_source_bytes(run,manifest,selected,name)
+            if size+len(selected[name])>REFERENCE_SOURCE_BYTES_LIMIT:
+                raise ValueError('selected reference sources exceed the 64 MiB input limit')
     for check in record.get('checks', []) if isinstance(record, dict) else []:
         if not isinstance(check, dict) or not is_receipt_reference(check.get('reference'), check.get('id')):
             continue

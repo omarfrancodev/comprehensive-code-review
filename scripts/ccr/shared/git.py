@@ -3,19 +3,63 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
 from urllib.parse import urlsplit
 
 from ccr.shared.paths import safe_path
 
 
-def git(repo, *args, optional=False):
+def git_environment():
     structural = {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
                   'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE',
                   'GIT_IMPLICIT_WORK_TREE', 'GIT_PREFIX', 'GIT_GRAFT_FILE', 'GIT_SHALLOW_FILE',
-                  'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_REPLACE_REF_BASE'}
+                  'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT', 'GIT_REPLACE_REF_BASE',
+                  'GIT_DIFF_OPTS'}
     environment = {key: value for key, value in os.environ.items() if key.upper() not in structural
                    and not key.upper().startswith(('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'))}
-    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0', GIT_NO_REPLACE_OBJECTS='1')
+    # Queries never acquire promisor objects. The empty transport allowlist
+    # also fails closed on Git versions that ignore GIT_NO_LAZY_FETCH.
+    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0', GIT_NO_REPLACE_OBJECTS='1',
+                       GIT_NO_LAZY_FETCH='1', GIT_ALLOW_PROTOCOL='')
+    return environment
+
+
+def iter_git_bytes(repo, *args):
+    """Stream immutable Git data; caller must close the iterator on early exit."""
+    environment = git_environment()
+    environment.update(GIT_ATTR_NOSYSTEM='1', GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(['git', '-c', 'safe.directory=' + str(repo),
+            '-c', 'core.attributesFile=' + os.devnull, '-c','diff.suppressBlankEmpty=false',
+            '--literal-pathspecs', *args], cwd=repo,
+            env=environment, stdout=subprocess.PIPE, stderr=errors)
+        try:
+            while chunk := process.stdout.read(65536):
+                yield chunk
+            if process.wait():
+                raise ValueError('Git byte query failed')
+        finally:
+            process.stdout.close()
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+
+
+def git_bytes(repo, *args, max_output_bytes):
+    output = bytearray()
+    stream = iter_git_bytes(repo, *args)
+    try:
+        for chunk in stream:
+            if len(output) + len(chunk) > max_output_bytes:
+                raise ValueError('Git output exceeds byte limit')
+            output.extend(chunk)
+    finally:
+        stream.close()
+    return bytes(output)
+
+
+def git(repo, *args, optional=False):
+    environment = git_environment()
     process = subprocess.run(['git', '-c', 'safe.directory=' + str(repo), *args], cwd=repo,
                              env=environment, capture_output=True, text=True,
                              encoding='utf-8', errors='replace', check=False)

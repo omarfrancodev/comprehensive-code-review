@@ -14,6 +14,19 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ScriptCliTests(unittest.TestCase):
+    def test_assess_reuse_reports_invalid_session_as_json(self):
+        import io
+        from ccr.cli.artifacts import main
+        from ccr.execution.workspace_manifest import ReviewError
+        args=['assess-reuse','--repo','repo','--scope-file','scope.json',
+              '--current-inputs','inputs.json','--effective-changes','changes.json',
+              '--current-materials','materials.json','--session','session.json']
+        errors=io.StringIO()
+        with patch('ccr.execution.workspace_manifest.owned_session',side_effect=ReviewError('invalid session')):
+            with patch('sys.stderr',errors):
+                self.assertEqual(main(args),1)
+        self.assertEqual(json.loads(errors.getvalue()),{'error':'invalid session'})
+
     def test_root_forwards_the_suffix_without_requoting(self):
         from types import SimpleNamespace
         from ccr.cli.main import main
@@ -74,7 +87,7 @@ class ScriptCliTests(unittest.TestCase):
             self.assertEqual(Path(installed_state['catalog']),
                              installed / 'references' / 'archive' / 'harness-catalog.json')
             self.assertEqual(installed_state['catalog_version'], 1)
-            self.assertEqual(installed_state['skill_version'], '3.1.0')
+            self.assertEqual(installed_state['skill_version'], '3.2.0')
             self.assertTrue(installed_state['rejected'])
             for area in AREAS:
                 result = subprocess.run(
