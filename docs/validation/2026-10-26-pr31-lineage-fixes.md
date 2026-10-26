@@ -53,3 +53,7 @@ Se conservan las protecciones contra lazy fetch, GIT_DIFF_OPTS, paths recursivos
 | Suite en tres procesos con inventarios disjuntos y balance por coste | Se cubren todos los módulos; no se valida el orden entre procesos |
 
 Sin hallazgos menores diferidos en esta pasada. Worktree conservado; sin merge, instalación ni release.
+
+## Publicación
+
+Push normal a la rama existente y descripción del PR 31 actualizada. GitHub confirmó HEAD 5d348d5, base main/4fab306, cuerpo correcto, PR abierto y sin conflictos observados. El cierre documental posterior conserva el producto probado en 4922b4b y el fixture reforzado en 995ab72. El checkout main permanece limpio en 4fab306. No se publicaron respuestas ni se modificaron los comentarios de revisión.

@@ -40,5 +40,5 @@
 
 - [x] Revisión final independiente del ajuste, con una sola pasada de corrección si hay hallazgos importantes.
 - [x] Suite completa con inventario disjunto de todos los módulos; conservar omisiones de capacidad y resultados reproducibles.
-- [ ] Actualizar documentación de alcance heredado y evidencia de validación; commit y push normal.
-- [ ] Verificar HEAD, cuerpo y base del PR 31; conservar worktree y consulta histórica, sin merge ni respuestas públicas no solicitadas.
+- [x] Actualizar documentación de alcance heredado y evidencia de validación; commit y push normal.
+- [x] Verificar HEAD, cuerpo y base del PR 31; conservar worktree y consulta histórica, sin merge ni respuestas públicas no solicitadas.
