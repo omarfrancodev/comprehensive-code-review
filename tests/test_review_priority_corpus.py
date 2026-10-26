@@ -1,6 +1,7 @@
 """Fixture integrity and reference separation, not model-judgment tests."""
 import json
 from pathlib import Path
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parent / 'fixtures' / 'priority_calibration'
@@ -82,3 +83,15 @@ class PriorityCorpusTests(unittest.TestCase):
             row = observed[f'PC{index:02}']
             self.assertEqual(row['expected_status'], 'confirmed' if outcome.startswith('P') else outcome)
             self.assertEqual(row['accepted_priorities'], [outcome] if outcome.startswith('P') else [])
+
+    def test_git_retains_hashed_evaluation_bytes(self):
+        repo = Path(__file__).resolve().parents[1]
+        evidence = repo / 'docs/validation/priority-calibration-evidence'
+        self.assertTrue(evidence.is_dir())
+        for file in sorted(evidence.iterdir()):
+            if not file.is_file():
+                continue
+            relative = file.relative_to(repo).as_posix()
+            raw = subprocess.check_output(['git', 'hash-object', '--no-filters', str(file)], cwd=repo)
+            retained = subprocess.check_output(['git', 'hash-object', f'--path={relative}', str(file)], cwd=repo)
+            self.assertEqual(retained.strip(), raw.strip(), f'Git would change frozen evidence bytes: {relative}')

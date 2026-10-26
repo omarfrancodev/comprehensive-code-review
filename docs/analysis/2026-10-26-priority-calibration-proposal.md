@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-26. Base original del análisis: CCR 3.2.0 / `559fc5c0f8eb2e9677ff738ed86c703017b4bf17`. Base vigente para diseñar/implementar: CCR 3.3.0 / `d119fbc781312bd15c2eaf5e04f3768f542de7cc`.
 
-Estado: el usuario seleccionó el enfoque B y autorizó pasar a spec y plan. Esta propuesta queda como antecedente; el [spec](../superpowers/specs/2026-10-26-priority-calibration-design.md) y el [plan](../superpowers/plans/2026-10-26-priority-calibration.md) son la referencia vigente para la siguiente etapa. La implementación no se ha iniciado. Se apoya en el [diagnóstico local](2026-10-26-priority-calibration-diagnosis.md).
+Estado: el usuario seleccionó el enfoque B y autorizó pasar a spec y plan. Esta propuesta queda como antecedente; el [spec](../superpowers/specs/2026-10-26-priority-calibration-design.md) y el [plan](../superpowers/plans/2026-10-26-priority-calibration.md) son la referencia vigente para la siguiente etapa. La implementación y su validación se registran en [evaluación](../validation/2026-10-26-priority-calibration-evaluation.md). Se apoya en el [diagnóstico local](2026-10-26-priority-calibration-diagnosis.md).
 
 ## 1. Objetivo y alternativas
 
@@ -131,4 +131,4 @@ Una prueba del renderer confirma que el texto se conserva; no que el modelo elig
 
 Primero acordar la rúbrica y sus ejemplos, especialmente qué distingue un efecto serio dentro de una entidad de una consecuencia catastrófica. Después preparar referencias/casos y realizar la evaluación controlada. Implementar la guía con los campos existentes y distribuirla cuando las comprobaciones y la calibración sean satisfactorias. Si la evaluación exige cambiar la rúbrica, actualizar la propuesta antes de distribuir.
 
-La decisión de enfoque ya está tomada: B. El spec y el plan enlazados concretan su ejecución sobre CCR 3.3.0; la skill de CCR sigue con sus reglas actuales.
+La decisión de enfoque ya está tomada: B. El spec y el plan enlazados concretan su ejecución sobre CCR 3.3.0; la guía ya está implementada en este worktree y queda pendiente una publicación autorizada.

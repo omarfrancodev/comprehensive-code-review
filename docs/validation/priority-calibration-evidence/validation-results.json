@@ -1,0 +1,49 @@
+{
+  "base": "d119fbc781312bd15c2eaf5e04f3768f542de7cc",
+  "total_distinct_selected_tests": 125,
+  "suites": [
+    {
+      "suite": "priority",
+      "command": "python -B -m unittest discover -s tests -p 'test_review_priority_*.py' -v",
+      "tests": 14,
+      "result": "passed",
+      "full_output_sha256": "46639a2f8899428a88841f0fe178049c0a279edecd2efffc1a62724899eaab75"
+    },
+    {
+      "suite": "packets",
+      "command": "python -B -m unittest discover -s tests -p 'test_review_packets.py' -v",
+      "tests": 11,
+      "result": "passed",
+      "full_output_sha256": "3174a4fb03132ad3161a22a73121319abe952a40ea7a3d3eaf3298881255a8d4"
+    },
+    {
+      "suite": "contract",
+      "command": "python -B -m unittest discover -s tests -p 'test_review_contract.py' -v",
+      "tests": 34,
+      "result": "passed",
+      "full_output_sha256": "f8d67eb2d627a958292e5d1877899181d30aab52740857fd5f8fd89b30bdf3a7"
+    },
+    {
+      "suite": "traceability",
+      "command": "python -B -m unittest discover -s tests -p 'test_review_traceability_*.py' -v",
+      "tests": 62,
+      "result": "passed",
+      "full_output_sha256": "0ce4b062161476bbfae5e3c0313ce998559403ea18843b177e17a193b47de580"
+    },
+    {
+      "suite": "purpose",
+      "command": "python -B -m unittest discover -s tests -p 'test_review_check_purpose.py' -v",
+      "tests": 4,
+      "result": "passed",
+      "full_output_sha256": "0d1a20161b4beedad61d0f600b858f23ad4706e550ce7ee09c7c8ec93c2b4d92"
+    }
+  ],
+  "sandbox_attempts": {
+    "packets": "WinError 5 in temporary fixture",
+    "contract": "WinError 5 in temporary fixture",
+    "traceability": "WinError 5 in temporary repositories",
+    "purpose": "WinError 5 in temporary fixture"
+  },
+  "retry": "Same suites, reviewed permissions for test temporaries; no product edits to make them pass",
+  "not_run": "Entire project suite"
+}

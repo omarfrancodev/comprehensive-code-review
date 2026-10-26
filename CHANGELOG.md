@@ -2,6 +2,14 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## unreleased
+
+### Changed
+
+#### Reportes y entregas
+
+- Calibrar P0–P3 según consecuencias sustentadas y justificar la prioridad en el impacto de nuevos hallazgos confirmados; separar confirmación, origen y bloqueo, preservando final 11, propósito de checks y dimensiones. Incorporar ejemplos y evaluación sintética sin cuotas ni reclasificación de archivos históricos.
+
 ## 3.3.0 — 2026-10-26
 
 ### Added

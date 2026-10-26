@@ -2,3 +2,6 @@
 *.py text eol=lf
 *.json text eol=lf
 *.yaml text eol=lf
+
+# Frozen evaluation prompts/responses retain the bytes bound by their hashes.
+/docs/validation/priority-calibration-evidence/* -text

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "PC04",
+    "status": "confirmed",
+    "priority": "P1",
+    "justification": "El lote vacío retira las 120 unidades de los flujos de reserva y genera ventas falsas que requieren reconciliación manual: afecta una función principal y la integridad de una entidad. La autenticación y el reconocimiento del autor no evitan ese daño; no se demuestra una consecuencia catastrófica."
+  },
+  {
+    "id": "PC03",
+    "status": "confirmed",
+    "priority": "P1",
+    "justification": "El lote vacío retira las 120 unidades de los flujos de reserva y genera ventas falsas que requieren reconciliación manual: afecta una función principal y la integridad de una entidad. La autenticación no evita ese daño; no se demuestra una consecuencia catastrófica."
+  },
+  {
+    "id": "PC02",
+    "status": "confirmed",
+    "priority": "P1",
+    "justification": "La sesión de Alfa permite leer y alterar historias clínicas de Beta, con divulgación irreversible y restauración manual de las ediciones. Es una vulneración seria de autorización e integridad sensible; su origen preexistente no reduce la consecuencia y los hechos no demuestran una catástrofe."
+  },
+  {
+    "id": "PC01",
+    "status": "confirmed",
+    "priority": "P1",
+    "justification": "La sesión de Alfa permite leer y alterar historias clínicas de Beta, con divulgación irreversible y restauración manual de las ediciones. Es una vulneración seria de autorización e integridad sensible; el alcance descrito no demuestra una consecuencia catastrófica."
+  }
+]

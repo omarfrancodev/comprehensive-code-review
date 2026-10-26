@@ -1,6 +1,6 @@
 # Priority Calibration — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Este documento no inicia implementación ni elige todavía el método de ejecución.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Ejecución nativa autorizada por el usuario; resultados en el registro de evaluación enlazado al final.
 
 **Goal:** Aplicar la propuesta B para justificar y calibrar P0–P3 según consecuencias sustentadas, evitando degradación e inflación, sobre CCR 3.3.0.
 
@@ -125,7 +125,7 @@ Assertions: el archivo canónico existe; los enlaces desde SKILL/reviewers/worke
 - Consumes: APIs existentes de `ccr.contracts.packets`, `ccr.contracts.review`, `ccr.reporting.render`, `ccr.reporting.comment` y helpers privados de `delivery` ya ejercitados por tests (`_Projection`, `_brief`). No son APIs nuevas ni cambios de producto.
 - Produces: tests de caracterización del transporte actual y un informe de aceptación observado; mantiene schemas/shape y bytes de los inputs. Un bundle merge no se presenta como final 11.
 
-- [ ] **Step 1: Escribir `PriorityRoundtripTests`** en `tests/test_review_priority_roundtrip.py` con los siguientes casos y assertions:
+- [x] **Step 1: Escribir `PriorityRoundtripTests`** en `tests/test_review_priority_roundtrip.py` con los siguientes casos y assertions:
 
 | Test | Assertions exactas relevantes |
 |---|---|
@@ -138,8 +138,8 @@ Assertions: el archivo canónico existe; los enlaces desde SKILL/reviewers/worke
 
 Una fixture local de test puede construir el record sintético y sus reservas; no se exporta como API de producción. El propósito/check nunca se rellena copiando el impacto del finding.
 
-- [ ] **Step 2: Ejecutar** `python -B -m unittest discover -s tests -p test_review_priority_roundtrip.py -v`. Estos tests pueden pasar desde la base porque las APIs ya transportan los campos: registrar caracterización GREEN, sin fabricar RED ni modificar scripts para aparentar un cambio funcional. Investigar cualquier fallo real antes de ampliar alcance.
-- [ ] **Step 3: Ejecutar los controles existentes pertinentes**, en invocaciones separadas:
+- [x] **Step 2: Ejecutar** `python -B -m unittest discover -s tests -p test_review_priority_roundtrip.py -v`. Estos tests pueden pasar desde la base porque las APIs ya transportan los campos: registrar caracterización GREEN, sin fabricar RED ni modificar scripts para aparentar un cambio funcional. Investigar cualquier fallo real antes de ampliar alcance.
+- [x] **Step 3: Ejecutar los controles existentes pertinentes**, en invocaciones separadas:
 
 ```sh
 python -B -m unittest discover -s tests -p test_review_packets.py -v
@@ -150,11 +150,11 @@ python -B -m unittest discover -s tests -p test_review_check_purpose.py -v
 
 Esperado: cero fallos, conservando gates y compatibilidad de 3.3.0. Las suites con archivos temporales requieren permisos reales; un fallo de fixture/entorno no demuestra un defecto ni habilita degradar el resultado. No repetir sin causa corregida/alternativa viable.
 
-- [ ] **Step 4: Congelar el candidato y ejecutar aceptación PC21–PC28** en contexto limpio, sin referencia visible y con configuración comparable al baseline. Puntuar después con referencia ratificada. Ejecutar además las repeticiones inversas de PC01/02 y PC03/04 previstas por el protocolo.
-- [ ] **Step 5: Evaluar criterios de spec §6.1** y registrar cada error/omisión/resultado inválido, numeradores/denominadores y justificación. Si falla aceptación, conservar el fallo; ajustar con desarrollo y crear una variante reservada ratificada antes de reevaluar. Si falta ratificación, herramienta o independencia, dejar calibración pendiente y no declarar aptitud para distribuir.
-- [ ] **Step 6: Registrar el resultado final real y el changelog**. En `unreleased` describir la política aplicada y sus límites; sin fecha/versión publicada inventada. No afirmar mejoras porcentuales con el censo histórico. El informe distingue tests mecánicos, conducta exploratoria/ratificada y pendientes.
-- [ ] **Step 7: Ejecutar cierre acotado**: suites nuevas `python -B -m unittest discover -s tests -p 'test_review_priority_*.py' -v`, comprobar enlaces locales de documentos nuevos/modificados y `git diff --check`. No ampliar a toda la suite si los controles anteriores pasan y no aparece riesgo nuevo. Inspeccionar que `scripts/ccr` y archivos históricos no cambiaron.
-- [ ] **Step 8: Crear commit** con paths de esta tarea y mensaje sugerido `test(prioridades): verificar compatibilidad y aceptación`. Conservar documentación de pendientes si los hay; commit no equivale a distribución aprobada.
+- [x] **Step 4: Congelar el candidato y ejecutar aceptación PC21–PC28** en contexto limpio, sin referencia visible y con configuración comparable al baseline. Puntuar después con referencia ratificada. Ejecutar además las repeticiones inversas de PC01/02 y PC03/04 previstas por el protocolo.
+- [x] **Step 5: Evaluar criterios de spec §6.1** y registrar cada error/omisión/resultado inválido, numeradores/denominadores y justificación. Si falla aceptación, conservar el fallo; ajustar con desarrollo y crear una variante reservada ratificada antes de reevaluar. Si falta ratificación, herramienta o independencia, dejar calibración pendiente y no declarar aptitud para distribuir.
+- [x] **Step 6: Registrar el resultado final real y el changelog**. En `unreleased` describir la política aplicada y sus límites; sin fecha/versión publicada inventada. No afirmar mejoras porcentuales con el censo histórico. El informe distingue tests mecánicos, conducta exploratoria/ratificada y pendientes.
+- [x] **Step 7: Ejecutar cierre acotado**: suites nuevas `python -B -m unittest discover -s tests -p 'test_review_priority_*.py' -v`, comprobar enlaces locales de documentos nuevos/modificados y `git diff --check`. No ampliar a toda la suite si los controles anteriores pasan y no aparece riesgo nuevo. Inspeccionar que `scripts/ccr` y archivos históricos no cambiaron.
+- [x] **Step 8: Crear commit** con paths de esta tarea y mensaje sugerido `test(prioridades): verificar compatibilidad y aceptación`. Conservar documentación de pendientes si los hay; commit no equivale a distribución aprobada.
 
 **Gate:** transporte/compatibilidad verificados y estado de conducta honesto. Solo con aceptación satisfactoria y referencia ratificada se puede afirmar que la propuesta pasó su calibración de muestra; no equivale a rendimiento general ni publicación autorizada.
 
@@ -174,3 +174,7 @@ Esperado: cero fallos, conservando gates y compatibilidad de 3.3.0. Las suites c
 Autorrevisión: las tareas tienen interfaces y comprobaciones concretas; no se añade schema 12, campo de severidad, score o motor nuevo. Los tests de transporte caracterizan APIs existentes y los de política comprueban alcanzabilidad documental. Solo la evaluación puede aportar evidencia sobre decisiones del agente. La referencia humana pendiente y la falta de herramientas no se convierten en éxito.
 
 Plan escrito para implementación posterior. Se recomienda ejecución nativa en la misma sesión por tratarse de tres tareas muy dependientes de una guía y corpus comunes, con revisión final independiente; esta recomendación no registra elección del usuario ni inicia ejecución.
+
+## Ejecución observada
+
+Implementación nativa completada por tareas. [Resultados y límites](../../validation/2026-10-26-priority-calibration-evaluation.md). La ratificación humana se recibió por respuesta directa en este chat. Se añadió una prueba y excepción de Git para preservar los bytes de evidencia congelada; no cambia política ni runtime. El censo histórico conserva su corte original.

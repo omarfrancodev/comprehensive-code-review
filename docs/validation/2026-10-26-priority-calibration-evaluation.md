@@ -21,3 +21,27 @@ Las rutas de prioridad hicieron RED por ausencia de referencia/enlace y luego GR
 Candidato de desarrollo: 20/20 decisiones coincidentes con referencia ratificada, frente a 15/20 del baseline. Una muestra por condición; no es mejora estadística general. Se conservaron todas las referencias. La guía no se ajustó tras este resultado.
 
 [Candidato congelado](priority-calibration-evidence/candidate-instructions.md), [manifiesto](priority-calibration-evidence/candidate-manifest.json), [respuestas](priority-calibration-evidence/candidate-development.json), [evaluación por caso](priority-calibration-evidence/candidate-development-assessment.json). Los inputs concretos de aceptación todavía no se abrieron al autor antes de esta congelación.
+
+## Task 3: compatibilidad y aceptación
+
+Se ejecutaron 125 tests distintos de selección focalizada: 14 nuevos (5 corpus/integridad, 3 rutas de política, 6 transporte), 11 paquetes, 34 contrato, 62 trazabilidad y 4 propósito. Todos pasaron. Las suites existentes fallaron primero por WinError 5 al crear/limpiar fixtures temporales en sandbox; se conservaron esos intentos en el workspace de ejecución y se repitieron con permisos revisados, sin tocar producto. No se ejecutó toda la suite del proyecto. [Resultados y comandos](priority-calibration-evidence/validation-results.json).
+
+Los tests de transporte caracterizan comportamiento que ya existía: GREEN inicial, no RED inventado. La prueba nueva de integridad sí hizo RED: Git normalizaba respuestas congeladas y cambiaba sus bytes. Se añadió una excepción -text acotada a los artefactos de evaluación en .gitattributes; luego hizo GREEN. Es el único ajuste fuera del mapa inicial de archivos, para conservar la evidencia ligada a hashes. No se cambió scripts/ccr ni el contrato final 11.
+
+| Muestra | Baseline | Candidato | Alcance de la comparación |
+|---|---:|---:|---|
+| Desarrollo | 15/20 | 20/20 | Corrige dos sobreclasificaciones P1→P0, dos subclasificaciones P1→P2 y una P2→P3 frente a referencia ratificada |
+| Aceptación reservada | 8/8 | 8/8 | Conserva acierto; no demuestra ganancia de precisión en esta muestra |
+| Inversión de PC01/02 y PC03/04 | 2/4 | 4/4 | Ninguna etiqueta cambia respecto de la ejecución normal de cada condición |
+
+En desarrollo, subclasificaciones de positivos P0/P1: baseline 2/10 y candidato 0/10; sobreclasificaciones a P0/P1: baseline 2/20 y candidato 0/20. Las tres parejas same_priority de desarrollo mantienen igualdad en ambas condiciones. En aceptación, cada condición omite 0/2 positivos P0, produce 0/6 falsos P0 y confirma indebidamente 0/1 casos no resueltos. No hubo omisiones ni respuestas inválidas en las seis salidas de clasificadores.
+
+[Aceptación por caso y revisión semántica del custodio](priority-calibration-evidence/acceptance-assessment.json), [respuestas candidato](priority-calibration-evidence/candidate-acceptance.json), [comparación de orden inverso](priority-calibration-evidence/reverse-assessment.json), [baseline inverso](priority-calibration-evidence/baseline-reverse.json), [candidato inverso](priority-calibration-evidence/candidate-reverse.json), [inputs inversos](priority-calibration-evidence/reverse-cases.json). Los hashes del corpus/referencias permanecieron intactos.
+
+El custodio encontró justificaciones fieles en aceptación y dos matices: el uso de “global” no debe interpretarse como requisito universal para P0, y una explicación condensa la secuencia causal de borrado/conversión. Se conservan las respuestas originales; estos matices no cambian clasificación ni justifican editar la guía con aceptación.
+
+### Conclusión acotada
+
+La propuesta pasó los criterios de esta muestra ratificada, con candidato congelado antes de abrir aceptación y contextos nuevos por condición. No prueba calibración general, rendimiento en producción o capacidad de descubrir defectos. La inversión usa cuatro casos en vez del lote de veinte: describe estabilidad observada de esas parejas, no aísla estadísticamente todos los efectos de orden/contexto. El modelo efectivo no fue expuesto por la plataforma; no puede verificarse independientemente igualdad de versión de modelo aunque todas las clasificaciones heredaron la configuración de sesión sin override.
+
+La implementación permanece en la rama y el worktree solicitados, con changelog unreleased. No se publicó, instaló ni integró a main. La revisión independiente final de implementación se registra tras su ejecución.
