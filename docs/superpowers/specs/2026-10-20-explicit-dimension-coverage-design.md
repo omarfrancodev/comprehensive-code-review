@@ -4,7 +4,7 @@
 
 Actualizado el 26 de octubre de 2026 a petición del usuario. Base vigente observada: CCR **3.2.0**, `main` en `559fc5c0f8eb2e9677ff738ed86c703017b4bf17`. Se integró en este worktree mediante el merge `bc7d5b6`, conservando los dos commits documentales previos. El nombre del archivo se conserva para mantener sus enlaces; sustituye la propuesta basada en 2.13.0.
 
-Se solicita análisis y planificación, no implementación. El alcance reúne la cobertura explícita de las 27 dimensiones previamente propuesta y los nuevos requisitos sobre propósito de checks, presentación de evidencias y cobertura privada/pública. El [análisis del modelo vigente](../../analysis/2026-10-26-check-evidence-coverage-analysis.md) describe las fuentes inspeccionadas; el [plan](../plans/2026-10-20-explicit-dimension-coverage.md) utiliza módulos e imports de 3.2.0.
+La solicitud inicial comprendía análisis y planificación. El usuario autorizó después la implementación, completada el 26 de octubre de 2026 en el mismo worktree; véase el [registro de implementación y validación](../../validation/2026-10-26-check-evidence-coverage-implementation.md). El alcance reúne la cobertura explícita de las 27 dimensiones previamente propuesta y los nuevos requisitos sobre propósito de checks, presentación de evidencias y cobertura privada/pública. El [análisis del modelo vigente](../../analysis/2026-10-26-check-evidence-coverage-analysis.md) describe las fuentes inspeccionadas; el [plan](../plans/2026-10-20-explicit-dimension-coverage.md) utiliza módulos e imports de 3.2.0.
 
 **Regla principal:** cada check comunica qué verifica; cada evidencia conserva su origen; el hallazgo explica el problema y su impacto sin repetir innecesariamente los resultados de los checks.
 

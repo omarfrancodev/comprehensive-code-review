@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Estado:** implementación autorizada y completada el 26 de octubre de 2026; [validación y límites observados](../../validation/2026-10-26-check-evidence-coverage-implementation.md).
+
 **Goal:** hacer explícitos las 27 dimensiones y el propósito de cada check, enlazar evidencias a sus orígenes y presentar cobertura legible en informes y comentarios.
 
 **Architecture:** ampliar final 10 a 11 con dimensiones/purpose y capturar propósito en recibo 2. Compartir bloques Markdown puros y proyecciones por audiencia; conservar archive 8, preflight y reutilización de 3.2.0. Actualizar el camino canónico de comentarios y entregas sin duplicar un ledger de evidencias.
@@ -19,7 +21,7 @@
 - No modificar archivos reales de revisiones, informes retenidos ni comentarios remotos durante esta preparación.
 - Conservar criterios, prioridades, hallazgos, perfiles, veredictos, aislamiento, preflight y reglas de reutilización de CCR 3.2.0.
 - La matriz ABCDE y los IDs de dimensiones siguen siendo privados; la cobertura pública describe flujos de producto.
-- No modificar el visor, publicar, hacer merge a main, asignar versión de release ni ejecutar la implementación.
+- Mantener fuera del alcance el visor, publicación, merge a main y asignación de release. La restricción inicial de no implementar correspondía a la preparación; el usuario autorizó después ejecutar este plan.
 
 ## Review Focus
 
@@ -70,7 +72,7 @@ Las rutas de unidades de esta tabla son relativas a `scripts/ccr/`; cada Files d
 - Produces: `DIMENSIONS: dict[str, tuple[str, ...]]`, `DIMENSION_LABELS: dict[str, str]`, `dimension_summary(dimensions: list[dict]) -> dict`, `validate_dimensions(areas: object, finding_ids: set[str]) -> list[str]`.
 - Produces fixtures: `dimension_row(identifier: str, status='covered', **updates) -> dict` y `dimension_areas() -> list[dict]`, con cinco áreas y sus 27 dimensiones sintéticas cubiertas. Summary devuelve solo `{status, material, finding_ids}`; referencias ordenadas/únicas. No incorpora aún un envelope 11.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear `DimensionTests(unittest.TestCase)`; importar `ccr.contracts.dimensions as dims` y las factories de `traceability_fixtures`.
 
@@ -111,23 +113,23 @@ def test_exact_fields_and_details_are_required(self):
         self.assertTrue(dims.validate_dimensions(rows, set()))
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`
 
 Expected: FAIL por módulo/factories ausentes.
 
-- [ ] **Step 3: Implement `dimension_summary` and `validate_dimensions` in `scripts/ccr/contracts/dimensions.py`**
+- [x] **Step 3: Implement `dimension_summary` and `validate_dimensions` in `scripts/ccr/contracts/dimensions.py`**
 
 Usar exactamente los IDs de §3, validar tipos antes de conjuntos y rechazar resúmenes contradictorios. Implementar factories de Interfaces y registrar el módulo en el índice; no habilitar parcialmente final 11 todavía.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `python -B -m unittest discover -s tests -p test_review_dimensions.py -v`
 
 Expected: PASS, incluyendo los 27 casos de eliminación e IDs no hashables.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/contracts/dimensions.py scripts/README.md tests/traceability_fixtures.py tests/test_review_dimensions.py
@@ -152,7 +154,7 @@ git commit -m 'feat(cobertura): validar dimensiones explícitas por área'
 - Produces: `capture_check(*, check_id: str, purpose: str, argv: list[str], command: str, cwd: str, executor_workspace: str, revision: str, executor: str, output_dir: str) -> dict`, con purpose obligatorio y recibo 2. CLI conserva `python <skill>/scripts checks run --request ... --output-dir ...`.
 - Produces fixture: `receipt2_bundle() -> tuple[dict, dict[str, bytes], dict, list[dict]]`: receipt, streams seleccionados, check y executors, derivados de las factories 1 sintéticas, añadiendo el mismo purpose al check/recibo. `PURPOSE = 'Verificar que una reclamación conserve una sola ejecución.'`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear `PurposeTests(unittest.TestCase)`; imports: `patch` de unittest.mock; `ccr.contracts.checks.purpose_errors`, `ccr.execution.checks as capture`, `ccr.contracts.receipts as receipts`, `test_review_check_receipts as old`, `receipt2_bundle`, `PURPOSE`.
 
@@ -183,17 +185,17 @@ def test_receipt2_binds_purpose_and_keeps_legacy_receipt1(self):
 
 Extender `CaptureCheckTests.test_receipt_preserves_literal_argv_and_previous_attempt` con `purpose=PURPOSE` en capturas/request y aserciones `self.assertEqual(receipt['schema_version'], 2)`, `self.assertEqual(receipt['purpose'], PURPOSE)`. Mantener las aserciones actuales sobre argv literal, hashes, exit y preservación del intento previo. Añadir propósito a los otros requests nuevos del mismo archivo, sin alterar `valid_receipt()` histórica.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_check_purpose.py -v`
 
 Expected: FAIL por módulo nuevo, argumento no soportado o recibo 2 no aceptado; no por un workspace sintético inexistente.
 
-- [ ] **Step 3: Implement `purpose_errors`, extend capture and version receipt validation**
+- [x] **Step 3: Implement `purpose_errors`, extend capture and version receipt validation**
 
 Validar purpose antes de `_validate_owned_workspace` y de mkdir/subprocess. Request exige el campo y el recibo nuevo copia exactamente el string; no inferirlo del comando/exit. `validate_receipt` distingue shapes 1/2 y compara purpose solo en 2, conservando los demás bindings. Registrar el módulo puro en scripts/README.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_check_purpose.py -v
@@ -202,7 +204,7 @@ python -B -m unittest discover -s tests -p test_review_check_receipts.py -v
 
 Expected: PASS en ambos; los attempts nuevos producen 2 y las fixtures antiguas 1 siguen válidas.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/contracts/checks.py scripts/ccr/contracts/receipts.py scripts/ccr/execution/checks.py scripts/README.md tests/traceability_fixtures.py tests/test_review_check_purpose.py tests/test_review_check_receipts.py
@@ -228,7 +230,7 @@ git commit -m 'feat(checks): capturar propósito verificable en recibos nuevos'
 - Produces: `set_dimension(record: dict, identifier: str, **updates) -> None`, actualiza la dimensión y su resumen sintético; `record11()` nunca es una migración de un archivo real.
 - `identifiers.canonicalize_ids(record, reserved_ids=None) -> tuple[dict, dict]` conserva record/source_maps y remapea también los finding_ids de dimensiones.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear `Contract11Tests(unittest.TestCase)`; importar `ccr.contracts.review`, `identifiers`, `packets`, `provenance`; factories de `traceability_fixtures`, `record10` de recovery_fixtures y `finding` de test_review_contract.
 
@@ -293,17 +295,17 @@ def test_merge11_keeps_purpose_without_changing_packet1(self):
 
 En test_review_packets conservar los casos existentes sin selector como regresiones del ledger 2. El test nuevo de arriba cubre el ledger 11 con referencias a C001 y rechazo de propósito ausente; no añadir purpose al shape de packet 1.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_contract11.py -v`
 
 Expected: FAIL por schema 11/factories todavía no soportados.
 
-- [ ] **Step 3: Extend schema dispatch and typed check preservation**
+- [x] **Step 3: Extend schema dispatch and typed check preservation**
 
 Exigir purpose solo en 11 e integrar dimensiones; extender a 11 validación de perfiles, provenance, referencias y recibos en sus módulos propietarios. Ledger nuevo usa checks canónicos conocidos; merge conserva el campo, nunca los recorta a schema 2. Recibo 1 no acredita una captura local nueva 11; reutilización histórica conserva kind=reused y fuente original, sin requerir otra ejecución. Preflight mantiene sus diagnósticos, inputs, dispatch-identity y fuentes, sin bypass por cambio de versión.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_contract11.py -v
@@ -314,7 +316,7 @@ python -B -m unittest discover -s tests -p test_review_check_provenance.py -v
 
 Expected: PASS; tipos 11 no eluden guards y ledger 2/packet 1 se mantienen.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/contracts/review.py scripts/ccr/contracts/findings.py scripts/ccr/contracts/identifiers.py scripts/ccr/contracts/packets.py scripts/ccr/contracts/semantic_references.py scripts/ccr/contracts/execution.py scripts/ccr/contracts/provenance.py scripts/ccr/contracts/receipts.py scripts/ccr/contracts/preflight.py tests/traceability_fixtures.py tests/test_review_traceability_contract11.py tests/test_review_packets.py
@@ -339,7 +341,7 @@ Lookup/reuse no deben cambiar de criterio; sus suites son regresiones, no excusa
 - Test support: `TraceabilityCheckpointTests(checkpoints.CheckpointTests)` sobrescribe solo final_record con la misma firma del padre, aplicando schema 11 y dimension_areas a su fixture sintética, añadiendo purpose solo si contiene checks. Los tests originales siguen ejercitando 10; la subclase ejecuta los mismos cortes contra 11.
 - Test support: `Archive11Tests(unittest.TestCase)` reutiliza solo atributos de fixture setUp/git/write/read/snapshot/prepare/retain/close de old.ArchiveTests, no hereda sus tests.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Imports: Path, unittest; `ccr.archive.retention as retention`, `ccr.archive.lifecycle as lifecycle`; factories y módulos anteriores.
 
@@ -367,17 +369,17 @@ def test_missing_purpose_rejected_without_retained_output(self):
 
 Herencia de TraceabilityCheckpointTests conserva aserciones actuales de retry por límite de escritura, modificación ajena de pending y gate de fuente de perfil. Añadir variante 11 de `test_review_check_receipts.CheckReceiptTests.test_retain_preflight_rejects_missing_selected_receipt` y afirmar `ready=False`, issue `invalid_receipt`; luego proporcionar recibo 2/streams válidos y exigir que desaparezca ese issue, sin suprimir otros gates.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_archive.py -v`
 
 Expected: FAIL por restricción a final 10 o expected-schema 11.
 
-- [ ] **Step 3: Admit 11 in archive gates without changing archive schema**
+- [x] **Step 3: Admit 11 in archive gates without changing archive schema**
 
 Extender guards explícitos y CLI; conservar preflight de candidato, selección de fuentes retenidas, perfiles y executors. Actualizar solo el helper sintético retain para tratar 11 como trata 10; ninguna fixture histórica adquiere campos. Checkpoints/recovery conservan bytes, no regeneran purpose/dimensiones. No cambiar admisión por equivalencia ni prueba de cobertura heredada de 3.2.0.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_archive.py -v
@@ -389,7 +391,7 @@ python -B -m unittest discover -s tests -p test_review_reuse*.py -v
 
 Expected: PASS; 10 permanece consultable/recuperable y la admisión ordinaria conserva sus decisiones.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/archive/retention.py scripts/ccr/archive/lifecycle.py scripts/ccr/archive/inspection.py scripts/ccr/archive/checkpoints.py scripts/ccr/archive/history.py scripts/ccr/cli/artifacts.py tests/test_review_artifacts.py tests/test_review_traceability_archive.py
@@ -412,7 +414,7 @@ git commit -m 'feat(archivo): conservar gates y recovery para resultados 11'
 - Groups elimina solo detalles exactos repetidos en mismo origen, y omite el resultado que coincide exactamente con checks[id].evidence. Un grupo con details=[] todavía genera el enlace a Validación. Estáticas distintas siguen separadas.
 - `render(..., audience='user')` muestra purpose/resultado separados, evidencias anidadas, cobertura por elemento y tabla de 27 dimensiones. Estos mismos bloques de evidencias se usan ya en comentario; proyección pública de purpose/cobertura se completa en Task 6. Ausencia histórica de purpose muestra el texto exacto del spec.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear RenderingTests; importar `ccr.reporting.blocks`, `ccr.reporting.render as renderer`, `record11` desde `traceability_fixtures`, `DIMENSIONS` desde `ccr.contracts.dimensions` y copy.
 
@@ -451,17 +453,17 @@ def test_full_report_preserves_input_and_exposes_objective(self):
     self.assertEqual(value, before)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_rendering.py -v`
 
 Expected: FAIL por blocks ausente o layout aún concatenado.
 
-- [ ] **Step 3: Implement pure blocks and consume them in render**
+- [x] **Step 3: Implement pure blocks and consume them in render**
 
 Usar markdown_text/table_cell y generar enlaces solo desde IDs validados. Agrupar contra el resultado privado antes de proyección; no inferir origins por similitud ni concatenar evidence/flows. Mantener escenarios/impactos y counts existentes. Registrar blocks.py en scripts/README; no duplicar catálogo ni lógica en cada renderer.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_rendering.py -v
@@ -471,7 +473,7 @@ python -B -m unittest discover -s tests -p test_review_areas.py -v
 
 Expected: PASS. Actualizar en estas suites únicamente expectativas Markdown afectadas por el layout deliberado; conservar aserciones semánticas y fixtures originales.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/reporting/blocks.py scripts/ccr/reporting/render.py scripts/README.md tests/test_review_traceability_rendering.py tests/test_review_contract.py tests/test_review_areas.py
@@ -498,7 +500,7 @@ git commit -m 'feat(reportes): mostrar evidencia y cobertura en listas trazables
 - Produces fixture: `publication_contexts(record: dict) -> dict`, con kwargs check_publication_context (filas purpose para 11) y coverage_publication_context (cada índice con summary seguro). Los valores son semánticamente los de la fixture, nunca una clasificación del resultado real.
 - Produces fixture compartida: `tests/publication_fixtures.py:coverage_classification(record: dict) -> dict`, con digest y filas indexadas de los flows sintéticos. Los tests públicos antiguos la pasan explícitamente; si una fixture contiene detalles privados, suministran su summary de producto explícito. No cambiar `contract_api` para inyectar contextos ocultamente.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear CommentTraceTests. Imports: copy, `ccr.reporting.comment as comments`, `ccr.reporting.projections as projections`; factories de Task 3/6.
 
@@ -545,17 +547,17 @@ def test_old_draft_is_stale_and_changed_goal_invalidates_source(self):
 
 En tests de CLI ya existentes añadir --coverage-publication-context al prepare/render-comment y verificar body idéntico al renderer, rechazo de cobertura inválida antes de salida, y CRLF solo remoto. Extender la matriz de manipulación existente: cambiar purpose público o summary dentro del draft sin rehacer cuerpo produce body_mismatch; no puede cambiar purpose/status reales.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_comments.py -v`
 
 Expected: FAIL por argumentos/contexto/campos nuevos no soportados.
 
-- [ ] **Step 3: Implement source-bound public projections and draft2**
+- [x] **Step 3: Implement source-bound public projections and draft2**
 
 public_checks exige filas con purpose para 11 y conserva shape legacy; public_coverage exige todos los índices. Comentarios con flows necesitan contexto editorial incluso para registros antiguos, sin alterar su JSON. Adaptar todos los llamadores de tests enumerados en Files mediante coverage_classification y pasar el argumento por ambos CLIs; actualizar solo las dos entradas nuevas del inventario CLI. No desactivar validación ni inyectar summaries en el adaptador contract_api. Reutilizar blocks para la misma jerarquía de evidence/coverage; no publicar taxonomía interna. Verify compara render fresco exacto; no aceptar una alteración porque su texto parezca equivalente.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_comments.py -v
@@ -569,7 +571,7 @@ python -B -m unittest discover -s tests -p test_script_characterization.py -v
 
 Expected: PASS; diagnósticos stale_draft/source_mismatch/body_mismatch según el caso. Las pruebas de versiones antiguas reciben contexto de presentación cuando hay flows, no campos nuevos en los registros.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/reporting/projections.py scripts/ccr/reporting/render.py scripts/ccr/reporting/comment.py scripts/ccr/cli/comment.py scripts/ccr/cli/contract.py tests/traceability_fixtures.py tests/test_review_traceability_comments.py tests/test_review_comment.py tests/test_review_publication_policy.py tests/publication_fixtures.py tests/fixtures/scripts_cli_contracts.json tests/test_review_contract.py tests/test_review_areas.py tests/test_review_extended.py tests/test_review_flow_v24.py tests/test_review_model_usage.py tests/test_review_presentation.py tests/test_review_profiles.py tests/test_review_traceability_contract.py tests/test_script_reporting_boundaries.py
@@ -592,7 +594,7 @@ git commit -m 'feat(comentarios): vincular propósito y cobertura a drafts verif
 - Brief lista propósito y resultado de cada check, evidencia como origen/delta y coverage por elemento; dimensiones resumidas por ID/estado con motivos pendientes/N/A. Full conserva todas las dimensiones/relaciones en JSON.
 - Extends: `render_handoff(record, context=None, audience='user', publication_context=None, *, check_publication_context=None, coverage_publication_context=None) -> str`. Mantiene purpose, origen de evidencia y cobertura privada sin replicar la interpretación del hallazgo; cuando es público usa las mismas clasificaciones mediante esos kwargs, no publica raw flows.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear DeliveryTraceTests. Importar `ccr.reporting.delivery as delivery`, `ccr.reporting.render as renderer`, `record11`, `publication_contexts`, `PURPOSE`; Path y copy. Para tests puramente portátiles usar _Projection con repository_path/archive_root sintéticos. Para entregas de archivo reutilizar los atributos fixture de Archive11Tests de Task 4, sin importar su TestCase como símbolo global.
 
@@ -620,17 +622,17 @@ def test_private_handoff_keeps_check_objective_and_coverage(self):
 
 Añadir full/brief sobre un archivo 11 cerrado: afirmar en ambos Markdown purpose y cada flow, en JSON full schema=11 y 27 dimensiones, en .ccr-delivery source_schema_version=11 y mismo review_id. Comparar snapshot del archivo antes/después para probar lectura sin mutación. Conservar los casos de privado estructural, destinos existentes y rollback de entrega de test_review_delivery.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_delivery.py -v`
 
 Expected: FAIL por purpose/dimensiones sin política portátil o handoff/brief sin los nuevos bloques.
 
-- [ ] **Step 3: Extend portable fields and consume shared rendering blocks**
+- [x] **Step 3: Extend portable fields and consume shared rendering blocks**
 
 Clasificar explícitamente los campos; conservar IDs y relaciones, rechazar strings desconocidos. Usar bloques compartidos en brief/handoff; no duplicar evidencia del check en el hallazgo. Extender a 11 los guards de identidad/provenance de delivery, sin admitir un JSON sanitizado como fuente de retención.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_delivery.py -v
@@ -639,7 +641,7 @@ python -B -m unittest discover -s tests -p test_review_delivery.py -v
 
 Expected: PASS; originales y receipt lineage intactos, sin paths privados en prosa portable.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add -- scripts/ccr/reporting/delivery.py scripts/ccr/reporting/render.py tests/test_review_traceability_delivery.py tests/test_review_delivery.py
@@ -664,7 +666,7 @@ git commit -m 'feat(entregas): conservar objetivos y relaciones sin duplicación
 - Produces: instrucciones coherentes de solicitud/captura/ledger/preflight/retención/publicación, con propósito anterior al resultado y referencias del hallazgo a checks existentes. Nuevo flujo requiere final 11 y recibos 2 cuando capture; packet 1 y datos históricos se conservan.
 - Sin cambios en criterios de severidad/veredicto ni reglas de reuse. Documentación operativa en inglés y textos de usuario en español.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Crear PolicyTests; importar Path desde pathlib, unittest, DIMENSIONS desde `ccr.contracts.dimensions` y `from ccr.contracts.packets import validate as validate_packet`. ROOT es `Path(__file__).resolve().parents[1]`.
 
@@ -688,17 +690,17 @@ def test_dimension_ids_are_documented_in_their_area(self):
             self.assertIn(identifier, text)
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `python -B -m unittest discover -s tests -p test_review_traceability_policy.py -v`
 
 Expected: FAIL por reglas/IDs todavía no documentados, manteniendo el caso packet 1 válido.
 
-- [ ] **Step 3: Update operating instructions and compatibility documentation**
+- [x] **Step 3: Update operating instructions and compatibility documentation**
 
 Documentar purpose request → recibo → ledger → resultado, grupos de evidencia, listas de flows, contexto público obligatorio, draft 1 stale/draft 2, 27 dimensiones y reuse histórico sin rerun. Mostrar ejemplos completos sintéticos y distinguir fragmentos parciales. Actualizar solo productores vigentes a 11, nunca los ejemplos históricos identificados. Añadir bloque unreleased según CONTRIBUTING sin número de release. Documentar límites de compatibilidad con consumidores antiguos y mantener el visor fuera de alcance.
 
-- [ ] **Step 4: Run focused policy and architecture verification**
+- [x] **Step 4: Run focused policy and architecture verification**
 
 ```powershell
 python -B -m unittest discover -s tests -p test_review_traceability_policy.py -v
@@ -708,7 +710,7 @@ python -B -m unittest discover -s tests -p test_script_*.py -v
 
 Expected: PASS, módulos nuevos indexados y sin ciclos ni dependencias IO desde contratos puros.
 
-- [ ] **Step 5: Run complete verification**
+- [x] **Step 5: Run complete verification**
 
 ```powershell
 python -B -m unittest discover -s tests -v
@@ -717,11 +719,11 @@ git diff --check
 
 Expected: exit 0 en ambos. La suite incluye matrices extensas de restart/resources y admisión por equivalencia; no repetirlas si ya terminaron. Registrar omisiones reales, no convertirlas en aprobación.
 
-- [ ] **Step 6: Record observed evidence**
+- [x] **Step 6: Record observed evidence**
 
 Crear el registro de implementación de Files con comandos/resultados/exit codes, conteos y límites. Contrastar AC1–AC10 y la separación propósito/resultado/impacto con ejemplos antes/después, escenarios estáticos sin check, dos checks con mismo resultado, reuse de recibo 1 y clasificación pública equivocada. No atribuir calidad de juicio del modelo a simples assertions estructurales.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add -- SKILL.md README.md CHANGELOG.md docs/usage.md docs/script-migration.md scripts/README.md references/workflow/review-areas.md references/execution/reviewers.md references/execution/worker-packets.md references/execution/workspaces.md references/contracts/result-contract.md references/archive/artifacts.md references/reporting/report-format.md references/reporting/publication.md references/reporting/delivery.md references/dimensions/design-testability.md references/dimensions/contracts-data.md references/dimensions/security-operation.md docs/validation/2026-10-26-check-evidence-coverage-implementation.md tests/test_review_traceability_policy.py
@@ -746,4 +748,4 @@ Cada tarea tiene Files, Consumes/Produces, aserciones concretas en código, RED/
 
 ## Execution Handoff
 
-Spec y plan actualizados para revisión; no se ha elegido ni iniciado implementación. Se recomienda **Native** por el ledger y los gates compartidos entre las ocho tareas; **Subagent-driven** ofrece revisión por tarea con contextos adicionales. La elección del usuario y revisión del documento preceden a ejecutar el plan. No se crea otra rama de ejecución, no se publica y no se modifica main como parte de esta preparación.
+Las ocho tareas se completaron en el worktree acordado mediante ejecución Native. La revisión fresca de toda la rama confirmó tres defectos importantes, reproducidos y corregidos en una única pasada RED→GREEN. La suite completa final ejecutó 953 casos: 950 aprobados y 3 omitidos por privilegios de symlink en Windows; un caso con acceso denegado temporal pasó en su reintento con código idéntico. Se conservan rama y worktree para integración posterior. El [registro de validación](../../validation/2026-10-26-check-evidence-coverage-implementation.md) recoge resultados, decisiones, compatibilidad y límites.
