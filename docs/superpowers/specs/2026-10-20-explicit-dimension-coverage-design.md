@@ -1,156 +1,183 @@
-# Cobertura explícita de dimensiones ABCDE
+# Dimensiones, propósito de checks y trazabilidad de evidencias
 
-## Estado y propósito
+## Estado, base y alcance
 
-Propuesta documental preparada junto con su plan por petición del usuario. Pendiente de revisión; preparar estos documentos no autoriza ejecutar la implementación. Base: `main`, commit `09eeb03`, CCR 2.13.0. Rama de preparación: `docs/explicit-dimensions-spec`.
+Actualizado el 26 de octubre de 2026 a petición del usuario. Base vigente observada: CCR **3.2.0**, `main` en `559fc5c0f8eb2e9677ff738ed86c703017b4bf17`. Se integró en este worktree mediante el merge `bc7d5b6`, conservando los dos commits documentales previos. El nombre del archivo se conserva para mantener sus enlaces; sustituye la propuesta basada en 2.13.0.
 
-El usuario quiere saber qué dimensiones se aprovecharon en cada revisión y evitar que se omitan silenciosamente. Acepta expresarlas en `details` o mediante otro mecanismo. Esta propuesta elige un contrato estructurado obligatorio que también se muestra en el informe. Se distingue una decisión explícita de aplicabilidad de la inspección efectiva y de la confirmación de un defecto.
+Se solicita análisis y planificación, no implementación. El alcance reúne la cobertura explícita de las 27 dimensiones previamente propuesta y los nuevos requisitos sobre propósito de checks, presentación de evidencias y cobertura privada/pública. El [análisis del modelo vigente](../../analysis/2026-10-26-check-evidence-coverage-analysis.md) describe las fuentes inspeccionadas; el [plan](../plans/2026-10-20-explicit-dimension-coverage.md) utiliza módulos e imports de 3.2.0.
 
-## 1. Situación actual y alternativas
+**Regla principal:** cada check comunica qué verifica; cada evidencia conserva su origen; el hallazgo explica el problema y su impacto sin repetir innecesariamente los resultados de los checks.
 
-Las referencias de `dimensions/` aportan preguntas sobre 27 subaspectos de las áreas A–E. Los briefs deben nombrar los relevantes, pero packet version 1 conserva únicamente flujos y limitaciones; final schema 10 conserva cinco filas de `coverage.areas`. El validador exige `details` no vacío, sin poder detectar que falta una dimensión. El renderer y el visor muestran ese texto; no reconstruyen las preguntas que se inspeccionaron.
+## 1. Objetivos y alternativas
 
-Opciones consideradas:
+El informe debe permitir seguir requisito o hipótesis → propósito del check → ejecución/resultado → evidencia del hallazgo → problema/impacto. La cobertura conserva cada flujo como elemento independiente y muestra el estado de cada dimensión.
 
-| Opción | Ventaja | Limitación |
+| Alternativa | Ventaja | Motivo de la decisión |
 |---|---|---|
-| Plantilla obligatoria dentro de `details` | Conserva schema 10 | Requiere interpretar prosa para detectar ausencias; ambiguo entre idiomas y formatos |
-| Lista estructurada solo de dimensiones seleccionadas | Poco volumen | Una dimensión olvidada puede confundirse con una exclusión intencional |
-| Catálogo completo con decisión por dimensión, opción elegida | Detecta ausencias, duplicados y contradicciones; permite renderizar estados explícitos | Requiere final schema 11 y actualizar sus consumidores internos |
+| Exigir todo mediante plantillas de prosa | Menor cambio estructural | No detecta dimensiones ausentes ni propósito omitido |
+| Añadir propósito y dimensiones opcionales a schema 10 | Incorporación gradual | Desvirtúa un contrato estricto y permite nuevas omisiones silenciosas |
+| Final 11 obligatorio para productores nuevos, recibo 2 y proyecciones compartidas | Valida completitud, vincula propósito a captura y conserva contratos antiguos | Propuesta elegida para revisión; no se atribuye al usuario una aprobación de esta solución concreta |
 
-No se intenta inferir desde código que una dimensión realmente no aplica ni certificar la verdad de un texto de evidencia. La garantía mecánica es que ninguna dimensión del catálogo desaparece del resultado ni queda implícita en el estado global de un área.
+Se mantiene el modelo de evidencia existente `{kind, details, check_id}`; no se crea un registro paralelo de evidencias. Agrupar para presentar no modifica, elimina ni reinterpreta los elementos JSON.
 
 ## 2. Restricciones globales
 
-- Python 3.10+ y biblioteca estándar; no agregar dependencias de producto.
-- Los nuevos resultados finales usan schema 11; los schemas 1–10 conservan sus reglas y bytes históricos.
-- Mantener archive schema 8, layout version 2, trace schema 1 y packet version 1.
-- No migrar, reabrir ni reescribir archivos reales de revisiones para completar dimensiones antiguas.
-- Mantener perfiles, independencia, gates de proyecto, IDs de hallazgos/checks y reglas de veredicto existentes.
-- Los comentarios públicos omiten la taxonomía ABCDE y de dimensiones; las brechas materiales conservan su impacto público.
-- El visor externo no se modifica ni se declara compatible con schema 11 en esta entrega.
-- No asignar versión de release, publicar, hacer merge ni modificar datos reales de reviews durante esta preparación.
+- Python 3.10+ y biblioteca estándar; sin dependencias nuevas de producto.
+- Usar paquetes scripts/ccr y CLI python <skill>/scripts <área>; no restaurar scripts/review_*.py ni imports legacy.
+- Nuevos finales: schema 11 con checks.purpose y las 27 dimensiones; schemas 1–10 conservan sus contratos.
+- Mantener archive 8/layout 2, trace 1 y packet version 1; nuevos recibos locales usan schema 2 y se siguen leyendo recibos 1.
+- No modificar archivos reales de revisiones, informes retenidos ni comentarios remotos durante esta preparación.
+- Conservar criterios, prioridades, hallazgos, perfiles, veredictos, aislamiento, preflight y reglas de reutilización de CCR 3.2.0.
+- La matriz ABCDE y los IDs de dimensiones siguen siendo privados; la cobertura pública describe flujos de producto.
+- No modificar el visor, publicar, hacer merge a main, asignar versión de release ni ejecutar la implementación.
 
-## 3. Catálogo estable, ligado a schema 11
+## 3. Dimensiones explícitas
 
-El catálogo tiene 27 IDs, nombres en inglés en la referencia operativa y etiquetas españolas para los renderers existentes. Cada ID pertenece a una sola área. Su significado no se recicla; cambiar el conjunto obligatorio exige otra revisión explícita del contrato, no modificar retrospectivamente schema 11.
+El catálogo queda ligado a final 11 y reside en `ccr/contracts/dimensions.py`, módulo puro sin IO. Nombres operativos en inglés; etiquetas españolas en los renderers actuales. No se reciclan IDs ni se modifica retrospectivamente el catálogo de este schema.
 
 | Área | IDs y significado |
 |---|---|
-| A | `A01` Boundaries and ownership; `A02` Dependency direction; `A03` Lifecycle and state; `A04` Failure isolation; `A05` Test seams |
-| B | `B01` Preconditions and postconditions; `B02` Validation and branching; `B03` Invariants and edge cases; `B04` Fallback behavior; `B05` User-visible outcome |
-| C | `C01` API/event shape; `C02` Producer-consumer agreement; `C03` Serialization; `C04` Compatibility/versioning; `C05` Ordering and rollout |
-| D | `D01` Identity and ownership; `D02` Query/filter semantics; `D03` Transactions; `D04` Constraints and migrations; `D05` Consistency and recovery |
-| E | `E01` Authentication and authorization; `E02` Tenant and resource isolation; `E03` Trust boundaries and validation; `E04` Error disclosure; `E05` Concurrency and idempotency; `E06` Lifecycle and cleanup; `E07` Performance |
+| A | A01 Boundaries and ownership; A02 Dependency direction; A03 Lifecycle and state; A04 Failure isolation; A05 Test seams |
+| B | B01 Preconditions and postconditions; B02 Validation and branching; B03 Invariants and edge cases; B04 Fallback behavior; B05 User-visible outcome |
+| C | C01 API/event shape; C02 Producer-consumer agreement; C03 Serialization; C04 Compatibility/versioning; C05 Ordering and rollout |
+| D | D01 Identity and ownership; D02 Query/filter semantics; D03 Transactions; D04 Constraints and migrations; D05 Consistency and recovery |
+| E | E01 Authentication and authorization; E02 Tenant and resource isolation; E03 Trust boundaries and validation; E04 Error disclosure; E05 Concurrency and idempotency; E06 Lifecycle and cleanup; E07 Performance |
 
-`scripts/review_dimensions.py` será la fuente mecánica del catálogo, sus etiquetas y la agregación. Las referencias existentes explicarán sus preguntas; pruebas de correspondencia impedirán IDs ausentes o cambiados accidentalmente. No crear una segunda lista de IDs en el renderer ni en los tests.
+Cada fila de `coverage.areas` incorpora `dimensions`: exactamente cinco elementos para A–D y siete para E. Cada dimensión tiene exactamente `{id, status, details, material, finding_ids}`. Se rechazan ausencias, IDs repetidos/desconocidos/ajenos al área, tipos inválidos, campos extra y detalles vacíos.
 
-## 4. Registro final
+- `covered`: mecanismo inspeccionado con fuente o check observado; no significa ausencia de defectos.
+- `partial`: parte inspeccionada y pregunta pendiente concreta.
+- `not_evaluated`: aplicable, pero sin inspección; indicar causa y materialidad.
+- `not_applicable`: exclusión justificada por el alcance; nunca por falta de tiempo o de respuesta.
 
-Schema 11 conserva el envelope y los campos de schema 10 y añade `dimensions` obligatorio en cada fila de `coverage.areas`. No introduce un campo raíz ni modifica el formato de hallazgos. Cada fila mantiene `area`, `status`, `details`, `material` y `finding_ids`.
+El estado del área es N/A si todas son N/A; cubierta si todas las aplicables están cubiertas; no evaluada si todas las aplicables están no evaluadas; parcial en cualquier otra combinación. Su materialidad es el OR de sus dimensiones y sus hallazgos son exactamente la unión de sus IDs. Solo una dimensión parcial/no evaluada puede ser material. Una N/A no tiene hallazgos ni materialidad. El validador rechaza resúmenes contradictorios; no los corrige ni fabrica evidencia.
 
-Cada dimensión contiene exactamente:
+El catálogo completo exige 27 decisiones, no 27 ejecuciones. Se inspeccionan solo mecanismos afectados. Briefs, flows y limitaciones de packet 1 nombran los IDs aplicables en sus textos existentes. Respuesta ausente implica `not_evaluated`, no cobertura. La comprobación semántica usa la verificación ya exigida por el perfil, sin agente adicional obligatorio.
 
-| Campo | Contrato |
+En re-review se clasifica el alcance actual; un área histórica cubierta no prueba sus dimensiones. `canonicalize_ids` remapea también `dimensions[].finding_ids` de forma atómica. Se mantiene una sola causa/hallazgo aunque varias dimensiones lo referencien.
+
+## 4. Propósito de checks: declaración y captura
+
+En final 11, cada check incorpora `purpose` obligatorio: string no vacío tras strip, máximo 4000 caracteres, sin caracteres de control U+0000–U+001F. No se normaliza ni se deriva del comando. Las mismas reglas se comparten mediante `ccr/contracts/checks.py`; no confundir este propósito con `reference-index.inputs[].purpose`, que clasifica materiales.
+
+Ejemplo: «Verificar que dos reclamaciones simultáneas no ejecutan dos veces el mismo job». Es anterior al resultado; no dice «confirmar el bug», no presupone un fallo ni repite impacto o corrección del hallazgo.
+
+| Ejecución | Captura del propósito |
 |---|---|
-| `id` | ID canónico perteneciente al área contenedora |
-| `status` | `covered`, `partial`, `not_evaluated` o `not_applicable` |
-| `details` | Texto no vacío de evidencia, brecha o motivo de exclusión |
-| `material` | Booleano; solo puede ser verdadero en `partial` o `not_evaluated` |
-| `finding_ids` | IDs distintos de hallazgos retenidos y no rechazados, o lista vacía |
+| Local nueva | Declararlo en el request de `checks run`, antes de validar/ejecutar el proceso; copiarlo al recibo 2 y al ledger final |
+| Static/external/blocked/not_run | Declararlo en la planificación/observación correspondiente; no crear recibo local ni executor ficticio |
+| Reutilizada | Conservar propósito histórico si existe y es aplicable; si faltaba, explicar su uso en esta revisión desde la evidencia disponible, sin atribuir esa declaración al instante de ejecución anterior |
 
-Cada área contiene exactamente sus cinco dimensiones, salvo E, que contiene siete. Se rechazan IDs faltantes, repetidos, desconocidos o colocados en otra área, tipos inválidos y campos extra. Orden de entrada libre; salida en orden A–E e ID ascendente. Los errores identifican la ruta del campo, sin volcar el documento privado.
+`capture_check` añade argumento keyword-only obligatorio `purpose: str`; `_read_request` exige el campo. Los requests nuevos sin propósito fallan antes de crear attempt o iniciar subprocess. Es un cambio explícito del productor; no se añade una ruta silenciosa que siga capturando checks nuevos sin propósito.
 
-Semántica de `details`:
+Recibo 2 conserva exactamente los campos de recibo 1 y añade `purpose`. Conserva argv literal, command canónico, cwd, executor, revisión, timestamps, exit code y hashes/bytes de stdout/stderr. El valor de propósito del ledger y del recibo 2 debe coincidir exactamente. Una ejecución nueva de final 11 con `execution.kind=local` y `reused=false` que referencia un recibo necesita versión 2; un recibo 1 no acredita un propósito capturado. Finales antiguos con recibo 1 mantienen su validación original. No se obliga a capturar un recibo donde antes era opcional.
 
-- `covered`: flujo y fuente decisiva observados, con ruta/símbolo o check ID real cuando corresponda. Cubierta no significa libre de defectos.
-- `partial`: parte inspeccionada y pregunta pendiente concreta; no ocultarla tras evidencia de otra dimensión.
-- `not_evaluated`: mecanismo aplicable y razón de que no se inspeccionara.
-- `not_applicable`: motivo vinculado al alcance; no equivale a falta de tiempo, herramientas o conocimiento.
+La reutilización histórica es distinta: conserva `execution.kind=reused`, versión y referencia duradera al resultado fuente según las reglas actuales, con el recibo 1 validado en su archivo original. No se obliga a ejecutar de nuevo ni se cambia el executor original para hacerla pasar por captura nueva. El propósito añadido explica su uso actual; no afirma haber sido declarado antes de aquella ejecución. No se introduce un bypass de recibos para checks marcados reused ni se hace pasar una referencia flat local a un recibo por un linaje histórico verificado.
 
-No se agrega un parser de prosa. Un texto no vacío satisface la forma, pero su precisión se verifica en la revisión escéptica ya requerida por el perfil. No se inventan rutas, checks, resultados ni evidencia para completar el catálogo. Una prueba ausente, por sí sola, no convierte `A05` en defecto.
+El coordinador copia el campo al check JSON sin volver a redactarlo a partir del resultado. Reintentos conservan el propósito cuando no cambia el objetivo y mantienen attempts/IDs separados según las reglas vigentes; un objetivo distinto se declara explícitamente. No se alteran códigos de salida ni clasificación product/fixture/environment.
 
-Ejemplo ilustrativo de una dimensión, no de un registro final completo:
+## 5. Ledger, packets y validación de extremo a extremo
+
+Packet version 1 sigue devolviendo check_ids y evidencias, no checks completos nuevos. Sin embargo, `ccr/contracts/packets.py:merge` hoy valida el ledger neutral como schema 2: se adapta para aceptar explícitamente un contexto con `check_schema_version: 11`, validar shape/propósito/IDs del ledger mediante una proyección discovery 11 y comprobar la forma de execution. Los bindings de fuentes, linaje y executor conservan su gate completo en preflight/retención; el merge no inventa un envelope final ni reduce checks a campos legacy. Los check IDs del ledger nuevo son canónicos y se suministran como conocidos a packets.
+
+Contextos sin `check_schema_version` mantienen el comportamiento 2 anterior. El selector solo admite 2 u 11; un ledger 11 incompleto se rechaza, no se rebaja. El bundle conserva los checks y su propósito, además de los check_ids enlazados en evidencias; no altera decisiones ni prioridad. El envelope de packet no cambia.
+
+Extender los guards de schema 10 a 11 en review, findings/checks, identifiers, profiles, execution, provenance, receipts, semantic references, preflight y consumidores de archivo/reporting. No basta con aceptar el número 11 en el validador raíz. Se mantienen selección de fuentes iniciales, aliases planos, hashes, dispatch-identity, historia de perfiles, executors, material inputs y captura Git sin lazy fetch.
+
+Preflight retain rechaza dimensiones o propósito ausentes antes de escribir resultados. Si solo falla la construcción de un candidato y los inputs siguen vigentes, se reconstruye en el mismo run, sin repetir discovery/verificación. Archive 8 admite 10/11 en sus gates; el flujo nuevo fija `--expected-schema 11`. Recovery reproduce el schema/bytes reservados de la operación exacta, sin insertar campos retrospectivamente.
+
+La admisión y reutilización efectiva de 3.2.0 conserva comparación de cambios/materiales/contexto y prueba de cobertura ordinaria heredada. No se confunde ausencia histórica de dimensiones/propósito con un nuevo defecto de código, ni se usa una mejora de presentación para cambiar un veredicto anterior. Mostrar un resultado histórico y ejecutar un nuevo review mantienen sus reglas vigentes.
+
+## 6. Evidencias como sublistas con origen
+
+La presentación privada y pública usa un helper puro compartido `ccr/reporting/evidence.py`, sin IO ni decisiones de veredicto. Agrupa por `check_id` cuando existe, manteniendo orden de primera aparición.
+
+- Generar el enlace **[C001](#C001)** una vez por grupo dentro de cada hallazgo.
+- Si un detalle es exactamente igual al resultado registrado en `checks[C001].evidence`, usar «Resultado en Validación» y enlazar, sin copiarlo.
+- Conservar detalles distintos que aporten observaciones específicas al hallazgo; eliminar únicamente duplicados exactos dentro del mismo origen.
+- Checks diferentes con el mismo texto siguen siendo orígenes distintos.
+- Una evidencia estática sin check permanece en su propia fila con **Inspección estática** y su detalle/fuente observada. Si un resultado antiguo no registró una fuente concreta, indicarlo sin inventar una ruta ni asignarle un check. Eliminar solo duplicados exactos; no agrupar dos inspecciones distintas porque suenen parecidas.
+- No inferir check_id mediante búsquedas en prosa, no elegir un log arbitrario y no eliminar evidencia del JSON.
+
+Formato objetivo; el hallazgo conserva Escenario/Impacto/Corrección por separado:
+
+```markdown
+- **Evidencia:**
+  - **[C001](#C001)** — Resultado en Validación.
+    - El caso con dos reclamaciones alcanza el mismo owner antes del commit.
+  - **Inspección estática** — src/jobs.py:claim permite observar el mismo estado pendiente.
+
+### Validación
+
+- **C001** — Falló · versión head-456
+  - **Propósito:** Verificar que la reclamación concurrente conserve una sola ejecución.
+  - **Resultado:** Dos reclamaciones completaron el mismo efecto.
+```
+
+Los markers/IDs/enlaces generados llevan negrita. Referencias verificadas disponibles en el check usan etiquetas de origen en negrita y links seguros; rutas o texto no confiable se escapan con los helpers existentes. La agrupación se decide contra el ledger original antes de seleccionar texto público; jamás se vuelve a publicar un resultado privado porque su resumen público tenga otra redacción.
+
+El propósito y el resultado de cada check se imprimen una vez en Validación. Cada hallazgo mantiene el enlace necesario para entender su evidencia, más el delta específico si existe. No se usa similitud textual para eliminar escenario o impacto.
+
+## 7. Cobertura y proyecciones por audiencia
+
+El informe completo muestra `coverage.flows` como sublista Markdown, en su orden original, sin joins ni separación por punto y coma. La lista vacía se expresa como «Sin flujos de cobertura registrados», sin inventar cobertura. Los elementos iguales en JSON se conservan como elementos independientes: renderizar no altera la cardinalidad del registro.
+
+```markdown
+- **Cobertura:**
+  - Creación de jobs y asignación inicial.
+  - Reintentos tras una respuesta parcial.
+```
+
+Después se conserva la matriz ABCDE y se añade «Dimensiones evaluadas», 27 filas explícitas con nombre, estado, evidencia/motivo y hallazgos. Full mantiene también todas las filas en JSON; brief resume IDs por estado, explica pendientes/N/A y conserva propósito de checks y resultados significativos sin duplicar toda la evidencia cubierta.
+
+Los comentarios muestran también la lista de cobertura, con descripciones de producto seguras, y mantienen oculta la matriz/taxonomía de dimensiones. Para no publicar textos privados de flows se añade `coverage_publication_context`, ligado a `publication_digest(record)`:
 
 ```json
 {
-  "id": "E05",
-  "status": "partial",
-  "details": "Se inspeccionó la clave de idempotencia en src/jobs.py:claim_job. Falta establecer qué ocurre si dos procesos reclaman el mismo job antes de persistirla.",
-  "material": true,
-  "finding_ids": []
+  "source_sha256": "<digest del registro exacto>",
+  "flows": [{"index": 0, "summary": "Creación de jobs y asignación inicial."}]
 }
 ```
 
-### Agregación obligatoria por área
+Cuando hay flows públicos, el contexto incluye cada índice original exactamente una vez; rechaza duplicados, omisiones, índices fuera de rango, summaries vacíos o digest ajeno. Puede sustituir detalles internos por una descripción de producto equivalente; no elimina flujos ni añade cobertura. La lista vacía no necesita contexto. Se requiere también al renderizar comentarios nuevos de resultados antiguos con flows: es clasificación editorial del dato existente, no una nueva revisión ni migración.
 
-Se excluyen `not_applicable` para calcular las dimensiones aplicables. El estado del área es:
+`public_checks` incorpora propósito y lo muestra cuando lista ese check. En final 11, la clasificación editorial de checks es obligatoria si existen checks, ligada al mismo digest y con filas exactas que añaden `purpose` a los campos actuales. Su propósito público es no vacío y expresa el mismo objetivo; no puede reemplazarlo por una afirmación de fallo. Los contextos legacy conservan su shape anterior y muestran «Propósito no registrado (resultado anterior)»; no se infiere desde command ni desde un hallazgo.
 
-1. `not_applicable` si no hay dimensiones aplicables.
-2. `covered` si todas las aplicables están cubiertas.
-3. `not_evaluated` si todas las aplicables están sin evaluar.
-4. `partial` en los demás casos, incluida cualquier dimensión parcial.
+`checks[].purpose` se clasifica como PROSE en la proyección portátil; IDs/enums y referencias tipadas no se reescriben para facilitar una entrega. Las nuevas dimensiones tienen política STRUCTURAL/PROSE explícita. Las políticas nuevas de comentarios no se usan para mutar ni sobrescribir resultados del archivo.
 
-`area.material` es el OR de los booleanos de sus dimensiones. `area.finding_ids` es exactamente la unión, sin duplicados, de sus referencias. Una dimensión no aplicable tiene `material=false` y ninguna referencia a hallazgos. Los detalles del área siguen siendo un resumen no vacío; no sustituyen las filas individuales.
+## 8. Comentarios publicados y compatibilidad
 
-El validador rechaza un resumen contradictorio; no lo corrige ni inventa dimensiones. La precedencia actual de veredicto usa la brecha agregada: una brecha material impide aprobar, salvo que un bloqueante confirmado ya determine `not_approvable`. Un mismo hallazgo puede referenciarse desde varias dimensiones/áreas sin duplicarse.
+La publicación usa la ruta canónica `reporting.comment → render`, pasando los contextos de limitaciones, checks y cobertura. No editar a mano el Markdown tras prepararlo. `comment prepare` y el CLI contract render-comment incorporan `--coverage-publication-context`.
 
-## 5. Uso durante una run
+Los drafts nuevos usan schema 2: todos los campos actuales de draft 1, más `coverage_publication_context`. Hash de fuente y hash del cuerpo siguen ligados al registro y Markdown exactos. Verify recalcula con esos contextos y rechaza fuente, propósito público, cobertura o cuerpo alterados; CRLF solo se tolera como transporte remoto, como hoy.
 
-1. Al fijar alcance, el coordinador considera el catálogo completo. Clasifica mecanismos afectados y registra motivos de no aplicabilidad. Esto no obliga a inspeccionar 27 mecanismos ni a cargar todas las referencias.
-2. Cada mecanismo aplicable se asigna a un responsable ya existente en el perfil. Los briefs nombran IDs, flujo, pregunta/invariante y evidencia esperada. Ningún ID añade automáticamente un revisor, sesión o check.
-3. Los workers conservan packet version 1. En sus campos de texto existentes, `coverage.flows` nombra IDs inspeccionados con fuentes; `coverage.limitations[].detail` nombra IDs pendientes. Las evidencias pueden servir a varias dimensiones. No se interpreta un packet sin mención de un ID asignado como cobertura completa.
-4. El coordinador consolida observaciones en las 27 filas. Un ID aplicable sin respuesta permanece `not_evaluated`, con causa y materialidad honesta, hasta resolverse; nunca `not_applicable` por omisión. Las dimensiones imprevistas se incorporan por las reglas de asignación vigentes.
-5. La verificación existente contrasta estados, motivos y fuentes con los resultados observados. No se crea una auditoría ni un agente adicional por dimensiones.
-6. Antes de retener, valida schema 11 y usa `retain --expected-schema 11`. Un resultado incompleto se corrige o se conserva como brecha explícita; no se rebaja a schema 10 para sortear un fallo.
+Los drafts 1 previos no se regeneran ni sobrescriben. Verify devuelve diagnóstico explícito `stale_draft` y se prepara un draft 2 nuevo desde el mismo resultado retenido y sus contextos, sin otro review. Es una limitación de compatibilidad de drafts pendientes, no invalida review.json ni los comentarios ya publicados. No hay publicaciones automáticas ni ediciones remotas en este trabajo.
 
-En re-review se vuelve a clasificar el alcance actual. La cobertura anterior puede reutilizarse solo con evidencia, versiones y justificación existentes; una revisión antigua sin dimensiones no prueba los 27 estados actuales. No se rellena el catálogo desde el estado agregado anterior.
-
-## 6. Reporte y entrega
-
-El reporte privado conserva la matriz ABCDE de cinco filas. Inmediatamente después añade `### Dimensiones evaluadas`, con un subtítulo por área y una tabla de ID, dimensión, estado, evidencia o motivo y hallazgos. Se muestran también `partial`, `not_evaluated` y `not_applicable`; no se ocultan por ausencia de hallazgos. Son 27 filas explícitas, no un porcentaje ni una puntuación.
-
-Ejemplo de presentación de una fila:
-
-```text
-E05 | Concurrencia e idempotencia | Parcial | Inspeccionada la clave de idempotencia; pendiente la reclamación concurrente… | —
-```
-
-El renderer genera nombres y estados desde el catálogo y escapa pipes, saltos de línea y HTML como los campos equivalentes actuales. No modifica el JSON de entrada. En schemas 1–10 no añade filas ni una sección de dimensiones inventadas; conserva su representación histórica.
-
-Entrega full: conserva las 27 dimensiones en JSON portátil y el desglose completo en Markdown. Entrega brief: añade un resumen por área con todos sus IDs agrupados por estado, más motivos de las dimensiones pendientes o no aplicables; no reproduce toda la evidencia cubierta. Su carácter resumido y la identidad del resultado fuente quedan explícitos. No debe presentar el silencio como cobertura.
-
-Los comentarios públicos omiten tablas, IDs y etiquetas internas de dimensiones. Siguen mostrando los hallazgos y las incertidumbres materiales sobre el producto. Las brechas llegan por el resumen agregado del área usando las reglas actuales, sin duplicar una incertidumbre ya representada en limitaciones. No borrar del comentario una condición material solo por ocultar la taxonomía.
-
-Las nuevas rutas de la proyección portátil tienen política explícita: `dimensions[].id`, `.status` y `.finding_ids[]` son identidades/enums; `.details` es prosa; `.material` es booleano. Conservar IDs y relaciones, sanear texto privado y rechazar identidades privadas como hoy. Un campo desconocido no adquiere una política permisiva.
-
-## 7. Compatibilidad y persistencia
-
-El nuevo helper acepta final schemas 1–11 según sus contratos respectivos. Schema 11 hereda íntegramente la historia de perfiles, bindings de asignación y provenance de checks de schema 10: ampliar las ramas de versión de `review_contract`, `review_profiles`, `review_execution`, `review_check_provenance` y `review_publication` sin omitir validaciones.
-
-Archive 8 mantiene su formato y su disposición. Checkpoint, retain y validate admiten final 10 y 11, conservando todos los gates de identidad, historial, fuentes y ejecutores. Los archivos schema 10 de 2.13.0 siguen siendo válidos, consultables y recuperables según las reglas actuales. Las runs iniciadas por el flujo actualizado deben producir 11; el guard `--expected-schema 11` impide aceptar accidentalmente 10 en esa finalización. No se elimina el soporte explícito de 10 necesario para operaciones anteriores; no constituye una actualización de su cobertura.
-
-La ampliación debe alcanzar también lookup/latest, diagnóstico de checkpoint, recuperación de bytes reservados, history/port, render_handoff y delivery. No se altera la reserva de operaciones ni se recomputan resultados para añadir dimensiones. En recovery se conserva el schema y los bytes de la operación existente; únicamente una nueva run vinculada aplica el contrato nuevo.
-
-Un helper de 2.13.0 puede rechazar schema 11; no se garantiza lectura por consumidores antiguos. El visor se actualizará en su repositorio aparte. La documentación de compatibilidad indicará esa dependencia y la disponibilidad del Markdown y JSON originales.
-
-## 8. Criterios de aceptación
-
-| ID | Resultado comprobable |
+| Fuente | Lectura y presentación nuevas |
 |---|---|
-| AC1 | Un final 11 válido contiene exactamente las 27 dimensiones canónicas en sus áreas |
-| AC2 | Eliminar cualquier dimensión, duplicarla, cambiar su área o dejar `details` vacío causa error específico |
-| AC3 | Ningún resumen de área puede ocultar brechas o contradecir la unión de hallazgos |
-| AC4 | Brechas materiales y bloqueantes conservan la precedencia de veredicto existente |
-| AC5 | Informe privado y full muestran todas las dimensiones; brief enumera todos los IDs y explica pendientes/exclusiones |
-| AC6 | Comentario público conserva impacto material sin taxonomía ni duplicados |
-| AC7 | Retención/recovery de 10 y 11 conservan IDs, fuentes, perfiles, ejecutores, hashes y bytes históricos |
-| AC8 | Briefs y packets existentes permiten seguir IDs desde asignación hasta evidencia o brecha, sin nuevo agente |
-| AC9 | Proyección portátil protege datos privados dentro de los nuevos campos sin cambiar identidades |
-| AC10 | Schemas 1–10 siguen válidos sin dimensiones; no se modifica ningún archivo real de revisión |
+| Final 1–10 sin purpose/dimensiones | Válido por su contrato; propósito desconocido explícito; no inventar dimensiones |
+| Final 11 | Purpose y dimensiones obligatorios; conserva todos los gates de 10 |
+| Recibo 1 | Validación legacy; no demuestra captura de purpose para un local nuevo 11 |
+| Recibo 2 | Purpose ligado exactamente al check, más todos los bindings anteriores |
+| Archive 8/layout 2 | Mantiene forma, ownership y archivos históricos; admite finales 10/11 |
+| Draft 1 | Preservar; diagnóstico stale_draft, preparar otro draft 2 si se requiere publicar/verificar con el renderer nuevo |
+| Draft 2 | Verificación exacta con los tres contextos editoriales |
 
-Tests mecánicos prueban completitud y coherencia, no la calidad del juicio del revisor. Escenarios documentados de asignación, omisión de respuesta y re-review complementan las pruebas del contrato. La implementación deberá registrar resultados observados, incluida la suite completa, antes de afirmar que la capacidad está disponible.
+Cambiar la presentación nueva puede modificar las expectativas de snapshots Markdown de pruebas, nunca los bytes de informes cerrados. Actualizar solo expectativas afectadas por la decisión, no regrabar inventarios completos para esconder regresiones. El visor externo y herramientas antiguas pueden rechazar final 11/recibo 2/draft 2; no se declara su compatibilidad.
 
-## 9. Alcance de la preparación y siguiente paso
+## 9. Aceptación y alcance final
 
-Esta entrega contiene únicamente este spec, el [plan de implementación](../plans/2026-10-20-explicit-dimension-coverage.md) y su registro de preparación. No cambia aún SKILL, contratos, helpers, tests ni visor. El usuario revisará los documentos y seleccionará el método de implementación antes de ejecutar el plan.
+| ID | Resultado verificable |
+|---|---|
+| AC1 | Las 27 dimensiones están presentes, clasificadas y agregadas sin contradicción |
+| AC2 | Check nuevo con purpose ausente/vacío/inválido falla antes de ejecución y retención |
+| AC3 | Request, recibo 2, ledger, merge y final conservan exactamente el propósito |
+| AC4 | Recibo 1, resultados 1–10 y recovery mantienen semántica y bytes originales |
+| AC5 | Evidencias forman sublistas con origen en negrita; conservan estáticas y observaciones distintas |
+| AC6 | Un resultado compartido se enlaza; no se repite entre check y hallazgo ni se fusionan checks distintos |
+| AC7 | Cobertura privada/pública conserva cada elemento, con orden y cardinalidad verificados |
+| AC8 | Full, brief, handoff y comentario mantienen propósito, resultado, relaciones y política de privacidad correspondientes |
+| AC9 | Draft 2 y CLI verifican cuerpo/contextos exactos; draft 1 tiene tratamiento explícito |
+| AC10 | Preflight, dispatch, materiales, límites 64/64 MiB, reutilización y veredictos de 3.2.0 no se debilitan |
+
+La validación estructural no certifica la verdad de una evidencia ni su equivalencia editorial; se contrasta con fuentes en la verificación ya prevista por el perfil. Pruebas y escenarios usan fixtures públicas sintéticas. La entrega actual modifica solo análisis/spec/plan y su registro de preparación. Su revisión y la elección de ejecución preceden a cualquier implementación.
