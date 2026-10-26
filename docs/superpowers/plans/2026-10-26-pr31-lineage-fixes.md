@@ -31,14 +31,14 @@
 
 **Files:** scripts/ccr/archive/reuse.py, scripts/ccr/workflow/reuse.py, scripts/ccr/execution/change_scope.py y tests de captura/flujo/archivo existentes.
 
-- [ ] Añadir escenarios independientes con archivos nativos realmente vinculados y ruta untracked llamada como OID; observar RED.
-- [ ] Conservar controles de revisión ordinaria, material gaps y consultas históricas; cambiar el antiguo positivo de rereview sin antecedente para que aporte prueba nativa real.
-- [ ] Compartir la comparación de un resultado retenido, verificar la cadena nativa de cobertura ordinaria y revalidar sus fuentes; añadir -- al diff por blobs.
-- [ ] Ejecutar regresiones focalizadas, incluyendo herencia válida y contexto Y cambiado; commit de implementación.
+- [x] Añadir escenarios independientes con archivos nativos realmente vinculados y ruta untracked llamada como OID; observar RED.
+- [x] Conservar controles de revisión ordinaria, material gaps y consultas históricas; cambiar el antiguo positivo de rereview sin antecedente para que aporte prueba nativa real.
+- [x] Compartir la comparación de un resultado retenido, verificar la cadena nativa de cobertura ordinaria y revalidar sus fuentes; añadir -- al diff por blobs.
+- [x] Ejecutar regresiones focalizadas, incluyendo herencia válida y contexto Y cambiado; commit de implementación.
 
 ## Task 2: Validación y publicación
 
-- [ ] Revisión final independiente del ajuste, con una sola pasada de corrección si hay hallazgos importantes.
-- [ ] Suite completa con inventario disjunto de todos los módulos; conservar omisiones de capacidad y resultados reproducibles.
+- [x] Revisión final independiente del ajuste, con una sola pasada de corrección si hay hallazgos importantes.
+- [x] Suite completa con inventario disjunto de todos los módulos; conservar omisiones de capacidad y resultados reproducibles.
 - [ ] Actualizar documentación de alcance heredado y evidencia de validación; commit y push normal.
 - [ ] Verificar HEAD, cuerpo y base del PR 31; conservar worktree y consulta histórica, sin merge ni respuestas públicas no solicitadas.
