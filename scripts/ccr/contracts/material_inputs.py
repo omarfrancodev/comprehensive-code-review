@@ -53,6 +53,12 @@ def validate_captured_material_sources(captured_inputs: dict, index: dict,
             issues.append(_issue('input_changed', f'review_inputs.sources[{reference}]', reference,
                                  'material source is not part of the initially captured review inputs',
                                  expected))
+    try:
+        from ccr.workflow.reuse import validate_reuse_evidence
+        validate_reuse_evidence(captured_inputs.get('scope') if isinstance(captured_inputs,dict) else None,
+                                index,sources)
+    except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+        issues.append(_issue('input_changed','reuse_evidence',None,str(exc),'valid initial reuse evidence'))
     return _ordered_issues(issues)
 
 
@@ -156,4 +162,9 @@ def validate_material_inputs(record: dict, context: dict, index: dict,
             if expected_identity is not None and expected_identity != requirements[0].get('sha256'):
                 add('input_changed', 'requirements_identity', ref,
                     'requirements identity differs from selected source hash', expected_identity)
+    try:
+        from ccr.workflow.reuse import validate_reuse_evidence
+        validate_reuse_evidence(record.get('scope'), index, sources, require_context=True)
+    except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+        add('input_changed','reuse_evidence',None,str(exc),'verified reuse sidecars bound to the pinned scope')
     return _ordered_issues(issues)
