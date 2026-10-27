@@ -36,5 +36,138 @@
       "test_retained_evidence_matches_declared_sha256",
       "test_indexed_evidence_matches_declared_sha256"
     ]
+  },
+  "clean_checkout_validation": {
+    "checked_commit": "3b128a1ffdd69f54f42e605b39b3a5187a2a8080",
+    "source": "Fresh local Git clone, independent index and checkout from committed objects",
+    "hashes_verified": 23,
+    "checks": [
+      {
+        "file": "acceptance-assessment.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-acceptance.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-development-assessment.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-development.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-instructions.md",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-manifest.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "baseline-reverse.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-acceptance.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-development-assessment.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-development.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-instructions.md",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-manifest.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "candidate-reverse.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "final-review.md",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "input-manifest.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "reverse-assessment.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "reverse-cases.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "test-output-contract.log",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "test-output-packets.log",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "test-output-priority.log",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "test-output-purpose.log",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "test-output-traceability.log",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      },
+      {
+        "file": "validation-results.json",
+        "checkout_matches": true,
+        "committed_blob_matches": true
+      }
+    ],
+    "acceptance_scores": {
+      "baseline": 8,
+      "candidate": 8
+    },
+    "classifiers_rerun": false,
+    "command": "python -B -m unittest discover -s tests -p 'test_review_priority_*.py' -v",
+    "tests": 16,
+    "test_result": "passed",
+    "test_output_sha256": "9d7b6ad12432136cf49f945a492dbc6fc5f03a09b55c86bb84d924a0e4767f3d",
+    "limitation": "Only the selected priority suites were rerun; original 125-test evidence remains historical",
+    "environment": "Initial local clone failed in sandbox MSYS startup; same local-only clone succeeded with reviewed permissions. No network or classifier calls were used."
   }
 }
