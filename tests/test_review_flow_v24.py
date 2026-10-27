@@ -1,6 +1,8 @@
 """Approved flow regressions: optional accounting and canonical presentation."""
 import unittest
 
+from publication_fixtures import coverage_classification
+
 import test_review_artifacts as archive_tests
 from test_review_presentation import current_record
 from test_review_contract import contract, finding
@@ -22,7 +24,7 @@ class PresentationFlowTests(unittest.TestCase):
             value = presented(kind)
             self.assertEqual(contract.validate(value), [])
             for audience in ('user', 'comment'):
-                text = contract.render(value, audience)
+                text = contract.render(value, audience, coverage_publication_context=coverage_classification(value) if audience == 'comment' else None)
                 self.assertTrue(text.startswith('## ' + label + ' — Configuración documental\n\n'))
                 self.assertIn('### Veredicto: **APROBABLE**', text)
                 self.assertIn('Autores del cambio:', text)
@@ -34,7 +36,7 @@ class PresentationFlowTests(unittest.TestCase):
         value['findings'] = [item]
         value['verdict'] = 'not_approvable'
         for audience in ('user', 'comment'):
-            text = contract.render(value, audience)
+            text = contract.render(value, audience, coverage_publication_context=coverage_classification(value) if audience == 'comment' else None)
             self.assertIn('### ' + contract.PRIORITIES[item['priority']] + ' — ' + item['id'] + '\n\n#### 1. ', text)
             self.assertIn('- **Escenario:** ', text)
             self.assertIn('- **Impacto:** ', text)
@@ -124,7 +126,7 @@ class ArchiveFlowTests(unittest.TestCase):
         self.close(run, 'complete')
         saved = self.read(run / 'review.json')
         self.assertEqual(saved['presentation'], value['presentation'])
-        self.assertEqual(contract.render(saved, 'comment').splitlines()[0], before)
+        self.assertEqual(contract.render(saved, 'comment', coverage_publication_context=coverage_classification(saved)).splitlines()[0], before)
 
     def test_context_executor_provenance_binds_real_worktree_and_head(self):
         from recovery_fixtures import native_record, selection_input

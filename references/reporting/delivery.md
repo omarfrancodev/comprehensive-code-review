@@ -6,7 +6,7 @@ The agent interprets `--delivery full|brief` and `--output <delivery-root>`. The
 
 ## Contents and location
 
-- Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties, applicable coverage, `previous_reviews` lineage and schema 10 profile/assignment history.
+- Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties, applicable coverage, `previous_reviews` lineage and schema 10/11 profile/assignment history.
 - Brief: resumen.md with identity/version/scope, verdict and reason, confirmed counts, IDs/priorities/locations, concrete triggering scenarios/impacts and correction guidance, meaningful validation summaries and material pending matters. It shows the prior review ID/source link and keeps the result summary; it does not promise full profile/assignment history. It remains sufficient to understand the requested next work; unresolved claims stay separate from confirmed corrections.
 - Optional contexto.md: only additional collected context that changes the next agent's decisions and is absent from the report. Preserve sources and uncertainties; do not repeat findings or create a new plan.
 - A small .ccr-delivery.json records projection/source identity and file hashes. It is transfer integrity metadata, not an execution log, review authorization or proof of correctness.
@@ -28,13 +28,13 @@ Omit absent sections rather than fabricating sources, assessments or filler. Pre
 
 ## Export and preservation
 
-Use scripts/review_delivery.py with --help when executable. It validates the retained source read-only, requires an explicit mode and persistent project checkout, and creates a distinct delivery directory. It never modifies a closed run or copies evidence. Existing destinations and unsafe paths are refused rather than overwritten; a changed delivery requires a distinct explicit destination.
+Use scripts delivery with --help when executable. It validates the retained source read-only, requires an explicit mode and persistent project checkout, and creates a distinct delivery directory. It never modifies a closed run or copies evidence. Existing destinations and unsafe paths are refused rather than overwritten; a changed delivery requires a distinct explicit destination.
 
 Invoke the helper through its absolute path; these are executable helper arguments, unlike the agent request conventions:
 
 ```text
-python <skill-path>/scripts/review_delivery.py --run-dir <retained-run-dir> --delivery full --project-root <persistent-checkout>
-python <skill-path>/scripts/review_delivery.py --run-dir <retained-run-dir> --delivery brief --project-root <persistent-checkout> --output-root docs/team-review
+python <skill-path>/scripts delivery --run-dir <retained-run-dir> --delivery full --project-root <persistent-checkout>
+python <skill-path>/scripts delivery --run-dir <retained-run-dir> --delivery brief --project-root <persistent-checkout> --output-root docs/team-review
 ```
 
 For collected additional context, supply `--context <context.json>`. Omit empty sections; observations in assumptions, decisions, implementation_state and pending use text, references and version. Sources require their actually analyzed sections and known identity:
@@ -56,8 +56,16 @@ Do not commit, publish or authorize fixes merely because delivery was requested.
 
 Use bold ID labels in full/brief delivery for confirmed findings (brief), checks, unresolved findings and previous-review ledger entries. Preserve the underlying IDs, historical source IDs and link targets; escape supplied text separately from generated formatting. Full delivery inherits report-format.md.
 
-## Schema 8–10 provenance
+## Schema 8–11 provenance
 
 Full delivery preserves source schema/review ID, truthful execution status, profile history and assignment selection bindings without collecting new sources. Brief preserves review identity and summarizes execution fulfillment; it does not include the effective profile name, profile history or a link to that history. Prior-review IDs/links identify the recorded previous reviews, when available. Consult the original archive or a full delivery for profile history. The portable JSON may contain sanitized provenance labels; validate its structure, not local filesystem references from another machine. The original archive verifies actual selected sources before cleanup. An explicitly private handoff retains relevant internal limitations; a public handoff uses the same typed/historical classification policy as comments. Delivery never grants permission to publish it.
 
 Both modes use the same typed portable projection: preserve enums, IDs, versions, snapshot identities and relationships; sanitize only prose/commands and reference/location fields according to their meaning. A private structural identity is refused with a field-only diagnostic before any output is created. Unclassified new string fields require an explicit policy; never rewrite IDs or weaken contract validation to make an export pass. The retained source and receipt lineage remain intact on failure.
+
+## Schema 11 traceability
+
+Full retains all 27 dimension rows and finding/evidence/check relationships in portable JSON and the report. Brief lists each check's purpose and result, links finding evidence to that check with distinct deltas/static observations, and keeps coverage as a nested list. It summarizes dimension IDs/states with pending/not-applicable reasons. Private handoff keeps check purpose, evidence origins and flow items; public handoff requires the same source-bound check/coverage contexts as public comments and omits internal matrices.
+
+Purpose and dimension details are PROSE; dimension IDs/status/finding IDs are STRUCTURAL. Sanitize prose, preserve relationships and reject private structural identities or unclassified new string fields. Both modes retain the same original review ID/source hash/schema in .ccr-delivery.json and never modify the source archive. Receipt schema 2 is the command-capture receipt, not the separate delivery receipt (which remains schema 1).
+
+Group and compare evidence against the original retained result before sanitizing any prose. Project those groups afterward and render them without another deduplication pass: two different private observations may legitimately become identical portable text. Keep both origins/deltas rather than collapsing them because their projected strings happen to match.

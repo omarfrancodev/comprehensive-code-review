@@ -10,7 +10,7 @@ Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-na
 
 Confirmed findings appear as findings; unresolved claims/material limits appear as uncertainties. Rejected candidates stay internal unless withdrawing prior claims. Omit empty conditional sections, full logs, duplicate findings tables and speculative defects. Give observable corrections, not an unsolicited patch. Finding evidence is concise decisive static evidence or linked check IDs; Validación adds the existing meaningful check output/results, skipped checks, blockage and retained log references instead of copying scenario/impact paragraphs.
 
-Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante; 🔵 P3 — Menor. Translate labels as needed, preserve circle/code. P0 is demonstrated immediate severe compromise/outage/corruption; P1 serious credible failure; P2 concrete correctness defect; P3 limited consequence. Blocking and origin are separate. Conditions come from actual blockers/nonblocking reservations, never silent acceptance of material unknown behavior.
+Priority labels: 🔴 P0 — Crítico; 🟠 P1 — Alto; 🟡 P2 — Importante; 🔵 P3 — Menor. Translate labels as needed, preserve circle/code. Apply the canonical [priority calibration](../contracts/priority-calibration.md), preserving its separate confirmation, origin and blocking decisions. New confirmed findings justify the chosen boundary once in existing Impacto, not in check purpose/result. Conditions come from actual blockers/nonblocking reservations, never silent acceptance of material unknown behavior.
 
 ## Canonical title
 
@@ -20,7 +20,7 @@ Select presentation once from scope/context, without extra discovery: kind revie
 
 Required: verdict/reason; persistent review ID and relevant previous report links; project/mode/reference/version/target; MR/PR responsible person (local: Responsable); change authors; profile/reason and verification mode; MR/PR description result (local: No aplica; revisión local); Hallazgos with confirmed counts and blocks or clean-review sentence; meaningful validation and covered flows; ABCDE coverage matrix for new reviews. Preserve historical IDs and missing legacy fields honestly.
 
-For final schema 10, the private report states the initial and effective profiles separately. If the selection changed, it also lists each transition with phase and reason. The public comment omits profile history and fulfillment details; legacy reports retain their historical profile line.
+For final schemas 10/11, the private report states the initial and effective profiles separately. If the selection changed, it also lists each transition with phase and reason. The public comment omits profile history and fulfillment details; legacy reports retain their historical profile line.
 
 Then conditional sections, in this order: uncertainties; conditions/reservations; re-review ID changes; residual resources or actual publication outcome. Omit successful cleanup mechanics. Residual resources need exact paths and next actions. Reused evidence/substantive reruns are identified. No executed checks means an explicit static-only statement.
 
@@ -54,15 +54,22 @@ Then conditional sections, in this order: uncertainties; conditions/reservations
 - **Ubicación:** [precise reference] · **Origen:** [translated origin]
 - **Escenario:** [conditions → expected/actual failure]
 - **Impacto:** [concrete consequence]
-- **Evidencia:** [concise decisive flow or linked canonical check ID]
+- **Evidencia:**
+  - **[canonical check ID](#canonical-check-ID)** — Resultado en Validación.
+    - [distinct observation beyond the check result]
+  - **Inspección estática** — [decisive static source/flow without a check]
 - **Corrección requerida:** [observable behavior]
 - **Bloqueante:** [yes/no; reason when yes]
 
 ### Validación
 
-- **[canonical check ID]**: [actual execution revision and meaningful existing output/result; check evidence/log link; skipped/blocked reason; reuse/rerun reason where applicable]
+- **[canonical check ID]**: [state and actual execution revision; reuse/rerun reason where applicable]
+  - **Propósito:** [behavior, condition or hypothesis declared before execution]
+  - **Resultado:** [observed output, skipped/blocked reason]
+  - **Referencia de ejecución:** [actual safe source link]
 
-**Cobertura:** [inspected flows; material gaps appear under uncertainties]
+- **Cobertura:**
+  - [one inspected flow per item; material gaps appear under uncertainties]
 
 ### Matriz ABCDE
 
@@ -102,3 +109,24 @@ Publishing uses publication.md. Public validation is projected from typed check 
 Final schemas 8–10 private metadata include “Ejecución del perfil: cumplida/degradada”, alongside actual verification. Public metadata omits both the profile and its fulfillment mechanics. Do not present a degraded requested strategy as fulfilled.
 
 Schemas 8–10 keep typed limitations and execution provenance in the private report/record. Public/manual rendering follows [publication.md](publication.md): relevant product/check/gate impact, no review mechanics. Material ABCDE gaps remain visible without the matrix; deduplicate uncertainties/reservations. Historical public limitations require source-bound classification. One coordinator draft pass covers all public fields; helpers do not certify arbitrary prose as semantically safe.
+
+Separate confirmation, priority and blocking when consolidating observations. Confirmed P3/nonblocking findings remain findings; relevant behavior/compatibility uncertainty uses the existing typed limitation and public_summary even when it does not block integration. Do not hide an observed issue only because exact production volume is unknown, and do not promote an unsupported suggestion to a defect. Rejected hypotheses remain private under the existing rule. Examples: [scenario disposition](../../docs/examples/review-scenario-disposition.md).
+
+## Traceable validation, evidence and coverage
+
+For each listed check show ID/state/revision, then nested **Propósito** and **Resultado** items, followed by any actual safe reference. Missing historical purpose displays `Propósito no registrado (resultado anterior)`; no inferred objective. Findings keep scenario/impact/correction and a nested evidence list. Group by the real check ID, link to its Validación anchor, omit an exact copy of that check's original result, retain distinct deltas as subitems and keep a link even when no delta remains. Different check IDs remain distinct even with identical outputs. Each distinct static observation remains an **Inspección estática** item without a fabricated check. Remove only exact duplicates from the same origin.
+
+The same Markdown hierarchy applies to full reports and public comments. Private final 11 shows the five-area summary plus all 27 dimension rows, each with name, status, details and finding references; historical records get no invented dimension table. Public comments omit both internal matrices and present editorial product-flow summaries. Coverage always preserves each source element, its order and duplicates as a nested list:
+
+```markdown
+- **Evidencia:**
+  - **[C001](#C001)** — Resultado en Validación.
+    - La segunda reclamación conserva al primer propietario.
+  - **Inspección estática** — src/jobs.py:cancel conserva el estado final.
+
+- **Cobertura:**
+  - Creación de trabajos
+  - Cancelación
+```
+
+This is a partial presentation fragment, not a complete result. Escape all supplied prose separately from generated Markdown; encode legacy ID fragments. Purpose/result/impact remain different facts, rather than three restatements of the defect.

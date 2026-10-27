@@ -37,11 +37,13 @@ Fresh contexts exclude coordinator hypotheses/full transcript. Preserve raw obse
 
 Preserve role packets, then contrast collected external note claims with independently discovered evidence before grouping and verification. For each pertinent note, retain author/source, native ID/link and known revision in existing evidence context; distinguish matching, contradicted and unsettled claims. A resolved thread does not prove a fix. Confirm through current code/requirements or actual checks, regardless of author, tool or numeric confidence. No fixed model quota, confidence cutoff or per-note/per-issue validator applies.
 
-Group only evidenced shared root causes, including matching external/internal claims. Map provisional worker IDs once into canonical coordinator IDs under identifiers.md. Keep source IDs, distinct scenarios and evidence; similar titles/locations/consequences alone are insufficient. Distinct causes remain separate. Preserve surviving historical IDs and evidenced duplicate aliases for re-review.
+Group only evidenced shared root causes, including matching external/internal claims. Map provisional finding IDs once into canonical coordinator IDs under identifiers.md. Allocate canonical check IDs before capture; keep receipt-bound check IDs unchanged. Keep source IDs, distinct scenarios and evidence; similar titles/locations/consequences alone are insufficient. Distinct causes remain separate. Preserve surviving historical IDs and evidenced duplicate aliases for re-review.
 
-Optional review_contract.py deduplicate preserves explicit same-cause groups; it does not infer equivalence. The verifier may split a group. Grouping never upgrades status.
+Optional `python <skill-path>/scripts contract deduplicate` preserves explicit same-cause groups; it does not infer equivalence. The verifier may split a group. Grouping never upgrades status.
 
 ## Verification packet
+
+Include the applicable [priority calibration](../contracts/priority-calibration.md) rules in the existing verifier brief. Confirm the obligation and reachable consequence before grading; assess origin and blocking separately. Return existing priority/impact deltas when needed; the coordinator completes the final impact justification. Preserve the current grouped pass, profile and independence requirements.
 
 Supply minimal shared facts, exact version, groups, baseline access, decisive paths, referenced checks and assigned material questions/invariants. Validate/refute groups while preserving distinct scenarios; this is bounded verification, not another full discovery sweep.
 
@@ -50,3 +52,15 @@ Trace actual requirements/mechanisms, registration conventions and consumers. Us
 Load worker-packets.md and its verification section. Return decisions for assigned IDs, decisive evidence and only changed assessments; unchanged candidate prose/check records stay referenced. Independence follows profiles.md; same-session fallback is disclosed. Decisions account for all assigned IDs; final rejected-claim retention stays limited to material uncertainty, withdrawal or likely repeat investigation. Preserve raw packets.
 
 Grouped verification includes pertinent external claims and material questions after the contrast, with source provenance available to the verifier. Verify their mechanism/severity instead of adopting their conclusion. Missing tests or manually managed migrations are not automatically defects. Keep deployment prerequisites and uncertain business rules distinct; retain evidenced state/input defects. CI evidence must name its actual revision and result.
+
+## Questions that prevent shallow coverage
+
+Within each existing flow owner, derive a short scenario set from observed mechanisms: the complete validation order and audit side effects; allowed non-nominal states and cross-store failure; producer-before-deploy versus current reader; resource creation/renewal/logout/expiry/cleanup; and operations per request or N-element batch. A correction to an earlier finding introduces its own contracts and side effects: inspect adjacent consumers and defaults, not only the original failing line. These are flow questions, not extra reviewers or mandatory benchmarks.
+
+For green tests, inspect what the assertions actually require. An assertion can preserve a behavior that contradicts the requirement; cite the contract and reachable consequence rather than treating the test count as approval. Separate observation, confirmation, priority and blocking. A confirmed limited defect remains a nonblocking finding when appropriate; a relevant unresolved compatibility condition remains a typed public behavior limitation. Lack of measured latency does not erase decisive static evidence of unbounded accumulation or N repeated operations; do not invent measured impact.
+
+For a guided reusable MR/PR result, return the compact inventory of complete Git files actually read to the coordinator through the assigned evidence context (side=base/head, byte path, mode, digest). Keep packet version 1 and existing flows/limitations; no new required packet fields. Unknown inventory completeness prevents reuse, without claiming that the historical review was invalid.
+
+## Dimension decisions and check ownership
+
+Each brief identifies the assigned dimension IDs from review-areas.md, concrete flows, hypotheses and expected evidence. Workers record inspected/pending/not-applicable decisions in existing packet text; the coordinator persists every dimension explicitly in final 11. Assigning a dimension is not evidence that it was inspected. Allocate a canonical check ID and declare its purpose before capture; give shared checks one executor and reference the same ledger entry from every relevant finding. Purpose asks what is verified, result states what happened, and the finding explains the problem/impact. Preserve one finding per cause even when many dimensions or checks contribute evidence.

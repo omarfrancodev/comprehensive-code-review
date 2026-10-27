@@ -67,7 +67,7 @@ Las afirmaciones pertinentes de otros revisores se contrastan después del descu
 
 ## Continuar o repetir una revisión
 
-Si una petición puede corresponder a una revisión anterior del mismo MR/PR o alcance local, primero consulta candidatos con el helper `review_artifacts.py lookup`. La consulta se limita al repositorio y a una referencia/target/snapshot estable; devuelve páginas de hasta 100, con cursor si hay más. No recorre otros repositorios, no lee las evidencias completas, no modifica archivos y no elige por fecha. Si el resultado indica `truncated`, la página no representa todos los candidatos.
+Si una petición puede corresponder a una revisión anterior del mismo MR/PR o alcance local, primero consulta candidatos con el helper `scripts artifacts lookup`. La consulta se limita al repositorio y a una referencia/target/snapshot estable; devuelve páginas de hasta 100, con cursor si hay más. No recorre otros repositorios, no lee las evidencias completas, no modifica archivos y no elige por fecha. Si el resultado indica `truncated`, la página no representa todos los candidatos.
 
 Una revisión completa, íntegra y vigente puede mostrarse o repetirse; una interrumpida se inspecciona por su ruta exacta antes de decidir continuar, recuperar o reiniciar. `inspect` separa integridad, disponibilidad y vigencia de las entradas. Recuperar significa reanudar la operación durable exacta con sus bytes reservados; no reutilizarla con entradas nuevas. Si base, head, descripción, requisitos, plan, configuración o fuentes cambiaron, o su identidad/completitud es `unknown`, no se continúa como si el snapshot siguiera vigente: se conserva el origen y, si procede, se inicia una revisión vinculada. Una fuente ausente sin recibo de limpieza permanece `missing_unknown`; no se interpreta como limpia. `lookup` no elige por fecha y mostrar un reporte no inicia trabajo, publica ni limpia. Las decisiones y comandos seguros están en [recovery.md](../references/archive/recovery.md).
 
@@ -124,7 +124,7 @@ Una revisión cerrada es inmutable. Correcciones, otra revisión, publicación o
 
 Solo se publican con autorización explícita. Comparten el título, veredicto, ID, alcance, versión, hallazgos confirmados y validación del informe; incorporan la consistencia de la descripción y las incertidumbres pertinentes. Omiten la matriz ABCDE, selección de perfil, rutas del archivo interno y mecánica de los revisores.
 
-El comentario lo produce `review_comment.py prepare` a partir del registro conservado y el contexto público estructurado. Verificar el cuerpo outbound exacto antes de enviarlo; si una clasificación o detalle es incorrecto, corregir el contexto y volver a generar el borrador. No editar manualmente el texto renderizado después de verificarlo. `verify --remote` permite comparar CRLF con LF; cualquier otra diferencia queda para inspección antes de reintentar y evitar duplicados. Los datos privados del modelo/harness nunca se incluyen.
+El comentario lo produce `scripts comment prepare` a partir del registro conservado y el contexto público estructurado. Verificar el cuerpo outbound exacto antes de enviarlo; si una clasificación o detalle es incorrecto, corregir el contexto y volver a generar el borrador. No editar manualmente el texto renderizado después de verificarlo. `verify --remote` permite comparar CRLF con LF; cualquier otra diferencia queda para inspección antes de reintentar y evitar duplicados. Los datos privados del modelo/harness nunca se incluyen.
 
 El responsable del MR/PR y los autores del cambio se declaran por separado usando fuentes verificadas. La asignación, creación del MR/PR y autoría de commits no son equivalentes. Los nombres o correos de Git no se convierten en menciones sin verificar su cuenta; las identidades no disponibles se declaran como no identificadas. Antes de publicar se comprueba la vigencia de código, descripción y atribución. Consulta [report-format.md](../references/reporting/report-format.md) y [publication.md](../references/reporting/publication.md).
 
@@ -143,17 +143,29 @@ La agrupación facilita mantener las reglas; cada rol sigue consultando solo las
 
 ## Helpers y validación
 
-La lectura de instrucciones no requiere ejecutar helpers. Todos usan Python 3.10+ y biblioteca estándar. Se invocan mediante intérprete y ruta absoluta; consulta `--help` para la interfaz exacta. Las convenciones de la petición al agente no sustituyen sus argumentos.
+La lectura de instrucciones no requiere ejecutar helpers. Todos usan Python 3.10+ y biblioteca estándar. Los comandos comparten una sola entrada, invocable desde cualquier directorio con una copia completa de la skill:
 
-| Helper | Propósito |
+```bash
+python /ruta/skill/scripts --help
+python /ruta/skill/scripts artifacts --help
+```
+
+La raíz lista las doce áreas sin cargar sus servicios. El [mapa de módulos](../scripts/README.md) identifica responsabilidades, efectos, contratos y pruebas. Consulta la [guía de migración](script-migration.md) para los equivalentes y la ruptura de imports. Las convenciones de la petición al agente no sustituyen los argumentos del CLI.
+
+| Área | Propósito |
 |---|---|
-| `scripts/review_contract.py` | Validar registros, asignar IDs y generar informes y comentarios en español. |
-| `scripts/review_packets.py` | Validar y combinar candidatos y decisiones incrementales sin inventar conclusiones. |
-| `scripts/review_artifacts.py` | Preparar, registrar, conservar, validar y cerrar el archivo interno sin eliminar recursos. |
-| `scripts/review_delivery.py` | Generar la entrega solicitada desde un resultado conservado. |
-| `scripts/review_workspace.py` | Preparar y limpiar snapshots temporales con comprobaciones de propiedad; requiere Git. |
-| `scripts/review_runner.py` | Ejecutar un adaptador CLI previamente configurado; no selecciona ni configura el proveedor. |
-| `scripts/review_metrics.py` | Registrar y agregar contadores suministrados para una evaluación explícita de coste. |
+| `artifacts` | Preparar, registrar, conservar, validar y cerrar el archivo interno sin eliminar recursos; incluye preflight y lookup. |
+| `contract` | Validar registros, asignar IDs y generar informes/comentarios en español. |
+| `delivery` | Generar la entrega solicitada desde un resultado conservado. |
+| `history` | Verificar, portar o mostrar paquetes históricos de consulta. |
+| `metrics` | Registrar y agregar contadores suministrados para una evaluación explícita de coste. |
+| `packets` | Validar y combinar candidatos y decisiones incrementales sin inventar conclusiones. |
+| `recovery` | Diagnosticar y continuar la recuperación para un run explícito. |
+| `runner` | Ejecutar un adaptador CLI previamente configurado; no selecciona ni configura el proveedor. |
+| `workspace` | Preparar, inspeccionar y limpiar snapshots temporales con comprobaciones de propiedad; requiere Git. |
+| `setup` | Construir entradas de perfil, contexto y eventos a partir de datos explícitos. |
+| `checks` | Ejecutar un comando de check explícito y capturar recibo/logs sin shell. |
+| `comment` | Preparar y verificar el borrador de comentario público; no lo publica. |
 
 El helper de artifacts es obligatorio cuando puede ejecutarse dentro de los permisos disponibles. Una alternativa nativa por indisponibilidad comprueba el mismo contrato; un fallo de validación no justifica eludir el gate. Para entregar se usa el helper de delivery cuando puede ejecutarse, con alternativa nativa equivalente si está indisponible. Los demás helpers son opcionales. Un validador estructural no determina si un hallazgo es verdadero. Consulta [result-contract.md](../references/contracts/result-contract.md), [artifacts.md](../references/archive/artifacts.md) y [delivery.md](../references/reporting/delivery.md).
 
@@ -183,4 +195,12 @@ Pedir CCR incluye las delegaciones del perfil elegido; no necesitas añadir «us
 
 El informe privado/JSON conserva cumplimiento y limitaciones internas. El comentario público comunica solo comportamiento, evidencia y condiciones pendientes relevantes. Desde schema 8, las limitaciones tienen clasificación estructurada; republicar limitaciones de resultados históricos anteriores exige clasificación explícita vinculada a la fuente. Detalles de campos/CLI: [contrato del resultado](../references/contracts/result-contract.md), [retención](../references/archive/artifacts.md) y [publicación](../references/reporting/publication.md). No hay migración de reviews existentes ni compatibilidad asumida del visor independiente.
 
-Los resultados nuevos usan schema 10: cada check declara si fue local, estático, CI externo o reutilizado y las asignaciones conservan la selección de perfil que las autorizó. Las validaciones locales ejecutadas enlazan el ejecutor registrado y su versión/snapshot; no se inventan ejecutores para lectura, CI o reuso. El coordinador retiene con `--expected-schema 10`; los contratos 1–9 siguen legibles sin migración. Los archivos internos nuevos usan archive schema 8/layout 2; archives 1–7 son incompatibles con las operaciones actuales y permanecen intactos. Trace y packet continúan en schema/version 1. Una entrega full conserva IDs, perfil e historial; brief conserva la identidad y resume el cumplimiento de ejecución, sin nombre del perfil ni historial ni vínculo a ese historial. Sus enlaces a reviews anteriores identifican esas revisiones, cuando existen; el historial de perfil se consulta en el archivo original o en full. Si una identidad estructural contiene una ruta privada, la entrega falla sin crear el destino ni alterar el archivo. El visor independiente debe admitir final schema 10 y archive schema 8/layout 2; su compatibilidad no se verifica en este repositorio.
+Los resultados nuevos usan schema 11: cada check declara si fue local, estático, CI externo o reutilizado y las asignaciones conservan la selección de perfil que las autorizó. Las validaciones locales ejecutadas enlazan el ejecutor registrado y su versión/snapshot; no se inventan ejecutores para lectura, CI o reuso. El coordinador retiene con `--expected-schema 11`; los contratos 1–10 siguen legibles sin migración. Los archivos internos nuevos usan archive schema 8/layout 2; archives 1–7 son incompatibles con las operaciones actuales y permanecen intactos. Trace y packet continúan en schema/version 1. Una entrega full conserva IDs, perfil e historial; brief conserva la identidad y resume el cumplimiento de ejecución, sin nombre del perfil ni historial ni vínculo a ese historial. Sus enlaces a reviews anteriores identifican esas revisiones, cuando existen; el historial de perfil se consulta en el archivo original o en full. Si una identidad estructural contiene una ruta privada, la entrega falla sin crear el destino ni alterar el archivo. El visor independiente debe admitir final schema 11 y archive schema 8/layout 2; su compatibilidad no se verifica en este repositorio.
+
+### Propósito, evidencia y cobertura explícitos
+
+Declarar purpose en la solicitud antes de ejecutar cada check: qué comportamiento, condición o hipótesis verifica. Copiarlo sin cambios del recibo 2 al ledger y final 11; evidence conserva el resultado observado. No repetir escenario/impacto del hallazgo en el propósito. Evidencias de hallazgos se agrupan por check_id real con enlace a Validación y deltas independientes; las estáticas conservan check_id=null. Cobertura se muestra como sublista en informe y comentario.
+
+Completar las 27 dimensiones A01–D05/E01–E07 sin omisiones: estado, evidencia o motivo, materialidad y hallazgos. Una dimensión no aplicable tiene motivo explícito; una pendiente material conserva las reglas de evidencia insuficiente. El coordinador agrega las cinco áreas; las asignaciones no acreditan cobertura. Los workers mantienen packet 1 y usan IDs de dimensión en el texto existente. El ID de un check ligado a un recibo se asigna antes de capturarlo y no se renombra después.
+
+Para preparar comentarios, suministrar --check-publication-context (incluye purpose en final 11) y --coverage-publication-context con digest y todos los índices de flows. El draft 2 se verifica contra un render fresco exacto; conservar un draft 1 obsoleto y prepararlo de nuevo desde el resultado vigente, sin repetir checks. La clasificación editorial debe preservar el objetivo real y describir flujos de producto. Finales 1–10 y recibos 1 no se migran ni se reejecutan para completar propósito.

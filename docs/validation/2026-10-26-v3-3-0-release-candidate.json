@@ -1,0 +1,62 @@
+{
+  "runner_source": [
+    "from pathlib import Path",
+    "import argparse,json,os,re,subprocess,sys,tempfile,time,unittest",
+    "parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,default=Path.cwd());parser.add_argument('--output',type=Path,required=True);args=parser.parse_args()",
+    "root=args.root.resolve();out=args.output.resolve();os.chdir(out.parent)",
+    "sys.path[:0]=[str(root/'tests'),str(root/'scripts')]",
+    "tempfile.tempdir=str(out.parent);os.environ['TEMP']=str(out.parent);os.environ['TMP']=str(out.parent)",
+    "assert re.search(r'^  version: \"3.3.0\"$',(root/'SKILL.md').read_text(encoding='utf-8'),re.M)",
+    "assert '## 3.3.0 — 2026-10-26' in (root/'CHANGELOG.md').read_text(encoding='utf-8')",
+    "from ccr.cli.main import AREAS",
+    "for area in [None,*AREAS]:",
+    "    argv=[sys.executable,'-B',str(root/'scripts')]+([] if area is None else [area])+['--help']",
+    "    result=subprocess.run(argv,cwd=root,env={k:v for k,v in os.environ.items() if k.upper()!='PYTHONPATH'},capture_output=True,text=True)",
+    "    assert result.returncode==0,(area,result.stderr)",
+    "specs=['test_script_cli','test_script_layout','test_script_characterization','test_reference_layout','test_review_traceability_policy','test_review_recovery_followup.RecoveryFollowupTests.test_extracted_documented_archive8_commands_execute_end_to_end']",
+    "suite=unittest.defaultTestLoader.loadTestsFromNames(specs)",
+    "log=out.with_suffix('.log');start=time.monotonic()",
+    "with log.open('w',encoding='utf-8') as stream:",
+    "    result=unittest.TextTestRunner(stream=stream,verbosity=2).run(suite)",
+    "data=dict(runner_source=Path(__file__).read_text(encoding='utf-8').splitlines(),version='3.3.0',tests=result.testsRun,failures=len(result.failures),errors=len(result.errors),skipped=len(result.skipped),seconds=round(time.monotonic()-start,3),help_commands=1+len(AREAS),modules=specs,python=sys.version.split()[0],log=log.read_text(encoding='utf-8'))",
+    "out.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\\n',encoding='utf-8')",
+    "print(json.dumps({k:v for k,v in data.items() if k not in ('log','modules','runner_source')}))",
+    "if not result.wasSuccessful():print(data['log'][-10000:])",
+    "sys.exit(not result.wasSuccessful())"
+  ],
+  "version": "3.3.0",
+  "tests": 17,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "seconds": 16.36,
+  "help_commands": 13,
+  "modules": [
+    "test_script_cli",
+    "test_script_layout",
+    "test_script_characterization",
+    "test_reference_layout",
+    "test_review_traceability_policy",
+    "test_review_recovery_followup.RecoveryFollowupTests.test_extracted_documented_archive8_commands_execute_end_to_end"
+  ],
+  "python": "3.12.14",
+  "log": "Initial run retained under initial_attempt; aggregate 17 distinct cases passed, with the links case repeated after writing this evidence JSON.",
+  "initial_attempt": {
+    "tests": 17,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0,
+    "seconds": 16.36,
+    "log": "test_assess_reuse_reports_invalid_session_as_json (test_script_cli.ScriptCliTests.test_assess_reuse_reports_invalid_session_as_json) ... ok\ntest_checks_cli_reports_successful_capture_of_exit_seven (test_script_cli.ScriptCliTests.test_checks_cli_reports_successful_capture_of_exit_seven) ... ok\ntest_installed_copy_works_from_foreign_cwd (test_script_cli.ScriptCliTests.test_installed_copy_works_from_foreign_cwd) ... ok\ntest_root_forwards_the_suffix_without_requoting (test_script_cli.ScriptCliTests.test_root_forwards_the_suffix_without_requoting) ... ok\ntest_root_help_does_not_load_work_services (test_script_cli.ScriptCliTests.test_root_help_does_not_load_work_services) ... ok\ntest_cli_registry_has_the_twelve_supported_areas (test_script_layout.ScriptLayoutTests.test_cli_registry_has_the_twelve_supported_areas) ... ok\ntest_every_implementation_module_is_registered_in_the_index (test_script_layout.ScriptLayoutTests.test_every_implementation_module_is_registered_in_the_index) ... ok\ntest_legacy_script_entrypoints_are_gone (test_script_layout.ScriptLayoutTests.test_legacy_script_entrypoints_are_gone) ... ok\ntest_cli_inventory_matches_the_locked_base (test_script_characterization.ScriptCharacterizationTests.test_cli_inventory_matches_the_locked_base) ... ok\ntest_encoding_inventory_matches_original_bytes (test_script_characterization.ScriptCharacterizationTests.test_encoding_inventory_matches_original_bytes) ... ok\ntest_module_dependencies_resolves_local_imports_from_ast (test_script_characterization.ScriptCharacterizationTests.test_module_dependencies_resolves_local_imports_from_ast) ... ok\ntest_run_cli_executes_the_selected_area (test_script_characterization.ScriptCharacterizationTests.test_run_cli_executes_the_selected_area) ... ok\ntest_canonical_locations_and_local_links (test_reference_layout.ReferenceLayoutTests.test_canonical_locations_and_local_links) ... \n  test_canonical_locations_and_local_links (test_reference_layout.ReferenceLayoutTests.test_canonical_locations_and_local_links) (source=WindowsPath('docs/validation/2026-10-26-v3-3-0-release-validation.md'), destination='2026-10-26-v3-3-0-release-candidate.json') ... FAIL\ntest_dimension_ids_are_documented_in_their_area (test_review_traceability_policy.PolicyTests.test_dimension_ids_are_documented_in_their_area) ... ok\ntest_purpose_precedes_capture_and_bound_check_ids_are_stable (test_review_traceability_policy.PolicyTests.test_purpose_precedes_capture_and_bound_check_ids_are_stable) ... ok\ntest_workflow_requires_new_contract_and_keeps_packet1 (test_review_traceability_policy.PolicyTests.test_workflow_requires_new_contract_and_keeps_packet1) ... ok\ntest_extracted_documented_archive8_commands_execute_end_to_end (test_review_recovery_followup.RecoveryFollowupTests.test_extracted_documented_archive8_commands_execute_end_to_end) ... ok\n\n======================================================================\nFAIL: test_canonical_locations_and_local_links (test_reference_layout.ReferenceLayoutTests.test_canonical_locations_and_local_links) (source=WindowsPath('docs/validation/2026-10-26-v3-3-0-release-validation.md'), destination='2026-10-26-v3-3-0-release-candidate.json')\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\Developer.INSCORSOF2\\.agents\\skills\\comprehensive-code-review\\.worktrees\\explicit-dimensions-spec\\tests\\test_reference_layout.py\", line 36, in test_canonical_locations_and_local_links\n    self.assertTrue((source.parent / unquote(destination)).exists(), 'missing local link')\nAssertionError: False is not true : missing local link\n\n----------------------------------------------------------------------\nRan 17 tests in 16.358s\n\nFAILED (failures=1)\n"
+  },
+  "approved_head": "56b7234194e5f9845204eaf6eeb0c4341df0b478",
+  "runtime_python_files_unchanged": 91,
+  "link_recheck": {
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "exit_code": 0,
+    "log": "test_canonical_locations_and_local_links (test_reference_layout.ReferenceLayoutTests.test_canonical_locations_and_local_links) ... ok\n\n----------------------------------------------------------------------\nRan 1 test in 0.110s\n\nOK\n"
+  },
+  "scope": "17 distinct release preparation cases; only the initially missing evidence JSON link was rechecked after saving it. No new global suite. Runtime Python matches the approved PR HEAD; installation version expectation changes only."
+}

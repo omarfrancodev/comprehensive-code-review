@@ -1,19 +1,19 @@
 import copy
-import importlib.util
 from pathlib import Path
 import unittest
+
+from publication_fixtures import coverage_classification
 import json
 import subprocess
 import sys
 import tempfile
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts' / 'review_contract.py'
-sys.path.insert(0, str(MODULE_PATH.parent))
-spec = importlib.util.spec_from_file_location('review_contract', MODULE_PATH)
-contract = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(contract)
-import review_publication
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
+MODULE_PATH = Path(__file__).resolve().parents[1] / 'scripts'
+from script_test_support import contract_api
+contract = contract_api()
+from ccr.reporting import projections as review_publication
 
 
 def clean_record():
@@ -233,7 +233,7 @@ class RenderingTests(unittest.TestCase):
         record['checks'] = [{'id': 'C001', 'command': command, 'revision': 'head-456',
                              'status': 'passed', 'failure_kind': None, 'evidence': 'Consumer works',
                              'reused': False, 'reuse_reason': None, 'rerun_reason': None}]
-        self.assertNotIn('private-session', contract.render(record, audience='comment'))
+        self.assertNotIn('private-session', contract.render(record, audience='comment', coverage_publication_context=coverage_classification(record)))
         self.assertIn(command, contract.render(record, audience='user'))
 
     def test_reused_validation_discloses_original_execution_revision(self):
@@ -245,7 +245,7 @@ class RenderingTests(unittest.TestCase):
                    'checks': [{'id': 'C001', 'evidence': 'Consumer works',
                                'reuse_reason': 'Only description changed',
                                'rerun_reason': None, 'reference': None}]}
-        output = contract.render(record, audience='comment', check_publication_context=context)
+        output = contract.render(record, audience='comment', check_publication_context=context, coverage_publication_context=coverage_classification(record))
         self.assertIn('prior-head', output)
         self.assertIn('Only description changed', output)
 
@@ -261,7 +261,7 @@ class RenderingTests(unittest.TestCase):
         record['description'] = {'status': 'not_applicable', 'identity': None, 'details': ''}
         self.assertNotIn('**MR/PR:**', contract.render(record))
     def test_comment_includes_verified_responsible_description_and_version(self):
-        result = contract.render(clean_record(), audience='comment')
+        result = contract.render(clean_record(), audience='comment', coverage_publication_context=coverage_classification(clean_record()))
         self.assertIn('@ana', result)
         self.assertIn('head-456', result)
         self.assertIn('Descripción', result)
@@ -269,12 +269,12 @@ class RenderingTests(unittest.TestCase):
     def test_unknown_identity_never_turns_email_or_name_into_mention(self):
         record = clean_record()
         record['responsible'] = {'name': None, 'username': 'invented', 'verified': False, 'source': None}
-        result = contract.render(record, audience='comment')
+        result = contract.render(record, audience='comment', coverage_publication_context=coverage_classification(record))
         self.assertNotIn('@invented', result)
         self.assertIn('No identificado', result)
 
     def test_clean_comment_keeps_empty_findings_counts_and_omits_internal_mechanics(self):
-        result = contract.render(clean_record(), audience='comment')
+        result = contract.render(clean_record(), audience='comment', coverage_publication_context=coverage_classification(clean_record()))
         self.assertIn('### Hallazgos', result)
         self.assertIn('**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0', result)
         self.assertNotIn('balanced', result)
@@ -295,10 +295,10 @@ class RenderingTests(unittest.TestCase):
         record['findings'] = [finding(status='unresolved')]
         record['coverage']['limitations'] = [{'detail': 'Consumer requirement unknown', 'material': True}]
         record['verdict'] = 'insufficient_evidence'
-        from review_publication import publication_digest
+        from ccr.reporting.projections import publication_digest
         output = contract.render(record, audience='comment', publication_context={
             'source_sha256': publication_digest(record),
-            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]})
+            'limitations': [{'index': 0, 'kind': 'validation', 'public_summary': None}]}, coverage_publication_context=coverage_classification(record))
         self.assertNotIn('### Hallazgos confirmados', output)
         self.assertIn('### Incertidumbres', output)
 
@@ -306,7 +306,7 @@ class RenderingTests(unittest.TestCase):
         record = clean_record()
         record['findings'] = [finding(blocking=True)]
         with self.assertRaises(ValueError):
-            contract.render(record, audience='comment')
+            contract.render(record, audience='comment', coverage_publication_context=coverage_classification(record))
 
 
 class DeduplicationTests(unittest.TestCase):
@@ -336,7 +336,7 @@ class CLITests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='review-contract-') as directory:
             path = Path(directory) / 'record.json'
             path.write_text(json.dumps(clean_record()), encoding='utf-8')
-            command = [sys.executable, '-B', str(MODULE_PATH), 'validate', '--input', str(path)]
+            command = [sys.executable, '-B', str(MODULE_PATH), 'contract', 'validate', '--input', str(path)]
             result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(result.stdout)['valid'])
@@ -344,7 +344,10 @@ class CLITests(unittest.TestCase):
             record = clean_record()
             record['findings'] = [item]
             path.write_text(json.dumps(record), encoding='utf-8')
-            command[3] = 'render-comment'
+            command[4] = 'render-comment'
+            coverage_path = Path(directory) / 'coverage.json'
+            coverage_path.write_text(json.dumps(coverage_classification(record)), encoding='utf-8')
+            command.extend(['--coverage-publication-context', str(coverage_path)])
             result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('🟡 P2', result.stdout)
@@ -355,7 +358,7 @@ class CLITests(unittest.TestCase):
             record = clean_record()
             record['findings'] = [finding(blocking=True)]
             path.write_text(json.dumps(record), encoding='utf-8')
-            result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'render-comment',
+            result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'contract', 'render-comment',
                                      '--input', str(path)], capture_output=True, text=True, encoding='utf-8')
             self.assertEqual(result.returncode, 1)
             self.assertEqual(result.stdout, '')

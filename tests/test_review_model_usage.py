@@ -4,11 +4,13 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+
+from publication_fixtures import coverage_classification
 from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
-import review_model_usage as models
+from ccr.contracts import model_usage as models
 
 
 REVIEW_ID = 'CR-' + 'a' * 20
@@ -137,11 +139,12 @@ class ModelUsageTests(unittest.TestCase):
                 too_large['entries'][0].items() if key not in {'id', 'status'}})
 
     def test_sidecar_is_private_and_never_added_to_public_comment(self):
-        import review_contract
+        from script_test_support import contract_api
+        review_contract = contract_api()
         from publication_fixtures import check_classification, publication_record
         record = publication_record()
         comment = review_contract.render(record, audience='comment',
-                                         check_publication_context=check_classification(record))
+                                         check_publication_context=check_classification(record), coverage_publication_context=coverage_classification(record))
         self.assertNotIn('model-usage', comment)
         self.assertNotIn('configured_model', comment)
 

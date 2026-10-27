@@ -4,16 +4,19 @@ import importlib
 import inspect
 import unittest
 
+from publication_fixtures import coverage_classification
+
 from recovery_fixtures import record10, selection, selection_input
 from test_review_contract import contract
 from test_review_traceability_contract import check
-from review_check_provenance import validate_check_sources
+from ccr.contracts.provenance import validate_check_sources
 from recovery_fixtures import context10, source_events
-from review_execution import validate_execution_sources
-from review_publication import public_limitations
+from ccr.contracts.execution import validate_execution_sources
+from ccr.contracts import execution as execution_contract
+from ccr.reporting.projections import public_limitations
 
 
-profiles = importlib.import_module('review_profiles')
+profiles = importlib.import_module('ccr.workflow.profiles')
 
 
 class ReviewProfileTests(unittest.TestCase):
@@ -29,7 +32,7 @@ class ReviewProfileTests(unittest.TestCase):
         value['profile_reason'] = 'User explicitly narrowed the requested profile'
 
         report = contract.render(value, audience='user')
-        comment = contract.render(value, audience='comment')
+        comment = contract.render(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
         self.assertIn('**Perfil inicial:** profundo', report)
         self.assertIn('**Perfil efectivo:** standard (estándar)', report)
@@ -111,10 +114,10 @@ class ReviewProfileTests(unittest.TestCase):
         for row in execution['plan']:
             row['selection_id'] = initial['id']
         self.assertEqual(contract.validate(value), [])
-        self.assertEqual(profiles.validate_profile_execution(value), [])
+        self.assertEqual(execution_contract.validate_profile_execution(value), [])
         execution['plan'] = [row for row in execution['plan'] if row['role'] != 'verification']
         execution['results'] = [row for row in execution['results'] if row['assignment_id'] != 'V1']
-        errors = profiles.validate_profile_execution(value)
+        errors = execution_contract.validate_profile_execution(value)
         self.assertTrue(any('verification obligation' in error for error in errors), errors)
 
     def test_upgrade_reuses_prior_independent_discovery(self):
@@ -133,7 +136,7 @@ class ReviewProfileTests(unittest.TestCase):
             execution['results'].append(dict(assignment_id=identifier, reviewer_context=identifier,
                 provider_id=None, reference=f'evidence/results.json#{identifier}'))
         self.assertEqual(contract.validate(value), [])
-        self.assertEqual(profiles.validate_profile_execution(value), [])
+        self.assertEqual(execution_contract.validate_profile_execution(value), [])
 
     def test_supersession_cannot_cancel_project_gate(self):
         value = record10('deep', 'automatic')
@@ -146,7 +149,7 @@ class ReviewProfileTests(unittest.TestCase):
         gate = copy.deepcopy(execution['plan'][0])
         gate.update(id='G1', role='project_gate', selection_id='S001', superseded_by='S002', required=False)
         execution['plan'].append(gate)
-        errors = profiles.validate_profile_execution(value)
+        errors = execution_contract.validate_profile_execution(value)
         self.assertTrue(any('project_gate' in error and 'supersed' in error for error in errors), errors)
 
     def test_prior_coordinator_pass_is_not_new_independent_discovery(self):
@@ -154,7 +157,7 @@ class ReviewProfileTests(unittest.TestCase):
         execution = value['coverage']['execution']
         execution['plan'][0]['independent'] = False
         execution['results'][0]['reviewer_context'] = 'coordinator'
-        errors = profiles.validate_profile_execution(value)
+        errors = execution_contract.validate_profile_execution(value)
         self.assertTrue(any('independent discovery' in error for error in errors), errors)
 
     def test_schema10_does_not_relax_local_check_bindings(self):
@@ -226,7 +229,7 @@ class ReviewProfileTests(unittest.TestCase):
 
     def test_downgrade_omits_started_assignments_from_final_and_context(self):
         self.assertIn('assignment_registry', inspect.signature(
-            profiles.validate_profile_execution).parameters,
+            execution_contract.validate_profile_execution).parameters,
             'profile validation must compare the durable assignment registry')
         value = record10('focused')
         initial = selection('deep')
@@ -244,7 +247,7 @@ class ReviewProfileTests(unittest.TestCase):
         registry = copy.deepcopy(record10('deep')['coverage']['execution']['plan'])
         started = [{'sequence': 3, 'kind': 'discovery', 'status': 'started',
                     'evidence': [registry[0]['reference']]}]
-        errors = profiles.validate_profile_execution(value, started, assignment_registry=registry)
+        errors = execution_contract.validate_profile_execution(value, started, assignment_registry=registry)
         self.assertTrue(any('started/completed assignment' in error and 'D1' in error for error in errors), errors)
 
     def test_focused_to_deep_preserves_coordinator_without_counting_it_as_fresh(self):
@@ -317,7 +320,7 @@ class ReviewProfileTests(unittest.TestCase):
 
     def test_malformed_trace_fields_return_validation_errors(self):
         value = record10('deep')
-        errors = profiles.validate_profile_execution(
+        errors = execution_contract.validate_profile_execution(
             value, [{'kind': [], 'status': [], 'evidence': None, 'sequence': []}])
         self.assertTrue(errors)
         context = context10(value)
@@ -327,7 +330,7 @@ class ReviewProfileTests(unittest.TestCase):
 
     def test_acquired_automatic_extended_minimum_survives_explicit_selection(self):
         self.assertIn('assignment_registry', inspect.signature(
-            profiles.validate_profile_execution).parameters,
+            execution_contract.validate_profile_execution).parameters,
             'profile validation must calculate obligations from acquired selections')
         value = record10('extended', 'automatic')
         execution = value['coverage']['execution']
@@ -347,7 +350,7 @@ class ReviewProfileTests(unittest.TestCase):
             {'sequence': 4, 'event_id': 'E000002', 'kind': 'profile', 'status': 'selected',
              'evidence': [execution['profile_history'][1]['reference']]},
         ]
-        errors = profiles.validate_profile_execution(value, trace, assignment_registry=registry)
+        errors = execution_contract.validate_profile_execution(value, trace, assignment_registry=registry)
         self.assertTrue(any('at least 4 active discovery assignments' in error for error in errors), errors)
 
     def test_generic_start_is_not_fabricated_as_assignment(self):

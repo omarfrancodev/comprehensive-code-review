@@ -1,6 +1,6 @@
 # Profile selection and closure
 
-Profiles describe review strategies: focused for demonstrated bounded scope, standard for one discovery with conditional independent verification, deep for independent perspectives on material mechanisms, and extended for further necessary distinct assignments. Request aliases economy → focused and balanced → standard remain supported and fixed when explicit; record any normalization in the existing profile_reason/context. New final records use schema 10 canonical names; historical records keep their original names, schemas and rendering. Renaming changes no eligibility, passes, limits or verdict rules.
+Profiles describe review strategies: focused for demonstrated bounded scope, standard for one discovery with conditional independent verification, deep for independent perspectives on material mechanisms, and extended for further necessary distinct assignments. Request aliases economy → focused and balanced → standard remain supported and fixed when explicit; record any normalization in the existing profile_reason/context. New final records use schema 11 canonical names; historical records keep their original names, schemas and rendering. Renaming changes no eligibility, passes, limits or verdict rules.
 
 Select once during shared scope/context discovery, before delegating. Reuse already collected facts; no separate selection agent, full audit, scoring system or measurement probe. Record selection source (explicit/automatic), effective profile and concrete basis in the existing profile_reason/context. Line count, urgency, model, available slots, technology names and ABCDE letters do not determine depth.
 
@@ -61,7 +61,7 @@ Close when affected flows are covered and candidates/questions are decided, or w
 
 ## Verdict decision
 
-Priority expresses consequence; blocking depends on affected requirements and verified policy. Preexisting defects block only for a demonstrated scope-relevant consequence/gate; no baseline means unknown origin. Precedence:
+Priority expresses consequence under [priority calibration](../contracts/priority-calibration.md); blocking depends on affected requirements and verified policy. A serious preexisting P1 can be nonblocking for this MR when no demonstrated scope-relevant obligation/gate requires correction: origin changes responsibility, not the evidenced consequence. Preexisting defects block only for a demonstrated scope-relevant consequence/gate; no baseline means unknown origin. Precedence:
 
 1. Confirmed blocker: not_approvable; also disclose uncertainties.
 2. No blocker, but stale version, inadequate coverage or material unresolved limitation: insufficient_evidence.

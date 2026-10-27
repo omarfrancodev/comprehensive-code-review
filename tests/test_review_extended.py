@@ -7,6 +7,8 @@ import sys
 import tempfile
 import unittest
 
+from publication_fixtures import coverage_classification
+
 import test_review_artifacts as archive_tests
 from test_review_areas import area_record
 from test_review_contract import MODULE_PATH, clean_record, contract
@@ -69,11 +71,11 @@ class ExtendedContractTests(unittest.TestCase):
                                              'material': True}]
         value['verdict'] = 'insufficient_evidence'
         self.assertEqual(contract.validate(value), [])
-        from review_publication import publication_digest
+        from ccr.reporting.projections import publication_digest
         output = contract.render(value, 'comment', publication_context={
             'source_sha256': publication_digest(value),
             'limitations': [{'index': 0, 'kind': 'execution',
-                             'public_summary': 'Required invariant verification remains incomplete'}]})
+                             'public_summary': 'Required invariant verification remains incomplete'}]}, coverage_publication_context=coverage_classification(value))
         self.assertIn('Required invariant verification remains incomplete', output)
         self.assertNotIn('Independent sessions unavailable', output)
         self.assertIn('EVIDENCIA INSUFICIENTE', output)
@@ -83,7 +85,7 @@ class ExtendedContractTests(unittest.TestCase):
     def test_extended_user_label_and_public_projection_preserve_presentation(self):
         value = extended_record()
         before = copy.deepcopy(value)
-        user, comment = contract.render(value), contract.render(value, 'comment')
+        user, comment = contract.render(value), contract.render(value, 'comment', coverage_publication_context=coverage_classification(value))
         self.assertIn('- **Perfil:** extendido', user)
         self.assertIn('### Matriz ABCDE', user)
         self.assertNotIn('Matriz ABCDE', comment)
@@ -98,8 +100,11 @@ class ExtendedContractTests(unittest.TestCase):
             path.write_text(json.dumps(extended_record()), encoding='utf-8')
             for command in ('validate', 'render-user', 'render-comment'):
                 with self.subTest(command=command):
-                    result = subprocess.run([sys.executable, '-B', str(MODULE_PATH),
-                                             command, '--input', str(path)],
+                    coverage_path = Path(directory) / 'coverage.json'
+                    coverage_path.write_text(json.dumps(coverage_classification(extended_record())), encoding='utf-8')
+                    extra = ['--coverage-publication-context', str(coverage_path)] if command == 'render-comment' else []
+                    result = subprocess.run([sys.executable, '-B', str(MODULE_PATH), 'contract',
+                                             command, '--input', str(path)] + extra,
                                             capture_output=True, text=True, encoding='utf-8')
                     self.assertEqual(result.returncode, 0, result.stderr)
                     if command == 'validate':

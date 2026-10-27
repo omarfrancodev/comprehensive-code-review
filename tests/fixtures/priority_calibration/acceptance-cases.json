@@ -1,0 +1,133 @@
+[
+  {
+    "id": "PC21",
+    "obligation": "El servicio sintético Faro conserva el control de su cuenta administradora raíz dentro del proceso de aprovisionamiento; las rutas públicas no pueden emitir credenciales de esa cuenta.",
+    "trigger": "Activar la configuración de aprovisionamiento y enviar POST /bootstrap/credential sin cabeceras de identidad desde la red pública.",
+    "observed_flow": "bootstrap_routes.py registra esa ruta antes del middleware de sesión. emit_credential() carga root_account y firma un token con role=administrator. La ruta devuelve el token en el cuerpo. El verificador de las rutas administrativas acepta esa firma y ese rol sin otra comprobación.",
+    "consequence": "El solicitante puede usar el token devuelto para sustituir las claves de todos los espacios, borrar sus almacenes y revocar el acceso de los operadores. La capacidad se obtiene en la primera petición tras activar la configuración.",
+    "affected_scope": "La única cuenta raíz controla los almacenes y las claves de todos los espacios de Faro, incluidos los datos necesarios para operar el servicio.",
+    "recovery": "Desactivar la ruta evita nuevas emisiones pero no invalida los tokens emitidos; se requiere retirar la clave de firma y restablecer las credenciales de los espacios. Las acciones de un portador del token ya pueden ejecutarse mientras se realiza esa contención.",
+    "controls": "El despliegue publica /bootstrap/* en el mismo ingress que las rutas públicas; no aplica ACL, secreto inicial, confirmación ni limitación de operaciones a esa ruta. El único guard administrativo comprueba la firma y role.",
+    "proof": [
+      "Una prueba de integración con ingress y configuración de activación devuelve un token a una petición sin identidad.",
+      "Con ese token, la misma prueba sustituye una clave de espacio y revoca la sesión del operador; ambos cambios quedan persistidos.",
+      "La inspección de los handlers de borrado y claves muestra el mismo guard de firma y role, y la cuenta raíz tiene acceso a todos los espacios."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC22",
+    "obligation": "El servicio sintético Brújula debe seguir aceptando y resolviendo solicitudes de orientación al activar una tabla de rutas válida.",
+    "trigger": "Activar la tabla routes-v7.json distribuida con el cambio.",
+    "observed_flow": "El cargador reemplaza de forma síncrona la tabla compartida de todos los workers. La nueva tabla dirige /orientation y /orientation/status a un destino que siempre devuelve 503. No conserva una ruta al motor de orientación ni un fallback.",
+    "consequence": "Desde el intercambio de tabla, ninguna solicitud nueva obtiene una orientación ni puede consultar su estado en ninguna región. Los consumidores tampoco tienen otra ruta al motor; el servicio esencial queda interrumpido hasta intervenir la tabla activa.",
+    "affected_scope": "Todas las regiones y todos los consumidores soportados de Brújula usan los dos endpoints y el mismo destino de la tabla activada.",
+    "recovery": "Un operador puede restaurar routes-v6.json mediante rollback manual; el procedimiento tarda al menos doce minutos. El rollback recupera solicitudes posteriores, pero no impide la interrupción que comienza al activar v7.",
+    "controls": "La activación no tiene canary, comprobación previa de destino ni rollback automático. El ingress y la tabla sustituyen simultáneamente el destino en todos los workers.",
+    "proof": [
+      "La ejecución en el entorno de ensayo con la configuración completa cambia de respuestas 200 a 503 para ambos endpoints inmediatamente después de activar v7.",
+      "La inspección del cargador confirma un único intercambio global y ausencia de validación o fallback; la tabla solo contiene el destino que devuelve 503.",
+      "La prueba del procedimiento de rollback restablece las respuestas 200 después de doce minutos, y durante ese intervalo todas las peticiones ensayadas reciben 503."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC23",
+    "obligation": "El sistema sintético Nudo debe conservar cada asignación de material por pedido al recalcular un lote de fabricación; el recálculo es la función principal y no puede cambiar la unidad de las cantidades persistidas.",
+    "trigger": "Recalcular un lote válido que incluye cantidades expresadas en cajas, cada una de diez piezas.",
+    "observed_flow": "recalculate_batch() transforma cajas a piezas para resolver la distribución y después persiste el número de piezas en la columna quantity_boxes sin dividir por diez. commit_batch() confirma todas las asignaciones del lote y el planificador las consume como cajas.",
+    "consequence": "Las asignaciones persistidas quedan multiplicadas por diez y la planificación posterior reserva material y genera órdenes de fabricación con esas cantidades. El lote ya no puede ejecutar correctamente su distribución de pedidos sin reconstruir las asignaciones.",
+    "affected_scope": "Todas las asignaciones en cajas de un lote de hasta 400 pedidos; otros lotes no se escriben en esta transacción.",
+    "recovery": "Se puede reconstruir manualmente el lote a partir de los pedidos originales, que permanecen intactos, y retirar las órdenes emitidas antes de replanificar. No existe reparación automática de las asignaciones ya confirmadas.",
+    "controls": "La transacción evita escrituras parciales, pero acepta las cantidades multiplicadas porque siguen siendo positivas. La pantalla de confirmación muestra solo el identificador del lote; no comprueba unidades ni exige revisión de las nuevas cantidades.",
+    "proof": [
+      "Un ensayo con dos pedidos de tres y cuatro cajas persiste 30 y 40 en quantity_boxes y el planificador reserva 300 y 400 piezas.",
+      "La consulta posterior al commit confirma esos valores y las órdenes generadas; los pedidos originales aún contienen tres y cuatro cajas.",
+      "El predicado del UPDATE limita las escrituras al batch_id recibido y no afecta otros lotes."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC24",
+    "obligation": "El editor sintético Pliego debe conservar el original de un expediente al convertirlo a su formato editable hasta que la copia convertida se haya guardado correctamente.",
+    "trigger": "Convertir un expediente admitido mientras el convertidor remoto responde con un timeout, una condición de fallo soportada por el cliente.",
+    "observed_flow": "convert_original() lee el archivo original, elimina su objeto del almacén y luego llama al convertidor. Ante timeout, la excepción abandona el flujo antes de guardar la copia convertida. El buffer local se libera al finalizar la petición y no se almacena en otro lugar.",
+    "consequence": "Se pierde el único original de ese expediente y no se produce una copia editable. El usuario pierde las páginas y anotaciones que necesita para continuar el expediente.",
+    "affected_scope": "El expediente seleccionado, que puede contener cientos de páginas y anotaciones; la petición no enumera ni elimina otros expedientes.",
+    "recovery": "El almacén de originales no tiene versionado ni copia de seguridad; una nueva petición no puede reconstruir el archivo. El usuario solo puede recomponerlo con fuentes externas si aún las conserva.",
+    "controls": "El cliente permite timeout y reintento, pero el reintento busca el original por su clave ya eliminada. El borrado precede a la conversión y no participa en una transacción con la escritura de destino.",
+    "proof": [
+      "La prueba con el adaptador de conversión configurado para timeout registra delete(original_key) antes de la llamada fallida.",
+      "Después de la petición, get(original_key) y get(converted_key) devuelven ausencia; una segunda petición falla por original inexistente.",
+      "La configuración del almacén de ensayo coincide con la configuración distribuida: versionado desactivado y ninguna tarea de respaldo de originales."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC25",
+    "obligation": "La opción de exportar etiquetas de la aplicación sintética Vitrina debe incluir las doce etiquetas seleccionadas y anunciar un fallo si no puede completar el archivo.",
+    "trigger": "Exportar doce etiquetas cuando la primera respuesta paginada contiene ocho y anuncia una segunda página de cuatro.",
+    "observed_flow": "export_labels() escribe la primera página en el CSV y devuelve éxito sin seguir next_cursor. La descarga contiene ocho filas y la aplicación muestra que exportó la selección completa.",
+    "consequence": "El CSV omite cuatro etiquetas y debe regenerarse o completarse antes de imprimirlas. La selección y las doce etiquetas del catálogo permanecen disponibles sin cambios.",
+    "affected_scope": "La descarga solicitada de hasta doce etiquetas en esta opción auxiliar de impresión; el catálogo y los flujos de inventario no consumen el archivo exportado.",
+    "recovery": "El usuario puede exportar las cuatro etiquetas restantes en una segunda selección y unir ambos archivos; el ensayo de esa alternativa conserva todas las filas y sus valores.",
+    "controls": "La API conserva todas las etiquetas y permite exportar selecciones de ocho o menos; no se elimina ni actualiza ninguna etiqueta. La interfaz no avisa de que la primera descarga está incompleta.",
+    "proof": [
+      "La prueba de API obtiene ocho etiquetas y next_cursor en la primera página, y cuatro etiquetas distintas en la segunda.",
+      "El ensayo de la exportación de doce genera ocho filas y un mensaje de éxito; las doce etiquetas siguen presentes al consultar el catálogo.",
+      "Dos exportaciones de ocho y cuatro etiquetas producen las doce filas esperadas sin diferencias de valores."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC26",
+    "obligation": "La opción auxiliar de importar una paleta en el editor sintético Mosaico admite archivos palette-1.json y palette-2.json; el contrato publicado conserva compatibilidad con ambas versiones.",
+    "trigger": "Importar un archivo palette-1.json válido con cuatro colores hexadecimales.",
+    "observed_flow": "load_palette() accede directamente a document.colors.items, una estructura de la versión 2. La versión 1 contiene document.colors como lista. El acceso falla y la interfaz muestra un error genérico sin agregar los colores.",
+    "consequence": "La importación de una paleta de versión 1 no funciona y el usuario tiene que introducir los cuatro colores manualmente o convertir el archivo a la estructura de versión 2. El documento que estaba editando conserva su contenido y puede guardarse.",
+    "affected_scope": "La opción de importar paletas de versión 1; el dibujo, el guardado y la importación de paletas de versión 2 siguen disponibles.",
+    "recovery": "La introducción manual o la conversión local a versión 2 agrega los mismos cuatro colores; el archivo original se mantiene intacto para volver a intentarlo.",
+    "controls": "La importación construye una paleta temporal y solo la aplica tras terminar, de modo que el fallo no cambia la paleta actual. El selector de archivos sigue admitiendo ambas versiones y no existe aviso de retirada de compatibilidad.",
+    "proof": [
+      "El fixture de versión 1 satisface el esquema publicado y el loader falla en el acceso a items antes de modificar el documento.",
+      "El mismo conjunto de cuatro colores en versión 2 se importa correctamente.",
+      "El ensayo posterior al error guarda el documento sin diferencias y agrega manualmente los cuatro valores esperados."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC27",
+    "obligation": "La ayuda del panel sintético Lienzo debe describir el nombre actual de la opción de mostrar cuadrícula, que en el menú se llama Cuadrícula.",
+    "trigger": "Abrir la sección de ayuda sobre mostrar la cuadrícula.",
+    "observed_flow": "La ayuda indica que debe elegirse Rejilla en el menú Ver. En ese menú, la única opción de superposición se llama Cuadrícula; su acción y su atajo se registran correctamente y coinciden con el icono de la ayuda.",
+    "consequence": "El texto utiliza un nombre distinto al visible y puede hacer que el usuario tarde en identificar la opción. Mostrar y ocultar la cuadrícula funciona, y la discrepancia no modifica el documento ni el resultado de las acciones.",
+    "affected_scope": "Una frase de ayuda de la opción de cuadrícula; los rótulos del menú, el atajo y los mensajes de estado usan Cuadrícula.",
+    "recovery": "El usuario puede elegir la única opción de superposición del menú o usar el atajo que la propia ayuda muestra correctamente; ambas vías producen el mismo estado.",
+    "controls": "El texto no se usa como identificador de acción ni como valor enviado a otra capa. La ayuda muestra un icono que coincide con la opción y el atajo correcto.",
+    "proof": [
+      "La comparación de help_grid.md con el registro de menú muestra Rejilla en la frase y Cuadrícula en el rótulo.",
+      "Los ensayos del menú y del atajo activan y desactivan la misma cuadrícula y no generan modificaciones del documento.",
+      "La búsqueda de consumidores del texto de ayuda encuentra únicamente el renderizador de contenido informativo."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC28",
+    "obligation": "El catálogo sintético Atlas solo debe permitir que el administrador de una colección ejecute su sustitución completa; los lectores deben quedar impedidos de ejecutar esa operación.",
+    "trigger": "Un lector intenta enviar PUT /collections/{id}/replace con una colección que puede consultar pero que no administra.",
+    "observed_flow": "El handler replace_collection() sustituye la colección sin verificar el rol. El manifiesto de despliegue declara que /collections/* pasa antes por el filtro externo collection_access. El código y la configuración efectiva de ese filtro no están disponibles en el material inspeccionado.",
+    "consequence": "Si el filtro permite al lector continuar, el handler sustituiría la colección; si exige administración para esta ruta y método, la petición se detendría antes de la escritura. No hay una ejecución de la petición a través del filtro desplegado.",
+    "affected_scope": "La colección indicada por la petición, condicionada a que el lector pueda alcanzar el handler de sustitución a través del filtro externo.",
+    "recovery": "El handler conserva una versión anterior de la colección y el administrador puede restaurarla; esa ruta solo sería necesaria si la petición de sustitución llega a ejecutarse.",
+    "controls": "Existe un filtro externo declarado para el prefijo, pero no se conoce si distingue lectura de sustitución ni qué política aplica a PUT /replace. No se ha inspeccionado una ruta que omita ese filtro.",
+    "proof": [
+      "La inspección del handler confirma ausencia de comprobación de rol y escritura al recibir una petición ya enrutada.",
+      "El manifiesto de despliegue conecta el prefijo /collections/* con collection_access antes del proceso que contiene el handler.",
+      "La prueba unitaria que invoca directamente el handler no incluye el filtro y por eso no determina si un lector puede activar la escritura en el despliegue soportado."
+    ],
+    "unknowns": [
+      "La política efectiva de collection_access para el rol lector, el método PUT y la ruta de sustitución.",
+      "El resultado de una petición de lector que atraviese el filtro con la configuración desplegada."
+    ]
+  }
+]

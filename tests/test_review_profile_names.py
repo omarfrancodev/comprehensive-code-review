@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from test_review_contract import contract, finding, MODULE_PATH
+from ccr.workflow.profiles import normalize_profile
 import test_review_delivery as delivery_tests
 from test_review_extended import extended_record
 from test_review_traceability_contract import record6
@@ -27,10 +28,10 @@ class ProfileNameTests(unittest.TestCase):
         for requested, canonical in [('economy', 'focused'), ('balanced', 'standard'),
                                      ('focused', 'focused'), ('standard', 'standard'),
                                      ('deep', 'deep'), ('extended', 'extended')]:
-            self.assertEqual(contract.normalize_profile(requested), canonical)
+            self.assertEqual(normalize_profile(requested), canonical)
         for invalid in ('auto', 'multi', 'economic', '', None, [], {}):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                contract.normalize_profile(invalid)
+                normalize_profile(invalid)
 
     def test_schema7_accepts_only_new_canonical_names_without_mutation(self):
         for profile in ('focused', 'standard', 'deep', 'extended'):
@@ -50,7 +51,7 @@ class ProfileNameTests(unittest.TestCase):
             self.assertEqual(contract.validate(value), [])
             self.assertIn('- **Perfil:** ' + label, contract.render(value))
             self.assertEqual(value, before)
-            value['profile'] = contract.normalize_profile(profile)
+            value['profile'] = normalize_profile(profile)
             self.assertIn('profile: invalid value', contract.validate(value))
         for profile in ('focused', 'standard'):
             value = extended_record()
@@ -98,13 +99,17 @@ class ProfileNameTests(unittest.TestCase):
             self.assertTrue(any(field in error for error in contract.validate(invalid)))
 
     def test_schema7_cli_and_public_projection(self):
+        from publication_fixtures import coverage_classification
         with tempfile.TemporaryDirectory(prefix='ccr-names-') as directory:
             path = Path(directory) / 'review.json'
             value = record7('focused')
             path.write_text(json.dumps(value), encoding='utf-8')
             for command in ('validate', 'render-user', 'render-comment'):
-                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH),
-                                         command, '--input', str(path)], capture_output=True, text=True, encoding='utf-8')
+                coverage_path = Path(directory) / 'coverage.json'
+                coverage_path.write_text(json.dumps(coverage_classification(value)), encoding='utf-8')
+                extra = ['--coverage-publication-context', str(coverage_path)] if command == 'render-comment' else []
+                result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract',
+                                         command, '--input', str(path)] + extra, capture_output=True, text=True, encoding='utf-8')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if command == 'render-user':
                     self.assertIn('focused', result.stdout)

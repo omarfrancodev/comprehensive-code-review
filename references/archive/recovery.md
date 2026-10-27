@@ -6,9 +6,9 @@ Current runs use logical selector folders and UTC/version run names from [artifa
 
 Lookup may list a bounded legacy header under the matching repository and old scope prefix as `historical_source/unsupported_layout`, with actions to preserve, port a verified report for consultation or start a fresh review. It reads only the bounded manifest header; it does not inspect old resource claims, pending transactions or workspaces and never offers resume/restart/recover for that source. Explicit inspection of such a path returns the same diagnostic. The old source stays unchanged. Historical consultation packages are separate from native candidate selection.
 
-The default lookup only lists candidates; it does not select or show one. If any prior run matches the same logical scope, ask whether the user wants a new review or to see the latest result unless the request already explicitly says “rerun” or “show last/latest.” For an explicit latest request, provide `--current-inputs` and add `--select latest`. This exhaustively scans at most 10,000 candidates in the exact logical group, selects only a complete native run with verified report hashes and a unique metadata timestamp, then rechecks that candidate before returning it. A tie, unverifiable candidate or scan limit returns no selection. Changed or unknown inputs remain visible in `applicability`/`differences`; present a changed result as historical evidence, never as current. Do not use name order, mtime, run ID or report dates. Latest selection does not dispatch, show or create a run by itself.
+The default lookup only lists candidates; it does not select or show one. For an ordinary MR/PR review request, evaluate [effective changes and consumed context](../workflow/reuse.md) before offering reuse. A changed or unprovable scope starts a new review automatically; only `offer_choice` asks whether to repeat or consult. For other modes, keep exact-input comparison and apply the same changed/unknown vs. applicable routing. Existence of a run and commit identities alone are insufficient. For an explicit latest request, provide `--current-inputs` and add `--select latest`. This exhaustively scans at most 10,000 candidates in the exact logical group, selects only a complete native run with verified report hashes and a unique metadata timestamp, then rechecks that candidate before returning it. A tie, unverifiable candidate or scan limit returns no selection. Changed or unknown inputs remain visible in `applicability`/`differences`; present a changed result as historical evidence, never as current. Do not use name order, mtime, run ID or report dates. Latest selection does not dispatch, show or create a run by itself.
 
-Use `--include-history` only when explicitly listing consultation packages. It exposes verified `historical_port` entries as `show_history` candidates; they are excluded from `--select latest` and cannot be resumed or used as a current review. To inspect/show one, use `scripts/review_history.py inspect|show`; its report includes a separate historical warning and the original report body remains unchanged.
+Use `--include-history` only when explicitly listing consultation packages. It exposes verified `historical_port` entries as `show_history` candidates; they are excluded from `--select latest` and cannot be resumed or used as a current review. To inspect/show one, use `scripts history inspect|show`; its report includes a separate historical warning and the original report body remains unchanged.
 
 Load this reference only when a request may match an earlier review, when an archive is incomplete, or when a user asks to resume/recover a review. Lookup is read-only and local. It does not fetch remote data, dispatch agents, publish, modify, repair or clean resources.
 
@@ -19,7 +19,7 @@ Registration, transfer, workspace artifact registration and workspace cleanup co
 Pin the repository and the exact requested scope first. When the same MR/PR or stable local target may already have a run, call the bounded lookup before creating a new archive. For unrelated new scopes, skip lookup. Each project is queried separately; never scan the global archive or another repository to infer a match.
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py lookup \
+python /absolute/skill/scripts artifacts lookup \
   --repo /absolute/project \
   --scope-file /absolute/owned/session/scope.json \
   --current-inputs /absolute/owned/session/current-inputs.json \
@@ -29,7 +29,7 @@ python /absolute/skill/scripts/review_artifacts.py lookup \
 When the user explicitly asks for the latest prior result, use the same exact request inputs with:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py lookup \
+python /absolute/skill/scripts artifacts lookup \
   --repo /absolute/project \
   --scope-file /absolute/owned/session/scope.json \
   --current-inputs /absolute/owned/session/current-inputs.json \
@@ -84,7 +84,7 @@ Showing a report is read-only: inspect the selected run, verify it, and display 
 Use the exact returned path. Inspection has no write side effects:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py inspect \
+python /absolute/skill/scripts artifacts inspect \
   --run-dir /absolute/archive/repository/scope/date-run-id \
   --current-inputs /absolute/owned/session/current-inputs.json
 ```
@@ -94,11 +94,11 @@ python /absolute/skill/scripts/review_artifacts.py inspect \
 Mutation commands require structured controller/authority/current-input files and an explicit user direction when the operation needs continuation authority:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py pause --help
-python /absolute/skill/scripts/review_artifacts.py block --help
-python /absolute/skill/scripts/review_artifacts.py resume --help
-python /absolute/skill/scripts/review_artifacts.py recover --help
-python /absolute/skill/scripts/review_artifacts.py restart --help
+python /absolute/skill/scripts artifacts pause --help
+python /absolute/skill/scripts artifacts block --help
+python /absolute/skill/scripts artifacts resume --help
+python /absolute/skill/scripts artifacts recover --help
+python /absolute/skill/scripts artifacts restart --help
 ```
 
 `pause` records an explicit user-directed stop; `block` records a failure actually observed by the harness. `resume` is limited to an intact archive-8 run whose exact scope and source hashes still match, and requires authority to continue a paused/blocked run or take over a different controller. It preserves old worker/executor events; it does not call them new independent work. `recover` consumes only an exact recorded helper transaction and never dispatches.
@@ -128,7 +128,7 @@ For compatibility, integrity.status `recoverable` means a preserved helper-owned
 Restart resolves the harness from the current invocation. It never copies the source run's `harness_id` as if that ID had been declared for the new session. Without a current identity declaration or environment value, use `--harness unknown` and let the helper retain an unknown canonical ID. When a current canonical ID and its provenance are observed, provide them explicitly:
 
 ```text
-python /absolute/skill/scripts/review_artifacts.py restart \
+python /absolute/skill/scripts artifacts restart \
   --run-dir /absolute/archive/exact-source-run \
   --profile-input /absolute/owned/session/profile-selection.json \
   --controller-input /absolute/owned/session/controller.json \
@@ -145,7 +145,7 @@ Before closing any run, retain and validate the final result/evidence, then obse
 
 ### Missing resources, superseded cleanup and explicit abandonment
 
-A claimed session absent without a release receipt is `missing_unknown`. Inspect, recover and resume use the same classifier: they never announce continuation for that state. Start an authorized linked restart without transferring the missing path. If a changed-scope restart leaves present owned sessions in the superseded source, dispose them with `review_workspace.py cleanup --manifest <source-session>/manifest.json --run-dir <source-run>`; cleanup changes only that source claim/receipt, never the successor. Completed archives remain immutable.
+A claimed session absent without a release receipt is `missing_unknown`. Inspect, recover and resume use the same classifier: they never announce continuation for that state. Start an authorized linked restart without transferring the missing path. If a changed-scope restart leaves present owned sessions in the superseded source, dispose them with `scripts workspace cleanup --manifest <source-session>/manifest.json --run-dir <source-run>`; cleanup changes only that source claim/receipt, never the successor. Completed archives remain immutable.
 
 A pending restart appears in `pending_transaction` with operation ID, exact intent path and reserved successor. Recover takes the source lock before any prepare/replay. The original authority/controller remain bound to the pending request.
 
@@ -158,7 +158,7 @@ If present claims remain with that source after a scope change, their verified c
 If the coordinator explicitly decides to abandon a pending restart **before** the successor has a manifest, use its exact `intent_path`. If that file is missing after the active descriptor was written, the helper reconstructs only that exact hash-bound intent under the source lock; an arbitrary missing path is refused:
 
 ```sh
-python /absolute/skill/scripts/review_artifacts.py abandon-restart \
+python /absolute/skill/scripts artifacts abandon-restart \
   --run-dir /absolute/archive/exact-source-run \
   --intent-input /absolute/archive/exact-intent.json \
   --controller-input /absolute/owned/session/controller.json \
@@ -190,7 +190,7 @@ A new request after abandonment must have a new selection decision/reason/refere
 For a verified resource conflict that cannot be cancelled, diagnostics additionally offer `record_restart_refusal` with the exact source, operation and intent. The operator may explicitly record that refusal:
 
 ```sh
-python /absolute/skill/scripts/review_artifacts.py record-restart-refusal \
+python /absolute/skill/scripts artifacts record-restart-refusal \
   --run-dir /absolute/archive/exact-source-run \
   --intent-input /absolute/archive/exact-intent.json \
   --controller-input /absolute/owned/session/controller.json \

@@ -20,6 +20,8 @@ npx skills add omarfrancodev/comprehensive-code-review -a codex --copy -y
 
 Requiere Node.js/npm. Consulta la [guía de instalación y actualización](docs/installation.md) para requisitos comprobados, descarga ZIP, agentes y precauciones al actualizar copias.
 
+Los helpers opcionales usan una entrada única, `python /ruta/skill/scripts <área> ...`, desde cualquier directorio; no necesitan instalación Python. Consulta [uso y migración de scripts](docs/script-migration.md) para las doce áreas y la ruptura de imports anterior.
+
 ## Uso
 
 Invoca la skill desde un agente compatible; algunos admiten `$comprehensive-code-review`. Indica repositorio y alcance cuando no sean inequívocos:
@@ -86,7 +88,7 @@ Por defecto se conserva en `<home>/.comprehensive-code-review/reviews/<repositor
 
 El archivo se verifica antes de limpiar recursos propios. Una revisión cerrada permanece inmutable; otra revisión crea un registro enlazado y una entrega posterior conserva el vínculo con el original. Las mediciones son optativas, solo para una evaluación de coste solicitada. Consulta [archivo y ejecución](docs/usage.md#archivo-interno-y-ejecución).
 
-Antes de repetir un alcance ya revisado, CCR pregunta si debe iniciar otra revisión o mostrar la última verificada, salvo que la petición ya lo indique. La selección explícita compara vigencia y puede devolver empate o búsqueda incompleta; nunca decide por el orden de carpetas. Los resultados históricos incompatibles se preservan y pueden portarse como consulta mínima. Consulta [recuperación y continuidad](references/archive/recovery.md).
+Antes de ofrecer repetir o consultar un resultado anterior, CCR verifica que los cambios efectivos, el contexto y los materiales sigan siendo equivalentes. Los cambios reales o la evidencia insuficiente inician una revisión nueva sin confirmación adicional. La selección explícita compara vigencia y puede devolver empate o búsqueda incompleta; nunca decide por el orden de carpetas. Los resultados históricos incompatibles se preservan y pueden portarse como consulta mínima. Consulta [recuperación y continuidad](references/archive/recovery.md).
 
 ## Guías y versiones
 
@@ -96,7 +98,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 2.14.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v2.14.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Release 3.4.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.4.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 
@@ -105,3 +107,20 @@ Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para el formato de descripciones de 
 ## Licencia
 
 Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
+
+
+## Reutilización por equivalencia en 3.2.0
+
+La versión 3.2.0 incorpora [admisión por cambios efectivos](references/workflow/reuse.md). Para una petición ordinaria de MR/PR, cambios de contenido o contexto y evidencia insuficiente inician una nueva revisión sin confirmación adicional. Un merge vacío o rebase puede reutilizar el resultado cuando el diff y sus insumos materiales son equivalentes; HEAD por sí solo no decide. `artifacts assess-reuse` es de solo lectura y la consulta explícita del último informe conserva su carácter histórico.
+
+Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). La reutilización de un re-review exige acreditar cobertura ordinaria completa y aplicable mediante su cadena nativa explícita; una matriz de seguimiento cubierta no basta.
+
+## Calibración de prioridades en 3.4.0
+
+La [rúbrica canónica](references/contracts/priority-calibration.md) define P0–P3 según la consecuencia sustentada y separa confirmación, origen y bloqueo. Los nuevos hallazgos confirmados justifican su prioridad en `impact`, sin campos ni schemas nuevos. La guía se carga en verificación y consolidación; el corpus sintético no se carga en cada review ordinario. Consulta los [ejemplos de frontera](docs/examples/priority-calibration.md) y la [evaluación con sus límites](docs/validation/2026-10-26-priority-calibration-evaluation.md).
+
+## Trazabilidad explícita en 3.3.0
+
+Los resultados nuevos usan final schema 11: cada check declara propósito antes de ejecutarse, la captura lo conserva en recibo 2 y las cinco áreas muestran sus 27 dimensiones con evidencia o motivo. El informe y los comentarios usan sublistas para evidencias y cobertura; cada evidencia enlaza su check real o conserva su origen estático. Propósito, resultado e impacto del hallazgo se presentan por separado.
+
+Los comentarios requieren resúmenes editoriales ligados al registro para propósito y cada flujo; los drafts nuevos usan schema 2. Un draft 1 se conserva y se prepara de nuevo desde la misma fuente vigente. Finales 1–10, recibos 1 y reglas de reutilización mantienen su contrato; archive 8/layout 2, trace 1 y packet 1 no cambian. Los consumidores de nuevos resultados deben admitir final 11; la compatibilidad del visor independiente queda fuera de esta implementación. Véanse [contrato](references/contracts/result-contract.md), [publicación](references/reporting/publication.md) y [validación](docs/validation/2026-10-26-check-evidence-coverage-implementation.md).

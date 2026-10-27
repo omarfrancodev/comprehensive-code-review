@@ -13,8 +13,10 @@ from test_review_contract import contract
 from test_review_traceability_contract import check
 import test_review_execution_policy as policy_tests
 from test_review_delivery import delivery
-import review_check_receipts
-import review_workspace
+from ccr.execution import checks as review_check_receipts
+from script_test_support import workspace_api
+review_workspace = workspace_api()
+from ccr.contracts import provenance as check_provenance
 
 record8 = policy_tests.record8
 
@@ -27,7 +29,7 @@ def record9(profile='focused', selection='explicit'):
 
 class CheckProvenanceTests(unittest.TestCase):
     def setUp(self):
-        self.provenance = importlib.import_module('review_check_provenance')
+        self.provenance = check_provenance
 
     def test_local_completed_check_requires_executor(self):
         for status in ('passed', 'failed'):
@@ -153,7 +155,7 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
         output_dir = evidence_dir / 'attempt-1'
         argv = [sys.executable, '-c', "print('verified')"]
         receipt = review_check_receipts.capture_check(
-            check_id='C001', argv=argv, command=shlex.join(argv), cwd=str(workspace),
+            check_id='C001', purpose='Verify the selected command output', argv=argv, command=shlex.join(argv), cwd=str(workspace),
             executor_workspace=str(workspace), revision=head, executor='X1',
             output_dir=str(output_dir))
         receipt_reference = review_check_receipts.receipt_reference('C001', output_dir)
@@ -162,6 +164,11 @@ class ArchiveCheckProvenanceTests(unittest.TestCase):
             execution=dict(kind='local', executor='X1'))]
         final_file = self.fixture.write('receipt-final.json', value)
         receipt_path = output_dir / Path(receipt_reference).name
+        # This schema-10 archive case deliberately exercises the historical receipt shape.
+        # Preserve observed command/stream facts; do not claim this fixture is a new capture.
+        receipt = {key: item for key, item in receipt.items() if key != 'purpose'}
+        receipt['schema_version'] = 1
+        receipt_path.write_text(json.dumps(receipt), encoding='utf-8')
         stdout_path = output_dir / Path(receipt['stdout']['reference']).name
         stderr_path = output_dir / Path(receipt['stderr']['reference']).name
         selected = evidence_inputs + [receipt_path, stdout_path, stderr_path]

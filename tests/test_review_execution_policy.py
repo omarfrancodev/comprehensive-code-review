@@ -5,7 +5,8 @@ import unittest
 
 from test_review_profile_names import record7
 from test_review_contract import contract, finding
-from review_execution import validate_execution_sources
+from ccr.contracts.execution import validate_execution_sources
+from ccr.archive import retention as archive_retention
 import test_review_delivery as delivery_tests
 
 
@@ -223,6 +224,178 @@ class ExecutionPolicyTests(unittest.TestCase):
         events[1]['executor'] = None
         self.assertTrue(validate_execution_sources(value, context, events, references))
 
+    def recovered_dispatch(self, identifier, *, early_verifier=False):
+        from recovery_fixtures import context10, record10, source_events
+
+        value = record10('deep')
+        context = context10(value)
+        events = source_events(value)
+        assignment = next(row for row in value['coverage']['execution']['plan'] if row['id'] == identifier)
+        result = next(row for row in value['coverage']['execution']['results']
+                      if row['assignment_id'] == identifier)
+        start = next(event for event in events if event.get('kind') == 'agent'
+                     and event.get('status') == 'started' and assignment['reference'] in event['evidence'])
+        if early_verifier:
+            events.remove(start)
+            events.insert(2, start)
+            for sequence, event in enumerate(events, 1):
+                event.update(sequence=sequence, event_id=f'E{sequence:06d}')
+        start['executor'] = None
+        start['actor'] = {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None}
+        references = {context['profile_reference']}
+        references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+        references.update(row['reference'] for row in value['coverage']['execution']['results'])
+        source = 'evidence/dispatch.json#' + identifier
+        annotation = {
+            'kind': 'dispatch-identity', 'status': 'unchanged',
+            'summary': 'Observed identity for original dispatch; no new execution',
+            'actor': {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None},
+            'executor': {'name': result['reviewer_context'], 'provider_id': result['provider_id']},
+            'provenance': {'kind': 'recovered', 'source': source},
+            'evidence': [assignment['reference'], source],
+            'relations': [{'relation': 'records', 'target': start['event_id']}],
+            'authority': None, 'occurred_at': None,
+            'event_id': 'E000008', 'sequence': 8,
+        }
+        events.append(annotation)
+        references.add(source)
+        return value, context, events, references, start
+
+    def test_late_dispatch_identity_projects_the_original_independent_start(self):
+        for identifier in ('D1', 'V1'):
+            with self.subTest(assignment=identifier):
+                value, context, events, references, start = self.recovered_dispatch(identifier)
+                self.assertTrue(validate_execution_sources(value, context, events[:-1], references))
+                before = copy.deepcopy(events)
+
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+                self.assertEqual(events, before)
+                self.assertIsNone(start['executor'])
+
+    def test_late_verifier_identity_does_not_move_early_dispatch_after_discovery(self):
+        value, context, events, references, start = self.recovered_dispatch('V1', early_verifier=True)
+        before = copy.deepcopy(events)
+
+        errors = validate_execution_sources(value, context, events, references)
+
+        self.assertTrue(any('one fresh verifier after the final discovery batch' in error for error in errors))
+        self.assertEqual(start['sequence'], 3)
+        self.assertEqual(events[-1]['sequence'], 8)
+        self.assertEqual(events, before)
+
+    def test_later_start_cannot_replace_early_independent_dispatch(self):
+        for recovered in (False, True):
+            for later_start in ('stage', 'wrong_provider', 'actor_only', 'repeated_dispatch'):
+                with self.subTest(recovered=recovered, later_start=later_start):
+                    value, context, events, references, start = self.recovered_dispatch(
+                        'V1', early_verifier=True)
+                    identity = copy.deepcopy(events[-1]['executor'])
+                    if not recovered:
+                        events.pop()
+                        start['executor'] = identity
+                    completion = next(event for event in events
+                                      if event['kind'] == 'grouped-verification')
+                    events.remove(completion)
+                    executor = copy.deepcopy(identity)
+                    if later_start == 'wrong_provider':
+                        executor['provider_id'] = 'another-provider-context'
+                    elif later_start == 'actor_only':
+                        executor['name'] = 'another-reviewer'
+                    events.append(dict(
+                        kind='grouped-verification' if later_start == 'stage' else 'agent',
+                        status='started', actor={'kind': 'agent', **identity},
+                        executor=None if later_start == 'stage' else executor,
+                        evidence=['evidence/briefs.json#V1']))
+                    events.append(completion)
+                    for sequence, event in enumerate(events, 1):
+                        event.update(sequence=sequence, event_id=f'E{sequence:06d}')
+                    before = copy.deepcopy(events)
+
+                    errors = validate_execution_sources(value, context, events, references)
+
+                    self.assertTrue(any('one fresh verifier after the final discovery batch' in error
+                                        for error in errors), errors)
+                    self.assertEqual(start['sequence'], 3)
+                    self.assertEqual(events, before)
+
+    def test_same_session_final_verifier_accepts_grouped_stage_start(self):
+        from recovery_fixtures import context10, record10, source_events
+
+        value = record10('focused')
+        context = context10(value)
+        events = source_events(value)
+        start = next(event for event in events if event.get('status') == 'started'
+                     and 'evidence/briefs.json#V1' in event['evidence'])
+        start.update(kind='grouped-verification', executor=None,
+                     actor={'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None})
+        references = {context['profile_reference']}
+        references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+        references.update(row['reference'] for row in value['coverage']['execution']['results'])
+
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+    def test_fresh_recovered_verifier_ignores_other_provider_dispatch(self):
+        value, context, events, references, start = self.recovered_dispatch('V1')
+        result = next(row for row in value['coverage']['execution']['results']
+                      if row['assignment_id'] == 'V1')
+        result['provider_id'] = 'observed-v1-provider'
+        completion = next(event for event in events if event['kind'] == 'grouped-verification')
+        completion['actor']['provider_id'] = result['provider_id']
+        annotation = events[-1]
+        annotation['executor']['provider_id'] = result['provider_id']
+        earlier = copy.deepcopy(start)
+        earlier['executor'] = {'name': result['reviewer_context'], 'provider_id': None}
+        events.insert(2, earlier)
+        for sequence, event in enumerate(events, 1):
+            event.update(sequence=sequence, event_id=f'E{sequence:06d}')
+        annotation['relations'][0]['target'] = start['event_id']
+        before = copy.deepcopy(events)
+
+        self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+        self.assertEqual(events, before)
+
+    def test_generic_unchanged_milestone_preserves_schema8_and_schema10_sources(self):
+        from ccr.archive import trace
+        from recovery_fixtures import context10, record10, source_events
+
+        for schema in (8, 10):
+            with self.subTest(schema=schema):
+                value = record8() if schema == 8 else record10()
+                if schema == 8:
+                    context, events, references = source_fixture(value)
+                else:
+                    context, events = context10(value), source_events(value)
+                    references = {context['profile_reference']}
+                    references.update(row['reference'] for row in value['coverage']['execution']['plan'])
+                    references.update(row['reference'] for row in value['coverage']['execution']['results'])
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+                generic = trace.event_input({
+                    'kind': 'agent', 'status': 'unchanged',
+                    'summary': 'Worker already active; no new dispatch',
+                    'actor': {'kind': 'agent', 'name': 'worker-notice', 'provider_id': None},
+                    'executor': None, 'provenance': {'kind': 'agent', 'source': None},
+                    'evidence': [], 'relations': []})
+                generic.update(sequence=len(events) + 1, event_id=f'E{len(events) + 1:06d}')
+                events.append(generic)
+                before = copy.deepcopy(events)
+
+                self.assertEqual(validate_execution_sources(value, context, events, references), [])
+
+                self.assertEqual(events, before)
+
+    def test_unmarked_historical_event_cannot_complete_a_dispatch_identity(self):
+        value, context, events, references, _ = self.recovered_dispatch('V1')
+        events[-1]['kind'] = 'agent'
+        before = copy.deepcopy(events)
+
+        errors = validate_execution_sources(value, context, events, references)
+
+        self.assertTrue(any('independent result lacks observed dispatch' in error for error in errors), errors)
+        self.assertFalse(any('identity annotation' in error for error in errors), errors)
+        self.assertEqual(events, before)
+
     def test_focused_requires_one_actual_context(self):
         value = record8()
         value['coverage']['execution']['results'][-1]['reviewer_context'] = 'another-context'
@@ -363,12 +536,12 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         from unittest.mock import patch
         run, value, context, inputs = self.prepared()
         final = self.fixture.write('final.json', value)
-        original = self.artifacts.atomic_write
+        original = archive_retention.atomic_write
         def interrupt(path, data):
             original(path, data)
             if path == run / 'evidence' / 'context.json':
                 raise OSError('interrupted after owned context write')
-        with patch.object(self.artifacts, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
+        with patch.object(archive_retention, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
             self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
         self.assertIn('evidence/context.json', self.artifacts.read_json(run / 'cierre.json')['planned_hashes'])
         self.artifacts.retain(run, final, context_input=context)

@@ -8,11 +8,18 @@ import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+import sys
 
-import review_run_lock as locks
-import review_artifacts as artifacts
-import review_resource_claims as claims
-import review_workspace as workspace
+SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts'
+sys.path.insert(0, str(SCRIPTS))
+
+from ccr.archive import coordination as archive_coordination
+from ccr.archive import resources as archive_resources
+from ccr.execution import claims, locks, workspaces as workspace_ops
+from script_test_support import archive_api
+artifacts = archive_api()
+from script_test_support import workspace_api
+workspace = workspace_api()
 
 
 class CoordinationTypeTests(unittest.TestCase):
@@ -63,11 +70,11 @@ class CoordinationTypeTests(unittest.TestCase):
         def lock(*args):
             raise failure
             yield
-        args = argparse.Namespace(manifest='manifest', run_dir='run')
-        with patch.object(workspace, 'load', return_value={'session_dir': str(self.root)}), \
-                patch.object(artifacts, '_owned_run_locks', side_effect=lock):
+        args = argparse.Namespace(manifest='manifest', run_dir=str(self.root / 'run'))
+        with patch.object(workspace_ops, 'load', return_value={'session_dir': str(self.root)}), \
+                patch.object(archive_resources, 'owned_run_locks', side_effect=lock):
             with self.assertRaises(workspace.ReviewError) as caught:
-                workspace._cleanup_claim_locked(args)
+                workspace.cleanup(args)
         self.assertIn('Review archive cleanup failed; preserve the session', str(caught.exception))
         self.assertIs(caught.exception.__cause__, failure)
 
@@ -85,7 +92,7 @@ class CoordinationTypeTests(unittest.TestCase):
         def read(path):
             return changed if held else identity
         with patch.object(claims, '_workspace', side_effect=read), \
-                patch.object(workspace, 'out', return_value=b'.git'), \
+                patch.object(claims, '_git', return_value='.git'), \
                 patch.object(locks, 'run_locks', side_effect=lock):
             with self.assertRaises(locks.CoordinationError):
                 with claims.session_claim_locks([self.root]):
@@ -99,8 +106,8 @@ class CoordinationTypeTests(unittest.TestCase):
             if len(attempts) == 1:
                 raise locks.LockConflictError('occupied by another process')
             yield
-        with patch.object(artifacts, '_load_run', return_value=(self.root, {}, {})), \
-                patch.object(artifacts, 'run_locks', side_effect=lock), patch('time.sleep'):
+        with patch.object(archive_coordination, '_load_run', return_value=(self.root, {}, {})), \
+                patch.object(archive_coordination, 'run_locks', side_effect=lock), patch('time.sleep'):
             with artifacts._restart_lock(self.root):
                 pass
         self.assertEqual(len(attempts), 2)
@@ -111,8 +118,8 @@ class CoordinationTypeTests(unittest.TestCase):
         def lock(*args):
             raise failure
             yield
-        with patch.object(artifacts, '_load_run', return_value=(self.root, {}, {})), \
-                patch.object(artifacts, 'run_locks', side_effect=lock), patch('time.sleep') as sleep, \
+        with patch.object(archive_coordination, '_load_run', return_value=(self.root, {}, {})), \
+                patch.object(archive_coordination, 'run_locks', side_effect=lock), patch('time.sleep') as sleep, \
                 patch('time.monotonic', side_effect=[0, 0, 1]):
             with self.assertRaises(ValueError) as caught:
                 with artifacts._restart_lock(self.root, timeout=0.01):
@@ -131,7 +138,7 @@ class CoordinationTypeTests(unittest.TestCase):
                 raise failure
                 yield
             with self.subTest(function=function.__name__), \
-                    patch.object(workspace, 'load', return_value={'session_dir': str(self.root)}), \
+                    patch.object(workspace_ops, 'load', return_value={'session_dir': str(self.root)}), \
                     patch.object(claims, 'session_claim_locks', side_effect=lock):
                 with self.assertRaises(workspace.ReviewError) as caught:
                     function(args)

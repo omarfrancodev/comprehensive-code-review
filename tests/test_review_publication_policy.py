@@ -8,11 +8,13 @@ import sys
 import tempfile
 import unittest
 
+from publication_fixtures import coverage_classification
+
 from test_review_execution_policy import record8, limit
 from test_review_profile_names import record7
 from test_review_contract import contract, MODULE_PATH
 from publication_fixtures import publication_record, check_classification
-import review_publication
+from ccr.reporting import projections as review_publication
 
 
 def classification(value, kind='validation', summary=None):
@@ -27,7 +29,7 @@ class PublicationPolicyTests(unittest.TestCase):
         value = publication_record()
         original = copy.deepcopy(value)
         context = check_classification(value)
-        public = contract.render(value, audience='comment', check_publication_context=context)
+        public = contract.render(value, audience='comment', check_publication_context=context, coverage_publication_context=coverage_classification(value))
         private = contract.render(value, audience='user')
         for internal in ('evidence/', 'CS2012', '-m:1'):
             self.assertNotIn(internal, public)
@@ -41,7 +43,7 @@ class PublicationPolicyTests(unittest.TestCase):
     def test_relative_local_reference_is_suppressed_without_extra_classification(self):
         value = publication_record()
         value['checks'] = value['checks'][:1]
-        output = contract.render(value, audience='comment')
+        output = contract.render(value, audience='comment', coverage_publication_context=coverage_classification(value))
         self.assertNotIn('evidence/test-scheduling.log', output)
         self.assertIn('C001', output)
 
@@ -50,10 +52,10 @@ class PublicationPolicyTests(unittest.TestCase):
         value['checks'][0].update(reused=True, reuse_reason='Los inputs funcionales no cambiaron')
         value['checks'][0]['execution'] = {'kind': 'reused', 'executor': None}
         with self.assertRaisesRegex(ValueError, 'check publication context'):
-            contract.render(value, audience='comment')
+            contract.render(value, audience='comment', coverage_publication_context=coverage_classification(value))
         context = check_classification(value)
         self.assertIn('Los inputs funcionales no cambiaron', contract.render(
-            value, audience='comment', check_publication_context=context))
+            value, audience='comment', check_publication_context=context, coverage_publication_context=coverage_classification(value)))
 
     def test_check_classification_cannot_change_status_or_add_evidence_url(self):
         value = publication_record()
@@ -75,7 +77,7 @@ class PublicationPolicyTests(unittest.TestCase):
             detail='Runner agotó recursos al compilar el proyecto')]
         value['verdict'] = 'insufficient_evidence'
         output = contract.render(value, audience='comment',
-                                 check_publication_context=check_classification(value))
+                                 check_publication_context=check_classification(value), coverage_publication_context=coverage_classification(value))
         self.assertIn('La validación de compatibilidad requerida sigue pendiente.', output)
         self.assertNotIn('Runner agotó recursos', output)
 
@@ -88,14 +90,14 @@ class PublicationPolicyTests(unittest.TestCase):
         value['coverage']['limitations'] = [limit(material=True, summary='Required validation incomplete')]
         value['verdict'] = 'insufficient_evidence'
         self.assertIn('**Ejecución del perfil:** degradada', contract.render(value))
-        self.assertNotIn('Ejecución del perfil', contract.render(value, 'comment'))
+        self.assertNotIn('Ejecución del perfil', contract.render(value, 'comment', coverage_publication_context=coverage_classification(value)))
 
     def test_internal_execution_detail_stays_private(self):
         value = record8()
         value['coverage']['limitations'] = [limit(detail='Worker tool denied by local harness')]
         before = copy.deepcopy(value)
         self.assertIn('Worker tool denied', contract.render(value))
-        self.assertNotIn('Worker tool denied', contract.render(value, 'comment'))
+        self.assertNotIn('Worker tool denied', contract.render(value, 'comment', coverage_publication_context=coverage_classification(value)))
         self.assertEqual(value, before)
 
     def test_material_execution_publishes_impact(self):
@@ -103,7 +105,7 @@ class PublicationPolicyTests(unittest.TestCase):
         value['coverage']['limitations'] = [limit(material=True, summary='Required compatibility check remains incomplete',
                                                 detail='Worker tool denied by local harness')]
         value['verdict'] = 'insufficient_evidence'
-        output = contract.render(value, 'comment')
+        output = contract.render(value, 'comment', coverage_publication_context=coverage_classification(value))
         self.assertIn('Required compatibility check remains incomplete', output)
         self.assertNotIn('Worker tool denied', output)
         self.assertIn('EVIDENCIA INSUFICIENTE', output)
@@ -111,7 +113,7 @@ class PublicationPolicyTests(unittest.TestCase):
     def test_product_session_text_survives(self):
         value = record8()
         value['coverage']['limitations'] = [limit('behavior', detail='User session expiry remains untested')]
-        self.assertIn('User session expiry remains untested', contract.render(value, 'comment'))
+        self.assertIn('User session expiry remains untested', contract.render(value, 'comment', coverage_publication_context=coverage_classification(value)))
 
     def test_material_abcde_gap_survives_without_duplicates(self):
         value = record8()
@@ -119,25 +121,25 @@ class PublicationPolicyTests(unittest.TestCase):
         value['coverage']['limitations'] = [limit('validation', True, detail=text)]
         value['coverage']['areas'][2].update(status='partial', material=True, details=text)
         value['verdict'] = 'insufficient_evidence'
-        output = contract.render(value, 'comment')
+        output = contract.render(value, 'comment', coverage_publication_context=coverage_classification(value))
         self.assertEqual(output.count(text), 1)
         value['reservations'] = [text]
-        self.assertEqual(contract.render(value, 'comment').count(text), 1)
+        self.assertEqual(contract.render(value, 'comment', coverage_publication_context=coverage_classification(value)).count(text), 1)
 
     def test_legacy_publication_needs_bound_classification(self):
         value = record7()
         value['coverage']['limitations'] = [dict(detail='Harness mechanics', material=False)]
         before = copy.deepcopy(value)
         with self.assertRaises(ValueError):
-            contract.render(value, 'comment')
+            contract.render(value, 'comment', coverage_publication_context=coverage_classification(value))
         context = classification(value, 'execution')
-        self.assertNotIn('Harness mechanics', contract.render(value, 'comment', publication_context=context))
+        self.assertNotIn('Harness mechanics', contract.render(value, 'comment', publication_context=context, coverage_publication_context=coverage_classification(value)))
         for mutation in [dict(source_sha256='0' * 64), dict(limitations=[]),
                          dict(limitations=context['limitations'] * 2)]:
             bad = copy.deepcopy(context)
             bad.update(mutation)
             with self.assertRaises(ValueError):
-                contract.render(value, 'comment', publication_context=bad)
+                contract.render(value, 'comment', publication_context=bad, coverage_publication_context=coverage_classification(value))
         self.assertEqual(value, before)
 
     def test_public_reservations_deduplicate_original_detail_without_hiding_other_conditions(self):
@@ -155,7 +157,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 before = copy.deepcopy(value)
                 self.assertEqual(contract.validate(value), [])
                 for renderer in (contract.render, contract.render_handoff):
-                    output = renderer(value, audience='comment', publication_context=context)
+                    output = renderer(value, audience='comment', publication_context=context, coverage_publication_context=coverage_classification(value))
                     self.assertNotIn(detail, output)
                     self.assertEqual(output.count(summary), 1)
                     self.assertEqual(output.count(condition), 1)
@@ -175,7 +177,7 @@ class PublicationPolicyTests(unittest.TestCase):
                 context = classification(value, 'execution', summary) if legacy else None
                 before = copy.deepcopy(value)
                 for renderer in (contract.render, contract.render_handoff):
-                    output = renderer(value, audience='comment', publication_context=context)
+                    output = renderer(value, audience='comment', publication_context=context, coverage_publication_context=coverage_classification(value))
                     self.assertNotIn(detail, output)
                     self.assertEqual(output.count(summary), 1)
                 self.assertEqual(value, before)
@@ -188,17 +190,17 @@ class PublicationPolicyTests(unittest.TestCase):
         value['verdict'] = 'insufficient_evidence'
         for renderer in (contract.render, contract.render_handoff):
             with self.assertRaises(ValueError):
-                renderer(value, audience='comment')
+                renderer(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
     def test_public_handoff_uses_same_policy(self):
         value = record8()
         value['coverage']['limitations'] = [limit(detail='Worker tool denied by local harness')]
-        self.assertNotIn('Worker tool denied', contract.render_handoff(value, audience='comment'))
+        self.assertNotIn('Worker tool denied', contract.render_handoff(value, audience='comment', coverage_publication_context=coverage_classification(value)))
         self.assertIn('Worker tool denied', contract.render_handoff(value))
         value = record7()
         value['coverage']['limitations'] = [dict(detail='Unclassified', material=False)]
         with self.assertRaises(ValueError):
-            contract.render_handoff(value, audience='comment')
+            contract.render_handoff(value, audience='comment', coverage_publication_context=coverage_classification(value))
 
     def test_cli_classification_is_explicit_and_bound(self):
         value = record7()
@@ -208,8 +210,11 @@ class PublicationPolicyTests(unittest.TestCase):
             context = Path(directory) / 'classification.json'
             record.write_text(json.dumps(value), encoding='utf-8')
             context.write_text(json.dumps(classification(value, 'execution')), encoding='utf-8')
-            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH)]
+            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract']
             args = ['--input', str(record), '--publication-context', str(context)]
+            coverage_path = Path(directory) / 'coverage.json'
+            coverage_path.write_text(json.dumps(coverage_classification(value)), encoding='utf-8')
+            args += ['--coverage-publication-context', str(coverage_path)]
             result = subprocess.run(command + ['render-comment'] + args, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('Harness mechanics', result.stdout)
@@ -228,9 +233,11 @@ class PublicationPolicyTests(unittest.TestCase):
             context = Path(directory) / 'check-classification.json'
             record.write_text(json.dumps(value), encoding='utf-8')
             context.write_text(json.dumps(check_context), encoding='utf-8')
-            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH)]
+            command = [sys.executable, '-B', '-X', 'utf8', str(MODULE_PATH), 'contract']
+            coverage_path = Path(directory) / 'coverage.json'
+            coverage_path.write_text(json.dumps(coverage_classification(value)), encoding='utf-8')
             result = subprocess.run(command + ['render-comment', '--input', str(record),
-                '--check-publication-context', str(context)], capture_output=True, text=True)
+                '--check-publication-context', str(context), '--coverage-publication-context', str(coverage_path)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('evidence/', result.stdout)
             result = subprocess.run(command + ['render-comment', '--input', str(record),
