@@ -12,6 +12,10 @@ El [runner reproducible y resultado del candidato](2026-10-26-v3-4-0-release-can
 
 Resultado observado: **33 pruebas distintas, 13 ayudas CLI y 91 compilaciones Python en memoria aprobadas, sin fallos ni omisiones pendientes**. Se seleccionan las pruebas de prioridades, CLI/instalación desde cwd ajeno sin PYTHONPATH, layout, inventarios de CLI/encoding, enlaces, política de trazabilidad y ejemplo archive 8. No se atribuye una ejecución global nueva a la preparación. Las pruebas que consultan el índice/filtros de Git son específicas del checkout de desarrollo; en un ZIP sin `.git` se excluyen esas dos, manteniendo la comprobación de SHA-256 declarado de todos los artefactos.
 
+## Preflight del ZIP antes del merge
+
+El [resultado de extracción del candidato](2026-10-26-v3-4-0-package-candidate.json) corresponde a `bf0f7e096b950283fbd4255fab3391ab88787c4e`. Se contrastaron los **383 archivos del ZIP contra todos sus blobs Git**, incluidos los **23 hashes de evidencia**, sin diferencias. La extracción sin .git pasó **31 pruebas, 13 ayudas CLI y 91 compilaciones Python**, sin fallos ni omisiones inesperadas. Se excluyeron explícitamente las dos pruebas de filtros/índice Git, ya aprobadas en el checkout de desarrollo; no se atribuyen a una instalación ZIP sin repositorio. El ZIP definitivo se reconstruirá desde el SHA integrado y se verificará de nuevo.
+
 ## Empaquetado posterior al merge
 
 La etiqueta `v3.4.0` apuntará al SHA integrado de este mismo PR. El ZIP `comprehensive-code-review-v3.4.0.zip` se generará desde él con `git archive`, prefijo `comprehensive-code-review/`, sin temporales ni cachés. Se verificará su inventario y cada archivo contra los blobs del commit, incluidos los 23 hashes de evidencia y el baseline recuperado. No se normalizarán esos bytes.
