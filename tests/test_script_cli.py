@@ -87,7 +87,7 @@ class ScriptCliTests(unittest.TestCase):
             self.assertEqual(Path(installed_state['catalog']),
                              installed / 'references' / 'archive' / 'harness-catalog.json')
             self.assertEqual(installed_state['catalog_version'], 1)
-            self.assertEqual(installed_state['skill_version'], '3.3.0')
+            self.assertEqual(installed_state['skill_version'], '3.4.0')
             self.assertTrue(installed_state['rejected'])
             for area in AREAS:
                 result = subprocess.run(

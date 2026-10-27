@@ -1,5 +1,7 @@
 """Canonical reference locations and navigable local Markdown links."""
 from pathlib import Path
+import hashlib
+import json
 import re
 import unittest
 from urllib.parse import unquote
@@ -9,7 +11,7 @@ GROUPS = {
     'workflow': ('scopes', 'profiles', 'capabilities', 'reading-strategy', 're-review', 'review-areas', 'reuse'),
     'dimensions': ('design-testability', 'contracts-data', 'security-operation'),
     'execution': ('reviewers', 'worker-packets', 'workspaces', 'external-cli'),
-    'contracts': ('result-contract', 'identifiers'),
+    'contracts': ('result-contract', 'identifiers', 'priority-calibration'),
     'archive': ('artifacts', 'lifecycle-trace', 'recovery', 'history'),
     'reporting': ('report-format', 'publication', 'delivery', 'handoff'),
     'maintenance': ('evaluation', 'measurements'),
@@ -25,7 +27,16 @@ class ReferenceLayoutTests(unittest.TestCase):
         documents = [ROOT / 'SKILL.md', ROOT / 'README.md']
         documents.extend((ROOT / 'references').rglob('*.md'))
         documents.extend((ROOT / 'docs').rglob('*.md'))
+        snapshots = {ROOT / 'docs/validation/priority-calibration-evidence' / f'{kind}-instructions.md':
+                     f'{kind}-manifest.json' for kind in ('baseline', 'candidate')}
         for source in documents:
+            if source in snapshots:
+                # These are immutable role-input bytes with links relative to their
+                # original source, not independently navigable documentation.
+                manifest = json.loads((source.parent / snapshots[source]).read_text(encoding='utf-8'))
+                self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),
+                                 manifest['instructions_sha256'])
+                continue
             # Fenced examples describe inputs rather than links in the document.
             content = re.sub(r'```.*?```', '', source.read_text(encoding='utf-8'), flags=re.S)
             for destination in re.findall(r'\[[^\]\n]*\]\(([^)\n]+)\)', content):
