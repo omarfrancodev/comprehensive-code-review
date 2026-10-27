@@ -43,6 +43,8 @@ Optional `python <skill-path>/scripts contract deduplicate` preserves explicit s
 
 ## Verification packet
 
+Include the applicable [priority calibration](../contracts/priority-calibration.md) rules in the existing verifier brief. Confirm the obligation and reachable consequence before grading; assess origin and blocking separately. Return existing priority/impact deltas when needed; the coordinator completes the final impact justification. Preserve the current grouped pass, profile and independence requirements.
+
 Supply minimal shared facts, exact version, groups, baseline access, decisive paths, referenced checks and assigned material questions/invariants. Validate/refute groups while preserving distinct scenarios; this is bounded verification, not another full discovery sweep.
 
 Trace actual requirements/mechanisms, registration conventions and consumers. Use baseline for introduced/preexisting/unknown origin. Reproduce when evidence is insufficient; decisive static flow is acceptable. Validate fixtures before interpreting failures. In-memory stores do not establish relational translation, constraints or credible-scale performance.

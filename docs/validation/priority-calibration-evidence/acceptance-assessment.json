@@ -1,0 +1,499 @@
+{
+  "assessment_date": "2026-10-26",
+  "purpose": "Evaluación reservada de aceptación PC21-PC28 sin modificar corpus, referencias ni guía.",
+  "guide_freeze_commit_reported_by_coordinator": "9efa4cb",
+  "reference_ratification": {
+    "status": "human_ratification_reported",
+    "source": "Instrucción del coordinador: usuario ratificó directamente las referencias tras revisarlas.",
+    "note": "El texto histórico de rationale permanece intacto y todavía dice pendiente de ratificación; la comunicación de ratificación se registra aquí sin reescribir la referencia."
+  },
+  "sources": {
+    "cases": "tests/fixtures/priority_calibration/acceptance-cases.json",
+    "cases_sha256": "86E001BABAE865ACDF25255B39930F1ABFF1C276E8CB86EECAA1AA7A3598DB84",
+    "reference": "tests/fixtures/priority_calibration/acceptance-reference.json",
+    "reference_sha256": "08A85E6E50DF53E2FD0AC2207EF339FA6F1658645393E878A259B8A536A72CB8"
+  },
+  "method": {
+    "classification_match": "Status idéntico al esperado y prioridad en accepted_priorities; para no confirmados se exige prioridad null.",
+    "validity": "Un objeto único por ID con exactamente id/status/priority/justification, estados permitidos, prioridad coherente con status y justificación no vacía.",
+    "semantic_review": "El custodio cotejó cada justificación con obligation, trigger, observed_flow, consequence, affected_scope, recovery, controls, proof y unknowns. No se exigió una fórmula literal de redacción.",
+    "false_p0_denominator": "Seis referencias distintas de confirmed P0, incluida PC28 unresolved.",
+    "scoring_scope": "Se puntúan las respuestas guardadas. Este informe no verifica por sí mismo configuración del modelo, limpieza de las sesiones ni integridad de los prompts de ejecución."
+  },
+  "conditions": [
+    {
+      "condition": "baseline",
+      "source": ".superpowers/sdd/2026-10-26-priority-calibration/baseline-acceptance.json",
+      "source_sha256": "AE7A37EE0686574CE33AB759F40B88123BA95667CA2C4AC4011931B982D00779",
+      "rows": [
+        {
+          "id": "PC21",
+          "response": {
+            "id": "PC21",
+            "status": "confirmed",
+            "priority": "P0",
+            "justification": "Una petición pública sin identidad obtiene un token raíz aceptado por los guards administrativos; el ensayo confirma cambios persistidos de claves y revocación de acceso. Permite comprometer de inmediato todos los espacios sin controles adicionales."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P0"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Sustenta la cadena de autoridad efectiva, el alcance esencial y la activación inmediata sin inventar un incidente. Es fiel; no desarrolla la revocación posterior de tokens.",
+          "disputed": false
+        },
+        {
+          "id": "PC22",
+          "response": {
+            "id": "PC22",
+            "status": "confirmed",
+            "priority": "P0",
+            "justification": "La activación sustituye globalmente las rutas esenciales por un destino 503 sin fallback; el ensayo completo confirma la interrupción inmediata de ambos endpoints para todos los consumidores hasta el rollback manual."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P0"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Reconoce la interrupción esencial inmediata de todo el servicio y la ausencia de fallback. Menciona recuperación por rollback sin usarla para degradar el caso.",
+          "disputed": false
+        },
+        {
+          "id": "PC23",
+          "response": {
+            "id": "PC23",
+            "status": "confirmed",
+            "priority": "P1",
+            "justification": "El recálculo persiste piezas como cajas y el planificador genera reservas y órdenes multiplicadas por diez, confirmado tras el commit. Corrompe las asignaciones de la función principal del lote y exige reconstrucción manual, aunque los pedidos originales y otros lotes se conservan."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P1"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Conecta la corrupción persistida con reservas y órdenes de la función principal y conserva los límites de lote y reconstrucción manual.",
+          "disputed": false
+        },
+        {
+          "id": "PC24",
+          "response": {
+            "id": "PC24",
+            "status": "confirmed",
+            "priority": "P1",
+            "justification": "El borrado del único original precede a la conversión y el timeout impide guardar su copia; la prueba confirma ausencia de ambos archivos y fallo del reintento. Se pierde de forma irreversible el expediente seleccionado sin respaldo."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P1"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Respeta el orden borrado-conversión fallida y el carácter no recuperable internamente del original. Expediente seleccionado resume el contenido perdido, sin extender el alcance a otros expedientes.",
+          "disputed": false
+        },
+        {
+          "id": "PC25",
+          "response": {
+            "id": "PC25",
+            "status": "confirmed",
+            "priority": "P2",
+            "justification": "La exportación ignora next_cursor y anuncia éxito con ocho de doce filas; los ensayos confirman la omisión de cuatro etiquetas. Incumple la integridad del archivo solicitado, aunque el catálogo se conserva y dos exportaciones permiten recuperarlo."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P2"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Distingue la descarga incompleta del catálogo intacto y reconoce la alternativa comprobada de recuperación; no infiere daño de inventario.",
+          "disputed": false
+        },
+        {
+          "id": "PC26",
+          "response": {
+            "id": "PC26",
+            "status": "confirmed",
+            "priority": "P2",
+            "justification": "Un archivo válido de versión 1 falla en el acceso a una estructura exclusiva de versión 2, confirmado con el esquema publicado. Se incumple la compatibilidad de importación admitida, aunque la edición y el guardado siguen disponibles y los colores pueden ingresarse manualmente."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P2"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Reconoce la obligación de compatibilidad vigente, el fallo funcional de la importación y las alternativas disponibles sin atribuir pérdida del documento.",
+          "disputed": false
+        },
+        {
+          "id": "PC27",
+          "response": {
+            "id": "PC27",
+            "status": "confirmed",
+            "priority": "P3",
+            "justification": "La ayuda utiliza Rejilla donde el menú muestra Cuadrícula, comprobado en ambos registros. La consecuencia se limita a identificar la opción: el icono, el atajo y la acción funcionan y el texto solo se renderiza como información."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P3"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Identifica una obligación informativa incumplida y el límite demostrado: los caminos de ejecución siguen funcionando.",
+          "disputed": false
+        },
+        {
+          "id": "PC28",
+          "response": {
+            "id": "PC28",
+            "status": "unresolved",
+            "priority": null,
+            "justification": "La escritura sin comprobar rol en el handler está demostrada, pero el manifiesto sitúa un filtro externo antes de él. Sin su política efectiva ni una petición de lector a través del filtro, no se puede determinar si el lector alcanza la sustitución."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "unresolved",
+          "accepted_priorities": [],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Mantiene incertidumbre sobre existencia del bypass y separa la escritura local probada de la alcanzabilidad externa no comprobada.",
+          "disputed": false
+        }
+      ],
+      "counts": {
+        "expected_cases": 8,
+        "received_responses": 8,
+        "valid_responses": 8,
+        "omissions": 0,
+        "invalid_responses": 0,
+        "unexpected_ids": [],
+        "status_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "priority_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "status_and_priority_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "missed_positive_p0": {
+          "numerator": 0,
+          "denominator": 2
+        },
+        "false_p0": {
+          "numerator": 0,
+          "denominator": 6
+        },
+        "undue_confirmation_pc28": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "faithful_justifications": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "disputed_cases": []
+      }
+    },
+    {
+      "condition": "candidate",
+      "source": ".superpowers/sdd/2026-10-26-priority-calibration/candidate-acceptance.json",
+      "source_sha256": "EBFE76B3B1DE53CC3839669F88B08DE4469B9334D29C0B025586AD48C1B0852D",
+      "rows": [
+        {
+          "id": "PC21",
+          "response": {
+            "id": "PC21",
+            "status": "confirmed",
+            "priority": "P0",
+            "justification": "La primera petición pública obtiene autoridad raíz efectiva sobre todos los almacenes y claves esenciales; la prueba persiste cambios administrativos y el guard compartido permite las operaciones destructivas. Sin barrera efectiva ni revocación al cerrar la ruta, exige contención inmediata de la firma y las credenciales."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P0"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "La justificación añade por qué cerrar la ruta no contiene las credenciales ya emitidas y enlaza la autoridad efectiva con activos esenciales y contención inmediata, con respaldo en los hechos.",
+          "disputed": false
+        },
+        {
+          "id": "PC22",
+          "response": {
+            "id": "PC22",
+            "status": "confirmed",
+            "priority": "P0",
+            "justification": "La activación interrumpe inmediatamente la función esencial en todas las regiones y consumidores: ambos endpoints reciben 503 sin ruta alternativa. El ensayo y el intercambio global lo demuestran; el rollback manual de doce minutos recupera después, pero no evita la interrupción catastrófica."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P0"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Explica expresamente por qué el rollback posterior de doce minutos no evita la interrupción inmediata ni reduce la consecuencia probada.",
+          "disputed": false
+        },
+        {
+          "id": "PC23",
+          "response": {
+            "id": "PC23",
+            "status": "confirmed",
+            "priority": "P1",
+            "justification": "El recálculo principal confirma cantidades multiplicadas por diez y el planificador genera reservas y órdenes incorrectas, como demuestra el ensayo posterior al commit. La corrupción importante queda limitada a un lote y los pedidos originales permiten reconstrucción manual; no se demuestra daño catastrófico global."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P1"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Conserva el daño serio de la función principal y los límites de lote y recuperación. La mención final de daño catastrófico global es una comparación de este caso; no se interpreta como requisito universal de globalidad para P0.",
+          "disputed": false
+        },
+        {
+          "id": "PC24",
+          "response": {
+            "id": "PC24",
+            "status": "confirmed",
+            "priority": "P1",
+            "justification": "Un timeout soportado elimina de forma definitiva el único original del expediente y sus anotaciones antes de crear la copia; la prueba confirma ambas claves ausentes y el reintento fallido. La pérdida grave alcanza un expediente sin respaldo ni reparación interna, sin evidencia de destrucción del almacén esencial completo."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P1"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Reconoce pérdida definitiva de un original relevante, fallo condicional y alcance de un expediente. La frase un timeout elimina es abreviación causal: la traza sitúa el borrado antes del timeout; no altera la conclusión ni afirma que el timeout ejecuta el borrado.",
+          "disputed": false
+        },
+        {
+          "id": "PC25",
+          "response": {
+            "id": "PC25",
+            "status": "confirmed",
+            "priority": "P2",
+            "justification": "La exportación omite cuatro etiquetas y anuncia éxito, según el ensayo de doce filas seleccionadas. Es un resultado funcional incorrecto acotado a una descarga auxiliar: el catálogo queda intacto y dos exportaciones permiten recuperar todas las filas sin afectar inventario."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P2"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Explica la frontera mediante daño funcional acotado, origen intacto y recuperación probada, sin elevar una omisión auxiliar a pérdida del catálogo.",
+          "disputed": false
+        },
+        {
+          "id": "PC26",
+          "response": {
+            "id": "PC26",
+            "status": "confirmed",
+            "priority": "P2",
+            "justification": "El loader rechaza un archivo válido de una versión expresamente admitida, incumpliendo la importación de paletas. El fallo precede a aplicar cambios y el ensayo conserva el documento guardable; introducir cuatro colores o convertir el archivo recupera esta función auxiliar sin pérdida de datos."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P2"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Incluye contrato vigente, fallo anterior a aplicar cambios y alternativas comprobadas. No convierte recuperación manual en ausencia de defecto.",
+          "disputed": false
+        },
+        {
+          "id": "PC27",
+          "response": {
+            "id": "PC27",
+            "status": "confirmed",
+            "priority": "P3",
+            "justification": "La comparación confirma un nombre desactualizado en una frase de ayuda, con dificultad limitada para identificar la opción. Menú y atajo funcionan en los ensayos y el texto solo se renderiza como información, por lo que no hay daño funcional ni cambios del documento."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "confirmed",
+          "accepted_priorities": [
+            "P3"
+          ],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Justifica el límite informativo mediante acción y documento conservados, sin utilizar falta de cobertura como evidencia de defecto.",
+          "disputed": false
+        },
+        {
+          "id": "PC28",
+          "response": {
+            "id": "PC28",
+            "status": "unresolved",
+            "priority": null,
+            "justification": "La escritura sin control de rol está probada dentro del handler, pero el filtro externo declarado puede impedir que un lector lo alcance. Su política efectiva y una petición a través del despliegue faltan; la prueba unitaria directa no confirma una sustitución no autorizada alcanzable."
+          },
+          "response_present": true,
+          "response_valid": true,
+          "validation_issues": [],
+          "expected_status": "unresolved",
+          "accepted_priorities": [],
+          "status_match": true,
+          "priority_match": true,
+          "status_and_priority_match": true,
+          "error_types": [],
+          "justification_faithful": true,
+          "semantic_observation": "Evita confirmar una hipótesis de autorización a partir de una invocación directa que omite el control aplicable; identifica la evidencia pendiente correcta.",
+          "disputed": false
+        }
+      ],
+      "counts": {
+        "expected_cases": 8,
+        "received_responses": 8,
+        "valid_responses": 8,
+        "omissions": 0,
+        "invalid_responses": 0,
+        "unexpected_ids": [],
+        "status_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "priority_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "status_and_priority_matches": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "missed_positive_p0": {
+          "numerator": 0,
+          "denominator": 2
+        },
+        "false_p0": {
+          "numerator": 0,
+          "denominator": 6
+        },
+        "undue_confirmation_pc28": {
+          "numerator": 0,
+          "denominator": 1
+        },
+        "faithful_justifications": {
+          "numerator": 8,
+          "denominator": 8
+        },
+        "disputed_cases": []
+      }
+    }
+  ],
+  "comparison": {
+    "baseline_matches": 8,
+    "candidate_matches": 8,
+    "denominator": 8,
+    "accuracy_delta_cases": 0,
+    "new_classification_errors": 0,
+    "conclusion": "El candidato conserva los ocho aciertos del baseline; esta muestra no demuestra ganancia de precisión.",
+    "clarity_observations": [
+      "PC21 candidato explicita la persistencia de credenciales emitidas y la contención requerida.",
+      "PC22 candidato explicita que recuperación posterior no constituye una barrera que evite el daño.",
+      "PC25-PC26 candidato hace más explícitos el alcance auxiliar, la conservación de datos y las alternativas comprobadas."
+    ],
+    "wording_caveats": [
+      "PC23 candidato usa global al contrastar con daño catastrófico; no se infiere de esa frase una regla que exija afectar a todos los usuarios para P0.",
+      "PC24 candidato condensa la secuencia causal en un timeout elimina; el flujo real descrito borra antes de fallar la conversión. Es una imprecisión de formulación, sin cambiar los hechos determinantes de la clasificación."
+    ],
+    "substantive_doubts": [],
+    "limitations": [
+      "Ocho casos sintéticos no certifican rendimiento general.",
+      "La limpieza y configuración de ejecuciones deben comprobarse con sus artefactos de procedencia, fuera de esta puntuación."
+    ]
+  }
+}

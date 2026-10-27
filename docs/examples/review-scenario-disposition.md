@@ -13,4 +13,6 @@ These synthetic review exercises illustrate existing contracts; they contain no 
 | One read per token becomes three | A batch of N performs N token reads plus two identity reads per token | Success tests do not measure throughput or latency | Count the actual operation path and duplication. Keep consequence credible; report a limited inefficiency if material, without invented response times or mandatory benchmark |
 | External review suggests deleting link checks | New hashes can be compared inside the store; older records still require their established validation | Agreement with the external author does not prove the literal fix preserves compatibility | Verify the trust boundary and mixed-format chain. Preserve necessary old checks or demonstrate a safe alternative; reject the unsafe simplification with evidence |
 
+For priority boundaries and comparable cases, see [priority calibration exercises](priority-calibration.md); confirmation, origin and blocking remain separate.
+
 Consolidation uses existing findings and coverage.limitations: confirmed limited defects stay visible even when nonblocking; relevant unresolved behavior gets a public-safe summary; rejected or speculative proposals remain private. Covered means the named scenarios were inspected, not that all possible behaviors were proved.

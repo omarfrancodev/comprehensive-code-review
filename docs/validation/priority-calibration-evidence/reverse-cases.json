@@ -1,0 +1,62 @@
+[
+  {
+    "id": "PC04",
+    "obligation": "Un snapshot vacío accidental debe rechazarse; la sincronización no puede inventar movimientos de venta.",
+    "trigger": "El proveedor devuelve units=[] cuando pierde su lectura y el servicio acepta ese lote.",
+    "observed_flow": "El handler calcula disponibles menos IDs del lote, marca todas las unidades como vendidas y escribe una venta por unidad en una transacción.",
+    "consequence": "Desaparece de los flujos de reserva todo el inventario de una entidad y queda un historial de ventas inexistentes.",
+    "affected_scope": "Las 120 unidades disponibles de la entidad del lote; otras entidades no cambian.",
+    "recovery": "Otra sincronización puede reponer disponibilidad, pero las ventas falsas necesitan reconciliación manual.",
+    "controls": "La entrada está autenticada; no existe validación de lote vacío ni guard de bajas. El autor reconoce ese riesgo en la descripción, sin cambiar el contrato que exige rechazar vacío accidental.",
+    "proof": [
+      "Traza suministrada: incomingIds={} -> availableIds minus incomingIds = availableIds -> update status + append sale.",
+      "Reserva y búsqueda filtran status=AVAILABLE."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC03",
+    "obligation": "Un snapshot vacío accidental debe rechazarse; la sincronización no puede inventar movimientos de venta.",
+    "trigger": "El proveedor devuelve units=[] cuando pierde su lectura y el servicio acepta ese lote.",
+    "observed_flow": "El handler calcula disponibles menos IDs del lote, marca todas las unidades como vendidas y escribe una venta por unidad en una transacción.",
+    "consequence": "Desaparece de los flujos de reserva todo el inventario de una entidad y queda un historial de ventas inexistentes.",
+    "affected_scope": "Las 120 unidades disponibles de la entidad del lote; otras entidades no cambian.",
+    "recovery": "Otra sincronización puede reponer disponibilidad, pero las ventas falsas necesitan reconciliación manual.",
+    "controls": "La entrada está autenticada; no existe validación de lote vacío ni guard de bajas. La descripción no menciona este efecto.",
+    "proof": [
+      "Traza suministrada: incomingIds={} -> availableIds minus incomingIds = availableIds -> update status + append sale.",
+      "Reserva y búsqueda filtran status=AVAILABLE."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC02",
+    "obligation": "Cada usuario solo puede leer y editar historias clínicas de su organización.",
+    "trigger": "Usuario de Alfa envía GET y PUT /organizations/Beta/records/7 con sesión válida de Alfa.",
+    "observed_flow": "El único guard comprueba sesión. El repositorio usa organizationId de la ruta sin comparar pertenencia; los dos handlers entregan y persisten la historia.",
+    "consequence": "El usuario obtiene datos clínicos ajenos y puede alterar el tratamiento almacenado.",
+    "affected_scope": "Historias de Beta cuyos IDs obtiene del listado sin filtro. No hay acceso al administrador global.",
+    "recovery": "Una edición necesita revisar auditoría y restaurar la versión anterior; la lectura no puede retirarse.",
+    "controls": "El endpoint exige sesión. Estos mismos handlers ya estaban en la base; el cambio solo mejora sus logs. No hay otro guard en middleware, repositorio o base.",
+    "proof": [
+      "Traza suministrada: authorize(session) -> repository.find(route.organizationId, recordId) -> response/update.",
+      "El listado suministrado enumera IDs de Beta bajo la sesión de Alfa."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC01",
+    "obligation": "Cada usuario solo puede leer y editar historias clínicas de su organización.",
+    "trigger": "Usuario de Alfa envía GET y PUT /organizations/Beta/records/7 con sesión válida de Alfa.",
+    "observed_flow": "El único guard comprueba sesión. El repositorio usa organizationId de la ruta sin comparar pertenencia; los dos handlers entregan y persisten la historia.",
+    "consequence": "El usuario obtiene datos clínicos ajenos y puede alterar el tratamiento almacenado.",
+    "affected_scope": "Historias de Beta cuyos IDs obtiene del listado sin filtro. No hay acceso al administrador global.",
+    "recovery": "Una edición necesita revisar auditoría y restaurar la versión anterior; la lectura no puede retirarse.",
+    "controls": "El endpoint exige sesión. El cambio introduce estos handlers; no hay otro guard en middleware, repositorio o base.",
+    "proof": [
+      "Traza suministrada: authorize(session) -> repository.find(route.organizationId, recordId) -> response/update.",
+      "El listado suministrado enumera IDs de Beta bajo la sesión de Alfa."
+    ],
+    "unknowns": []
+  }
+]

@@ -1,0 +1,142 @@
+[
+  {
+    "id": "PC01",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "La traza permite leer y alterar historias clínicas de Beta con sesión de Alfa, sin control de pertenencia; los IDs son enumerables. Es una falla grave de autorización sobre datos sensibles, con lectura irreversible y restauración manual de ediciones; no se demuestra una consecuencia catastrófica."
+  },
+  {
+    "id": "PC02",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "Los handlers permiten leer y alterar historias clínicas ajenas con IDs enumerables y sin control de pertenencia. La divulgación no puede retirarse y las ediciones exigen restauración manual; que el defecto sea preexistente no reduce esta consecuencia grave de autorización."
+  },
+  {
+    "id": "PC03",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "El lote vacío alcanza sin guard la baja de las 120 unidades y crea ventas falsas, dejando a la entidad sin inventario reservable. La sincronización puede reponer disponibilidad, pero el historial exige reconciliación manual: falla grave del flujo principal y de integridad, sin catástrofe general demostrada."
+  },
+  {
+    "id": "PC04",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "El lote vacío deja las 120 unidades fuera de reserva y registra ventas inexistentes; falta el guard exigido y el historial requiere reconciliación manual. Es daño grave funcional y de integridad; el reconocimiento del autor no cambia la obligación ni limita sus efectos."
+  },
+  {
+    "id": "PC05",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "La asignación directa de 125 caracteres a varchar(100), junto con la regla del motor suministrada, prueba el aborto de la migración para un catálogo admitido. Impide un despliegue soportado y exige corregir y repetirlo; el rollback íntegro y la versión anterior operativa limitan daños, pero no eliminan esa falla grave."
+  },
+  {
+    "id": "PC06",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "La traza y la reproducción confirman el rechazo de longitud y el aborto de la migración para un catálogo admitido. Se bloquea el despliegue soportado hasta corregir y repetir la semilla; la continuidad de la instancia anterior y la ausencia de escrituras parciales no reducen esa falla a un defecto secundario."
+  },
+  {
+    "id": "PC07",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "La secuencia claim(key1), upsert(key2) y cierre por ID consume el evento nuevo sin entrega ni copia pendiente; el dispensador ejecuta la medicación anterior. Afecta gravemente una función principal para el paciente y no hay replay desde la cola; ni el worker único ni las escrituras serializadas protegen la clave reclamada."
+  },
+  {
+    "id": "PC08",
+    "expected": "P2",
+    "observed": "P2",
+    "match": true,
+    "justification": "La traza muestra el panel con v1 después de guardar v2, violando la visibilidad inmediata. El defecto funcional queda acotado al nombre en una vista secundaria durante un máximo de 30 segundos, con recuperación automática comprobada y operaciones y datos principales correctos; esa recuperación no elimina el incumplimiento."
+  },
+  {
+    "id": "PC09",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "La respuesta expone un token real y la prueba suministrada confirma que descarga historiales privados de una entidad. Es divulgación grave de datos sensibles accesible a cualquier usuario autenticado; revocarlo limita accesos posteriores, pero no retira lo leído, y no se evidencia compromiso catastrófico adicional."
+  },
+  {
+    "id": "PC10",
+    "expected": "P3",
+    "observed": "P3",
+    "match": true,
+    "justification": "El productor agrega catalogId contra el contrato exacto de error {code}. La discrepancia queda limitada a un dato diagnóstico ya público, sin alterar operaciones ni revelar registros privados o autorizar acciones; no existe daño funcional relevante ni datos que restaurar."
+  },
+  {
+    "id": "PC11",
+    "expected": "P0",
+    "observed": "P0",
+    "match": true,
+    "justification": "La traza de arranque soportado ejecuta y confirma deleteAll antes de atender tráfico, sin guard ni barrera efectiva. Destruye inmediatamente el único almacén esencial de todas las entidades y deja el servicio sin capacidad operativa; no hay copia recuperable y revertir el binario no restaura los expedientes, por lo que exige contención inmediata."
+  },
+  {
+    "id": "PC12",
+    "expected": "rejected",
+    "observed": "rejected",
+    "match": true,
+    "justification": "El guard previo omite el reset en todos los caminos de producción, y la prueba suministrada confirma cero llamadas a deleteAll y arranque completado. Se conservan los expedientes y la disponibilidad; la hipótesis destructiva no alcanza una escritura en la configuración soportada."
+  },
+  {
+    "id": "PC13",
+    "expected": "P1",
+    "observed": "P1",
+    "match": true,
+    "justification": "Todos los guards y la base inspeccionados solo validan sesión antes de escribir una orden ajena por ID enumerable. Permite alterar instrucciones operativas persistentes y exige auditoría y restauración, sin deshacer automáticamente lo procesado: falla grave de autorización aunque una solicitud afecte una orden."
+  },
+  {
+    "id": "PC14",
+    "expected": "unresolved",
+    "observed": "unresolved",
+    "match": true,
+    "justification": "El guard externo se ejecuta antes de escribir, pero faltan su contrato, implementación y resultado para usuario de Alfa y orden de Beta. Puede impedir totalmente el acceso ajeno; sin resolver esa condición no se demuestra el defecto ni corresponde asignar prioridad."
+  },
+  {
+    "id": "PC15",
+    "expected": "rejected",
+    "observed": "rejected",
+    "match": true,
+    "justification": "El contrato permite el reporte parcial y la traza conserva status=partial, partial=true y la sección faltante. El consumidor exige complete antes de tratarlo como completo; el fallback observado cumple la obligación y no demuestra un defecto."
+  },
+  {
+    "id": "PC16",
+    "expected": "P2",
+    "observed": "P2",
+    "match": true,
+    "justification": "La traza marca complete y success=true pese a faltar una imagen obligatoria, entregando un reporte incompleto como completo. El daño funcional está acotado a un reporte secundario regenerable manualmente con la imagen conservada, sin pagos, eliminación de datos ni decisiones automáticas demostradas."
+  },
+  {
+    "id": "PC17",
+    "expected": "rejected",
+    "observed": "rejected",
+    "match": true,
+    "justification": "La comparación de categoryId y las filas suministradas muestran el resultado correcto. Solo falta una prueba adicional, sin gate que la exija ni resultado defectuoso demostrado; no hay incumplimiento funcional que confirmar o graduar."
+  },
+  {
+    "id": "PC18",
+    "expected": "P2",
+    "observed": "P2",
+    "match": true,
+    "justification": "La traza envía el nombre visible al comparador exacto de UUID y devuelve vacío para una categoría con filas. Es un defecto funcional del filtro secundario, acotado por la vista sin filtro que permite continuar y por datos intactos; la ausencia de pruebas no es la causa de la clasificación."
+  },
+  {
+    "id": "PC19",
+    "expected": "P3",
+    "observed": "P3",
+    "match": true,
+    "justification": "La captura suministrada prueba la errata código pastal en la ayuda. Su efecto se limita a una palabra secundaria: etiqueta accesible, payload y validación son correctos y procesan todos los valores válidos, sin daño funcional relevante."
+  },
+  {
+    "id": "PC20",
+    "expected": "P2",
+    "observed": "P2",
+    "match": true,
+    "justification": "parseInt convierte 01234 a 1234 y la comparación textual exacta pierde las coincidencias válidas, sin normalización que lo corrija. El filtro secundario incumple su función, pero los datos siguen intactos y quitarlo o buscar por nombre permite continuar; el daño es acotado y recuperable."
+  }
+]

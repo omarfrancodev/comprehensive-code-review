@@ -1,0 +1,19 @@
+test_case_and_reference_shapes_are_exact (test_review_priority_corpus.PriorityCorpusTests.test_case_and_reference_shapes_are_exact) ... ok
+test_git_retains_hashed_evaluation_bytes (test_review_priority_corpus.PriorityCorpusTests.test_git_retains_hashed_evaluation_bytes) ... ok
+test_ids_split_and_pairs_are_complete (test_review_priority_corpus.PriorityCorpusTests.test_ids_split_and_pairs_are_complete) ... ok
+test_inputs_do_not_contain_reference_fields (test_review_priority_corpus.PriorityCorpusTests.test_inputs_do_not_contain_reference_fields) ... ok
+test_reference_matches_spec_boundaries (test_review_priority_corpus.PriorityCorpusTests.test_reference_matches_spec_boundaries) ... ok
+test_canonical_reference_is_reachable_from_verification_and_consolidation (test_review_priority_policy.PriorityPolicyTests.test_canonical_reference_is_reachable_from_verification_and_consolidation) ... ok
+test_focused_and_independent_verification_routes_share_the_reference (test_review_priority_policy.PriorityPolicyTests.test_focused_and_independent_verification_routes_share_the_reference) ... ok
+test_policy_preserves_current_contract_boundaries (test_review_priority_policy.PriorityPolicyTests.test_policy_preserves_current_contract_boundaries) ... ok
+test_final10_without_new_justification_stays_readable (test_review_priority_roundtrip.PriorityRoundtripTests.test_final10_without_new_justification_stays_readable) ... ok
+test_packet1_merge11_preserves_judgment_delta (test_review_priority_roundtrip.PriorityRoundtripTests.test_packet1_merge11_preserves_judgment_delta) ... ok
+test_priority_origin_and_blocking_remain_independent (test_review_priority_roundtrip.PriorityRoundtripTests.test_priority_origin_and_blocking_remain_independent) ... ok
+test_public_draft_and_portable_outputs_preserve_impact (test_review_priority_roundtrip.PriorityRoundtripTests.test_public_draft_and_portable_outputs_preserve_impact) ... ok
+test_render11_preserves_impact_and_traceability (test_review_priority_roundtrip.PriorityRoundtripTests.test_render11_preserves_impact_and_traceability) ... ok
+test_unresolved_does_not_enter_confirmed_counts (test_review_priority_roundtrip.PriorityRoundtripTests.test_unresolved_does_not_enter_confirmed_counts) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 3.413s
+
+OK

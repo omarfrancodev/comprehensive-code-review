@@ -98,7 +98,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Última release publicada: 3.3.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.3.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Release 3.4.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.4.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 
@@ -114,6 +114,10 @@ Este proyecto se distribuye bajo la [licencia MIT](LICENSE).
 La versión 3.2.0 incorpora [admisión por cambios efectivos](references/workflow/reuse.md). Para una petición ordinaria de MR/PR, cambios de contenido o contexto y evidencia insuficiente inician una nueva revisión sin confirmación adicional. Un merge vacío o rebase puede reutilizar el resultado cuando el diff y sus insumos materiales son equivalentes; HEAD por sí solo no decide. `artifacts assess-reuse` es de solo lectura y la consulta explícita del último informe conserva su carácter histórico.
 
 Los sidecars nuevos no migran archivos anteriores ni modifican archive 8/layout 2, review schema 10, trace schema 1 o packet version 1. Cuando una revisión antigua carezca de prueba suficiente, se conserva como histórica y se realiza una nueva. Las ejecuciones reutilizadas conservan su revisión original. Véase [el diagnóstico](docs/analysis/2026-10-25-review-reuse-and-coverage-diagnosis.md) y [los ejemplos de cobertura](docs/examples/review-scenario-disposition.md). La reutilización de un re-review exige acreditar cobertura ordinaria completa y aplicable mediante su cadena nativa explícita; una matriz de seguimiento cubierta no basta.
+
+## Calibración de prioridades en 3.4.0
+
+La [rúbrica canónica](references/contracts/priority-calibration.md) define P0–P3 según la consecuencia sustentada y separa confirmación, origen y bloqueo. Los nuevos hallazgos confirmados justifican su prioridad en `impact`, sin campos ni schemas nuevos. La guía se carga en verificación y consolidación; el corpus sintético no se carga en cada review ordinario. Consulta los [ejemplos de frontera](docs/examples/priority-calibration.md) y la [evaluación con sus límites](docs/validation/2026-10-26-priority-calibration-evaluation.md).
 
 ## Trazabilidad explícita en 3.3.0
 

@@ -1,0 +1,9 @@
+test_missing_request_purpose_is_rejected (test_review_check_purpose.PurposeTests.test_missing_request_purpose_is_rejected) ... ok
+test_purpose_validation_precedes_any_process_or_attempt (test_review_check_purpose.PurposeTests.test_purpose_validation_precedes_any_process_or_attempt) ... ok
+test_receipt2_binds_purpose_and_keeps_legacy_receipt1 (test_review_check_purpose.PurposeTests.test_receipt2_binds_purpose_and_keeps_legacy_receipt1) ... ok
+test_unencodable_purpose_never_creates_attempt_or_runs_process (test_review_check_purpose.PurposeTests.test_unencodable_purpose_never_creates_attempt_or_runs_process) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.045s
+
+OK

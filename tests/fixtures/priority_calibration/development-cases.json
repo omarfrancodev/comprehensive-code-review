@@ -1,0 +1,299 @@
+[
+  {
+    "id": "PC01",
+    "obligation": "Cada usuario solo puede leer y editar historias clínicas de su organización.",
+    "trigger": "Usuario de Alfa envía GET y PUT /organizations/Beta/records/7 con sesión válida de Alfa.",
+    "observed_flow": "El único guard comprueba sesión. El repositorio usa organizationId de la ruta sin comparar pertenencia; los dos handlers entregan y persisten la historia.",
+    "consequence": "El usuario obtiene datos clínicos ajenos y puede alterar el tratamiento almacenado.",
+    "affected_scope": "Historias de Beta cuyos IDs obtiene del listado sin filtro. No hay acceso al administrador global.",
+    "recovery": "Una edición necesita revisar auditoría y restaurar la versión anterior; la lectura no puede retirarse.",
+    "controls": "El endpoint exige sesión. El cambio introduce estos handlers; no hay otro guard en middleware, repositorio o base.",
+    "proof": [
+      "Traza suministrada: authorize(session) -> repository.find(route.organizationId, recordId) -> response/update.",
+      "El listado suministrado enumera IDs de Beta bajo la sesión de Alfa."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC02",
+    "obligation": "Cada usuario solo puede leer y editar historias clínicas de su organización.",
+    "trigger": "Usuario de Alfa envía GET y PUT /organizations/Beta/records/7 con sesión válida de Alfa.",
+    "observed_flow": "El único guard comprueba sesión. El repositorio usa organizationId de la ruta sin comparar pertenencia; los dos handlers entregan y persisten la historia.",
+    "consequence": "El usuario obtiene datos clínicos ajenos y puede alterar el tratamiento almacenado.",
+    "affected_scope": "Historias de Beta cuyos IDs obtiene del listado sin filtro. No hay acceso al administrador global.",
+    "recovery": "Una edición necesita revisar auditoría y restaurar la versión anterior; la lectura no puede retirarse.",
+    "controls": "El endpoint exige sesión. Estos mismos handlers ya estaban en la base; el cambio solo mejora sus logs. No hay otro guard en middleware, repositorio o base.",
+    "proof": [
+      "Traza suministrada: authorize(session) -> repository.find(route.organizationId, recordId) -> response/update.",
+      "El listado suministrado enumera IDs de Beta bajo la sesión de Alfa."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC03",
+    "obligation": "Un snapshot vacío accidental debe rechazarse; la sincronización no puede inventar movimientos de venta.",
+    "trigger": "El proveedor devuelve units=[] cuando pierde su lectura y el servicio acepta ese lote.",
+    "observed_flow": "El handler calcula disponibles menos IDs del lote, marca todas las unidades como vendidas y escribe una venta por unidad en una transacción.",
+    "consequence": "Desaparece de los flujos de reserva todo el inventario de una entidad y queda un historial de ventas inexistentes.",
+    "affected_scope": "Las 120 unidades disponibles de la entidad del lote; otras entidades no cambian.",
+    "recovery": "Otra sincronización puede reponer disponibilidad, pero las ventas falsas necesitan reconciliación manual.",
+    "controls": "La entrada está autenticada; no existe validación de lote vacío ni guard de bajas. La descripción no menciona este efecto.",
+    "proof": [
+      "Traza suministrada: incomingIds={} -> availableIds minus incomingIds = availableIds -> update status + append sale.",
+      "Reserva y búsqueda filtran status=AVAILABLE."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC04",
+    "obligation": "Un snapshot vacío accidental debe rechazarse; la sincronización no puede inventar movimientos de venta.",
+    "trigger": "El proveedor devuelve units=[] cuando pierde su lectura y el servicio acepta ese lote.",
+    "observed_flow": "El handler calcula disponibles menos IDs del lote, marca todas las unidades como vendidas y escribe una venta por unidad en una transacción.",
+    "consequence": "Desaparece de los flujos de reserva todo el inventario de una entidad y queda un historial de ventas inexistentes.",
+    "affected_scope": "Las 120 unidades disponibles de la entidad del lote; otras entidades no cambian.",
+    "recovery": "Otra sincronización puede reponer disponibilidad, pero las ventas falsas necesitan reconciliación manual.",
+    "controls": "La entrada está autenticada; no existe validación de lote vacío ni guard de bajas. El autor reconoce ese riesgo en la descripción, sin cambiar el contrato que exige rechazar vacío accidental.",
+    "proof": [
+      "Traza suministrada: incomingIds={} -> availableIds minus incomingIds = availableIds -> update status + append sale.",
+      "Reserva y búsqueda filtran status=AVAILABLE."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC05",
+    "obligation": "La migración debe completarse para cualquier catálogo admitido, cuyas claves pueden tener hasta 120 caracteres.",
+    "trigger": "Una clave válida de 92 caracteres se concatena con prefijo y rol y produce 125 caracteres.",
+    "observed_flow": "La migración inserta el resultado sin truncar en varchar(100), dentro de una transacción.",
+    "consequence": "El motor rechaza la inserción y aborta la migración; no se puede desplegar esta versión para ese catálogo.",
+    "affected_scope": "Despliegue con ese catálogo soportado; la versión anterior sigue atendiendo solicitudes.",
+    "recovery": "Requiere corregir la semilla y repetir el despliegue; no hay escrituras parciales.",
+    "controls": "La transacción revierte íntegra. No existe validación de longitud previa ni conversión acotada. No se ha desplegado ni ejecutado una reproducción.",
+    "proof": [
+      "Traza suministrada: seedKey = prefix + validCatalogKey + role; destino varchar(100), asignación directa.",
+      "La regla del motor suministrada rechaza strings de más de 100 caracteres sin truncamiento explícito."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC06",
+    "obligation": "La migración debe completarse para cualquier catálogo admitido, cuyas claves pueden tener hasta 120 caracteres.",
+    "trigger": "Una clave válida de 92 caracteres se concatena con prefijo y rol y produce 125 caracteres.",
+    "observed_flow": "La migración inserta el resultado sin truncar en varchar(100), dentro de una transacción.",
+    "consequence": "El motor rechaza la inserción y aborta la migración; no se puede desplegar esta versión para ese catálogo.",
+    "affected_scope": "Despliegue con ese catálogo soportado; la versión anterior sigue atendiendo solicitudes.",
+    "recovery": "Requiere corregir la semilla y repetir el despliegue; no hay escrituras parciales.",
+    "controls": "La transacción revierte íntegra. No existe validación de longitud previa ni conversión acotada. Una reproducción suministrada con ese catálogo ya obtuvo el rechazo de longitud.",
+    "proof": [
+      "Traza suministrada: seedKey = prefix + validCatalogKey + role; destino varchar(100), asignación directa.",
+      "La regla del motor suministrada rechaza strings de más de 100 caracteres sin truncamiento explícito.",
+      "Resultado incluido en el escenario: la migración devuelve error de longitud y la instancia anterior continúa operativa."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC07",
+    "obligation": "Cada cambio confirmado de medicación debe entregarse al dispensador antes de cerrar la orden; ningún evento confirmado puede descartarse.",
+    "trigger": "Un cambio confirmado llega mientras el worker envía la instantánea anterior.",
+    "observed_flow": "El upsert solo reemplaza la clave de evento de la fila Processing. Al terminar, el worker marca Processed por ID sin comprobar la clave ni reencolar.",
+    "consequence": "La nueva medicación no llega al dispensador, que ejecuta la orden anterior. El evento queda consumido sin copia pendiente.",
+    "affected_scope": "Orden del paciente afectado por la concurrencia; flujo principal de dispensación.",
+    "recovery": "No hay replay ni historial completo del payload en esa cola; el dato confirmado ya no puede reconstruirse desde ella.",
+    "controls": "El worker es único. La transacción serializa cada escritura, pero no vincula el cierre a la clave reclamada.",
+    "proof": [
+      "Traza suministrada: claim(key1) -> upsert(key2, Processing) -> markProcessed(id) -> no pending row.",
+      "El dispensador usa exclusivamente el último payload entregado por esta cola."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC08",
+    "obligation": "El panel secundario de favoritos debe reflejar inmediatamente una edición guardada.",
+    "trigger": "Se edita un favorito mientras el worker actualiza su índice de lectura.",
+    "observed_flow": "La escritura principal guarda la edición, pero el panel lee el índice anterior hasta la siguiente actualización programada.",
+    "consequence": "Durante hasta 30 segundos el panel de favoritos muestra el nombre previo, incumpliendo la visibilidad inmediata prometida.",
+    "affected_scope": "Vista secundaria de favoritos; la ficha principal y todas las operaciones usan el dato nuevo.",
+    "recovery": "Un refresco de índice automático comprobado actualiza el panel en un máximo de 30 segundos sin perder ediciones.",
+    "controls": "Las escrituras están confirmadas y versionadas; el worker compara la versión antes de publicar el índice.",
+    "proof": [
+      "El escenario aporta una traza: write(v2), panel(v1), scheduledRefresh(v2) a los 30 segundos.",
+      "El contrato suministrado exige actualización inmediata del panel, aunque la operación principal no depende de él."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC09",
+    "obligation": "Las credenciales para historiales privados no pueden devolverse en errores al usuario.",
+    "trigger": "Un usuario genera un error de búsqueda para una entidad que no administra.",
+    "observed_flow": "La respuesta incluye un token real del servicio; la traza suministrada muestra que permite descargar los historiales privados de esa entidad.",
+    "consequence": "El receptor puede leer datos sensibles de la entidad usando el token expuesto.",
+    "affected_scope": "Una entidad. El token no permite administrar el sistema, escribir datos ni alcanzar otras entidades.",
+    "recovery": "Revocar el token detiene accesos posteriores; la información ya leída no puede retirarse.",
+    "controls": "Se exige sesión, pero cualquier usuario autenticado puede activar ese error; el token no se enmascara.",
+    "proof": [
+      "Respuesta suministrada contiene un token de alcance read:records de la entidad.",
+      "La prueba descrita en el escenario usa ese token para descargar datos privados de esa misma entidad."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC10",
+    "obligation": "Los errores deben devolver el código documentado, sin información diagnóstica secundaria adicional.",
+    "trigger": "Una búsqueda fallida devuelve además de NOT_FOUND el ID público del catálogo.",
+    "observed_flow": "La respuesta incluye un identificador ya publicado por el catálogo abierto; no incluye token ni dato personal.",
+    "consequence": "Se incumple la forma documentada del error con un identificador adicional.",
+    "affected_scope": "Un campo diagnóstico que no altera las operaciones del cliente ni amplía información disponible.",
+    "recovery": "No hace falta restaurar datos; basta corregir la respuesta para solicitudes futuras.",
+    "controls": "El catálogo y todos sus IDs son públicos sin sesión. El ID no autoriza acciones ni confirma existencia de registros privados.",
+    "proof": [
+      "Contrato suministrado: respuesta de error exacta {code}; productor agrega catalogId.",
+      "El mismo catalogId aparece en el catálogo abierto incluido en el escenario."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC11",
+    "obligation": "El arranque debe conservar el almacén de expedientes, único estado persistente del producto.",
+    "trigger": "Se activa la versión con la configuración de producción soportada.",
+    "observed_flow": "El inicializador ejecuta DELETE sin predicado sobre todo el almacén antes de atender tráfico; la transacción confirma automáticamente.",
+    "consequence": "Se eliminan todos los expedientes y se pierde la capacidad de operar el servicio para todas las entidades.",
+    "affected_scope": "Todo el almacén esencial y todas las entidades.",
+    "recovery": "No existe réplica ni backup recuperable en el escenario; revertir el binario no restaura los datos.",
+    "controls": "La configuración está soportada. No hay bandera de reset, guard, autorización adicional ni transacción abortada.",
+    "proof": [
+      "Traza estática suministrada: start -> initializer -> execute(deleteAll) -> commit -> listen.",
+      "Los expedientes solo existen en ese almacén, sin copias recuperables según el inventario incluido."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC12",
+    "obligation": "El arranque debe conservar el almacén de expedientes y permitir iniciar con configuración válida.",
+    "trigger": "Se activa la versión con la configuración de producción soportada.",
+    "observed_flow": "Antes de la instrucción de reset, el guard reconoce producción, omite el reset completo y sigue el arranque normal.",
+    "consequence": "El almacén conserva todas sus filas y el servicio queda disponible; la hipótesis de borrado no ocurre.",
+    "affected_scope": "Todas las entidades conservan sus expedientes.",
+    "recovery": "No se requiere restauración porque no se ejecuta escritura destructiva.",
+    "controls": "El guard está antes del reset en todos los caminos de producción; el reset solo admite una base vacía de pruebas.",
+    "proof": [
+      "Traza suministrada: start -> if production skipReset -> listen.",
+      "Prueba de flujo suministrada verifica cero llamadas a deleteAll en producción y arranque completado."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC13",
+    "obligation": "Un usuario de una entidad no puede escribir órdenes de otra entidad.",
+    "trigger": "Usuario de Alfa solicita modificar una orden de Beta con IDs obtenidos de un listado accesible.",
+    "observed_flow": "Todos los guards del camino y la base están inspeccionados: solo hay validación de sesión; se escribe por ID de ruta.",
+    "consequence": "El usuario cambia una orden ajena y sus instrucciones operativas persistentes.",
+    "affected_scope": "Una orden de Beta por solicitud, enumerable desde el listado.",
+    "recovery": "Requiere reconciliar auditoría y restaurar la orden; una instrucción ya procesada no se deshace automáticamente.",
+    "controls": "No hay autorización adicional; el permiso de sesión es general y el servicio externo tampoco comprueba pertenencia.",
+    "proof": [
+      "Traza suministrada enumera cada middleware y repositorio: solo session.valid y update(routeOrderId).",
+      "La base suministrada no tiene política por principal y el guard externo no existe en este camino."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC14",
+    "obligation": "Un usuario de una entidad no puede escribir órdenes de otra entidad.",
+    "trigger": "Usuario de Alfa solicita modificar una orden de Beta.",
+    "observed_flow": "El handler local escribe por ID de ruta, pero antes se invoca un guard de autorización externo cuyo contrato y binario no están disponibles.",
+    "consequence": "Si el guard no compara pertenencia, habría escritura ajena; si la compara, la solicitud se rechaza antes del handler.",
+    "affected_scope": "La existencia de acceso a órdenes ajenas depende del guard previo.",
+    "recovery": "No se ha demostrado una escritura indebida que restaurar.",
+    "controls": "Hay sesión válida y un guard externo previo al handler; no se debe asumir qué permite.",
+    "proof": [
+      "Traza suministrada: session -> externalGuard.authorize(request) -> handler.update(routeOrderId)."
+    ],
+    "unknowns": [
+      "Contrato, implementación y resultado del guard externo para el par usuario/orden."
+    ]
+  },
+  {
+    "id": "PC15",
+    "obligation": "Ante una imagen ausente, el contrato permite un reporte parcial si su estado y respuesta dicen partial y señalan las secciones faltantes.",
+    "trigger": "No llega la imagen opcional de un reporte.",
+    "observed_flow": "El generador inserta una página de aviso, persiste status=partial y devuelve partial=true con la sección faltante.",
+    "consequence": "El reporte queda parcial de la manera permitida y el cliente conoce qué falta.",
+    "affected_scope": "Un reporte regenerable; ninguna operación depende de que se trate como completo.",
+    "recovery": "La regeneración posterior puede completar el reporte y actualiza el estado.",
+    "controls": "El consumidor inspeccionado exige status=complete antes de usarlo como completo.",
+    "proof": [
+      "Contrato suministrado permite este fallback; traza del productor y consumidor conserva la marca partial."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC16",
+    "obligation": "El endpoint debe devolver éxito completo únicamente si todas las secciones exigidas del reporte están presentes.",
+    "trigger": "No llega una imagen obligatoria de un reporte secundario descargable.",
+    "observed_flow": "El generador inserta una página de aviso, persiste status=complete y responde success=true sin señalar la sección faltante.",
+    "consequence": "El usuario recibe un reporte incompleto presentado como completo, incumpliendo la obligación de completitud.",
+    "affected_scope": "Un reporte secundario. No autoriza pagos, no elimina datos ni alimenta decisiones automáticas.",
+    "recovery": "La imagen original queda guardada y una regeneración manual puede completar el reporte.",
+    "controls": "Hay autorización de lectura, pero no comprobación de completitud ni marca partial.",
+    "proof": [
+      "Traza suministrada: missing image -> placeholder -> status complete -> success true.",
+      "El contrato suministrado distingue éxito completo y parcial."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC17",
+    "obligation": "El filtro secundario por categoría debe devolver las filas de esa categoría.",
+    "trigger": "Se revisa un cambio de estilo del formulario; no se añadió una prueba del filtro.",
+    "observed_flow": "El flujo inspeccionado compara categoryId correctamente y el consumidor muestra las filas correspondientes.",
+    "consequence": "No se ha identificado resultado incorrecto; la observación es ausencia de una prueba adicional.",
+    "affected_scope": "Cobertura de pruebas de un filtro secundario.",
+    "recovery": "No hay datos o resultados defectuosos que restaurar.",
+    "controls": "No hay requisito de un test adicional como gate del proyecto.",
+    "proof": [
+      "Traza suministrada: where row.categoryId == selectedId; fixtures del escenario muestran filas correctas."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC18",
+    "obligation": "El filtro secundario por categoría debe devolver las filas de esa categoría.",
+    "trigger": "El usuario selecciona una categoría que tiene filas.",
+    "observed_flow": "El flujo inspeccionado compara categoryId con el nombre visible en lugar del ID, y devuelve una lista vacía.",
+    "consequence": "El filtro de categoría no muestra resultados válidos, aunque la vista sin filtro funciona.",
+    "affected_scope": "Una opción secundaria del listado; no modifica ni elimina filas.",
+    "recovery": "Quitar el filtro permite ver todas las filas y continuar el trabajo.",
+    "controls": "No se añadió una prueba del filtro; no hay conversión posterior que arregle el valor.",
+    "proof": [
+      "Traza suministrada: selectedId es UUID, se envía selectedName y el repositorio compara igualdad exacta de UUID."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC19",
+    "obligation": "La ayuda debe llamar código postal al campo postal.",
+    "trigger": "El usuario abre la ayuda junto al formulario.",
+    "observed_flow": "El texto dice código pastal; la etiqueta, el valor enviado y el validador de código postal son correctos.",
+    "consequence": "Hay una errata en un texto de ayuda sin cambio de comportamiento del formulario.",
+    "affected_scope": "Una palabra del texto secundario; todos los valores válidos se procesan correctamente.",
+    "recovery": "Corregir el texto basta para solicitudes futuras.",
+    "controls": "La etiqueta accesible, payload y validación están inspeccionados y no contienen la errata.",
+    "proof": [
+      "Captura textual suministrada de la ayuda y traza de envío/validación con el valor correcto."
+    ],
+    "unknowns": []
+  },
+  {
+    "id": "PC20",
+    "obligation": "El filtro opcional por código postal debe conservar ceros iniciales de los valores válidos.",
+    "trigger": "El usuario filtra por 01234.",
+    "observed_flow": "El formulario convierte el string a entero y envía 1234; el servidor compara texto exacto y no encuentra coincidencias.",
+    "consequence": "La opción de filtro postal no muestra las filas cuyo código tiene cero inicial.",
+    "affected_scope": "Filtro secundario. La búsqueda por nombre y la vista sin filtro funcionan; datos guardados intactos.",
+    "recovery": "Quitar el filtro o buscar por nombre permite continuar; no hay que restaurar datos.",
+    "controls": "No existe normalización posterior que reponga el cero.",
+    "proof": [
+      "Traza suministrada: parseInt(\"01234\") -> 1234 -> exact match sobre texto postal."
+    ],
+    "unknowns": []
+  }
+]

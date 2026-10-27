@@ -1,0 +1,36 @@
+{
+  "iteration": 1,
+  "instructions_sha256": "d9ef9e61fd22f3cf25ecb305869b12e987d52a482581500acbf672c3f6f806c8",
+  "scope": "Role-specific synthetic verification exercise; same source sections as baseline plus canonical guide",
+  "sources": [
+    {
+      "source": "SKILL.md",
+      "sha256": "78e81d5f040ee4ac5b4d95bcb94574404d29afbf4cfd1bf417788675713b5c40"
+    },
+    {
+      "source": "references/execution/worker-packets.md",
+      "sha256": "c9ab9f1c73bcfdd981ff7fe4813adfb6e3592104b1b67744ecd4be23ada63530"
+    },
+    {
+      "source": "references/execution/reviewers.md",
+      "sha256": "bb858ecffed6dda5ca12ee72b46660de8e2c6e9c7afbb2f14bfa4d456c63f11b"
+    },
+    {
+      "source": "references/contracts/result-contract.md",
+      "sha256": "a744e6594bc7b335710e5c979ed9e8ce4375ecf4729bf461658856221a7c0969"
+    },
+    {
+      "source": "references/workflow/profiles.md",
+      "sha256": "466fe44bcae18c10239c183c87f6217ec57ed65f853909fda1c7074b739725a7"
+    },
+    {
+      "source": "references/reporting/report-format.md",
+      "sha256": "7c475f9668f2ae730ef5071a168f34e58aaac1f5bcf105f775ff54ef81a8a0e8"
+    },
+    {
+      "source": "references/contracts/priority-calibration.md",
+      "sha256": "8a9abf62013376a4c201880b1074ae0908f981fbdeac9e9693f5b98244c727ef"
+    }
+  ],
+  "acceptanceOpened": false
+}

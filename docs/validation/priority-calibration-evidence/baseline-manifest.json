@@ -1,0 +1,31 @@
+{
+  "base": "d119fbc781312bd15c2eaf5e04f3768f542de7cc",
+  "sources": [
+    {
+      "source": "SKILL.md",
+      "sha256": "444b03f7d69f59641512c53011f856784d70740ebde3de97630bb6d9ea2427b5"
+    },
+    {
+      "source": "references/contracts/result-contract.md",
+      "sha256": "66fe4bc79a735fca73cddad15592b69b80914ab5c2442eb66a3112805d16f831"
+    },
+    {
+      "source": "references/execution/worker-packets.md",
+      "sha256": "0fc9a91b39e37e4e66bdf344127c0c0344d6f5d9fbd955337351a446fb5b0dcf"
+    },
+    {
+      "source": "references/execution/reviewers.md",
+      "sha256": "946b4aaf6e42b98dc954eec1f7269f0ff6ca4a176aafbf740924a95d58719fae"
+    },
+    {
+      "source": "references/workflow/profiles.md",
+      "sha256": "fd1a05e6723ed9e26d322e9e48d97564d4259bcf60e6b48472d0ae86b70bcaf9"
+    },
+    {
+      "source": "references/reporting/report-format.md",
+      "sha256": "7e1a5efaa0590781904f009123dafd5908ce6468569571a2317a5ded9aa4369c"
+    }
+  ],
+  "instructions_sha256": "5816711a1affcd8832c8c236a965f96a8f584d84fe47547bce3362d2642cfad1",
+  "scope": "Exact role-specific excerpts for a synthetic verification exercise, not end-to-end CCR execution"
+}

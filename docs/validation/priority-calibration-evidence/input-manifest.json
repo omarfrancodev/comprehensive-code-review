@@ -1,0 +1,29 @@
+{
+  "base": "d119fbc781312bd15c2eaf5e04f3768f542de7cc",
+  "ratification": {
+    "status": "user_confirmed",
+    "authority": "Direct human reply in this chat",
+    "text": "Ratifico las referencias tras revisarlas",
+    "recorded_at_utc": "2026-10-26T20:46:10.502Z"
+  },
+  "acceptance_custody": "Separate fresh-context author; concrete inputs/reference and baseline acceptance responses withheld from guide author before freeze",
+  "observed_model": null,
+  "configured_model": "inherited session default; exact model not exposed by dispatch result",
+  "contexts": {
+    "custodian": "/root/acceptance_custodian",
+    "baseline_development": "/root/baseline_development",
+    "baseline_acceptance": "/root/baseline_acceptance",
+    "candidate_development": "/root/candidate_development",
+    "candidate_acceptance": "/root/candidate_acceptance",
+    "baseline_reverse": "/root/baseline_reverse",
+    "candidate_reverse": "/root/candidate_reverse"
+  },
+  "files": {
+    "development-cases.json": "6fa0f84492f77a1081841a042dfddf8d7fe1fb19d0b7133f9145df1ce7608967",
+    "development-reference.json": "3a9d0da6b409bcbd7e983c9255999ca11af4d0df930d6e30619bd7d46f55d70e",
+    "acceptance-cases.json": "86e001babae865acdf25255b39930f1abff1c276e8cb86eecaa1aa7a3598db84",
+    "acceptance-reference.json": "08a85e6e50df53e2fd0ac2207ef339fa6f1658645393e878a259b8a536a72cb8"
+  },
+  "candidate_frozen_commit": "9efa4cbf5dca5d967278ea44edcc795e0381db5c",
+  "candidate_acceptance_scope": "Concrete reserved inputs withheld from guide author until freeze; fresh classifier context"
+}

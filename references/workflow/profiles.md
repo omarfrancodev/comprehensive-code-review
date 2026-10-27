@@ -61,7 +61,7 @@ Close when affected flows are covered and candidates/questions are decided, or w
 
 ## Verdict decision
 
-Priority expresses consequence; blocking depends on affected requirements and verified policy. Preexisting defects block only for a demonstrated scope-relevant consequence/gate; no baseline means unknown origin. Precedence:
+Priority expresses consequence under [priority calibration](../contracts/priority-calibration.md); blocking depends on affected requirements and verified policy. A serious preexisting P1 can be nonblocking for this MR when no demonstrated scope-relevant obligation/gate requires correction: origin changes responsibility, not the evidenced consequence. Preexisting defects block only for a demonstrated scope-relevant consequence/gate; no baseline means unknown origin. Precedence:
 
 1. Confirmed blocker: not_approvable; also disclose uncertainties.
 2. No blocker, but stale version, inadequate coverage or material unresolved limitation: insufficient_evidence.
