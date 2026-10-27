@@ -10,6 +10,12 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 - Calibrar P0–P3 según consecuencias sustentadas y justificar la prioridad en el impacto de nuevos hallazgos confirmados; separar confirmación, origen y bloqueo, preservando final 11, propósito de checks y dimensiones. Incorporar ejemplos y evaluación sintética sin cuotas ni reclasificación de archivos históricos.
 
+### Fixed
+
+#### Artefactos y contratos
+
+- Restaurar la respuesta baseline original en Git sin cambiar su hash declarado y comprobar los SHA-256 del inventario contra los archivos locales y los blobs del índice, evitando aceptar evidencias normalizadas antes de activar su preservación de bytes.
+
 ## 3.3.0 — 2026-10-26
 
 ### Added

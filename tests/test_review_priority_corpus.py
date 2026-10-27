@@ -1,4 +1,5 @@
 """Fixture integrity and reference separation, not model-judgment tests."""
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -95,3 +96,25 @@ class PriorityCorpusTests(unittest.TestCase):
             raw = subprocess.check_output(['git', 'hash-object', '--no-filters', str(file)], cwd=repo)
             retained = subprocess.check_output(['git', 'hash-object', f'--path={relative}', str(file)], cwd=repo)
             self.assertEqual(retained.strip(), raw.strip(), f'Git would change frozen evidence bytes: {relative}')
+
+    def test_retained_evidence_matches_declared_sha256(self):
+        evidence = Path(__file__).resolve().parents[1] / 'docs/validation/priority-calibration-evidence'
+        inventory = json.loads((evidence / 'retained-inventory.json').read_text(encoding='utf-8'))
+        for name, expected in inventory['files'].items():
+            with self.subTest(file=name):
+                self.assertEqual(hashlib.sha256((evidence / name).read_bytes()).hexdigest(), expected,
+                                 f'Retained SHA-256 mismatch: {name}')
+        assessment = json.loads((evidence / 'acceptance-assessment.json').read_text(encoding='utf-8'))
+        for condition in assessment['conditions']:
+            name = Path(condition['source']).name
+            self.assertEqual(condition['source_sha256'].lower(), inventory['files'][name])
+
+    def test_indexed_evidence_matches_declared_sha256(self):
+        repo = Path(__file__).resolve().parents[1]
+        relative = 'docs/validation/priority-calibration-evidence'
+        inventory = json.loads((repo / relative / 'retained-inventory.json').read_text(encoding='utf-8'))
+        for name, expected in inventory['files'].items():
+            with self.subTest(file=name):
+                blob = subprocess.check_output(['git', 'show', f':{relative}/{name}'], cwd=repo)
+                self.assertEqual(hashlib.sha256(blob).hexdigest(), expected,
+                                 f'Indexed SHA-256 mismatch: {name}')

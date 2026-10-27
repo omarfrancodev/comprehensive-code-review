@@ -1,0 +1,40 @@
+{
+  "kind": "PR33 F001 original-byte recovery",
+  "review": "https://github.com/omarfrancodev/comprehensive-code-review/pull/33#issuecomment-6430562886",
+  "reviewed_commit": "f656be0bdf29345e9ac4d689584f27b710359454",
+  "source": {
+    "origin": "Preexisting original user worktree, before corrective staging; matched original dispatch and assessment digest",
+    "reference": "docs/validation/priority-calibration-evidence/baseline-acceptance.json",
+    "bytes": 2604,
+    "sha256": "ae7a37ee0686574ce33ab759f40b88123ba95667ca2c4ac4011931b982d00779",
+    "line_endings": {
+      "bare_lf": 9,
+      "crlf": 1
+    }
+  },
+  "published_before_fix": {
+    "bytes": 2603,
+    "sha256": "4222488855bd320f2c6363c38009cbbd085f8cfcde8a277c736189624f2b2b1e",
+    "line_endings": {
+      "bare_lf": 10,
+      "crlf": 0
+    }
+  },
+  "restored_index": {
+    "bytes": 2604,
+    "sha256": "ae7a37ee0686574ce33ab759f40b88123ba95667ca2c4ac4011931b982d00779",
+    "git_blob_sha1": "93a436f3c67a56d7b819eb3fb7527fdbb6c13403",
+    "equals_source_bytes": true
+  },
+  "cause_evidence": "The same normalized blob exists in commits 95a09c6, 09a1051 and f656be0. Later -text attributes did not rewrite the preexisting index blob; explicit restaging under current attributes restores original bytes.",
+  "hash_declarations_changed": false,
+  "classifiers_rerun": false,
+  "regression": {
+    "red": "test_indexed_evidence_matches_declared_sha256 fails with published SHA 422248... against declared ae7a37...",
+    "green": "16 selected priority tests passed after restoring original bytes",
+    "new_tests": [
+      "test_retained_evidence_matches_declared_sha256",
+      "test_indexed_evidence_matches_declared_sha256"
+    ]
+  }
+}
