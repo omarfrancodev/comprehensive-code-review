@@ -7,6 +7,8 @@ from ccr.workflow.profiles import (
 
 PROFILE_SCHEMAS = (10, 11, 12)
 NEW_TOPOLOGY_SCHEMAS = (12,)
+NEW_PROFILE_LIMITS = {'focused': (1, 1), 'standard': (1, 1),
+                      'deep': (2, 2), 'extended': (3, 5)}
 
 
 def validate_execution(record):
@@ -108,6 +110,8 @@ def validate_execution(record):
             profile_source = 'automatic'
     limits = {'focused': (1, 1), 'standard': (1, 1), 'deep': (2, 3),
               'extended': (4, 5) if profile_source == 'automatic' else (2, 5)}
+    if schema_version in NEW_TOPOLOGY_SCHEMAS:
+        limits = NEW_PROFILE_LIMITS
     minimum, maximum = limits.get(profile, (0, 0)) if isinstance(profile, str) else (0, 0)
     qualifying_discovery = ([row for row in discovery if row['independent'] is True]
                             if schema_version in PROFILE_SCHEMAS and profile in ('deep', 'extended') else discovery)
@@ -584,6 +588,8 @@ def validate_profile_execution(record: dict, trace_events: list[dict] | None = N
                                      and row['selection_source'] == 'automatic' for row in history)
     minimum = {'focused': 1, 'standard': 1, 'deep': 2,
                'extended': 4 if acquired_extended_auto or source == 'automatic' else 2}[strongest]
+    if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS:
+        minimum = NEW_PROFILE_LIMITS[strongest][0]
     qualifying_discovery = discovery
     if strongest in {'deep', 'extended'}:
         qualifying_discovery = [row for row in discovery if row.get('independent') is True]
