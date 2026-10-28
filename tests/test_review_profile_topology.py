@@ -11,6 +11,18 @@ from recovery_fixtures import record10
 
 
 class ProfileTopologyTests(unittest.TestCase):
+    def test_final_completion_requires_observed_sequence(self):
+        value = record12('extended', discovery=3, verification=2)
+        context, events, refs = source_fixture12(value)
+        completion = next(event for event in events if event['kind'] == 'grouped-verification')
+        for sequence in ('missing', None, 'late'):
+            with self.subTest(sequence=sequence):
+                if sequence == 'missing':
+                    completion.pop('sequence')
+                else:
+                    completion['sequence'] = sequence
+                self.assertTrue(execution_contract.validate_execution_sources(value, context, events, refs))
+
     def test_schema12_retains_schema11_fields_and_rejects_unknown_version(self):
         record = record12()
         self.assertEqual(review.validate(record), [])
@@ -80,6 +92,15 @@ class ProfileTopologyTests(unittest.TestCase):
                 value['coverage']['verification'] = 'unavailable' if missing_ids else 'same_session'
             with self.subTest(state=state):
                 self.assertEqual(review.validate(value), [])
+                context, events, refs = source_fixture12(value)
+                self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+                for fallback in execution['fallbacks']:
+                    absent_source = refs - {fallback['source']}
+                    self.assertTrue(any('fallback lacks retained' in error for error in
+                        execution_contract.validate_execution_sources(value, context, events, absent_source)))
+                    absent_milestone = [event for event in events if fallback['source'] not in event.get('evidence', [])]
+                    self.assertTrue(any('fallback lacks retained' in error for error in
+                        execution_contract.validate_execution_sources(value, context, absent_milestone, refs)))
                 wrong = copy.deepcopy(value)
                 wrong['coverage']['verification'] = ('independent' if state != 'independent' else 'same_session')
                 self.assertTrue(any('coverage.verification contradicts' in e for e in review.validate(wrong)))
@@ -89,6 +110,7 @@ class ProfileTopologyTests(unittest.TestCase):
         context, events, refs = source_fixture12(value)
         self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
         value = record12('extended', 'explicit', discovery=3, verification=3)
+        self.assertEqual(review.validate(value), [])
         context, events, refs = source_fixture12(value)
         errors = execution_contract.validate_execution_sources(value, context, events, refs)
         self.assertTrue(any('permits at most 2 final verification batches' in e for e in errors), errors)
@@ -117,10 +139,12 @@ class ProfileTopologyTests(unittest.TestCase):
         for profile, count in [('deep', 1), ('extended', 1), ('extended', 2)]:
             value, context, events, refs = historical_fixture12(profile, count)
             with self.subTest(profile=profile, finals=count):
+                self.assertEqual(review.validate(value), [])
                 self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
-        value, context, events, refs = historical_fixture12('deep', 0)
-        errors = execution_contract.validate_execution_sources(value, context, events, refs)
-        self.assertTrue(any('requires at least 1 final verification batches' in e for e in errors), errors)
+        for profile in ('deep', 'extended'):
+            value, context, events, refs = historical_fixture12(profile, 0)
+            errors = execution_contract.validate_execution_sources(value, context, events, refs)
+            self.assertTrue(any('requires at least 1 final verification batches' in e for e in errors), errors)
 
     def test_final_limit_and_clean_standard_exception(self):
         for profile in ('focused', 'standard', 'deep'):
@@ -270,6 +294,18 @@ class ProfileTopologyTests(unittest.TestCase):
                 self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
             else:
                 self.assertEqual(errors, [])
+            value['coverage']['execution']['status'] = 'degraded'
+            value['coverage']['execution']['fallbacks'] = [dict(assignments=['V2'], reason='dispatch_failed',
+                detail='Synthetic interruption', source='evidence/fallback.json#V2')]
+            value['coverage']['verification'] = 'same_session'
+            refs.add('evidence/fallback.json#V2')
+            events.append(dict(sequence=len(events)+1, event_id='E000901', kind='interruption',
+                               status='blocked', evidence=['evidence/fallback.json#V2']))
+            errors = execution_contract.validate_execution_sources(value, context, events, refs)
+            if early:
+                self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+            else:
+                self.assertEqual(errors, [])
 
     def test_wrong_provider_does_not_replace_final_dispatch(self):
         value = record12('extended', 'explicit', discovery=3, verification=2)
@@ -286,4 +322,159 @@ class ProfileTopologyTests(unittest.TestCase):
         errors = execution_contract.validate_execution_sources(value, context, events, refs)
         self.assertTrue(any('independent result lacks observed dispatch' in e for e in errors), errors)
         start['executor']['provider_id'] = 'actual-provider'
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+
+    def test_discovery_impeded_on_escalation_keeps_previous_binding_historical(self):
+        value, _, events, refs = historical_fixture12('extended', 1)
+        execution = value['coverage']['execution']
+        execution['status'] = 'degraded'
+        execution['results'] = [row for row in execution['results'] if row['assignment_id'] != 'D3']
+        execution['fallbacks'] = [dict(assignments=['D3'], reason='dispatch_failed',
+            detail='Synthetic interruption', source='evidence/fallback.json#D3')]
+        events = [event for event in events if 'evidence/briefs.json#D3' not in event.get('evidence', [])]
+        events.append(dict(sequence=1000, event_id='E001000', kind='interruption', status='blocked',
+                           evidence=['evidence/fallback.json#D3']))
+        refs.add('evidence/fallback.json#D3')
+        from recovery_fixtures import context10
+        self.assertEqual(review.validate(value), [])
+        self.assertEqual(execution_contract.validate_execution_sources(value, context10(value), events, refs), [])
+        historical, final, boundary = execution_contract.verification_batches(value, events)
+        self.assertEqual([row['id'] for row in historical], ['V-previa'])
+        self.assertEqual([row['id'] for row in final], ['V1'])
+        previous_completion = next(event['sequence'] for event in events
+            if 'evidence/results.json#V-previa' in event.get('evidence', []))
+        self.assertGreater(previous_completion, boundary)
+
+    def test_historical_coordinator_result_remains_visible_after_independent_final(self):
+        value, _, events, refs = historical_fixture12('extended', 2)
+        execution = value['coverage']['execution']
+        result = next(row for row in execution['results'] if row['assignment_id'] == 'V-previa')
+        result['reviewer_context'] = 'coordinator'
+        for event in events:
+            if 'evidence/briefs.json#V-previa' in event.get('evidence', []):
+                event.get('actor', event.get('executor'))['name'] = 'coordinator'
+        execution['status'] = 'degraded'
+        execution['fallbacks'] = [dict(assignments=['V-previa'], reason='dispatch_failed',
+            detail='Synthetic interruption', source='evidence/fallback.json#V-previa')]
+        value['coverage']['verification'] = 'same_session'
+        events.append(dict(sequence=1000, event_id='E001000', kind='interruption', status='blocked',
+                           evidence=['evidence/fallback.json#V-previa']))
+        refs.add('evidence/fallback.json#V-previa')
+        from recovery_fixtures import context10
+        self.assertEqual(review.validate(value), [])
+        self.assertEqual(execution_contract.validate_execution_sources(value, context10(value), events, refs), [])
+        value['coverage']['verification'] = 'independent'
+        self.assertTrue(execution_contract.validate_execution_sources(value, context10(value), events, refs))
+
+    def test_final_start_before_or_equal_to_boundary_rejects_both_statuses(self):
+        for status in ('fulfilled', 'degraded'):
+            for position in ('before', 'equal'):
+                with self.subTest(status=status, position=position):
+                    value = record12('extended', discovery=3, verification=2)
+                    execution = value['coverage']['execution']
+                    if status == 'degraded':
+                        execution['status'] = status
+                        execution['fallbacks'] = [dict(assignments=['V2'], reason='dispatch_failed',
+                            detail='Synthetic interruption', source='evidence/fallback.json#V2')]
+                        value['coverage']['verification'] = 'same_session'
+                    context, events, refs = source_fixture12(value)
+                    boundary = next(event['sequence'] for event in events
+                                    if 'evidence/results.json#D3' in event.get('evidence', []))
+                    start = next(event for event in events if event['status'] == 'started'
+                                 and 'evidence/briefs.json#V1' in event.get('evidence', []))
+                    start['sequence'] = boundary - (position == 'before')
+                    errors = execution_contract.validate_execution_sources(value, context, events, refs)
+                    self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+
+    def test_shared_context_or_provider_between_final_batches_is_not_independent(self):
+        for field, identity in [('reviewer_context', 'shared'), ('provider_id', 'shared-provider')]:
+            value = record12('extended', discovery=3, verification=2)
+            for result in value['coverage']['execution']['results']:
+                if result['assignment_id'] in ('V1', 'V2'):
+                    result[field] = identity
+            context, events, refs = source_fixture12(value)
+            with self.subTest(field=field):
+                self.assertTrue(any('fulfilled requires every assignment and reviewer independence' in e
+                    for e in execution_contract.validate_execution_sources(value, context, events, refs)))
+
+    def test_legacy_schema_preserves_historical_plus_fresh_final(self):
+        for builder in (record10, record11):
+            historical, context, events, refs = historical_fixture12('deep', 1)
+            value = builder('deep', 'automatic')
+            value['coverage']['execution'] = historical['coverage']['execution']
+            with self.subTest(schema=value['schema_version']):
+                self.assertEqual(review.validate(value), [])
+                self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+
+    def test_missing_current_result_counts_towards_final_limit(self):
+        value = record12('extended', discovery=3, verification=3)
+        execution = value['coverage']['execution']
+        execution['results'] = [row for row in execution['results'] if row['assignment_id'] != 'V3']
+        execution['status'] = 'degraded'
+        execution['fallbacks'] = [dict(assignments=['V3'], reason='dispatch_failed',
+            detail='Synthetic interruption', source='evidence/fallback.json#V3')]
+        value['coverage']['verification'] = 'unavailable'
+        self.assertEqual(review.validate(value), [])
+        errors = execution_contract.validate_execution_sources(value, *source_fixture12(value))
+        self.assertTrue(any('permits at most 2 final verification batches' in e for e in errors), errors)
+
+    def test_material_standard_cannot_close_without_final_obligation(self):
+        value = record12('standard', discovery=1, verification=0)
+        value['coverage']['areas'][0]['material'] = True
+        errors = execution_contract.validate_execution_sources(value, *source_fixture12(value))
+        self.assertTrue(any('verification requires a grouped assignment' in e for e in errors), errors)
+
+    def test_coordinator_stage_requires_own_fallback_and_cannot_replace_early_dispatch(self):
+        value = record12('extended', discovery=3, verification=2)
+        execution = value['coverage']['execution']
+        execution['status'] = 'degraded'
+        execution['fallbacks'] = [dict(assignments=['V1'], reason='dispatch_failed',
+            detail='Synthetic interruption', source='evidence/fallback.json#V1')]
+        value['coverage']['verification'] = 'same_session'
+        next(row for row in execution['results'] if row['assignment_id'] == 'V1')['reviewer_context'] = 'coordinator'
+        context, events, refs = source_fixture12(value)
+        start = next(event for event in events if event['status'] == 'started'
+                     and 'evidence/briefs.json#V1' in event.get('evidence', []))
+        stage = copy.deepcopy(start)
+        stage['kind'] = 'grouped-verification'
+        stage['actor'] = stage.pop('executor')
+        stage['event_id'] = 'E000999'
+        events.append(stage)
+        start['sequence'] = 6
+        errors = execution_contract.validate_execution_sources(value, context, events, refs)
+        self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+        events.remove(start)
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+        execution['fallbacks'][0]['assignments'] = ['V2']
+        errors = execution_contract.validate_execution_sources(value, context, events, refs)
+        self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+
+    def test_both_fresh_batches_support_recovered_identity_and_parallel_execution(self):
+        value = record12('extended', discovery=3, verification=2)
+        context, events, refs = source_fixture12(value)
+        # Both dispatches precede either completion; annotation is recorded later.
+        events[8], events[9] = events[9], events[8]
+        for index, event in enumerate(events, 1):
+            event['sequence'] = index
+            event['event_id'] = f'E{index:06d}'
+        for identifier in ('V1', 'V2'):
+            start = next(event for event in events if event['kind'] == 'agent'
+                         and f'evidence/briefs.json#{identifier}' in event.get('evidence', []))
+            executor = start.pop('executor')
+            executor['provider_id'] = 'actual-' + identifier
+            next(result for result in value['coverage']['execution']['results']
+                 if result['assignment_id'] == identifier)['provider_id'] = executor['provider_id']
+            start['actor'] = {'kind': 'coordinator', 'name': 'coordinator', 'provider_id': None}
+            source = f'evidence/dispatch.json#{identifier}'
+            refs.add(source)
+            events.append(dict(kind='dispatch-identity', status='unchanged', summary='Observed identity',
+                actor=start['actor'], executor=executor, provenance={'kind': 'recovered', 'source': source},
+                evidence=[f'evidence/briefs.json#{identifier}', source],
+                relations=[{'relation': 'records', 'target': start['event_id']}], authority=None,
+                occurred_at=None, sequence=len(events)+1, event_id=f'E{len(events)+1:06d}'))
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+        # A dispatch for another provider is irrelevant to the actual result.
+        alternate = dict(sequence=7, event_id='E000999', kind='agent', status='started',
+            executor={'name': 'V1', 'provider_id': 'unrelated-provider'}, evidence=['evidence/briefs.json#V1'])
+        events.append(alternate)
         self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])

@@ -305,7 +305,8 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                 not isinstance(item, str) for item in event.get('evidence', [])):
             errors.append(prefix + f'trace event {index} evidence must be an array of text references')
             current = dict(current, evidence=[])
-        if current.get('sequence') is not None and type(current.get('sequence')) is not int:
+        if (type(current.get('sequence')) is not int and
+                (current.get('sequence') is not None or record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS)):
             errors.append(prefix + f'trace event {index} sequence must be an integer')
             current = dict(current, sequence=-1)
         normalized_events.append(current)

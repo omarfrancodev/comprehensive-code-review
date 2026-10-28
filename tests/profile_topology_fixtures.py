@@ -73,7 +73,11 @@ def historical_fixture12(profile='deep', verification=1):
         return [event for event in original_events if by_ref[identifier] in event.get('evidence', [])]
     first_profile = [event for event in events if event.get('event_id') == 'E000001']
     second_profile = [event for event in events if event.get('event_id') == 'E000002'] if profile == 'extended' else []
-    events = first_profile + pair('D1') + pair('V-previa') + pair('D2') + second_profile
+    events = first_profile + pair('D1')
+    if profile == 'extended':
+        events += pair('D2') + pair('V-previa') + second_profile
+    else:
+        events += pair('V-previa') + pair('D2')
     if profile == 'extended':
         events += pair('D3')
     for identifier in ids[1:]:
