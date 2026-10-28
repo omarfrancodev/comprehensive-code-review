@@ -1,7 +1,7 @@
 """Synthetic schema-12 records and retained execution sources."""
 import copy
 
-from recovery_fixtures import context10, source_events
+from recovery_fixtures import context10, selection, source_events
 from traceability_fixtures import record11
 
 
@@ -49,3 +49,37 @@ def source_fixture12(record):
                            kind='interruption', status='blocked',
                            evidence=[fallback['source']]))
     return context, events, references
+
+
+def historical_fixture12(profile='deep', verification=1):
+    count = 2 if profile == 'deep' else 3
+    ids = ['V-previa'] + ([] if verification == 0 else
+          ['V1'] if verification == 1 else ['V-candidatos', 'V-invariantes'])
+    value = record12(profile, 'automatic', discovery=count, verification=len(ids), verification_ids=ids)
+    execution = value['coverage']['execution']
+    if profile == 'extended':
+        first = selection('deep', 'automatic')
+        second = selection('extended', 'explicit', id='S002', changed_from='deep',
+                           reference='evidence/context.json#profile_history/1/profile',
+                           event_id='E000002', phase='discovery', authority='Synthetic approval')
+        execution['profile_history'] = [first, second]
+        for row in execution['plan']:
+            if row['id'] not in ('D1', 'D2', 'V-previa'):
+                row['selection_id'] = 'S002'
+    context, events, references = source_fixture12(value)
+    original_events = events
+    by_ref = {row['id']: row['reference'] for row in execution['plan']}
+    def pair(identifier):
+        return [event for event in original_events if by_ref[identifier] in event.get('evidence', [])]
+    first_profile = [event for event in events if event.get('event_id') == 'E000001']
+    second_profile = [event for event in events if event.get('event_id') == 'E000002'] if profile == 'extended' else []
+    events = first_profile + pair('D1') + pair('V-previa') + pair('D2') + second_profile
+    if profile == 'extended':
+        events += pair('D3')
+    for identifier in ids[1:]:
+        events += pair(identifier)
+    for index, event in enumerate(events, 1):
+        event['sequence'] = index
+        if event['kind'] != 'profile':
+            event['event_id'] = f'E{index+100:06d}'
+    return value, context, events, references

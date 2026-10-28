@@ -223,6 +223,46 @@ def validate_execution(record):
         fail('unmet required project_gate needs a material coverage gap')
     return errors
 
+def verification_batches(record, trace_events):
+    """Classify active verifications using profile bindings and observed completion."""
+    execution = record['coverage']['execution']
+    active = [row for row in execution['plan'] if row.get('superseded_by') is None]
+    history = {row['id']: row for row in execution['profile_history']}
+    rank = {'focused': 0, 'standard': 1, 'deep': 2, 'extended': 3}
+    profiles = [history[row['selection_id']]['profile'] for row in active if row['selection_id'] in history]
+    profiles.append(record['profile'])
+    strongest = max(profiles, key=rank.get)
+    results = {row['assignment_id']: row for row in execution['results']}
+
+    def completions(row, kind):
+        result = results.get(row['id'])
+        if result is None:
+            return []
+        return [event['sequence'] for event in trace_events
+                if isinstance(event, dict) and event.get('kind') == kind
+                and event.get('status') in ('completed', 'passed')
+                and result['reference'] in event.get('evidence', [])
+                and isinstance(event.get('actor'), dict)
+                and event['actor'].get('name') == result['reviewer_context']
+                and event['actor'].get('provider_id') == result['provider_id']
+                and type(event.get('sequence')) is int]
+
+    discovery = [sequence for row in active if row['role'] == 'discovery'
+                 for sequence in completions(row, 'discovery')]
+    boundary = max(discovery, default=-1)
+    historical, final = [], []
+    for row in active:
+        if row['role'] != 'verification':
+            continue
+        selected = history.get(row['selection_id'], {}).get('profile')
+        sequences = completions(row, 'grouped-verification')
+        if (selected in rank and rank[selected] < rank[strongest]) or (sequences and max(sequences) <= boundary):
+            historical.append(row)
+        else:
+            final.append(row)
+    return historical, final, boundary
+
+
 def validate_execution_sources(record, context, trace_events, retained_references, *, assignment_registry=None):
     """Contrast declared passes with retained facts and existing trace milestones."""
     errors = validate_execution(record)
@@ -247,6 +287,8 @@ def validate_execution_sources(record, context, trace_events, retained_reference
         errors.extend(validate_profile_execution(record, trace_events, assignment_registry=registry))
         if context.get('profile_history') != execution.get('profile_history'):
             errors.append(prefix + 'profile history differs from the captured context')
+        if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS and errors:
+            return errors
     history = (execution.get('profile_history') if schema10 else
                context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))]))
     if not isinstance(history, list) or not history:
@@ -398,62 +440,105 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             if sequences:
                 discovery_sequences.append(max(sequences))
         last_discovery = max(discovery_sequences, default=-1)
-        final_candidates = []
-        require_independent = strongest in ('deep', 'extended') or (
-            strongest == 'standard' and (substantive or material))
-        for assignment in active_plan:
-            if assignment.get('role') != 'verification' or (require_independent
-                    and assignment.get('independent') is not True):
-                continue
-            assignment_selection = history_by_id.get(assignment.get('selection_id'), {})
-            if assignment_selection.get('profile') != strongest:
-                continue
-            result = next((item for item in execution['results']
-                           if item.get('assignment_id') == assignment['id']), None)
-            if result is None:
-                continue
-            completions = [event for event in trace_events if isinstance(event, dict)
-                           and event.get('kind') == 'grouped-verification'
-                           and event.get('status') in ('completed', 'passed')
-                           and isinstance(event.get('evidence'), list)
-                           and result['reference'] in event['evidence']
-                           and isinstance(event.get('actor'), dict)
-                           and (event.get('actor') or {}).get('name') == result['reviewer_context']
-                           and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
-            starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
-                                   and event.get('status') == 'started'
-                                   and event.get('kind') in ('agent', 'grouped-verification')
-                                   and isinstance(event.get('evidence'), list)
-                                   and assignment['reference'] in event['evidence']
-                                   and ((isinstance(event.get('executor'), dict)
-                                         and event['executor'].get('name') == result['reviewer_context'])
-                                        or (isinstance(event.get('actor'), dict)
-                                            and event['actor'].get('name') == result['reviewer_context']))]
-            fresh = False
-            for completion in completions:
-                completed_sequence = completion.get('sequence')
-                if type(completed_sequence) is not int or completed_sequence <= last_discovery:
+        if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS:
+            historical, final_batches, last_discovery = verification_batches(record, trace_events)
+            require_independent = strongest in ('deep', 'extended') or (
+                strongest == 'standard' and (substantive or material))
+            minimum = 0 if strongest == 'standard' and not (substantive or material) else 1
+            maximum = 2 if strongest == 'extended' else 1
+            if len(final_batches) < minimum:
+                errors.append(prefix + f'{strongest} requires at least {minimum} final verification batches')
+            if len(final_batches) > maximum:
+                errors.append(prefix + f'{strongest} permits at most {maximum} final verification batches')
+            fallback_ids = {item for row in execution['fallbacks'] for item in row['assignments']}
+            for assignment in final_batches:
+                if history_by_id.get(assignment.get('selection_id'), {}).get('profile') != strongest:
+                    errors.append(prefix + 'final verification batch must bind to the strongest profile')
+                if require_independent and assignment.get('independent') is not True:
+                    errors.append(prefix + 'final verification batch requires planned independence')
+                result = next((row for row in execution['results'] if row['assignment_id'] == assignment['id']), None)
+                if result is None:
                     continue
-                if assignment.get('independent') is True:
+                completions = [event for event in trace_events if event.get('kind') == 'grouped-verification'
+                               and event.get('status') in ('completed', 'passed')
+                               and result['reference'] in event.get('evidence', [])
+                               and isinstance(event.get('actor'), dict)
+                               and event['actor'].get('name') == result['reviewer_context']
+                               and event['actor'].get('provider_id') == result['provider_id']
+                               and type(event.get('sequence')) is int]
+                for completion in completions:
                     start = original_dispatch(assignment, result, completion)
-                    fresh = start is not None and start['sequence'] > last_discovery
-                else:
-                    fresh = any(type(event.get('sequence')) is int
-                                and last_discovery < event['sequence'] < completed_sequence
-                                for event in starts_for_verifier)
-                if fresh:
-                    break
-            if fresh:
-                final_candidates.append(assignment)
-        if len(final_candidates) != 1:
-            if execution.get('status') == 'fulfilled':
-                errors.append(prefix + 'fulfilled review requires one fresh verifier after the final discovery batch')
-            elif record.get('coverage', {}).get('verification') != 'unavailable':
-                errors.append(prefix + 'degraded review without a fresh final-batch verifier must report verification unavailable')
+                    coordinator = history[0].get('actor', {}).get('name')
+                    if start is None and (assignment['independent'] is False or (
+                            assignment['id'] in fallback_ids and result['reviewer_context'] == coordinator)):
+                        stages = [event for event in observed_starts if event.get('kind') == 'grouped-verification'
+                                  and event.get('status') == 'started'
+                                  and assignment['reference'] in event.get('evidence', [])
+                                  and isinstance(event.get('actor'), dict)
+                                  and event['actor'].get('name') == result['reviewer_context']
+                                  and event['actor'].get('provider_id') == result['provider_id']
+                                  and type(event.get('sequence')) is int
+                                  and event['sequence'] < completion['sequence']]
+                        start = min(stages, key=lambda event: event['sequence'], default=None)
+                    if start is None or not last_discovery < start['sequence'] < completion['sequence']:
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
         else:
-            expected = 'independent' if final_candidates[0].get('independent') is True else 'same_session'
-            if record.get('coverage', {}).get('verification') != expected:
-                errors.append(prefix + 'fresh final-batch verifier status contradicts its independent context')
+            final_candidates = []
+            require_independent = strongest in ('deep', 'extended') or (
+                strongest == 'standard' and (substantive or material))
+            for assignment in active_plan:
+                if assignment.get('role') != 'verification' or (require_independent
+                        and assignment.get('independent') is not True):
+                    continue
+                assignment_selection = history_by_id.get(assignment.get('selection_id'), {})
+                if assignment_selection.get('profile') != strongest:
+                    continue
+                result = next((item for item in execution['results']
+                               if item.get('assignment_id') == assignment['id']), None)
+                if result is None:
+                    continue
+                completions = [event for event in trace_events if isinstance(event, dict)
+                               and event.get('kind') == 'grouped-verification'
+                               and event.get('status') in ('completed', 'passed')
+                               and isinstance(event.get('evidence'), list)
+                               and result['reference'] in event['evidence']
+                               and isinstance(event.get('actor'), dict)
+                               and (event.get('actor') or {}).get('name') == result['reviewer_context']
+                               and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
+                starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
+                                       and event.get('status') == 'started'
+                                       and event.get('kind') in ('agent', 'grouped-verification')
+                                       and isinstance(event.get('evidence'), list)
+                                       and assignment['reference'] in event['evidence']
+                                       and ((isinstance(event.get('executor'), dict)
+                                             and event['executor'].get('name') == result['reviewer_context'])
+                                            or (isinstance(event.get('actor'), dict)
+                                                and event['actor'].get('name') == result['reviewer_context']))]
+                fresh = False
+                for completion in completions:
+                    completed_sequence = completion.get('sequence')
+                    if type(completed_sequence) is not int or completed_sequence <= last_discovery:
+                        continue
+                    if assignment.get('independent') is True:
+                        start = original_dispatch(assignment, result, completion)
+                        fresh = start is not None and start['sequence'] > last_discovery
+                    else:
+                        fresh = any(type(event.get('sequence')) is int
+                                    and last_discovery < event['sequence'] < completed_sequence
+                                    for event in starts_for_verifier)
+                    if fresh:
+                        break
+                if fresh:
+                    final_candidates.append(assignment)
+            if len(final_candidates) != 1:
+                if execution.get('status') == 'fulfilled':
+                    errors.append(prefix + 'fulfilled review requires one fresh verifier after the final discovery batch')
+                elif record.get('coverage', {}).get('verification') != 'unavailable':
+                    errors.append(prefix + 'degraded review without a fresh final-batch verifier must report verification unavailable')
+            else:
+                expected = 'independent' if final_candidates[0].get('independent') is True else 'same_session'
+                if record.get('coverage', {}).get('verification') != expected:
+                    errors.append(prefix + 'fresh final-batch verifier status contradicts its independent context')
     for row in execution['fallbacks']:
         if row['source'] not in retained_references or not any(event.get('kind') in ('agent', 'interruption')
                 and event.get('status') in ('failed', 'blocked', 'skipped') and row['source'] in event.get('evidence', [])
