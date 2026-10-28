@@ -118,7 +118,7 @@ def validate(record, *, reference_index=None, reference_sources=None,
         errors.extend(validate_execution(record))
     if schema_version in (9, 10, 11, 12):
         errors.extend(validate_check_execution(record))
-    if schema_version in (10, 11):
+    if schema_version in (10, 11, 12):
         errors.extend(validate_profile_execution(record))
 
     material_area_gap = False

@@ -7,7 +7,7 @@ def _text(value):
     return isinstance(value, str) and bool(value.strip()) and len(value) <= 4000
 
 def validate_check_execution(record):
-    if record.get('schema_version') not in (9, 10, 11):
+    if record.get('schema_version') not in (9, 10, 11, 12):
         return []
     errors = []
     checks = record.get('checks')
@@ -36,7 +36,7 @@ def validate_check_execution(record):
 
 def validate_check_sources(record, executors, *, receipt_sources=None):
     errors = validate_check_execution(record)
-    if errors or record.get('schema_version') not in (9, 10, 11):
+    if errors or record.get('schema_version') not in (9, 10, 11, 12):
         return errors
     if not isinstance(executors, list):
         return ['checks.execution.sources: executors must be an array']

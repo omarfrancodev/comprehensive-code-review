@@ -142,12 +142,12 @@ def merge(context, discoveries, verification=None, *, reference_index=None,
     if not isinstance(context, dict) or not isinstance(context.get('context_id'), str) or not context['context_id'].strip():
         raise ValueError('context requires a nonempty context_id')
     check_schema = context.get('check_schema_version', 2)
-    if type(check_schema) is not int or check_schema not in (2, 11):
-        raise ValueError('check_schema_version must be 2 or 11')
+    if type(check_schema) is not int or check_schema not in (2, 11, 12):
+        raise ValueError('check_schema_version must be 2, 11 or 12')
     neutral = {'schema_version': check_schema, 'stage': 'discovery', 'scope': context.get('scope'),
                'findings': [], 'checks': context.get('checks', []), 'coverage': {'flows': [], 'limitations': []}}
     errors = validate_review(neutral)
-    if check_schema == 11:
+    if check_schema in (11, 12):
         errors.extend(validate_check_execution(neutral))
     if errors:
         raise ValueError('invalid scope/check ledger: ' + '; '.join(errors))

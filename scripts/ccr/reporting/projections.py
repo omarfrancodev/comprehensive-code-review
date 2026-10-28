@@ -43,7 +43,7 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
     checks = record.get('checks') if isinstance(record, dict) else None
     if not isinstance(checks, list):
         raise ValueError('checks must be an array for public projection')
-    current = record.get('schema_version') == 11
+    current = record.get('schema_version') in (11, 12)
     if classification is None:
         if (current and checks) or any(_needs_check_classification(check) for check in checks if isinstance(check, dict)):
             raise ValueError('check publication context required for free-text reasons or internal evidence')
@@ -141,7 +141,7 @@ def public_coverage(record: dict, classification: dict | None = None) -> list[st
 
 def public_limitations(record, classification=None):
     original = record['coverage']['limitations']
-    if record['schema_version'] in (8, 9, 10, 11):
+    if record['schema_version'] in (8, 9, 10, 11, 12):
         if classification is not None:
             raise ValueError('schemas 8–10 already contain limitation classification')
         rows = original

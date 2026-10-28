@@ -227,12 +227,12 @@ def validate_preflight(*, phase: str, manifest: dict | None,
         issues.append(_issue('missing_input', 'record', None,
                              'retain preflight is incomplete without a final candidate',
                              'the structurally final review candidate'))
-    elif phase == 'retain' and record.get('schema_version') in (9, 10, 11):
-        if record.get('schema_version') == 11:
+    elif phase == 'retain' and record.get('schema_version') in (9, 10, 11, 12):
+        if record.get('schema_version') in (11, 12):
             from ccr.contracts.review import validate as validate_review
             for error in validate_review(record):
                 issues.append(_issue('invalid_record', 'candidate.structure', None, error,
-                                     'a structurally valid final schema 11 candidate'))
+                                     'a structurally valid final schema 11 or 12 candidate'))
             if record.get('stage') != 'final':
                 issues.append(_issue('invalid_record', 'candidate.stage', None,
                                      'retain preflight requires a final candidate', 'stage final'))

@@ -76,7 +76,7 @@ def _source_snapshot(run):
     run_id = manifest.get('run_id')
     if run_id is not None and (not isinstance(run_id, str) or not re.fullmatch(r'[0-9a-f]{20}', run_id)):
         raise HistoryError('source run identity is malformed')
-    if run_id and record.get('schema_version') in (6, 7, 8, 9, 10, 11) and record.get('review_id') != 'CR-' + run_id:
+    if run_id and record.get('schema_version') in (6, 7, 8, 9, 10, 11, 12) and record.get('review_id') != 'CR-' + run_id:
         raise HistoryError('retained review ID differs from source run identity')
     hashes = manifest.get('hashes')
     if (not isinstance(hashes, dict) or hashes.get('review.json') != _hash(review_bytes)
