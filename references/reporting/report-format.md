@@ -116,7 +116,7 @@ Separate confirmation, priority and blocking when consolidating observations. Co
 
 For each listed check show ID/state/revision, then nested **Propósito** and **Resultado** items, followed by any actual safe reference. Missing historical purpose displays `Propósito no registrado (resultado anterior)`; no inferred objective. Findings keep scenario/impact/correction and a nested evidence list. Group by the real check ID, link to its Validación anchor, omit an exact copy of that check's original result, retain distinct deltas as subitems and keep a link even when no delta remains. Different check IDs remain distinct even with identical outputs. Each distinct static observation remains an **Inspección estática** item without a fabricated check. Remove only exact duplicates from the same origin.
 
-The same Markdown hierarchy applies to full reports and public comments. Private final 11 shows the five-area summary plus all 27 dimension rows, each with name, status, details and finding references; historical records get no invented dimension table. Public comments omit both internal matrices and present editorial product-flow summaries. Coverage always preserves each source element, its order and duplicates as a nested list:
+The same Markdown hierarchy applies to full reports and public comments. Private final 11/12 shows the five-area summary plus all 27 dimension rows, each with name, status, details and finding references; historical records get no invented dimension table. Public comments omit both internal matrices and present editorial product-flow summaries. Coverage always preserves each source element, its order and duplicates as a nested list:
 
 ```markdown
 - **Evidencia:**
@@ -130,3 +130,9 @@ The same Markdown hierarchy applies to full reports and public comments. Private
 ```
 
 This is a partial presentation fragment, not a complete result. Escape all supplied prose separately from generated Markdown; encode legacy ID fragments. Purpose/result/impact remain different facts, rather than three restatements of the defect.
+
+## Accredited checks and private models
+
+Final 12 uses the validated check-disclosure projection. Alongside purpose/result, show the sanitized command and eligible project resources when selected proof accredits the pinned input and executed bytes. A CCR-created/modified entrypoint or unknown origin uses a concrete explanation of method, scenario and result; do not label that invocation as a project resource. Remove sensitive path components/arguments and mark sanitized representations. The same decision applies across public comment, requested handoff and local full/brief/JSON, without reintroducing raw commands in evidence or prose.
+
+Private reports and local full/brief include a model summary by actual participant/phase: configured model, observed model, status, and sanitized provenance or reason for absence. Unknown is explicit and is never guessed from harness/provider IDs. A ledger with coordination alone must disclose reviewers missing capture. Preserve observed changes/conflicts and link the selected ledger digest; do not export raw ledger bytes. Public comments and public handoff omit model/worker provenance. See [the maintained example](../../docs/examples/check-disclosure-and-models.md).

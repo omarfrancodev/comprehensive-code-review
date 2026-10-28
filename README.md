@@ -42,8 +42,8 @@ Usa comprehensive-code-review --delivery brief --output docs/revisiones para rev
 |---|---|
 | focused | Un revisor y comprobación escéptica en la misma sesión para un alcance acotado demostrado. |
 | standard | Un revisor; verificador independiente para candidatos sustantivos o dudas materiales. |
-| deep | Dos revisores independientes sobre flujos e invariantes; un tercero solo por una necesidad distinta, y verificación independiente agrupada. |
-| extended | Automático: cuatro o cinco asignaciones justificadas; explícito: dos a cinco según necesidades, y una verificación independiente agrupada. |
+| deep | Exactamente dos descubridores independientes y un verificador final; una tercera perspectiva necesaria exige extended. |
+| extended | Automático y explícito: tres a cinco descubridores independientes; uno o dos lotes finales, combinados o particionados en candidatos e invariantes. |
 
 Sin perfil solicitado, la selección es automática según mecanismos, requisitos y cobertura. Un perfil explícito permanece fijo. Ningún perfil elimina los checks obligatorios, la persistencia ni el aislamiento de ejecuciones. La [guía de uso](docs/usage.md) explica selección, límites y revisiones incrementales.
 
@@ -121,6 +121,6 @@ La [rúbrica canónica](references/contracts/priority-calibration.md) define P0�
 
 ## Trazabilidad explícita en 3.3.0
 
-Los resultados nuevos usan final schema 11: cada check declara propósito antes de ejecutarse, la captura lo conserva en recibo 2 y las cinco áreas muestran sus 27 dimensiones con evidencia o motivo. El informe y los comentarios usan sublistas para evidencias y cobertura; cada evidencia enlaza su check real o conserva su origen estático. Propósito, resultado e impacto del hallazgo se presentan por separado.
+Los resultados nuevos usan final schema 12: cada check declara propósito antes de ejecutarse, la captura lo conserva en recibo 2 y las cinco áreas muestran sus 27 dimensiones con evidencia o motivo. El informe y los comentarios usan sublistas para evidencias y cobertura; cada evidencia enlaza su check real o conserva su origen estático. Propósito, resultado e impacto del hallazgo se presentan por separado.
 
-Los comentarios requieren resúmenes editoriales ligados al registro para propósito y cada flujo; los drafts nuevos usan schema 2. Un draft 1 se conserva y se prepara de nuevo desde la misma fuente vigente. Finales 1–10, recibos 1 y reglas de reutilización mantienen su contrato; archive 8/layout 2, trace 1 y packet 1 no cambian. Los consumidores de nuevos resultados deben admitir final 11; la compatibilidad del visor independiente queda fuera de esta implementación. Véanse [contrato](references/contracts/result-contract.md), [publicación](references/reporting/publication.md) y [validación](docs/validation/2026-10-26-check-evidence-coverage-implementation.md).
+Los comentarios requieren resúmenes editoriales ligados al registro para propósito y cada flujo; los drafts de la proyección nueva usan schema 3. Draft 2 conserva su política histórica; un draft 1 se conserva y se prepara de nuevo desde la misma fuente vigente. Finales 1–11, recibos 1 y reglas de reutilización mantienen su contrato; archive 8/layout 2, trace 1 y packet 1 no cambian. Los consumidores de nuevos resultados deben admitir final 12; la compatibilidad del visor independiente queda fuera de esta implementación. Véanse [contrato](references/contracts/result-contract.md), [publicación](references/reporting/publication.md) y [validación](docs/validation/2026-10-26-check-evidence-coverage-implementation.md).

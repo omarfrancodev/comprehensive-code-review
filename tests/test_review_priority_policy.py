@@ -45,5 +45,5 @@ class PriorityPolicyTests(unittest.TestCase):
         packet = dict(packet_version=1, stage='discovery', context_id='synthetic',
                       findings=[], check_ids=[], coverage=dict(flows=[], limitations=[]))
         self.assertEqual(packets.validate(packet), [])
-        self.assertIn('--expected-schema 11', (ROOT / 'SKILL.md').read_text(encoding='utf-8'))
+        self.assertIn('--expected-schema 12', (ROOT / 'SKILL.md').read_text(encoding='utf-8'))
         self.assertIn('check_schema_version', (ROOT / 'references/execution/worker-packets.md').read_text(encoding='utf-8'))

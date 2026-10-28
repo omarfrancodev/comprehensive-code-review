@@ -2,6 +2,16 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.5.0 — Sin publicación registrada
+
+### Changed
+
+- Introducir final schema 12 conservando propósito, las 27 dimensiones y la forma de schema 11; congelar los contratos publicados 1–11.
+- Fijar deep en dos descubridores y extended en tres a cinco para selección automática o explícita; permitir uno o dos lotes finales particionados y conservar verificaciones históricas en el agregado.
+- Vincular la frescura al despacho original y exigir orden final aun en ejecución degradada; mantener fuentes, bindings, gates y retención.
+- Mostrar comandos y recursos acreditados del proyecto con ocultación selectiva en comentarios y entregas; explicar las comprobaciones creadas por CCR o de origen desconocido, con draft 3 y recibo de delivery 2 ligados a evidencia seleccionada.
+- Capturar modelos configurados/observados o ausencia explícita por participante; conservar el ledger privado schema 1 y presentar su resumen en informe y delivery local, sin backfill histórico ni consultas adicionales.
+
 ## 3.4.0 — 2026-10-26
 
 ### Changed

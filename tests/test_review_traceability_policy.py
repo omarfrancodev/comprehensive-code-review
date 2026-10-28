@@ -13,11 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 class PolicyTests(unittest.TestCase):
     def test_workflow_requires_new_contract_and_keeps_packet1(self):
         skill = (ROOT/'SKILL.md').read_text(encoding='utf-8')
-        self.assertIn('--expected-schema 11', skill)
+        self.assertIn('--expected-schema 12', skill)
         artifacts = (ROOT/'references/archive/artifacts.md').read_text(encoding='utf-8')
         profiles = (ROOT/'references/workflow/profiles.md').read_text(encoding='utf-8')
         self.assertNotIn('--expected-schema 10', artifacts)
-        self.assertIn('New final records use schema 11', profiles)
+        self.assertIn('New final records use schema 12', profiles)
         rules = (ROOT/'references/contracts/result-contract.md').read_text(encoding='utf-8')
         self.assertIn('checks[].purpose', rules)
         packet = dict(packet_version=1, stage='discovery', context_id='synthetic', findings=[], check_ids=[],

@@ -2,7 +2,7 @@
 
 - `scripts/ccr/contracts/checks.py`: contrato puro de propósito de checks y recibos nuevos.
 
-- `scripts/ccr/contracts/dimensions.py`: catálogo y coherencia de las 27 dimensiones de final 11, sin IO.
+- `scripts/ccr/contracts/dimensions.py`: catálogo y coherencia de las 27 dimensiones de final 11/12, sin IO.
 
 `scripts/__main__.py` es la entrada ejecutable instalada (`python <skill>/scripts ...`). `ccr.cli.main.AREAS` es el registro fijo de las doce áreas. Los parsers y traducciones de errores viven en `ccr.cli`; las operaciones de dominio viven en su propietario por área. El launcher carga sólo el parser solicitado, y la ayuda raíz no inicia servicios.
 
@@ -25,7 +25,7 @@ Cada fila indica el contrato principal que consume código vecino, el efecto que
 | `scripts/ccr/cli/packets.py` | Validar paquetes internos y combinar deltas de decisión explícitos. | `main(argv, *, prog) -> int`. | `test_review_packets.py`, `test_script_cli.py` |
 | `scripts/ccr/cli/recovery.py` | Exponer inspección de solo lectura y clasificación acotada. | `main(argv, *, prog) -> int`. | `test_review_recovery.py`, `test_review_latest.py`, `test_script_cli.py` |
 | `scripts/ccr/cli/runner.py` | Aceptar una ejecución configurada con contexto nuevo. | `main(argv, *, prog) -> int`; delega en `execution.runner`. | `test_review_areas.py`, `test_review_execution_policy.py`, `test_script_cli.py` |
-| `scripts/ccr/cli/setup.py` | Validar y guardar un candidato de preparación en una sesión propia. | `main(argv, *, prog) -> int`; expone `profile`, `context`, `event`, `inputs`, `changes`, `materials` y `reuse-context`. | `test_review_setup.py`, `test_review_reuse_context.py`, `test_script_cli.py`, `test_script_characterization.py` |
+| `scripts/ccr/cli/setup.py` | Validar y guardar un candidato de preparación en una sesión propia. | `main(argv, *, prog) -> int`; expone `profile`, `context`, `event`, `inputs`, `changes`, `materials`, `reuse-context`, `model-usage` y `check-disclosure`. | `test_review_setup.py`, `test_review_reuse_context.py`, `test_script_cli.py`, `test_script_characterization.py` |
 | `scripts/ccr/cli/workspace.py` | Exponer operaciones explícitas sobre workspaces Git propios. | `main(argv, *, prog) -> int`. | `test_workspace_layout.py`, `test_review_areas.py`, `test_script_cli.py` |
 
 ## `ccr.shared` — primitivas compartidas
@@ -128,6 +128,17 @@ Cada fila indica el contrato principal que consume código vecino, el efecto que
 
 La copia de la skill debe conservar completo `scripts/`, incluidos `scripts/__main__.py` y todos los paquetes `scripts/ccr`. No se admiten imports desde `review_*.py`; la ruptura y equivalencias están en [la guía de migración](../docs/script-migration.md). Los contratos CLI registrados, la copia instalada en una ruta con espacios y el grafo se verifican en `tests/test_script_cli.py`, `tests/test_script_layout.py` y `tests/test_script_dependencies.py`.
 
-## Contratos de trazabilidad vigentes (3.3.0)
+## Contratos de trazabilidad publicados en 3.3.0
 
-`contracts/checks.py` valida purpose no vacío/sin controles antes de captura; `execution/checks.py` conserva request → receipt 2; findings/receipts/preflight validan igualdad y final 11. `contracts/dimensions.py` valida 27 decisiones/agregados puros. `reporting/blocks.py` comparte origen/delta y listas de cobertura; projections exige contextos editoriales por digest/índice, comment prepara/verifica draft 2. Delivery clasifica purpose/details como PROSE e IDs como STRUCTURAL. Los productores finales usan 11; los contratos históricos y archivo 8/layout 2 conservan sus versiones.
+`contracts/checks.py` valida purpose no vacío/sin controles antes de captura; `execution/checks.py` conserva request → receipt 2; findings/receipts/preflight validan igualdad y final 11. `contracts/dimensions.py` valida 27 decisiones/agregados puros. `reporting/blocks.py` comparte origen/delta y listas de cobertura; projections exige contextos editoriales por digest/índice, comment prepara/verifica draft 2. Delivery clasifica purpose/details como PROSE e IDs como STRUCTURAL. Los productores de 3.3/3.4 usaban final 11; los contratos históricos y archivo 8/layout 2 conservan sus versiones.
+
+## Topología, exposición selectiva y modelos (3.5.0)
+
+| Módulo | Responsabilidad y efecto | Contrato principal | Pruebas representativas |
+|---|---|---|---|
+| `scripts/ccr/contracts/check_disclosure.py` | Acreditar pertenencia/bytes de recursos y decidir comando saneado o explicación, sin IO. | `validate_check_disclosure`, `build_disclosure_row`, `input_identity_for`; prueba Git y ancla inicial. | `test_review_check_disclosure.py` |
+| `scripts/ccr/execution/disclosure.py` | Leer únicamente fuentes seleccionadas y verificar catálogo/digests/identidad inicial; sin ejecutar checks. | `read_selected_disclosure`, `SelectedDisclosureSources`. | `test_review_disclosure_integration.py` |
+| `scripts/ccr/reporting/check_disclosure.py` | Proyectar una vista tipada común acreditada para todas las audiencias; puro. | `project_check_disclosure`, `disclosure_view`, `disclosure_lines`. | `test_review_check_disclosure.py`, `test_review_disclosure_integration.py` |
+| `scripts/ccr/reporting/models.py` | Validar/resumir metadata suministrada o retenida y mostrar ausencias por participante conocido; sin consultas a proveedores. | `model_summary`, `model_usage_context`, `model_lines`. | `test_review_model_capture.py`, `test_review_model_usage.py` |
+
+Final 12 hereda la forma de 11 y cambia topología/agregado solo para 12. `contracts/execution.py` clasifica filas históricas/finales con fuentes y conserva el despacho original; 10/11 mantienen sus reglas. La captura de workspace fija el mapa inicial de recursos; checks conserva argv y prueba de bytes junto al recibo de comandos 2. Setup produce candidatos de disclosure y modelos; registro/retención contrastan fuentes e identidades. La proyección nueva usa draft 3 y delivery receipt 2; model ledger 1 sigue privado, sin medir costes ni seleccionar modelos. Los contratos históricos publicados y archive 8/layout 2 mantienen sus versiones.
