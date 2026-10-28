@@ -16,7 +16,7 @@ from ccr.execution.workspace_manifest import owned_session as _owned_session
 from ccr.shared.encoding import compact_bytes as _json_bytes
 from ccr.shared.json_io import read_json
 from ccr.workflow.builders import (
-    _issues_message, build_assignment_event, build_context, build_model_usage_update,
+    _issues_message, build_assignment_event, build_context, build_model_usage_update, build_check_disclosure,
     build_profile_selection, build_review_inputs,
 )
 
@@ -151,6 +151,26 @@ def run_command(command, input_path, output_path):
         if args['complete'] and not json.loads(sources[MATERIALS])['complete']:
             raise ValueError('incomplete material map cannot certify context')
         result = build_review_context(**args)
+    elif command == 'check-disclosure':
+        required = {'record', 'input_identity', 'execution_observations', 'sources'}
+        if set(args) != required or not isinstance(args['sources'], dict) or len(args['sources']) > 64:
+            raise ValueError('check-disclosure arguments require record, input_identity, execution_observations and selected sources')
+        selected = {}
+        for reference, row in args['sources'].items():
+            if not isinstance(row, dict) or set(row) != {'reference', 'sha256'}:
+                raise ValueError('check-disclosure source requires owned-session reference and SHA-256')
+            raw = _session_evidence_file(session_dir, row['reference']).read_bytes()
+            if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != row['sha256']:
+                raise ValueError('check-disclosure selected source differs from its SHA-256')
+            selected[reference] = raw
+        result = build_check_disclosure(args['record'], args['input_identity'], args['execution_observations'], selected)
+    elif command == 'model-usage':
+        required = {'context', 'ledger', 'metadata', 'actor', 'phase', 'activity',
+                    'review_id', 'harness_id', 'assignment_id', 'check_id'}
+        if set(args) != required:
+            raise ValueError('model-usage arguments require exactly ' + ', '.join(sorted(required)))
+        context, ledger = build_model_usage_update(**args)
+        result = {'context': context, 'ledger': ledger}
     elif command == 'profile':
         result = build_profile_selection(args)
     elif command == 'event':
@@ -187,6 +207,17 @@ def run_command(command, input_path, output_path):
         result = build_context(
             manifest, execution_plan=args['execution_plan'], executors=args['executors'],
             review_inputs=args['review_inputs'], reference_index=args['reference_index'])
+        from ccr.contracts.check_disclosure import input_identity_for
+        identity = input_identity_for({'scope': manifest['scope']})
+        baselines = {row.get('resource_baseline_sha256') for row in workspace_manifest['workspaces']
+                     if row['path'] in {entry['workspace'] for entry in args['executors']}}
+        baselines.discard(None)
+        if len(baselines) == 1:
+            identity['resource_manifest_sha256'] = next(iter(baselines))
+        prior_identity = manifest.get('check_disclosure_input_identity')
+        if prior_identity is not None and identity != prior_identity:
+            raise ValueError('context cannot replace the initially pinned disclosure identity')
+        result['check_disclosure_input_identity'] = identity
     else:
         raise ValueError('unsupported setup builder')
     path = write_new_json(session_dir, output_path, result)

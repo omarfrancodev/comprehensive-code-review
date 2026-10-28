@@ -6,12 +6,14 @@ from urllib.parse import quote
 from ccr.contracts.review import validate
 from ccr.contracts.dimensions import DIMENSION_LABELS
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
+from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
 from ccr.contracts.validation import (
     AREAS, AREA_STATUS, CHECK_STATUS, DESCRIPTION, FAILURE_KINDS, MODE_LABELS,
     ORIGINS, PRIORITIES, PROFILE_PHASES, PROFILES,
     REREVIEW_STATUS, REVIEW_KINDS, VERDICTS, VERIFICATION,
 )
 from ccr.reporting.markdown import markdown_text, one_line, reference_text, table_cell
+from ccr.reporting.models import model_summary, model_lines
 from ccr.reporting.projections import (
     public_checks, public_coverage, public_limitations, public_projection, public_reservations, public_url,
 )
@@ -42,24 +44,32 @@ def confirmed_counts_text(findings):
         for priority, label in PRIORITIES.items())
 
 def render(record, audience='user', publication_context=None, *, check_publication_context=None,
-           coverage_publication_context=None):
+           coverage_publication_context=None, check_disclosure_context=None, check_disclosure_sources=None,
+           model_usage_context=None):
     return _render(record, audience, publication_context,
                    check_publication_context=check_publication_context,
-                   coverage_publication_context=coverage_publication_context)
+                   coverage_publication_context=coverage_publication_context,
+                   check_disclosure_context=check_disclosure_context, check_disclosure_sources=check_disclosure_sources,
+                   model_usage_context=model_usage_context)
 
 
 def render_portable(record, evidence_by_finding):
     """Render a typed portable record with groups formed before prose projection."""
-    return _render(record, evidence_by_finding=evidence_by_finding)
+    return _render(record, evidence_by_finding=evidence_by_finding, include_models=False)
 
 
 def _render(record, audience='user', publication_context=None, *, check_publication_context=None,
-            coverage_publication_context=None, evidence_by_finding=None):
+            coverage_publication_context=None, evidence_by_finding=None,
+            check_disclosure_context=None, check_disclosure_sources=None, model_usage_context=None,
+            include_models=True):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
+    disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+                  if audience == 'comment' or check_disclosure_context is not None else None)
+    disclosure_rows = {row['id']: row for row in disclosure['checks']} if disclosure else {}
     if publication_context is not None and audience != 'comment':
         raise ValueError('publication context is only applicable to public rendering')
     if check_publication_context is not None and audience != 'comment':
@@ -155,9 +165,11 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
             reuse = ' · evidencia reutilizada: ' + one_line(display['reuse_reason']) if display['reused'] else ''
             repeat = f" · repetición: {one_line(display['rerun_reason'])}" if display['rerun_reason'] else ''
             classification = f" · fallo de {FAILURE_KINDS[check['failure_kind']]}" if check['failure_kind'] else ''
-            command = f" `{one_line(check['command'])}` —" if audience == 'user' else ''
+            command = f" `{one_line(check['command'])}` —" if audience == 'user' and not disclosure else ''
             lines.append(f"- **{check['id']}**:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
             lines.append('  - **Propósito:** ' + markdown_text(display.get('purpose') or 'Propósito no registrado (resultado anterior)'))
+            if check['id'] in disclosure_rows:
+                lines.extend(disclosure_lines(disclosure_rows[check['id']]))
             if display.get('evidence'):
                 lines.append('  - **Resultado:** ' + markdown_text(display['evidence']))
             if display.get('reference'):
@@ -218,17 +230,26 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         lines.extend('- Recurso pendiente: ' + one_line(p) for p in record['resources']['residuals'])
         if record['resources']['publication'] in {'published', 'failed'}:
             lines.append('- Publicación: ' + record['resources']['publication'])
+    if audience == 'user' and include_models:
+        if model_usage_context is not None and model_usage_context.get('ledger') is not None:
+            if model_usage_context['ledger'].get('review_id') != record.get('review_id'):
+                raise ValueError('model usage evidence belongs to another review')
+        lines.extend(model_lines(model_usage_context))
     output = '\n'.join(lines) + '\n'
-    return public_projection(output, record) if audience == 'comment' else output
+    return public_projection(output, record, disclosure, check_disclosure_sources) if audience == 'comment' else output
 
 def render_handoff(record, context=None, audience='user', publication_context=None, *,
-                   check_publication_context=None, coverage_publication_context=None):
+                   check_publication_context=None, coverage_publication_context=None,
+                   check_disclosure_context=None, check_disclosure_sources=None):
     """Render an explicitly requested contextual index, never an authorization."""
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
+    disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+                  if audience == 'comment' or check_disclosure_context is not None else None)
+    disclosure_rows = {row['id']: row for row in disclosure['checks']} if disclosure else {}
     if publication_context is not None and audience != 'comment':
         raise ValueError('publication context is only applicable to public rendering')
     if audience != 'comment' and (check_publication_context is not None or coverage_publication_context is not None):
@@ -292,6 +313,8 @@ def render_handoff(record, context=None, audience='user', publication_context=No
         lines.append(f"- {check['id']} · {CHECK_STATUS[check['status']]} · versión {markdown_text(check['revision'])}" +
                      evidence_ref)
         lines.append('  - **Propósito:** ' + markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
+        if check['id'] in disclosure_rows:
+            lines.extend(disclosure_lines(disclosure_rows[check['id']]))
         lines.append('  - **Resultado:** ' + markdown_text(check['evidence'] or 'Sin ejecución'))
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
@@ -312,4 +335,4 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     lines.extend(['', 'Antes de continuar, comprobar que base, head y snapshot coincidan con la versión actual y repetir las comprobaciones afectadas o pendientes con un nuevo ID de ejecución.',
                   'La transferencia conserva el contexto; cualquier corrección, commit o publicación requiere la autorización correspondiente.'])
     output = '\n'.join(lines) + '\n'
-    return public_projection(output, record) if audience == 'comment' else output
+    return public_projection(output, record, disclosure, check_disclosure_sources) if audience == 'comment' else output

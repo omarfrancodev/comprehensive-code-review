@@ -29,6 +29,7 @@ from ccr.workflow import profiles as review_profiles
 from ccr.maintenance import metrics as review_metrics
 from ccr.contracts.review import validate as validate_review, validate_reference_semantics
 from ccr.reporting.render import render as render_review, render_handoff
+from ccr.reporting.models import model_usage_context as load_model_usage_context
 from ccr.contracts import preflight as review_preflight
 from ccr.contracts import model_usage as review_model_usage
 from ccr.archive import trace as review_trace
@@ -153,6 +154,43 @@ def _validate_model_usage_context(context, source, manifest):
     if issues:
         raise ValueError('selected model usage evidence is invalid: ' + issues[0]['message'])
 
+
+def rebind_disclosure_for_cleanup(previous, current, context, source):
+    """Rebind proof when ordinary closure changes only canonical cleanup facts."""
+    reference = context.get('check_disclosure_reference')
+    if reference is None:
+        return {}
+    from ccr.contracts.check_disclosure import validate_check_disclosure, source_digest
+    old, new = copy.deepcopy(previous), copy.deepcopy(current)
+    for value in (old, new):
+        for key in ('cleanup', 'residuals'):
+            value['resources'].pop(key, None)
+    if old != new:
+        raise ValueError('disclosure rebinding permits only cleanup/residual changes')
+    disclosure = json.loads(source(reference))
+    selected = {}
+    for row in disclosure['checks']:
+        for field in ('execution_reference', 'evidence_reference'):
+            if row[field] is not None:
+                selected[row[field]] = source(row[field])
+    issues = validate_check_disclosure(previous, disclosure, selected, context['check_disclosure_input_identity'])
+    if issues:
+        raise ValueError('; '.join(issues))
+    disclosure['source_sha256'] = source_digest(current)
+    return {reference: _json_bytes(disclosure)}
+
+
+def retained_model_context(run, manifest, contents=None, record=None):
+    """Read exclusively selected evidence, including when the session is gone."""
+    contents = contents or {}
+    def source(name):
+        return selected_source_bytes(run, manifest, contents, name)
+    if 'evidence/context.json' not in contents and 'evidence/context.json' not in manifest.get('hashes', {}):
+        return None
+    context = json.loads(source('evidence/context.json'))
+    events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
+    return load_model_usage_context(context, source, manifest, record=record, events=events)
+
 def _present_resources(registered):
     present = []
     for raw in registered:
@@ -173,6 +211,25 @@ def _execution_gate(run, manifest, value, contents):
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')
     _validate_model_usage_context(context, source, manifest)
+    disclosure_reference = context.get('check_disclosure_reference')
+    if disclosure_reference is not None:
+        from ccr.contracts.check_disclosure import validate_check_disclosure, input_identity_for
+        if disclosure_reference != 'evidence/check-disclosure.json':
+            raise ValueError('check disclosure reference must identify evidence/check-disclosure.json')
+        disclosure_sources = {disclosure_reference: source(disclosure_reference)}
+        disclosure = json.loads(disclosure_sources[disclosure_reference])
+        for row in disclosure.get('checks', []):
+            for field in ('execution_reference', 'evidence_reference'):
+                if row.get(field) is not None:
+                    disclosure_sources[row[field]] = source(row[field])
+        identity = context.get('check_disclosure_input_identity')
+        if identity is None:
+            raise ValueError('selected check disclosure requires its pinned input identity')
+        if identity.get('resource_manifest_sha256') is not None and identity != manifest.get('check_disclosure_input_identity'):
+            raise ValueError('selected disclosure input map was not captured before review work')
+        issues = validate_check_disclosure(value, disclosure, disclosure_sources, identity)
+        if issues:
+            raise ValueError('; '.join(issues))
     events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
@@ -554,6 +611,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         if not phase_preflight['ready']:
             raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
+    before_cleanup = copy.deepcopy(value)
     if set(declared_residuals) - set(temporary):
         raise ValueError('register declared temporary residuals before retaining cleanup evidence')
     present = _present_resources(temporary)
@@ -580,7 +638,13 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
                     and read_json(context_input) != json.loads(contents['evidence/context.json'])):
                 raise ValueError('selected execution context conflicts with context_input')
             contents['evidence/context.json'] = context_bytes
+        if before_cleanup != value:
+            disclosure_context = json.loads(selected_source_bytes(run, manifest, contents, 'evidence/context.json'))
+            contents.update(rebind_disclosure_for_cleanup(before_cleanup, value, disclosure_context,
+                lambda name: selected_source_bytes(run, manifest, contents, name)))
         _execution_gate(run, dict(manifest, executors=executors), value, contents)
+        model_context = retained_model_context(run, manifest, contents, value)
+        contents['informe.md'] = render_review(value, model_usage_context=model_context).encode('utf-8')
     if handoff_context_input is not None:
         manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
     if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):

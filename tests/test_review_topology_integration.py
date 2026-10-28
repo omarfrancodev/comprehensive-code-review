@@ -45,6 +45,11 @@ class TopologyIntegrationTests(unittest.TestCase):
         execution['profile_history'] = manifest['profile_history']
         context = context10(value)
         context['review_inputs'] = manifest['review_inputs']
+        from ccr.workflow.builders import build_check_disclosure
+        from ccr.contracts.check_disclosure import input_identity_for
+        identity = input_identity_for(value)
+        disclosure = build_check_disclosure(value, identity, {}, {})
+        context.update(check_disclosure_reference='evidence/check-disclosure.json', check_disclosure_input_identity=identity)
         if expected == 12:
             artifacts.register(run, [], context_input=fixture.write('register12.json', context))
             for index, (assignment, result) in enumerate(zip(execution['plan'], execution['results']), 1):
@@ -62,7 +67,8 @@ class TopologyIntegrationTests(unittest.TestCase):
                    for row in execution['results']}
         return artifacts.retain(run, fixture.write('final12.json', value), expected_schema=expected,
             context_input=fixture.write('context12.json', context),
-            evidence_inputs=[fixture.write('briefs.json', briefs), fixture.write('results.json', results)],
+            evidence_inputs=[fixture.write('briefs.json', briefs), fixture.write('results.json', results),
+                             fixture.write('check-disclosure.json', disclosure)],
             unavailable_reason='Provider exposes no counters')
 
     def test_schema12_archive_roundtrip(self):
@@ -152,17 +158,21 @@ class TopologyIntegrationTests(unittest.TestCase):
                 self.assertEqual(fixture.read(target / 'review.json')['schema_version'], 12)
         self.assertEqual(fixture.snapshot(run), before)
 
-    def test_schema12_public_draft2(self):
+    def test_schema12_public_draft3(self):
         value = record12('focused', 'automatic', discovery=1)
-        draft = comment.prepare_public_comment(value, **contexts12(value))
-        self.assertEqual(draft['schema_version'], 2)
+        from ccr.workflow.builders import build_check_disclosure
+        from ccr.contracts.check_disclosure import input_identity_for
+        disclosure = build_check_disclosure(value, input_identity_for(value), {}, {})
+        kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources={})
+        draft = comment.prepare_public_comment(value, **contexts12(value), **kwargs)
+        self.assertEqual(draft['schema_version'], 3)
         self.assertIn(value['checks'][0]['purpose'], draft['body'])
-        self.assertTrue(comment.verify_public_comment(value, draft, draft['body'])['verified'])
+        self.assertTrue(comment.verify_public_comment(value, draft, draft['body'], **kwargs)['verified'])
         bad = contexts12(value)
         bad['check_publication_context']['source_sha256'] = '0' * 64
         with self.assertRaises(ValueError):
-            comment.prepare_public_comment(value, **bad)
+            comment.prepare_public_comment(value, **bad, **kwargs)
         bad = contexts12(value)
         del bad['check_publication_context']['checks'][0]['purpose']
         with self.assertRaises(ValueError):
-            comment.prepare_public_comment(value, **bad)
+            comment.prepare_public_comment(value, **bad, **kwargs)

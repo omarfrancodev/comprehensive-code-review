@@ -7,6 +7,7 @@ import sys
 from ccr.contracts.identifiers import canonicalize_ids, deduplicate
 from ccr.contracts.review import validate
 from ccr.reporting.render import render, render_handoff
+from ccr.execution.disclosure import read_selected_disclosure
 
 def main(argv=None, *, prog=None):
     for stream in (sys.stdout, sys.stderr):
@@ -21,8 +22,14 @@ def main(argv=None, *, prog=None):
     parser.add_argument('--check-publication-context', help='Ephemeral source-bound public check summaries for render-comment')
     parser.add_argument('--coverage-publication-context', help='Ephemeral source-bound public coverage summaries for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
+    parser.add_argument('--check-disclosure-context')
+    parser.add_argument('--check-disclosure-sources')
     args = parser.parse_args(argv)
     try:
+        if bool(args.check_disclosure_context) != bool(args.check_disclosure_sources):
+            raise ValueError('check disclosure context and source catalog must be supplied together')
+        disclosure, disclosure_sources = (read_selected_disclosure(args.check_disclosure_context, args.check_disclosure_sources)
+            if args.check_disclosure_context else (None, None))
         if args.publication_context and args.command != 'render-comment':
             raise ValueError('--publication-context is only applicable to render-comment')
         if args.check_publication_context and args.command != 'render-comment':
@@ -50,13 +57,14 @@ def main(argv=None, *, prog=None):
             print(json.dumps({'record': record, 'source_mapping': mapping}, ensure_ascii=False))
         elif args.command == 'render-handoff':
             context = json.loads(Path(args.context).read_text(encoding='utf-8')) if args.context else None
-            print(render_handoff(value, context=context), end='')
+            print(render_handoff(value, context=context, check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources), end='')
         elif args.command == 'render-comment':
             print(render(value, 'comment', publication_context,
                          check_publication_context=check_publication_context,
-                         coverage_publication_context=coverage_publication_context), end='')
+                         coverage_publication_context=coverage_publication_context,
+                         check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources), end='')
         else:
-            print(render(value, 'user', publication_context), end='')
+            print(render(value, 'user', publication_context, check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources), end='')
         return 0
     except (OSError, ValueError, TypeError) as exc:
         print(json.dumps({'error': str(exc)}, ensure_ascii=False), file=sys.stderr)

@@ -504,6 +504,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     executors = _executors(context_input, manifest, temporary)
     assignment_registry = list(manifest.get('assignment_registry', []))
     review_input_capture = manifest.get('review_inputs')
+    disclosure_identity = manifest.get('check_disclosure_input_identity')
     claim_manifest = copy.deepcopy(manifest)
     claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
                           _claim_run_dir=str(run))
@@ -523,6 +524,32 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         if not isinstance(context.get('execution_plan'), list):
             raise ValueError('archive 8 registration requires captured context.execution_plan')
         existing_trace = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+        supplied_disclosure_identity = context.get('check_disclosure_input_identity')
+        if supplied_disclosure_identity is not None:
+            from ccr.contracts.check_disclosure import input_identity_for
+            scope_identity = {key: manifest['scope'].get(key) for key in ('head', 'snapshot')}
+            if (not isinstance(supplied_disclosure_identity, dict)
+                    or any(supplied_disclosure_identity.get(key) != value for key, value in scope_identity.items())):
+                raise ValueError('disclosure identity differs from pinned scope')
+            if disclosure_identity is not None and disclosure_identity != supplied_disclosure_identity:
+                raise ValueError('disclosure identity cannot replace its initial capture')
+            if disclosure_identity is None:
+                if any(row.get('kind') in {'agent', 'discovery', 'grouped-verification', 'check'}
+                       and row.get('status') in {'started', 'completed', 'passed', 'failed'} for row in existing_trace):
+                    raise ValueError('disclosure inputs must be pinned before review work starts')
+                baseline_hash = supplied_disclosure_identity.get('resource_manifest_sha256')
+                if baseline_hash is not None:
+                    from ccr.execution import workspaces as workspace_ops
+                    baseline_hashes = set()
+                    for executor in executors:
+                        if executor.get('manifest'):
+                            owned = workspace_ops.load(executor['manifest'])
+                            baseline_hashes.update(row.get('resource_baseline_sha256') for row in owned['workspaces']
+                                if row['path'] == executor['workspace'])
+                    captured_hashes = set((review_input_capture or {}).get('sources', {}).values())
+                    if baseline_hash not in baseline_hashes | captured_hashes:
+                        raise ValueError('disclosure resource map is not part of the initially captured workspace/inputs')
+                disclosure_identity = copy.deepcopy(supplied_disclosure_identity)
         if 'assignment_registry' not in manifest and any(
                 row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
                 and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
@@ -584,6 +611,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     if manifest['schema_version'] == 8:
         manifest.update(resource_claims=rows, assignment_registry=assignment_registry,
                         review_inputs=review_input_capture)
+        if disclosure_identity is not None:
+            manifest['check_disclosure_input_identity'] = disclosure_identity
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
@@ -844,12 +873,19 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     errors = review_contract.validate(value)
     if errors:
         raise ValueError('; '.join(errors))
-    report = render_review(value).encode('utf-8')
+    from ccr.archive.retention import retained_model_context
+    report = render_review(value, model_usage_context=retained_model_context(run, manifest, record=value)).encode('utf-8')
     if durable_close is not None and manifest.get('close_observation') != durable_close:
         manifest['close_observation'] = durable_close
         marker = _save_manifest(run, manifest, marker)
     if value != read_json(run / 'review.json') or pending_close:
         contents = {'review.json': _json_bytes(value), 'informe.md': report}
+        from ccr.archive.retention import rebind_disclosure_for_cleanup
+        from ccr.archive.evidence import selected_source_bytes
+        retained_context = (json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
+                            if 'evidence/context.json' in manifest['hashes'] else {})
+        contents.update(rebind_disclosure_for_cleanup(read_json(run / 'review.json'), value, retained_context,
+            lambda name: selected_source_bytes(run, manifest, {}, name)))
         if 'handoff.md' in manifest['hashes']:
             contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
         manifest = _retain_data(run, manifest, marker, contents, record_retention=False)

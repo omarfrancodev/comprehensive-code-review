@@ -11,6 +11,7 @@ from ccr.execution import workspaces as workspace_ops
 from ccr.execution.workspace_manifest import owned_session
 from ccr.reporting.projections import publication_digest
 from ccr.reporting.render import render as render_record
+from ccr.reporting.check_disclosure import disclosure_view
 
 DRAFT_FIELDS = {'schema_version', 'source_sha256', 'publication_context',
                 'check_publication_context', 'coverage_publication_context', 'body', 'body_sha256'}
@@ -25,15 +26,18 @@ def _digest_text(value):
 
 def prepare_public_comment(record: dict, *, publication_context: dict | None = None,
                            check_publication_context: dict | None = None,
-                           coverage_publication_context: dict | None = None) -> dict:
+                           coverage_publication_context: dict | None = None,
+                           check_disclosure_context=None, check_disclosure_sources=None) -> dict:
     """Render one deterministic draft with source and body hashes."""
     source_hash = publication_digest(record)
+    view = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
     body = render_record(
         record, audience='comment', publication_context=publication_context,
         check_publication_context=check_publication_context,
-        coverage_publication_context=coverage_publication_context)
-    return {
-        'schema_version': 2,
+        coverage_publication_context=coverage_publication_context,
+        check_disclosure_context=check_disclosure_context, check_disclosure_sources=check_disclosure_sources)
+    result = {
+        'schema_version': 3 if view is not None or record.get('schema_version') == 12 else 2,
         'source_sha256': source_hash,
         'publication_context': copy.deepcopy(publication_context),
         'check_publication_context': copy.deepcopy(check_publication_context),
@@ -41,16 +45,22 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
         'body': body,
         'body_sha256': _digest_text(body),
     }
+    if result['schema_version'] == 3:
+        result['check_disclosure_context'] = view
+    return result
 
-def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False) -> dict:
+def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False,
+                          check_disclosure_context=None, check_disclosure_sources=None) -> dict:
     """Verify an exact outbound body or an observed remote body against a fresh render."""
     source_hash = publication_digest(record)
     if (isinstance(draft, dict) and type(draft.get('schema_version')) is int
             and draft['schema_version'] == 1 and set(draft) == DRAFT_FIELDS - {'coverage_publication_context'}):
         raise ValueError('stale_draft: preserve schema 1 draft and prepare a new draft from the same source')
-    if not isinstance(draft, dict) or set(draft) != DRAFT_FIELDS \
-            or type(draft.get('schema_version')) is not int or draft.get('schema_version') != 2:
-        raise ValueError('invalid_draft: exact schema 2 fields required')
+    version = draft.get('schema_version') if isinstance(draft, dict) else None
+    fields = DRAFT_FIELDS | ({'check_disclosure_context'} if version == 3 else set())
+    if not isinstance(draft, dict) or set(draft) != fields \
+            or type(version) is not int or version not in (2, 3):
+        raise ValueError('invalid_draft: exact schema 2/3 fields required')
     if draft.get('source_sha256') != source_hash:
         raise ValueError('source_mismatch: draft is bound to another source record')
     if not isinstance(draft.get('body'), str):
@@ -64,10 +74,17 @@ def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool 
     draft_hash = _digest_text(draft['body'])
     if draft.get('body_sha256') != draft_hash:
         raise ValueError('body_mismatch: draft body hash differs from its bytes')
+    if version == 3:
+        view = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+        if view != draft['check_disclosure_context']:
+            raise ValueError('disclosure_mismatch: selected disclosure differs from the draft')
+    elif check_disclosure_context is not None:
+        raise ValueError('stale_draft: schema 2 policy cannot be changed by new disclosure')
     expected = render_record(
         record, audience='comment', publication_context=draft['publication_context'],
         check_publication_context=draft['check_publication_context'],
-        coverage_publication_context=draft['coverage_publication_context'])
+        coverage_publication_context=draft['coverage_publication_context'],
+        check_disclosure_context=check_disclosure_context, check_disclosure_sources=check_disclosure_sources)
     if expected != draft['body']:
         raise ValueError('body_mismatch: draft differs from a fresh canonical render')
     if not isinstance(body, str):
