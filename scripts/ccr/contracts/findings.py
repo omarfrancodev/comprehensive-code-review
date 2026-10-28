@@ -12,19 +12,19 @@ def validate_checks(record, schema_version, historical, prior_reviews, versions,
     for i, raw in enumerate(array(record.get('checks'), 'checks')):
         path = f'checks[{i}]'
         check_names = {'id', 'command', 'revision', 'status', 'failure_kind', 'evidence', 'reused', 'reuse_reason', 'rerun_reason'}
-        if schema_version in (6, 7, 8, 9, 10, 11):
+        if schema_version in (6, 7, 8, 9, 10, 11, 12):
             check_names.add('reference')
-        if schema_version in (9, 10, 11):
+        if schema_version in (9, 10, 11, 12):
             check_names.add('execution')
-        if schema_version == 11:
+        if schema_version in (11, 12):
             check_names.add('purpose')
         check = fields(raw, check_names, path)
-        if schema_version == 11:
+        if schema_version in (11, 12):
             errors.extend(purpose_errors(check.get('purpose'), path + '.purpose'))
         for key in ('id', 'command', 'revision'):
             text(check.get(key), f'{path}.{key}')
         identifier = check.get('id')
-        if schema_version in (6, 7, 8, 9, 10, 11):
+        if schema_version in (6, 7, 8, 9, 10, 11, 12):
             if not canonical_id(identifier, 'C') and identifier not in historical['checks']:
                 error(path + '.id', 'expected canonical check ID C001 (at least three digits, nonzero)')
             text(check.get('reference'), path + '.reference', nullable=check.get('reused') is not True)
@@ -67,7 +67,7 @@ def validate_findings(record, schema_version, stage, historical, checks, state):
         for key in ('id', 'title', 'scenario', 'impact', 'correction'):
             text(item.get(key), f'{path}.{key}')
         identifier = item.get('id')
-        if schema_version in (6, 7, 8, 9, 10, 11) and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
+        if schema_version in (6, 7, 8, 9, 10, 11, 12) and not canonical_id(identifier, 'F') and identifier not in historical['findings']:
             error(path + '.id', 'expected canonical finding ID F001 (at least three digits, nonzero)')
         if isinstance(identifier, str):
             if identifier in finding_ids:
