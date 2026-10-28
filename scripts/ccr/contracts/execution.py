@@ -11,6 +11,17 @@ NEW_PROFILE_LIMITS = {'focused': (1, 1), 'standard': (1, 1),
                       'deep': (2, 2), 'extended': (3, 5)}
 
 
+def verification_status(verification, observed, missing):
+    """Aggregate every active verification, without classifying final batches."""
+    if not verification:
+        return None
+    if any(row['id'] not in observed for row in verification):
+        return 'unavailable'
+    if any(row['id'] in missing or row['independent'] is not True for row in verification):
+        return 'same_session'
+    return 'independent'
+
+
 def validate_execution(record):
     errors = []
     coverage = record.get('coverage', {})
@@ -190,7 +201,9 @@ def validate_execution(record):
     if execution['status'] == 'degraded':
         # An observed fallback pass does not satisfy the planned fresh context.
         missing.update(impeded)
-    if schema_version in PROFILE_SCHEMAS:
+    if schema_version in NEW_TOPOLOGY_SCHEMAS:
+        effective = verification_status(verification, observed, missing)
+    elif schema_version in PROFILE_SCHEMAS:
         latest_verifier = verification[-1] if verification else None
         latest_result = observed.get(latest_verifier['id']) if latest_verifier is not None else None
         effective = ('unavailable' if latest_result is None else 'independent' if

@@ -59,3 +59,27 @@ class ProfileTopologyTests(unittest.TestCase):
                     execution['results'].insert(-1, result)
                 with self.subTest(schema=value['schema_version'], source=source, profile=profile):
                     self.assertEqual(review.validate(value), [])
+
+    def test_all_active_verifications_contribute_to_aggregate(self):
+        for state in ('independent', 'coordinator', 'missing_one', 'missing_both', 'coordinator_and_missing'):
+            value = record12('extended', 'explicit', discovery=3, verification=2)
+            execution = value['coverage']['execution']
+            if state != 'independent':
+                execution['status'] = 'degraded'
+                missing_ids = {'missing_one': ['V1'], 'missing_both': ['V1', 'V2'],
+                               'coordinator_and_missing': ['V2'], 'coordinator': []}[state]
+                coordinator_ids = ['V1'] if state in ('coordinator', 'coordinator_and_missing') else []
+                execution['results'] = [row for row in execution['results']
+                                        if row['assignment_id'] not in missing_ids]
+                for result in execution['results']:
+                    if result['assignment_id'] in coordinator_ids:
+                        result['reviewer_context'] = 'coordinator'
+                execution['fallbacks'] = [dict(assignments=[identifier], reason='dispatch_failed',
+                    detail='Synthetic interruption', source=f'evidence/fallback.json#{identifier}')
+                    for identifier in missing_ids + coordinator_ids]
+                value['coverage']['verification'] = 'unavailable' if missing_ids else 'same_session'
+            with self.subTest(state=state):
+                self.assertEqual(review.validate(value), [])
+                wrong = copy.deepcopy(value)
+                wrong['coverage']['verification'] = ('independent' if state != 'independent' else 'same_session')
+                self.assertTrue(any('coverage.verification contradicts' in e for e in review.validate(wrong)))
