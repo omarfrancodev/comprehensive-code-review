@@ -301,3 +301,34 @@ class ModelCaptureTests(unittest.TestCase):
             self.assertEqual([row['status'] for row in ledger['entries']], ['configured_only','configured_only','unknown','configured_only'])
             self.assertEqual(context['model_usage_reference'], 'evidence/model-usage.json')
             self.assertNotIn('review_inputs', context)
+
+    def test_result_only_completions_preserve_assignment_models_and_identity(self):
+        import copy
+        from profile_topology_fixtures import record12, source_fixture12
+        from ccr.contracts.execution import validate_execution_sources
+        from ccr.reporting.models import model_usage_context, model_summary
+        record = record12('focused', 'automatic', discovery=1)
+        context, events, references = source_fixture12(record)
+        result_refs = {r['reference'] for r in record['coverage']['execution']['results']}
+        for event in events:
+            if event.get('kind') == 'agent':
+                event['kind'] = 'discovery' if 'D1' in str(event['evidence']) else 'grouped-verification'
+                event.pop('executor', None)
+                event['actor'] = dict(kind='coordinator', name='coordinator', provider_id=None)
+            if event.get('kind') in ('discovery', 'grouped-verification') and event.get('status') in ('completed', 'passed'):
+                event['evidence'] = [ref for ref in event['evidence'] if ref in result_refs]
+        self.assertEqual(validate_execution_sources(record, context, events, references), [])
+        def entries(candidate):
+            envelope = model_usage_context(context, lambda _: self.fail('no ledger'),
+                dict(run_id=record['review_id'][3:], harness_id=HARNESS), record=record, events=candidate)
+            self.assertIsNone(envelope['ledger'])
+            return model_summary(envelope['context'], None)['entries']
+        rows = entries(events)
+        self.assertEqual([(r['actor']['name'], r['assignment_id'], r['phase']) for r in rows],
+            [('coordinator', None, 'coordination'), ('coordinator', 'D1', 'discovery'), ('coordinator', 'V1', 'verification')])
+        for mismatch in ('name', 'provider_id', 'role'):
+            bad = copy.deepcopy(events)
+            event = next(e for e in bad if e.get('status') == 'completed' and 'evidence/results.json#D1' in e.get('evidence', []))
+            if mismatch == 'role': event['kind'] = 'grouped-verification'
+            else: event['actor'][mismatch] = 'unrelated'
+            self.assertNotIn('D1', [r['assignment_id'] for r in entries(bad)])

@@ -189,3 +189,21 @@ class DisclosureTests(unittest.TestCase):
         self.assertNotIn('private_input.json', json.dumps(view))
         self.assertIn('-k retry', view['checks'][0]['command'])
         self.assertIn('tests/test_queue.py', view['checks'][0]['command'])
+
+    def test_named_task_nested_entrypoint_requires_original_bytes(self):
+        for argv, manifest in ((['npm', 'test'], {'package.json': b'{"scripts":{"test":"python helper.py"}}'}),
+                               (['make', 'check'], {'Makefile': b'check:\n\tpython helper.py\n'})):
+            for origin in ('missing', 'changed', 'original'):
+                with self.subTest(argv=argv, origin=origin):
+                    files = dict(manifest)
+                    if origin != 'missing': files['helper.py'] = b'print("original")'
+                    record, identity, observations, sources = fixture(argv, files)
+                    if origin == 'changed':
+                        execution = json.loads(sources['evidence/execution.json'])
+                        resource = next(r for r in execution['resources'] if r['path'] == 'helper.py')
+                        raw = b'print("CCR reproduction")'
+                        resource.update(content=raw.hex(), executed_sha256=hashlib.sha256(raw).hexdigest())
+                        sources['evidence/execution.json'] = encoded(execution)
+                    _, view = self.build((record, identity, observations, sources))
+                    self.assertEqual(view['checks'][0]['mode'], 'project_command' if origin == 'original' else 'explanation')
+                    self.assertEqual(view['checks'][0]['command'], shlex.join(argv) if origin == 'original' else None)

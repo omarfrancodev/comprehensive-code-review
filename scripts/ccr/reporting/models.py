@@ -87,11 +87,29 @@ def model_usage_context(context, source, manifest, *, record=None, events=None):
             actor = event.get('actor')
             if (event.get('kind') not in {'discovery', 'grouped-verification'}
                     or event.get('status') not in {'completed', 'passed', 'failed', 'blocked'}
-                    or not isinstance(actor, dict) or actor.get('kind') not in {'agent', 'coordinator'}):
+                    or not isinstance(actor, dict) or actor.get('kind') not in {None, 'agent', 'coordinator'}):
                 continue
+            if actor.get('kind') is None:
+                # Completion actors use the execution identity shape (name/provider).
+                # Reuse an observed coordinator identity, otherwise this is the
+                # actual result reviewer, not evidence of an independent dispatch.
+                kind = 'coordinator' if any(
+                    row['actor'].get('kind') == 'coordinator'
+                    and all(row['actor'].get(key) == actor.get(key) for key in ('name', 'provider_id'))
+                    for row in participants) else 'agent'
+                actor = dict(actor, kind=kind)
+            results = (record or {}).get('coverage', {}).get('execution', {}).get('results', [])
             for assignment in plan:
-                if assignment.get('reference') in event.get('evidence', []):
-                    activity = 'discovery' if assignment['role'] == 'discovery' else 'verification'
+                activity = 'discovery' if assignment['role'] == 'discovery' else 'verification'
+                expected_kind = 'discovery' if activity == 'discovery' else 'grouped-verification'
+                if event['kind'] != expected_kind:
+                    continue
+                evidence = event.get('evidence', [])
+                result_bound = any(result.get('assignment_id') == assignment['id']
+                    and result.get('reference') in evidence
+                    and result.get('reviewer_context') == actor.get('name')
+                    and result.get('provider_id') == actor.get('provider_id') for result in results)
+                if assignment.get('reference') in evidence or result_bound:
                     participants.append(dict(actor=copy.deepcopy(actor), assignment_id=assignment['id'],
                                              phase=activity, activity=activity))
     context['observed_participants'] = participants

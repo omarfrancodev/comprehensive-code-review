@@ -121,7 +121,9 @@ def safe_text(value, secrets=()):
         value = value.replace(secret, OMITTED)
     def url(text):
         try:
-            parsed = urlsplit(text)
+            # Inspect the displayed URL as well as raw prose; Markdown escapes
+            # and HTML entities must not disguise a sensitive query key.
+            parsed = urlsplit(re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text)))
             if (parsed.username or parsed.password or not parsed.hostname
                     or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
                     or parsed.hostname.lower().endswith(('.local', '.internal'))
@@ -237,6 +239,22 @@ def _project_command(execution, resources, contents):
         if cwd and compare(path).startswith(compare(cwd) + '/'):
             path = path[len(cwd) + 1:]
         return path if _relative(path) in eligible else None
+    def supported_task(definition):
+        # A bounded literal adapter, not a shell or dependency evaluator. The
+        # documented bare runner is manifest-bound; script operands must also
+        # have original/executed byte proof. Nested tasks remain unsupported.
+        if not isinstance(definition, str) or re.search(r'[|;&`$<>\n\r]|\b(?:sh|bash|cmd|powershell)\b', definition):
+            return False
+        try:
+            nested = shlex.split(definition)
+        except ValueError:
+            return False
+        if nested == ['jest']:
+            return True
+        if not nested or nested[0] not in {'python', 'python3', 'node', 'ruby', 'pytest', 'dotnet'}:
+            return False
+        _, mode = _project_command(dict(execution, argv=nested), resources, contents)
+        return mode == 'project_command'
     entry = next((arg for arg in argv[1:] if not arg.startswith('-')), None)
     if tool == 'npm':
         # These invocations can select another package or task runtime. No adapter
@@ -252,15 +270,17 @@ def _project_command(execution, resources, contents):
             return None, 'explanation'
         task = argv[2] if len(argv) > 2 and argv[1] == 'run' else entry
         definition = scripts.get(task)
-        if not isinstance(definition, str) or not definition.strip() or re.search(r'[|;&`$]|\b(?:sh|bash|cmd|powershell)\b', definition):
+        if not supported_task(definition) or any(name in scripts for name in ('pre' + str(task), 'post' + str(task))):
             return None, 'explanation'
     elif tool == 'make':
         if any(arg.split('=', 1)[0] in {'-f', '--file', '--makefile', '-C', '--directory'}
                or arg.startswith(('-f', '-C')) or '=' in arg for arg in argv[1:]):
             return None, 'explanation'
         content = contents.get('Makefile', b'').decode('utf-8', errors='replace')
-        if (not entry or not re.search(r'(?m)^' + re.escape(entry) + r'\s*:', content)
-                or re.search(r'[|;&`$]|\b(?:sh|bash|cmd|powershell)\b', content)):
+        # Only one explicit target with one literal recipe is currently bound;
+        # prerequisites, includes, variables and multiple recipes need an adapter.
+        match = re.fullmatch(re.escape(entry or '') + r'[ \t]*:[ \t]*\n\t([^\n]+)\n?', content)
+        if not entry or len(argv) != 2 or not match or not supported_task(match.group(1)):
             return None, 'explanation'
     elif tool == 'dotnet' and (entry != 'test' or len(argv) < 3 or argv[1] != 'test'
             or not any(project_path(arg) and arg.lower().endswith(('.csproj', '.sln')) for arg in argv[2:])):

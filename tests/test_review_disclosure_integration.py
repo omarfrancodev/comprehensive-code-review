@@ -198,3 +198,20 @@ class DisclosureIntegrationTests(unittest.TestCase):
             selection.write_bytes(encoded(catalog))
             with self.assertRaisesRegex(ValueError, 'SHA-256 differs'):
                 read_selected_disclosure(sidecar, selection)
+
+    def test_sensitive_url_query_without_argv_secret_is_hidden_everywhere(self):
+        for field in ('verdict', 'evidence', 'handoff'):
+            with self.subTest(field=field):
+                record, identity, observations, sources = fixture()
+                url = 'https://example.com/test?api_key=CONFIDENTIAL'
+                if field == 'verdict': record['verdict_reason'] += ' Observed ' + url
+                if field == 'evidence': record['checks'][0]['evidence'] = 'Observed ' + url
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['evidence'] = record['checks'][0]['evidence']
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                texts = [render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {'decisions_pending': ['Observed ' + url]},
+                        audience='comment', **contexts, **kwargs)]
+                for text in texts:
+                    self.assertNotIn('CONFIDENTIAL', text)
