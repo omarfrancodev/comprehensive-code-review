@@ -11,6 +11,76 @@ from recovery_fixtures import record10
 
 
 class ProfileTopologyTests(unittest.TestCase):
+    def test_missing_final_result_checks_own_coordinator_fallback_start(self):
+        value = record12('extended', 'explicit', discovery=3, verification=2)
+        execution = value['coverage']['execution']
+        execution['results'] = [r for r in execution['results'] if r['assignment_id'] != 'V2']
+        execution['status'] = 'degraded'
+        execution['fallbacks'] = [dict(assignments=['V2'], reason='dispatch_failed',
+            detail='Synthetic failure', source='evidence/fallback.json#V2')]
+        value['coverage']['verification'] = 'unavailable'
+        context, events, refs = source_fixture12(value)
+        actor = copy.deepcopy(execution['profile_history'][0]['actor'])
+        start = dict(kind='grouped-verification', status='started', actor=actor,
+                     evidence=['evidence/briefs.json#V2'], event_id='E000900')
+        events.insert(6, start)
+        for index, event in enumerate(events, 1):
+            event['sequence'] = index
+        for status in ('started', 'completed', 'passed'):
+            with self.subTest(status=status):
+                start['status'] = status
+                errors = execution_contract.validate_execution_sources(value, context, events, refs)
+                self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+                for field in ('name', 'provider_id'):
+                    with self.subTest(foreign_identity=field):
+                        start['actor'] = dict(actor, **{field: 'unrelated'})
+                        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+                start['actor'] = actor
+                events.remove(start)
+                events.append(start)
+                for index, event in enumerate(events, 1):
+                    event['sequence'] = index
+                self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+                events.remove(start)
+                events.insert(6, start)
+                for index, event in enumerate(events, 1):
+                    event['sequence'] = index
+        start['status'] = 'started'
+        # A later repeated stage must not replace the original early start.
+        later = dict(copy.deepcopy(start), event_id='E000901', sequence=len(events)+1)
+        events.append(later)
+        errors = execution_contract.validate_execution_sources(value, context, events, refs)
+        self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+        events.remove(start)
+        for index, event in enumerate(events, 1):
+            event['sequence'] = index
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+
+    def test_missing_final_result_does_not_hide_early_original_dispatch(self):
+        value = record12('extended', 'explicit', discovery=3, verification=2)
+        _, original_events, _ = source_fixture12(value)
+        start = next(e for e in original_events if e.get('kind') == 'agent'
+                     and 'evidence/briefs.json#V2' in e.get('evidence', []))
+        execution = value['coverage']['execution']
+        execution['results'] = [r for r in execution['results'] if r['assignment_id'] != 'V2']
+        execution['status'] = 'degraded'
+        execution['fallbacks'] = [dict(assignments=['V2'], reason='dispatch_failed',
+            detail='Synthetic failure', source='evidence/fallback.json#V2')]
+        value['coverage']['verification'] = 'unavailable'
+        context, events, refs = source_fixture12(value)
+        events.insert(6, start)
+        for index, event in enumerate(events, 1):
+            event['sequence'] = index
+        errors = execution_contract.validate_execution_sources(value, context, events, refs)
+        self.assertTrue(any('final verification batch must start and complete after' in e for e in errors), errors)
+        # The missing result remains a valid unavailable fallback when the
+        # observed dispatch really starts after discovery.
+        events.remove(start)
+        events.insert(-1, start)
+        for index, event in enumerate(events, 1):
+            event['sequence'] = index
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+
     def test_final_completion_requires_observed_sequence(self):
         value = record12('extended', discovery=3, verification=2)
         context, events, refs = source_fixture12(value)

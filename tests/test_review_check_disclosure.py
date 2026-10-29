@@ -118,6 +118,67 @@ class DisclosureTests(unittest.TestCase):
             {'tests/SECRET_TEST.py': b'assert retry()\n'}))
         self.assertNotIn('SECRET_TEST', json.dumps(view))
 
+    def test_header_credentials_are_redacted_from_all_public_check_fields(self):
+        for header in ('Authorization: Bearer HEADER_SECRET', 'X-Api-Key: HEADER_SECRET',
+                       'Authorization: Basic HEADER_SECRET'):
+            with self.subTest(header=header):
+                bundle = fixture(['pytest', 'tests/HEADER_SECRET.py', '-k', 'HEADER_SECRET', '--header', header],
+                                 {'tests/HEADER_SECRET.py': b'assert retry()\n'})
+                bundle[2][bundle[0]['checks'][0]['id']]['explanation'] = 'Observed HEADER_SECRET in output'
+                _, view = self.build(bundle)
+                self.assertNotIn('HEADER_SECRET', json.dumps(view))
+                self.assertEqual(view['checks'][0]['mode'], 'mixed')
+                self.assertIn('[omitido]', view['checks'][0]['command'])
+
+    def test_every_sensitive_query_value_is_redacted_when_repeated(self):
+        bundle = fixture(['pytest', 'tests/URL_SECRET.py', '-k', 'SECOND_SECRET',
+                          'https://example.com/?page=1&token=URL_SECRET&api_key=SECOND_SECRET'],
+                         {'tests/URL_SECRET.py': b'assert retry()\n'})
+        bundle[2][bundle[0]['checks'][0]['id']]['explanation'] = 'Observed URL_SECRET and SECOND_SECRET'
+        _, view = self.build(bundle)
+        self.assertNotIn('URL_SECRET', json.dumps(view))
+        self.assertNotIn('SECOND_SECRET', json.dumps(view))
+
+    def test_sensitive_query_aliases_and_encoded_pairs_are_extracted(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        values = sensitive_values({'evidence/a.json': encoded({'argv': [
+            'https://example.com/?page=1&auth=AUTH_SECRET&%74oken=ENCODED%5FSECRET']})})
+        self.assertIn('AUTH_SECRET', values)
+        self.assertIn('ENCODED_SECRET', values)
+
+    def test_path_qualified_adapter_cannot_claim_a_trusted_bare_runner(self):
+        for executable in ('tools/pytest', '/private/session/pytest', 'C:\\private\\pytest.exe'):
+            with self.subTest(executable=executable):
+                _, view = self.build(fixture([executable, 'tests/test_queue.py']))
+                self.assertEqual(view['checks'][0]['mode'], 'explanation')
+                self.assertIsNone(view['checks'][0]['command'])
+                self.assertEqual(view['checks'][0]['resources'], ['tests/test_queue.py'])
+
+    def test_original_path_qualified_adapter_preserves_its_resource_without_trusting_it(self):
+        _, view = self.build(fixture(['tools/pytest', 'tests/test_queue.py'],
+            {'tools/pytest': b'generated or project-specific runner', 'tests/test_queue.py': b'assert retry()\n'}))
+        self.assertEqual(view['checks'][0]['mode'], 'explanation')
+        self.assertIsNone(view['checks'][0]['command'])
+        self.assertEqual(view['checks'][0]['resources'], ['tools/pytest', 'tests/test_queue.py'])
+
+    def test_uppercase_urls_keep_public_links_and_hide_credentials(self):
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        public = 'HTTPS://example.com/docs?page=1'
+        self.assertEqual(safe_text(public), public)
+        private = 'HTTPS://example.com/docs?page=1&token=UPPER_SECRET'
+        self.assertNotIn('UPPER_SECRET', safe_text(private))
+        self.assertIn('UPPER_SECRET', sensitive_values({'evidence/a.json': encoded({'argv': [private]})}))
+
+    def test_capture_preserves_original_executable_as_an_independent_resource(self):
+        import pathlib
+        import tempfile
+        from test_review_check_receipts import CaptureCheckTests
+        from ccr.execution import checks
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, cwd = CaptureCheckTests().make_workspace(pathlib.Path(directory).resolve())
+            _, observation = checks._capture_disclosure_inputs(cwd, ['product.py'], 'C001', manifest['head'])
+            self.assertEqual([row['path'] for row in observation['resources']], ['product.py'])
+
     def test_forged_origin_hash_or_changed_execution_is_rejected(self):
         from ccr.contracts.check_disclosure import validate_check_disclosure
         bundle = fixture()

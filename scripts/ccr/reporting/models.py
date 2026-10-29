@@ -24,8 +24,15 @@ def model_summary(context, ledger):
     if issues:
         raise ValueError('selected model usage evidence is invalid: ' + issues[0]['message'])
     entries = copy.deepcopy(ledger['entries']) if ledger is not None else []
+    def identity_class(actor):
+        # A coordinator can perform an agent assignment; process/tool rows
+        # never capture the model of a same-named reviewer.
+        kind = actor['kind']
+        return 'model_user' if kind in ('coordinator', 'agent') else kind
+
     for participant in context.get('observed_participants', []):
         if any(all(row['actor'][key] == participant['actor'][key] for key in ('name', 'provider_id'))
+               and identity_class(row['actor']) == identity_class(participant['actor'])
                and row['assignment_id'] == participant['assignment_id']
                for row in entries):
             continue

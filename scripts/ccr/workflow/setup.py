@@ -10,6 +10,7 @@ import sys
 from ccr.archive.integrity import verify_files
 from ccr.archive.reader import load_run
 from ccr.contracts import references as review_references, reference_index as review_reference_index
+from ccr.contracts.model_usage import MAX_LEDGER_BYTES
 from ccr.execution import workspaces as workspace_ops
 from ccr.execution.candidates import write_new_json
 from ccr.execution.workspace_manifest import owned_session as _owned_session
@@ -22,6 +23,9 @@ from ccr.workflow.builders import (
 
 REFERENCE_INDEX = 'evidence/reference-index.json'
 MAX_INPUT_BYTES = 131072
+# The request embeds the entire ledger. ASCII-escaped JSON can use up to
+# three times its validated UTF-8 size; retain the ordinary envelope allowance.
+MAX_MODEL_USAGE_INPUT_BYTES = MAX_INPUT_BYTES + 3 * MAX_LEDGER_BYTES
 MAX_SELECTED_SOURCE_COUNT = 64
 MAX_SELECTED_SOURCE_BYTES = 64 * 1024 * 1024
 SHA256 = re.compile(r'[0-9a-f]{64}')
@@ -105,8 +109,10 @@ def _validate_session_reference_index(session_dir, descriptor, captured_inputs, 
     return index
 
 def run_command(command, input_path, output_path):
-    payload = _read_input(input_path, max_bytes=MAX_SELECTED_SOURCE_BYTES
-                          if command in ('materials','reuse-context') else MAX_INPUT_BYTES)
+    input_limit = (MAX_SELECTED_SOURCE_BYTES if command in ('materials', 'reuse-context')
+                   else MAX_MODEL_USAGE_INPUT_BYTES if command == 'model-usage'
+                   else MAX_INPUT_BYTES)
+    payload = _read_input(input_path, max_bytes=input_limit)
     session_dir, session_manifest_path, workspace_manifest = _owned_session(payload['session'])
     args = payload['arguments']
     if command == 'changes':

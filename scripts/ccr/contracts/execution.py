@@ -459,6 +459,27 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                     errors.append(prefix + 'final verification batch requires planned independence')
                 result = next((row for row in execution['results'] if row['assignment_id'] == assignment['id']), None)
                 if result is None:
+                    # Missing completion does not erase a dispatch already
+                    # observed for this final assignment. Projected starts
+                    # retain original name/provider identity and sequence.
+                    if any(event.get('kind') == 'agent' and event.get('status') == 'started'
+                           and assignment['reference'] in event.get('evidence', [])
+                           and isinstance(event.get('executor'), dict)
+                           and type(event.get('sequence')) is int
+                           and event['sequence'] <= last_discovery
+                           for event in observed_starts):
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
+                    coordinator = history[0].get('actor', {})
+                    if (assignment['independent'] is False or assignment['id'] in fallback_ids) and any(
+                            event.get('kind') == 'grouped-verification'
+                            and event.get('status') in ('started', 'completed', 'passed')
+                            and assignment['reference'] in event.get('evidence', [])
+                            and isinstance(event.get('actor'), dict)
+                            and all(event['actor'].get(key) == coordinator.get(key)
+                                    for key in ('name', 'provider_id'))
+                            and type(event.get('sequence')) is int
+                            and event['sequence'] <= last_discovery for event in trace_events):
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
                     continue
                 completions = [event for event in trace_events if event.get('kind') == 'grouped-verification'
                                and event.get('status') in ('completed', 'passed')

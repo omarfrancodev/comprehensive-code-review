@@ -787,6 +787,53 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             'state': manifest['state'], 'retained': manifest.get('retained') is True,
             'cleanup': manifest['cleanup']}
 
+def _close_recovery_contents(run, manifest):
+    """Reconstruct only the exact owned old/planned cleanup transaction."""
+    from ccr.archive.evidence import selected_source_bytes
+    from ccr.archive.retention import rebind_disclosure_for_cleanup, retained_model_context
+    from ccr.contracts.check_disclosure import source_digest
+
+    context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
+    reference = context.get('check_disclosure_reference')
+    if reference is None:
+        return None
+    if reference != 'evidence/check-disclosure.json':
+        raise ValueError('invalid close disclosure reference')
+    current = read_json(run / 'review.json')
+    # _verify_files has already checked every surviving file against old/planned
+    # hashes. Reconstruct the old canonical record from its bounded cleanup facts,
+    # accepting it only if its bytes match the original retained inventory.
+    previous = None
+    for cleanup in ('pending', 'complete', 'not_needed'):
+        candidate = copy.deepcopy(current)
+        candidate['resources'].update(cleanup=cleanup, residuals=manifest['residuals'])
+        if _digest(_json_bytes(candidate)) == manifest['hashes'].get('review.json'):
+            previous = candidate
+            break
+    if previous is None:
+        raise ValueError('interrupted close cannot reconstruct the owned previous review')
+    value = copy.deepcopy(previous)
+    observation = manifest['close_observation']
+    value['resources'].update(cleanup=observation['cleanup'], residuals=observation['residuals'])
+
+    disclosure = read_json(run / reference)
+    disclosure['source_sha256'] = source_digest(previous)
+    old_disclosure = _json_bytes(disclosure)
+    if _digest(old_disclosure) != manifest['hashes'].get(reference):
+        raise ValueError('interrupted close cannot reconstruct the owned previous disclosure')
+    old_sources = {reference: old_disclosure}
+    contents = {'review.json': _json_bytes(value)}
+    contents.update(rebind_disclosure_for_cleanup(previous, value, context,
+        lambda name: selected_source_bytes(run, manifest, old_sources, name)))
+    contents['informe.md'] = render_review(value, model_usage_context=retained_model_context(
+        run, manifest, contents, record=value)).encode('utf-8')
+    if 'handoff.md' in manifest['hashes']:
+        contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+    if {name: _digest(raw) for name, raw in contents.items()} != manifest.get('planned_hashes'):
+        raise ValueError('interrupted close differs from the exact planned inventory')
+    return contents
+
+
 @_locked_run
 def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
     """Observe exact registered resources and persist closure; never remove resources."""
@@ -801,14 +848,18 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         atomic_write(run / MARKER, _json_bytes(marker))
     pending_close = (manifest['state'] == 'retaining'
                      and isinstance(manifest.get('close_observation'), dict))
+    recovery_contents = None
     if pending_close:
         _verify_files(run, manifest)
-        candidate = read_json(run / 'review.json')
+        if manifest['schema_version'] == 8:
+            recovery_contents = _close_recovery_contents(run, manifest)
+        candidate = (json.loads(recovery_contents['review.json']) if recovery_contents is not None
+                     else read_json(run / 'review.json'))
         errors = review_contract.validate(candidate) if isinstance(candidate, dict) else ['retained review is not an object']
         if errors or candidate.get('stage') != 'final' or candidate.get('scope') != manifest['scope']:
             raise ValueError('; '.join(errors) if errors else 'interrupted close has no valid retained final review')
         if manifest['schema_version'] == 8:
-            _execution_gate(run, manifest, candidate, {})
+            _execution_gate(run, manifest, candidate, recovery_contents or {})
     else:
         validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
@@ -865,6 +916,12 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         if cleanup != manifest['cleanup'] or residuals != manifest['residuals']:
             raise ValueError('completed review history cannot be reopened')
         return manifest
+    if recovery_contents is not None:
+        # Observation/claim checks above must succeed before any recovery writes.
+        # Every byte and selected source was gated against the owned intent.
+        _retain_data(run, manifest, marker, recovery_contents, record_retention=False)
+        run, manifest, marker = _load_run(run)
+        pending_close = False
     value = read_json(run / 'review.json')
     if value.get('scope') != manifest['scope']:
         raise ValueError('retained review scope differs from manifest')

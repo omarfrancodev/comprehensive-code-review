@@ -126,7 +126,9 @@ def _capture_disclosure_inputs(worktree, argv, check_id, revision):
         raise ValueError('pinned resource baseline was changed')
     if len(canonical(pinned)) > MAX_BYTES:
         return None, None
-    candidates = list(argv[1:])
+    # The executable can itself be an original project resource. Its byte proof
+    # is independent of whether a disclosure adapter can explain its behavior.
+    candidates = list(argv)
     tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
     if tool == 'npm': candidates.append('package.json')
     if tool == 'make': candidates.append('Makefile')

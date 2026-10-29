@@ -93,9 +93,20 @@ class _Projection:
         # A provenance label, not a path/URL or a new human review identity.
         return 'retained:' + self.source_hash + '#ref-' + _hash(value.encode('utf-8'))[:16]
 
+    def public_url(self, value):
+        if not _public_url(value):
+            return None
+        # Syntax alone does not make a locator safe to share. Apply the same
+        # secret policy as prose, including legacy deliveries without a sidecar.
+        candidate = re.sub(r'^https?:', lambda match: match.group().lower(),
+                           value, flags=re.IGNORECASE)
+        return value if safe_text(candidate, self.secrets) == candidate else None
+
     def reference(self, value):
-        if _public_url(value):
+        if self.public_url(value):
             return value
+        if _public_url(value):
+            return self.retained(value)
         projected = self.text(value, omit_commands=False)
         if re.match(r'^(?:[A-Za-z]:[\\/]|[\\/]|file:)', projected):
             return self.retained(value)
@@ -108,6 +119,7 @@ class _Projection:
             r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
+                or any(_public_url(span) and self.public_url(span) is None for span in spans)
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
             raise ValueError('private structural value cannot be delivered: ' + path)
@@ -148,11 +160,11 @@ class _Projection:
         # Sanitize URL and non-URL spans separately; placeholders could collide
         # with caller content and accidentally restore a private path.
         spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
-        value = ''.join(span if _public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
+        value = ''.join(span if self.public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
                         else segment(span) for span in spans)
         # Relative Markdown links cannot resolve from the delivery directory.
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
-                       lambda match: match.group() if _public_url(match[2]) else match[1] + ' · ' + match[2], value)
+                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
         return value
 
     def value(self, value, path='record'):
@@ -175,9 +187,9 @@ class _Projection:
             row = self.disclosure_rows.get(self.check_ids[index])
             projected = (row['command'] or EXPLANATION_COMMAND) if row else '[comprobación registrada; comando omitido]'
         elif path.endswith(('.url', '.previous_url')):
-            projected = value if _public_url(value) else None
+            projected = self.public_url(value)
         elif (path.endswith(('.reference', '.previous_reference')) or field == 'coverage.execution.fallbacks[].source') and field != 'scope.reference':
-            projected = value if _public_url(value) else self.retained(value)
+            projected = self.public_url(value) or self.retained(value)
         elif path == 'record.scope.reference':
             projected = self.reference(value)
         elif field == 'findings[].location.path':

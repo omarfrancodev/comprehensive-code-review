@@ -21,6 +21,105 @@ def capture(context=None, ledger=None, metadata=None, **kwargs):
 
 
 class ModelCaptureTests(unittest.TestCase):
+    def test_setup_model_usage_accepts_valid_ledger_larger_than_general_input(self):
+        import copy
+        from ccr.contracts.model_usage import validate_model_usage
+        for char, count, ascii_json in (('x', 110, True), ('é', 90, True), ('é', 90, False)):
+            with self.subTest(char=char, ascii_json=ascii_json), tempfile.TemporaryDirectory() as folder:
+                session = Path(folder)
+                (session/'evidence').mkdir()
+                context, ledger = capture(metadata={'model':char*200, 'observed_model':char*200,
+                    'source':{'kind':'platform', 'reference':char*500}},
+                    actor=dict(kind='agent', name='reviewer', provider_id=None),
+                    assignment_id='D1', phase='discovery', activity='discovery')
+                first = ledger['entries'][0]
+                ledger['entries'] = [dict(copy.deepcopy(first), id=f'M{i+1:04d}',
+                    actor=dict(first['actor'], name=f'reviewer-{i}')) for i in range(count)]
+                self.assertEqual(validate_model_usage(ledger, review_id=REVIEW_ID, harness_id=HARNESS), [])
+                before = copy.deepcopy(ledger)
+                args = dict(context=context, ledger=ledger, metadata={'model':'next-model'},
+                    actor=dict(kind='agent', name='next-reviewer', provider_id=None),
+                    phase='discovery', activity='discovery', review_id=REVIEW_ID,
+                    harness_id=HARNESS, assignment_id='D2', check_id=None)
+                request = session/'request.json'
+                request.write_text(json.dumps(dict(session=str(session), arguments=args),
+                                              ensure_ascii=ascii_json), encoding='utf-8')
+                self.assertGreater(request.stat().st_size, 131072)
+                output = session/'evidence'/'candidate.json'
+                with patch.object(setup, '_owned_session', return_value=(session, session/'manifest.json', {'session_id':'synthetic'})):
+                    try:
+                        setup.run_command('model-usage', request, output)
+                    except ValueError as exc:
+                        self.fail('valid model ledger must reach the builder: ' + str(exc))
+                result = json.loads(output.read_text(encoding='utf-8'))
+                self.assertEqual(result['ledger']['entries'][:-1], before['entries'])
+                self.assertEqual(result['ledger']['entries'][-1]['configured_model'], 'next-model')
+                self.assertEqual(len(result['ledger']['entries']), count+1)
+                # Other operations retain their original input ceiling.
+                with self.assertRaisesRegex(ValueError, 'bounded size'):
+                    setup.run_command('profile', request, session/'profile.json')
+
+    def test_setup_model_usage_retains_prefix_and_diagnostics_at_real_ledger_limits(self):
+        import copy
+        from ccr.contracts.model_usage import validate_model_usage
+        for count, width, diagnostic in ((192, 200, 'byte limit'), (256, 1, 'entry limit')):
+            with self.subTest(limit=diagnostic), tempfile.TemporaryDirectory() as folder:
+                session = Path(folder)
+                (session/'evidence').mkdir()
+                metadata = dict(model='x'*width, observed_model='x'*width,
+                    source=dict(kind='platform', reference='x'*(500 if width == 200 else 1)))
+                context, ledger = capture(metadata=metadata)
+                first = ledger['entries'][0]
+                ledger['entries'] = [dict(copy.deepcopy(first), id=f'M{i+1:04d}') for i in range(count)]
+                self.assertEqual(validate_model_usage(ledger, review_id=REVIEW_ID, harness_id=HARNESS), [])
+                before = copy.deepcopy(ledger)
+                args = dict(context=context, ledger=ledger, metadata=metadata,
+                    actor=dict(kind='agent', name='new-reviewer', provider_id=None),
+                    phase='discovery', activity='discovery', review_id=REVIEW_ID,
+                    harness_id=HARNESS, assignment_id='D1', check_id=None)
+                request = session/'request.json'
+                request.write_text(json.dumps(dict(session=str(session), arguments=args)), encoding='utf-8')
+                output = session/'evidence'/'candidate.json'
+                with patch.object(setup, '_owned_session', return_value=(session, session/'manifest.json', {'session_id':'synthetic'})):
+                    setup.run_command('model-usage', request, output)
+                result = json.loads(output.read_text(encoding='utf-8'))
+                self.assertEqual(result['ledger'], before)
+                self.assertIn(diagnostic, ' '.join(result['context']['model_usage_diagnostics']))
+                self.assertEqual(ledger, before)
+                self.assertFalse((session/'evidence'/'model-usage.json').exists())
+
+    def test_setup_model_usage_rejects_oversize_and_malformed_envelopes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            request = Path(folder)/'request.json'
+            output = Path(folder)/'candidate.json'
+            # More than the operation's bounded ledger-plus-envelope allowance.
+            request.write_bytes(b' '*(1024*1024))
+            with self.assertRaisesRegex(ValueError, 'bounded size'):
+                setup.run_command('model-usage', request, output)
+            for raw, message in ((b'{bad', 'readable UTF-8 JSON'),
+                                 (b'[]', 'exactly'),
+                                 (b'{"session":"x","arguments":[]}', 'invalid types')):
+                with self.subTest(raw=raw):
+                    request.write_bytes(raw)
+                    with self.assertRaisesRegex(ValueError, message):
+                        setup.run_command('model-usage', request, output)
+            self.assertFalse(output.exists())
+
+    def test_process_or_tool_capture_cannot_hide_same_named_model_user(self):
+        from ccr.reporting.models import model_summary
+        for kind in ('process', 'tool'):
+            with self.subTest(kind=kind):
+                context, ledger = capture(actor=dict(kind=kind, name='reviewer', provider_id=None),
+                    assignment_id='D1', phase='discovery', activity='discovery')
+                context['observed_participants'] = [dict(
+                    actor=dict(kind='agent', name='reviewer', provider_id=None),
+                    assignment_id='D1', phase='discovery', activity='discovery')]
+                before = json.dumps(ledger, sort_keys=True)
+                rows = model_summary(context, ledger)['entries']
+                self.assertEqual([row['status'] for row in rows], ['not_applicable', 'unknown'])
+                self.assertEqual(rows[1]['actor']['kind'], 'agent')
+                self.assertEqual(json.dumps(ledger, sort_keys=True), before)
+
     def test_schema12_failed_capture_keeps_actual_participants_unknown_without_ledger(self):
         from ccr.reporting.models import model_usage_context, model_summary, model_lines
         coordinator = dict(kind='coordinator', name='actual-coordinator', provider_id=None)

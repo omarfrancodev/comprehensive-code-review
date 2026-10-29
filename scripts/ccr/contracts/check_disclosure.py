@@ -9,7 +9,7 @@ import json
 import ntpath
 import re
 import shlex
-from urllib.parse import urlsplit, parse_qsl
+from urllib.parse import urlsplit, parse_qsl, unquote_plus
 
 FIELDS = {'schema_version', 'review_id', 'source_sha256', 'input_identity', 'checks'}
 ROW_FIELDS = {'id', 'command_sha256', 'execution_reference', 'mode', 'command', 'resources', 'explanation', 'evidence_reference'}
@@ -61,6 +61,33 @@ def _secret_argument(argument):
         r'(?i)(?:token|password|secret|api[-_]?key|authorization|credential)', key))
 
 
+def _argument_secrets(argument):
+    """Extract credential values, including later and encoded URL query pairs."""
+    values = set()
+    key_pattern = r'(?i)(?:token|password|secret|api.?key|auth|credential)'
+    header = re.fullmatch(r'(?:--header=|-H)?([\w-]+)\s*:\s*(.+)', argument)
+    if header and re.search(key_pattern, header.group(1)):
+        credential = header.group(2).strip()
+        values.add(credential)
+        # Authentication schemes are public; the credential can be repeated on
+        # its own in results, paths, or prose and must be redacted there too.
+        values.add(re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', credential))
+    for text in re.findall(r'https?://[^\s<>\]\)]+', argument, re.IGNORECASE):
+        try:
+            parsed = urlsplit(html.unescape(text))
+            for pair in parsed.query.split('&'):
+                key, separator, value = pair.partition('=')
+                if separator and re.search(key_pattern, unquote_plus(key)):
+                    # Retain both reversible wire bytes and displayed text: a
+                    # credential can be repeated elsewhere in either spelling.
+                    values.update((value, unquote_plus(value)))
+            if parsed.password:
+                values.add(parsed.password)
+        except ValueError:
+            continue
+    return values
+
+
 def sensitive_values(sources):
     values = set()
     for raw in sources.values():
@@ -75,6 +102,7 @@ def sensitive_values(sources):
         for argument in argv if isinstance(argv, list) else []:
             if not isinstance(argument, str):
                 continue
+            values.update(_argument_secrets(argument))
             if secret_next:
                 values.add(argument); secret_next = False
             if _secret_argument(argument):
@@ -95,7 +123,7 @@ def private_values(record, view, sources):
             continue
         row = rows[execution['check_id']]
         allowed = row['resources']
-        for arg in execution.get('argv', [])[1:]:
+        for arg in execution.get('argv', []):
             if not isinstance(arg, str) or arg.startswith('-'):
                 continue
             name = ntpath.basename(arg)
@@ -134,14 +162,14 @@ def safe_text(value, secrets=()):
         except ValueError:
             return '[URL omitida]'
     # Separate spans avoid placeholder collisions with caller-controlled text.
-    spans = re.split(r'(https?://[^\s<>\]\)]+)', value)
+    spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
     for index in range(0, len(spans), 2):
         spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
         spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
     for index in range(1, len(spans), 2):
         spans[index] = url(spans[index])
     value = ''.join(spans)
-    value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*[^\s,;]+', r'\1=[omitido]', value)
+    value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
     value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', value)
     return value
 
@@ -231,7 +259,11 @@ def _project_command(execution, resources, contents):
     cwd = execution.get('cwd', '').replace('\\', '/').rstrip('/')
     tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
     allowed = {'python', 'python3', 'pytest', 'dotnet', 'npm', 'make', 'node', 'ruby', 'go', 'cargo'}
-    if tool not in allowed or any(arg in ('-c', '-e', '--eval', '--command') or any(c in arg for c in ('\n', '\r', '\x00')) for arg in argv):
+    # A path's basename does not establish a runner's origin. Until an adapter
+    # proves that executable, retain independently proved resources and explain
+    # the check instead of laundering a wrapper into a trusted bare command.
+    if (argv[0] != ntpath.basename(argv[0]) or ntpath.splitdrive(argv[0])[0]
+            or tool not in allowed or any(arg in ('-c', '-e', '--eval', '--command') or any(c in arg for c in ('\n', '\r', '\x00')) for arg in argv)):
         return None, 'explanation'
     def project_path(arg):
         path = arg.replace('\\', '/')
@@ -299,6 +331,8 @@ def _project_command(execution, resources, contents):
             if '=' in arg: projected.append(arg.split('=', 1)[0] + '=' + OMITTED)
             else: projected.append(arg); secret_next = True
             mixed = True; continue
+        if _argument_secrets(arg):
+            projected.append(OMITTED); mixed = True; continue
         original = project_path(arg)
         if original:
             projected.append(safe_text(original)); resource_next = False; continue
