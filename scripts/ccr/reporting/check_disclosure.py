@@ -61,4 +61,3 @@ def disclosure_lines(row):
         lines.append('  - **Recursos del proyecto:** ' + '; '.join(markdown_text(path) for path in row['resources']))
     lines.append('  - **Explicación del check:** ' + markdown_text(row['explanation']))
     return lines
-
