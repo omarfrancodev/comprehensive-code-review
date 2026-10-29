@@ -10,6 +10,69 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_encoded_redaction_preserves_source_text_outside_matching_runs(self):
+        from urllib.parse import quote
+        from ccr.contracts.check_disclosure import safe_text
+        cases = (
+            ('ñ prefix %43REDENTIAL%29123 suffix', {'CREDENTIAL)123'}, 'ñ prefix [omitido] suffix'),
+            ('prefix %41%42%43 suffix', {'B'}, 'prefix [omitido] suffix'),
+            ('prefix aXYZb)123 suffix', {'a.*b)123'}, 'prefix aXYZb)123 suffix'),
+            ('prefix %61.*b%29123 suffix', {'a.*b)123'}, 'prefix [omitido] suffix'),
+            ('prefix %broken%2 text', {'CREDENTIAL)123'}, 'prefix %broken%2 text'),
+            ('prefix %43RED&amp;ENT%29123 suffix', {'CRED&amp;ENT)123'}, 'prefix [omitido] suffix'),
+            (r'prefix %43RED\_ENT%29123 suffix', {r'CRED\_ENT)123'}, 'prefix [omitido] suffix'),
+            ('prefix &#37;43REDENTIAL&#37;29123 suffix', {'CREDENTIAL)123'}, 'prefix [omitido] suffix'),
+            ('prefix %61baba suffix', {'aba'}, 'prefix [omitido]ba suffix'),
+        )
+        for value, secrets, expected in cases:
+            with self.subTest(value=value):
+                self.assertEqual(safe_text(value, secrets), expected)
+        unmatched = 'prefix ' + quote('\\' * 64 + 'Y', safe='') + ' suffix'
+        self.assertEqual(safe_text(unmatched, {'\\' * 32 + 'Z'}), unmatched)
+        # Either overlapping copy may be withheld first; neither can survive.
+        import html
+        from urllib.parse import unquote
+        overlapping = safe_text('a&#98;a%62&#97;', {'aba'})
+        self.assertNotIn('aba', html.unescape(unquote(overlapping)))
+
+    def test_encoded_known_credentials_in_prose_ignore_url_delimiter_boundaries(self):
+        from urllib.parse import quote
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        for secret in ('CREDENTIAL)123', 'CREDENTIAL]123', 'CREDENTIAL+123',
+                       'CREDENTIAL%5F123', 'CREDÉNTIAL)123', 'CRED_ENT)123',
+                       'CRED&<ENT)123', r'CRED\ENT)123', 'CRED🔑)123',
+                       'CRED&amp;ENT)123', r'CRED\_ENT)123'):
+            encoded = ''.join('%%%02X' % byte for byte in secret.encode('utf-8'))
+            for spelling in (encoded, encoded.lower(), quote(secret, safe=''),
+                             quote(markdown_text(secret), safe=';'), encoded.replace('%', '&#37;')):
+                with self.subTest(secret=secret, spelling=spelling):
+                    record, identity, observations, sources = fixture(
+                        ['pytest', 'tests/test_queue.py', '--token', secret])
+                    repeated = 'https://example.com/result/' + secret + '?note=' + spelling
+                    record['verdict_reason'] += ' Observed ' + repeated
+                    record['checks'][0]['evidence'] = 'Observed ' + repeated
+                    observations[record['checks'][0]['id']]['explanation'] = 'Observed ' + repeated
+                    disclosure = build_check_disclosure(record, identity, observations, sources)
+                    contexts = contexts12(record)
+                    contexts['check_publication_context']['checks'][0]['evidence'] = record['checks'][0]['evidence']
+                    kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                    portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                    outputs = (safe_text(repeated, sensitive_values(sources)),
+                        render.render(record, 'comment', **contexts, **kwargs),
+                        render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                        comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                        json.dumps(portable, ensure_ascii=False), render.render_portable(portable, {}), delivery._brief(portable))
+                    for index, output in enumerate(outputs):
+                        with self.subTest(view=index):
+                            self.assertNotIn(secret, output)
+                            self.assertNotIn(spelling, output)
+                            self.assertNotIn(markdown_text(spelling), output)
+                    benign = 'prefix https://example.com/help?note=OTHER%20VALUE suffix'
+                    self.assertEqual(safe_text(benign, sensitive_values(sources)), benign)
+                    # A second encoding layer is not recursively decoded.
+                    self.assertEqual(safe_text('%2543REDENTIAL%2529123', {'CREDENTIAL)123'}),
+                                     '%2543REDENTIAL%2529123')
+
     def test_literal_encoded_credential_in_url_is_checked_before_normalization(self):
         from ccr.contracts.check_disclosure import safe_text, sensitive_values
         for secret in ('CREDENTIAL%5F123', 'CREDENTIAL&amp;123', r'CREDENTIAL\_123',

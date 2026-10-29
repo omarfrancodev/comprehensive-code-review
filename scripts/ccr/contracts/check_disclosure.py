@@ -4,6 +4,8 @@ The expected input identity is a trust anchor captured before review execution.
 The resource manifest is hashed at workspace preparation, never after a check.
 """
 import hashlib
+from array import array
+from bisect import bisect_left, bisect_right
 import html
 import json
 import ntpath
@@ -144,6 +146,95 @@ def private_values(record, view, sources):
     return values
 
 
+def _redact_encoded_values(text, spellings):
+    """Redact known encoded copies using source offsets, never decoded output."""
+    if not spellings:
+        return text
+    entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
+    encoded_starts = sorted({match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
+                           | {match.start() for match in re.finditer(entity, text)})
+    if not encoded_starts:
+        return text
+    shown = text
+    starts = array('I', range(len(text)))
+    ends = array('I', range(1, len(text) + 1))
+    ranges = set()
+
+    def collect():
+        for secret in spellings:
+            position = shown.find(secret)
+            while position != -1:
+                first, last = starts[position], ends[position + len(secret) - 1]
+                encoded_index = bisect_left(encoded_starts, first)
+                if encoded_index < len(encoded_starts) and encoded_starts[encoded_index] < last:
+                    # Literal-only matches are handled by replace below. Do not
+                    # retain one range per plain-text occurrence or per view.
+                    ranges.add((first, last))
+                    # Only withheld matches make their overlaps safe to skip.
+                    following = position + len(secret)
+                elif encoded_index < len(encoded_starts):
+                    # Skip literal-only windows, but retain overlaps that can
+                    # reach the next source encoding marker after normalization.
+                    boundary = bisect_right(ends, encoded_starts[encoded_index])
+                    following = max(position + 1, boundary - len(secret) + 1)
+                else:
+                    break
+                position = shown.find(secret, following)
+
+    def transform(pattern, convert):
+        nonlocal shown, starts, ends
+        parts, next_starts, next_ends = [], array('I'), array('I')
+        cursor = 0
+        for match in re.finditer(pattern, shown):
+            first, last = match.span()
+            parts.append(shown[cursor:first])
+            next_starts.extend(starts[cursor:first])
+            next_ends.extend(ends[cursor:first])
+            replacement = convert(match)
+            parts.append(replacement)
+            # A UTF-8 escape run or displayed entity can produce several
+            # characters. If it contains a secret, withhold that source run.
+            next_starts.extend([starts[first]] * len(replacement))
+            next_ends.extend([ends[last - 1]] * len(replacement))
+            cursor = last
+        parts.append(shown[cursor:])
+        next_starts.extend(starts[cursor:])
+        next_ends.extend(ends[cursor:])
+        shown, starts, ends = ''.join(parts), next_starts, next_ends
+        collect()
+
+    markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
+    # First preserve a credential's literal HTML/Markdown escape spelling.
+    transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
+    shown = text
+    starts = array('I', range(len(text)))
+    ends = array('I', range(1, len(text) + 1))
+    # Display escapes can surround URL escapes, or be URL-escaped themselves.
+    # This independent view also decodes percent escapes only once.
+    transform(entity, lambda match: html.unescape(match.group()))
+    transform(markdown_escape, lambda match: match.group(1))
+    # A renderer can escape the entity spelling already present in source prose.
+    transform(entity, lambda match: html.unescape(match.group()))
+    transform(markdown_escape, lambda match: match.group(1))
+    transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
+    transform(entity, lambda match: html.unescape(match.group()))
+    transform(markdown_escape, lambda match: match.group(1))
+    if not ranges:
+        return text
+    merged = []
+    for first, last in sorted(ranges):
+        if merged and first <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
+        else:
+            merged.append((first, last))
+    result, cursor = [], 0
+    for first, last in merged:
+        result.extend((text[cursor:first], OMITTED))
+        cursor = last
+    result.append(text[cursor:])
+    return ''.join(result)
+
+
 def safe_text(value, secrets=()):
     """Bounded privacy filter used across every new-policy prose field."""
     if not isinstance(value, str):
@@ -157,6 +248,9 @@ def safe_text(value, secrets=()):
             re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', escaped)))
     spellings = tuple(sorted((text for text in spellings if text), key=len, reverse=True))
     def redact(text):
+        # Copies may be outside a recognized URL, including after an original
+        # delimiter. Match their source spelling and preserve everything else.
+        text = _redact_encoded_values(text, spellings)
         for secret in spellings:
             text = text.replace(secret, OMITTED)
         return text
