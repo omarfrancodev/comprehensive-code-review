@@ -12,6 +12,14 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Mostrar comandos y recursos acreditados del proyecto con ocultación selectiva en comentarios y entregas; explicar las comprobaciones creadas por CCR o de origen desconocido, con draft 3 y recibo de delivery 2 ligados a evidencia seleccionada.
 - Capturar modelos configurados/observados o ausencia explícita por participante; conservar el ledger privado schema 1 y presentar su resumen en informe y delivery local, sin backfill histórico ni consultas adicionales.
 
+### Fixed
+
+- Ocultar credenciales de headers y URLs, incluidas sus formas codificadas repetidas, y sanear referencias de entregas; explicar wrappers con ejecutable no acreditado.
+- Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
+- Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
+
+Correcciones del PR #34: [validación y reintentos](docs/validation/2026-10-28-pr34-review-fixes.md).
+
 Validación de la implementación: [informe y límites](docs/validation/2026-10-28-profile-session-topology-implementation.md), con 1048 pruebas cubiertas y tres omisiones por privilegios de symlink.
 
 ## 3.4.0 — 2026-10-26

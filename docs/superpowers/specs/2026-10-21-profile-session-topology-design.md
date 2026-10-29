@@ -2,6 +2,8 @@
 
 Estado: decisiones funcionales aprobadas el 2026-10-21; correcciones documentales del 2026-10-22 y adaptación a main del 2026-10-26. Implementación y correcciones de revisión completadas; cierre del 2026-10-28 con 1048 pruebas cubiertas, cero fallos y tres omisiones por privilegios de symlink. Véase el [informe de validación](../../validation/2026-10-28-profile-session-topology-implementation.md).
 
+Seguimiento del PR #34: siete hallazgos corregidos y recheck independiente aprobado; la cobertura posterior de 1075 pruebas y el reintento de un módulo por E/S del host constan en [el informe de correcciones](../../validation/2026-10-28-pr34-review-fixes.md).
+
 Ampliación solicitada el 2026-10-28: conservar comandos/recursos acreditados del proyecto en comentarios y delivery con ocultación selectiva de datos sensibles, y registrar/presentar la procedencia del modelo por participante. Las decisiones de topología siguen vigentes; los formatos auxiliares descritos más abajo se incorporaron a la implementación revisada y verificada.
 
 Base vigente: `main`/`origin/main`, commit `1d2626048a882cab510a59fd10fdbca7cf16dda5` (CCR 3.4.0), integrado en este worktree mediante `67633cf`. Worktree: `.worktrees/profile-session-topology`; rama: `docs/profile-session-topology`. Los archivos conservan su fecha y nombre originales para mantener los enlaces.
