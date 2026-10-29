@@ -148,6 +148,7 @@ def safe_text(value, secrets=()):
     """Bounded privacy filter used across every new-policy prose field."""
     if not isinstance(value, str):
         return value
+    secrets = tuple(secret for secret in secrets if secret)
     spellings = set()
     for secret in secrets:
         plain = ' '.join(secret.splitlines()).strip()
@@ -160,7 +161,14 @@ def safe_text(value, secrets=()):
         try:
             # Inspect the displayed URL as well as raw prose; Markdown escapes
             # and HTML entities must not disguise a sensitive query key.
-            parsed = urlsplit(re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text)))
+            displayed = re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text))
+            parsed = urlsplit(displayed)
+            # Markdown reference encoding must not reintroduce a known secret.
+            # Decode URL escapes for comparison only; '+' stays literal and
+            # benign references retain their original spelling.
+            decoded = unquote(displayed)
+            if any(secret in decoded for secret in secrets):
+                return '[URL omitida]'
             if (parsed.username or parsed.password or not parsed.hostname
                     or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
                     or parsed.hostname.lower().endswith(('.local', '.internal'))

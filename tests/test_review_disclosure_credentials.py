@@ -10,6 +10,36 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_known_password_in_encoded_public_reference_is_not_reintroduced(self):
+        from urllib.parse import quote
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        password = 'USER+PASSWORD_123'
+        for suffix in (password, 'USER%2bPASSWORD_123', '%55SER%2BPASSWORD_123'):
+            with self.subTest(suffix=suffix):
+                record, identity, observations, sources = fixture(
+                    ['pytest', 'tests/test_queue.py',
+                     'https://user:USER+PASSWORD%5F123@example.com/'])
+                reference = 'https://example.com/result/' + suffix
+                record['checks'][0]['reference'] = reference
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                # Publication contexts must describe the exact updated source.
+                contexts['check_publication_context']['checks'][0]['reference'] = reference
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        for spelling in (password, quote(password, safe='/:#?&=%-._~'), suffix):
+                            self.assertNotIn(spelling, output)
+                secrets = sensitive_values(sources)
+                for benign in ('https://example.com/result/OTHER+VALUE_123',
+                               'https://example.com/result/USER%20PASSWORD_123'):
+                    self.assertEqual(safe_text(benign, secrets), benign)
+
     def test_fragment_credentials_are_learned_in_wire_and_decoded_spellings(self):
         from ccr.reporting.check_disclosure import disclosure_view
         for fragment, wire in (('access_token=FRAGMENTSECRET123', 'FRAGMENTSECRET123'),
