@@ -10,7 +10,7 @@
 
 **Spec:** [Topología de sesiones por perfil](../specs/2026-10-21-profile-session-topology-design.md).
 
-**Estado y base:** adaptación documental del 2026-10-26 a main `1d2626048a882cab510a59fd10fdbca7cf16dda5` (CCR 3.4.0), integrado mediante `67633cf` en `docs/profile-session-topology`. La base original `fd38df8` y las rutas monolíticas quedaron superadas. Ampliación solicitada el 2026-10-28: ocultación selectiva de comandos/rutas y captura/visualización de modelos del coordinador y reviewers despachados. Ninguna tarea de implementación está completada por esta actualización.
+**Estado y base:** adaptación documental del 2026-10-26 a main `1d2626048a882cab510a59fd10fdbca7cf16dda5` (CCR 3.4.0), integrado mediante `67633cf` en `docs/profile-session-topology`. La base original `fd38df8` y las rutas monolíticas quedaron superadas. Ampliación solicitada el 2026-10-28: ocultación selectiva de comandos/rutas y captura/visualización de modelos del coordinador y reviewers despachados. Tareas 1–9 implementadas, revisadas y verificadas. Cierre del 2026-10-28: 1048 pruebas cubiertas, 1045 aprobadas y tres omisiones por privilegios de symlink; cero fallos. Véase el [informe de validación](../../validation/2026-10-28-profile-session-topology-implementation.md).
 
 ## Global Constraints
 
@@ -22,7 +22,7 @@
 - No alterar calibración de prioridades, admisión por cambios efectivos, reutilización, evidencia ni veredictos. Conservar fidelidad de propósito/flows públicos y ampliar la política de comandos según spec §10; modelos siguen privados según §11.
 - No añadir dependencias ni recrear fachadas `scripts/review_*.py`. CLI vigente: `python <skill>/scripts <area> ...`.
 - No cambiar builders congelados de 8/10/11, paquetes instalados, releases ni evidencias históricas.
-- Los pasos son instrucciones futuras: esta corrección sólo cambia spec y plan; no ejecuta implementación, commits de tareas ni publicación.
+- Los pasos conservan las instrucciones de ejecución y sus pruebas previstas. La implementación se ejecutó en este worktree; la publicación remota sigue fuera de alcance. Las tareas 6/7 comparten un commit de integración por sus superficies de retención y rendering.
 
 ## Review Focus
 
@@ -69,7 +69,7 @@ Inventario inicial: `rg -n 'schema_version|check_schema_version|expected.schema|
 - Produces: `source_fixture12(record) -> tuple[dict, list[dict], set[str]]` (contexto, eventos, referencias), compatible también con registros sintéticos 10/11 para comparar.
 - Los módulos nuevos llaman `script_test_support.enable_package_imports()` antes de importar `ccr`. No importar archivos retirados ni cambiar sys.path de producción.
 
-- [ ] **Step 1: Añadir fixture y pruebas rojas**
+- [x] **Step 1: Añadir fixture y pruebas rojas**
 
 `record12` copia profundamente `traceability_fixtures.record11`, cambia sólo la versión a 12 y reconstruye plan/resultados para las cantidades solicitadas. Conserva checks con purpose, dimensiones y demás campos. Cada asignación recibe S001 y superseded_by null; IDs únicos D1...Dn y V1...Vn, o los explícitos recibidos. Cada resultado conserva identidad propia cuando se exige independencia; focused usa coordinator en descubrimiento y verificación. Verification inicial: skipped si no hay filas, same_session en focused, independent en otro caso.
 
@@ -90,12 +90,12 @@ def test_schema12_keeps_purpose_dimensions_and_rejects_13(self):
 
 Añadir variantes que omitan purpose o una dimensión en 12 y afirmen el error correspondiente. Comparar también `review.validate(traceability_fixtures.record11()) == []` antes/después, sin modificarlo.
 
-- [ ] **Step 2: Verificar el rojo**
+- [x] **Step 2: Verificar el rojo**
 
 Run: `python -B -m unittest test_review_profile_topology`.
 Expected: falla el registro 12 por versión no soportada; no interpretar otros errores derivados como prueba de topología.
 
-- [ ] **Step 3: Habilitar forma y admisión básica**
+- [x] **Step 3: Habilitar forma y admisión básica**
 
 En review, extender las tuplas de forma a 12 y el conjunto soportado a 1–12. Los dos bloques que añaden/validan dimensiones para 11 pasan a `in (11, 12)`. En findings, los campos/procedencia existentes incluyen 12 y los bloques de purpose cubren 11/12. No relajar purpose_errors ni el catálogo de dimensiones.
 
@@ -103,12 +103,12 @@ En execution, introducir las constantes indicadas; los guards de forma/historia/
 
 Dejar congeladas las reglas de 10/11. Para 12 usar provisionalmente las tablas actuales y el agregado binario legacy hasta Tasks 3/4, y el gate de único candidato final actual hasta Task 5. Esto permite los verdes de forma con un único lote; no presume que la topología esté implementada.
 
-- [ ] **Step 4: Verificar verde y regresión**
+- [x] **Step 4: Verificar verde y regresión**
 
 Run: `python -B -m unittest test_review_profile_topology test_review_contract test_review_traceability_contract11 test_review_dimensions test_review_profiles test_review_execution_policy`.
 Expected: PASS para las pruebas incorporadas hasta aquí; ningún cambio a los fixtures 8/10/11.
 
-- [ ] **Step 5: Commit de implementación futura**
+- [x] **Step 5: Commit de implementación futura**
 
 Staging sólo de los cinco archivos de esta task. Mensaje: `feat(contratos): reconocer final 12 conservando proposito y dimensiones`.
 
@@ -129,7 +129,7 @@ Staging sólo de los cinco archivos de esta task. Mensaje: `feat(contratos): rec
 - Produces: `publication_context12(record) -> dict` en el fixture nuevo: clasificación de checks/flows ligada al digest real de 12, con propósito público explícito. Puede reutilizar los constructores de publication_fixtures y completar purpose, sin cambiar los fixtures históricos.
 - El módulo de integración crea casos nuevos o subclases locales de los seams citados; no modifica la versión ni los expected_schema de tests 11 existentes.
 
-- [ ] **Step 1: Añadir pruebas de integración rojas**
+- [x] **Step 1: Añadir pruebas de integración rojas**
 
 Estas pruebas fijan el reconocimiento de 12 heredado de 11. Antes de Task 6 usan provisionalmente draft 2/receipt de delivery 1; Task 6 amplía los casos nuevos 12 a los formatos y sidecar de exposición, conservando los tests históricos 11 sin cambios.
 
@@ -148,12 +148,12 @@ Usar `record12('focused', 'automatic', discovery=1)` para no depender de Tasks 3
 
 Los tests de archive reutilizan el montaje sintético vigente de Archive11Tests, suministrando un final 12 y expected_schema=12 a los seams correspondientes; los nuevos casos de checkpoint sobreescriben final_record y preservan los campos de dimensión. No convertir bytes históricos ni asumir que publication_contexts(record12) ya agrega propósito.
 
-- [ ] **Step 2: Confirmar el rojo**
+- [x] **Step 2: Confirmar el rojo**
 
 Run: `python -B -m unittest test_review_topology_integration`.
 Expected: fallos de admisión de 12, gates de archive o pérdida de requisitos/clasificación; identificar el guard responsable antes de editar.
 
-- [ ] **Step 3: Extender los consumidores por semántica**
+- [x] **Step 3: Extender los consumidores por semántica**
 
 Incluir 12 en versiones de identidad, ejecución y procedencia. Los guards de propósito/recibo nuevo, preflight estructural, render de dimensiones y clasificación pública que hoy son `== 11` cubren `(11, 12)`. Una comparación de **receipt.schema_version** o **draft.schema_version** no es una versión de final y no se cambia en esta task; los formatos nuevos se implementan expresamente en Task 6.
 
@@ -163,12 +163,12 @@ Archive: extender los gates de retention, lifecycle y checkpoints a finales 10/1
 
 Los bloques de render/full/brief y public_checks deben reconocer 12 con los requisitos de 11, no caer en proyecciones legacy que omitan dimensiones o propósito. En esta task comment conserva provisionalmente draft 2; Task 6 implementa la proyección nueva y actualiza los casos 12 a draft 3.
 
-- [ ] **Step 4: Verificar verde y regresiones**
+- [x] **Step 4: Verificar verde y regresiones**
 
 Run: `python -B -m unittest test_review_topology_integration test_review_traceability_contract11 test_review_traceability_archive test_review_traceability_preflight test_review_traceability_comments test_review_traceability_delivery test_review_check_receipts test_review_packets`.
 Expected: PASS. Inspeccionar además el inventario de versiones, explicando ramas congeladas y formatos independientes.
 
-- [ ] **Step 5: Commit futuro**
+- [x] **Step 5: Commit futuro**
 
 Staging sólo de los propietarios modificados y tests nuevos de esta task. Mensaje: `feat(archivo): admitir final 12 en retencion y proyecciones`.
 
@@ -180,29 +180,29 @@ Staging sólo de los propietarios modificados y tests nuevos de esta task. Mensa
 
 **Interfaces:** produce `NEW_PROFILE_LIMITS = {'focused': (1, 1), 'standard': (1, 1), 'deep': (2, 2), 'extended': (3, 5)}` en execution; consume NEW_TOPOLOGY_SCHEMAS de Task 1.
 
-- [ ] **Step 1: Añadir pruebas de fronteras y compatibilidad**
+- [x] **Step 1: Añadir pruebas de fronteras y compatibilidad**
 
 Para **explicit y automatic**: deep 2 válido, 1/3 inválidos; extended 3/5 válidos, 2/6 inválidos. Error: `discovery cardinality does not match profile/selection`.
 
 Construir casos independientes de schema 10 mediante recovery_fixtures.record10 y de 11 mediante traceability_fixtures.record11: deep con tres descubridores, extended explícito con dos y automático con cuatro siguen válidos. Añadir D3 con ID/referencias/resultado únicos sin cambiar el builder congelado ni quitar propósito/dimensiones de 11.
 
-- [ ] **Step 2: Confirmar el rojo**
+- [x] **Step 2: Confirmar el rojo**
 
 Run: `python -B -m unittest test_review_profile_topology`.
 Expected: límites antiguos aceptan deep 3/extended explícito 2 y rechazan extended automático 3 en 12.
 
-- [ ] **Step 3: Bifurcar ambas reglas en execution**
+- [x] **Step 3: Bifurcar ambas reglas en execution**
 
 En validate_execution, sólo para 12 usar NEW_PROFILE_LIMITS. El legacy conserva deep 2–3 y extended automático 4–5 / explícito 2–5.
 
 En **validate_profile_execution del mismo archivo**, mínimo de extended 12 = 3 para ambas fuentes. Los cálculos de acquired_extended_auto y obligación heredada 4/2 se conservan para 10/11. Mantener la elección strongest, historia/registry y reglas de independencia adquirida.
 
-- [ ] **Step 4: Verificar verde**
+- [x] **Step 4: Verificar verde**
 
 Run: `python -B -m unittest test_review_profile_topology test_review_profiles test_review_execution_policy test_review_traceability_contract11`.
 Expected: PASS; los tres builders históricos quedan intactos.
 
-- [ ] **Step 5: Commit futuro**
+- [x] **Step 5: Commit futuro**
 
 Mensaje: `feat(perfiles): fijar limites de descubrimiento de final 12`, sólo execution y tests de esta task.
 
@@ -214,7 +214,7 @@ Mensaje: `feat(perfiles): fijar limites de descubrimiento de final 12`, sólo ex
 
 **Interfaces:** `verification_status(verification, observed, missing) -> str | None` en execution; todas las filas activas, históricas y finales. None sólo cuando no hay filas; el caller conserva el caso permitido skipped.
 
-- [ ] **Step 1: Añadir casos de agregado sin traza**
+- [x] **Step 1: Añadir casos de agregado sin traza**
 
 | Resultados requeridos | coverage.verification | Montaje |
 |---|---|---|
@@ -225,23 +225,23 @@ Mensaje: `feat(perfiles): fijar limites de descubrimiento de final 12`, sólo ex
 
 Afirmar IDs de resultados únicos y conocidos. El estado es degraded en los casos de fallback; cada fallback tiene fuente y razón admitida. Estas pruebas llaman sólo review.validate/validate_execution: la admisión básica existe desde Task 1; el gate de fuentes con pares llega en Task 5.
 
-- [ ] **Step 2: Confirmar el rojo de agregación**
+- [x] **Step 2: Confirmar el rojo de agregación**
 
 Run: `python -B -m unittest test_review_profile_topology`.
 Expected: al menos ausencia parcial devuelve el estado incorrecto con la agregación provisional. Los errores no deben deberse a IDs duplicados o rechazo anticipado de varias filas.
 
-- [ ] **Step 3: Implementar sólo en 12**
+- [x] **Step 3: Implementar sólo en 12**
 
 Algoritmo: sin filas → None; cualquier fila sin resultado → unavailable; con todos presentes, cualquier fila en missing o no independiente → same_session; resto → independent. missing incorpora las pérdidas de independencia y fallbacks según la validación existente. El caller resuelve skipped para standard limpio sin filas y conserva el enum.
 
 No recalcular el estado desde un único candidato final. Mantener intactos los agregados congelados de 10/11 y legacy. Esta función no decide frescura ni clasifica historia.
 
-- [ ] **Step 4: Verificar verde**
+- [x] **Step 4: Verificar verde**
 
 Run: `python -B -m unittest test_review_profile_topology test_review_profiles test_review_execution_policy`.
 Expected: PASS para las pruebas sin traza incorporadas.
 
-- [ ] **Step 5: Commit futuro**
+- [x] **Step 5: Commit futuro**
 
 Mensaje: `feat(ejecucion): agregar verificaciones activas en final 12`, sólo execution y tests de esta task.
 
@@ -256,7 +256,7 @@ Mensaje: `feat(ejecucion): agregar verificaciones activas en final 12`, sólo ex
 - `historical_fixture12(profile='deep', verification=1) -> tuple[dict, dict, list[dict], set[str]]` en fixtures nuevos: record, context, events, references.
 - Consumir la proyección existente de dispatch y **original_dispatch**; no cambiar su API ni recrear la búsqueda vulnerable por cualquier start.
 
-- [ ] **Step 1: Construir escenarios y pruebas rojas**
+- [x] **Step 1: Construir escenarios y pruebas rojas**
 
 Fixture deep: D1/D2 y V-previa bajo S001; V-previa termina antes del cierre de D2; V1 final posterior. Fixture extended: S001 deep automático ejecuta D1/D2/V-previa; después S002 extended explícito con autoridad sintética antes de D3/finales, que se vinculan a S002. Mantener selection_source inicial automático y las filas previas requeridas. verification 0 omite sólo finales, 1 añade V1, 2 añade V-candidatos/V-invariantes. Construir eventos intercalados con IDs/secuencias coherentes; source_events emite selecciones al principio y no se reutiliza sin adaptar esa cronología. Nunca reescribir una traza retenida.
 
@@ -283,12 +283,12 @@ Ampliar aquí todos los casos de Task 4 con source_fixture12: los pares válidos
 
 Reutilizar como referencia los escenarios existentes test_late_verifier_identity_does_not_move_early_dispatch_after_discovery, test_later_start_cannot_replace_early_independent_dispatch y test_fresh_recovered_verifier_ignores_other_provider_dispatch de test_review_execution_policy; construir variantes nuevas para **dos lotes en 12**, sin cambiar la versión de esos tests congelados.
 
-- [ ] **Step 2: Confirmar el rojo**
+- [x] **Step 2: Confirmar el rojo**
 
 Run: `python -B -m unittest test_review_profile_topology`.
 Expected: el gate provisional de único final rechaza pares 12; los tests congelados pueden estar verdes.
 
-- [ ] **Step 3: Implementar clasificación y gate sólo en 12**
+- [x] **Step 3: Implementar clasificación y gate sólo en 12**
 
 verification_batches aplica exactamente spec §6.1: históricas por binding válido a perfil anterior menor que strongest o finalización válida <= frontera; resto finales, incluidas obligaciones actuales sin resultado. Obtener strongest de las mismas obligaciones existentes, sin inventar selección ni depender del orden del array/ID.
 
@@ -301,12 +301,12 @@ En validate_execution_sources, conservar la rama de 10/11. Para 12:
 5. Rechazar orden observado inválido en ambos estados. Permitir ausencia o fallback real sólo con su fuente/milestone; una fila final ausente sigue contando en el límite. Una histórica ausente conserva su obligación y efecto unavailable sobre el agregado.
 6. Reutilizar el agregado de Task 4 sobre todas las filas activas; no compararlo de nuevo con final_candidates[0]. Fulfilled exige cumplimiento; independent agregado no implica por sí solo fulfilled.
 
-- [ ] **Step 4: Verificar verde y regresión de cierre**
+- [x] **Step 4: Verificar verde y regresión de cierre**
 
 Run: `python -B -m unittest test_review_profile_topology test_review_profiles test_review_execution_policy test_review_dispatch test_review_closure_consistency test_review_traceability_contract11`.
 Expected: PASS, incluidos los casos de identidad tardía y despacho original incorporados desde main.
 
-- [ ] **Step 5: Commit futuro**
+- [x] **Step 5: Commit futuro**
 
 Mensaje: `feat(perfiles): validar lotes finales sin descartar historia ni frescura`, sólo los tres archivos de esta task.
 
@@ -326,7 +326,7 @@ Mensaje: `feat(perfiles): validar lotes finales sin descartar historia ni frescu
 - Propagar keywords `check_disclosure_context` y `check_disclosure_sources` por prepare/verify/render/delivery. Los wrappers CLI aceptan el sidecar de exposición y resuelven únicamente sus fuentes seleccionadas con los guards de rutas existentes.
 - La fuente canónica sigue intacta. El nuevo draft 3 contiene la vista/digest y rerenderiza con la evidencia contrastada; el receipt de delivery 2 identifica política y digests según spec §10.4.
 
-- [ ] **Step 1: Escribir pruebas de política y sus negativos**
+- [x] **Step 1: Escribir pruebas de política y sus negativos**
 
 | Prueba nueva | Aserción concreta |
 |---|---|
@@ -347,18 +347,18 @@ Mensaje: `feat(perfiles): validar lotes finales sin descartar historia ni frescu
 
 Usar datos sintéticos con comandos/rutas distintos para que no puedan pasar sólo por reemplazar todo con un marcador. Los asserts positivos comprueban el comando **y** los recursos que deben quedar visibles; los negativos comprueban la ausencia de valores sensibles. Extender aquí los casos nuevos de Task 2 para esperar draft 3/receipt de delivery 2 con sidecar válido; no dejar tests 12 contradictorios que sigan esperando draft 2 sin clasificación nueva.
 
-- [ ] **Step 2: Confirmar el rojo**
+- [x] **Step 2: Confirmar el rojo**
 
 Run: `python -B -m unittest test_review_check_disclosure test_review_disclosure_integration`.
 Expected: funciones inexistentes o comportamiento actual que omite por completo comandos acreditados; no aceptar un rojo originado sólo por un fixture de propósito/dimensiones inválido.
 
-- [ ] **Step 3: Capturar y validar procedencia acotada**
+- [x] **Step 3: Capturar y validar procedencia acotada**
 
 Capturar sólo los recursos/argv del check y ligarlos a los inputs previos a CCR y a los bytes usados al ejecutar. Usar los seams de captura actuales y evidencia seleccionada, sin un barrido adicional del repositorio. Construir el sidecar schema 1 y registrar su selección/hash antes de cleanup; posteriormente validar mediante fuentes retenidas.
 
 El constructor no convierte «está dentro del repo» o «ahora está tracked» en prueba. Las comprobaciones con metadata insuficiente producen modo explanation con explicación fiel, sin degradar el veredicto del producto. Un sidecar seleccionado incoherente mantiene el error de integridad y debe corregirse antes de generar la salida.
 
-- [ ] **Step 4: Implementar una proyección tipada común**
+- [x] **Step 4: Implementar una proyección tipada común**
 
 Sustituir el descarte indiscriminado sólo en la ruta nueva y acreditada: public_checks/render/public_projection y _PortableProjection consumen la vista común por ID real. No insertar cadenas brutas después de sanitizar ni volver a deduplicar evidencia ya agrupada. Eliminar prefijos locales/valores sensibles, conservar recursos/flags acreditados y escape Markdown. Un comando parcialmente saneado se etiqueta como representación saneada, no invocación exacta garantizada para otro entorno.
 
@@ -366,12 +366,12 @@ Conservar campos estructurales/relaciones, forma de final 12 y separación Prop�
 
 Draft 3 añade check_disclosure_context a los campos de draft 2 y liga su sidecar/digest; receipt de delivery 2 añade projection_policy/check_disclosure_sha256/model_usage_sha256. Este último empieza en null hasta Task 7. Receipt de comandos sigue en 2 y model ledger en 1. El modo nuevo se aplica a finales 12 y, para históricos, sólo a una nueva proyección explícita con evidencia suficiente; no se modifican sus originales.
 
-- [ ] **Step 5: Verificar verde y regresión**
+- [x] **Step 5: Verificar verde y regresión**
 
 Run: `python -B -m unittest test_review_check_disclosure test_review_disclosure_integration test_review_topology_integration test_review_traceability_comments test_review_traceability_delivery test_review_publication_policy test_review_comment test_review_delivery test_script_reporting_boundaries test_script_dependencies`.
 Expected: PASS, incluidos positivos visibles y negativos de privacidad/bindings. No publicar comentarios ni crear entregas reales del usuario para probarlo.
 
-- [ ] **Step 6: Commit futuro**
+- [x] **Step 6: Commit futuro**
 
 Mensaje: `feat(reportes): mostrar comandos acreditados con ocultacion selectiva`. Staging sólo de propietarios y tests de esta task.
 
@@ -390,7 +390,7 @@ Mensaje: `feat(reportes): mostrar comandos acreditados con ocultacion selectiva`
 - En reporting/render.py, `model_summary(context, ledger) -> dict` produce hechos ya validados por participante/fase, modelo configurado/observado, estado y fuente/diagnóstico. El renderer privado y delivery reciben keyword `model_usage_context` con el ledger/contexto validado y su digest; no realizan consultas al proveedor.
 - El recorrido del coordinador invoca la captura al preparar coordinación y al observar dispatch/resultado/cambio de modelo. No crear otra identidad de reviewer para un dispatcher de proceso ni una fila de agente ficticio por una asignación nunca despachada; la ausencia de ejecución queda en la traza/diagnóstico correspondiente.
 
-- [ ] **Step 1: Escribir pruebas del recorrido completo**
+- [x] **Step 1: Escribir pruebas del recorrido completo**
 
 | Prueba nueva | Resultado exigido |
 |---|---|
@@ -407,27 +407,27 @@ Mensaje: `feat(reportes): mostrar comandos acreditados con ocultacion selectiva`
 
 Usar modelos ficticios etiquetados únicamente como fixtures. Un string genérico «heredado» no acredita un ID real. Los asserts distinguen captura inexistente de modelo no expuesto y de ledger capturado que el renderer omitía.
 
-- [ ] **Step 2: Confirmar el rojo**
+- [x] **Step 2: Confirmar el rojo**
 
 Run: `python -B -m unittest test_review_model_capture`.
 Expected: falta de integración/operación/vista, aun cuando los tests del helper pasivo existente ya pasen.
 
-- [ ] **Step 3: Integrar captura sin mediciones**
+- [x] **Step 3: Integrar captura sin mediciones**
 
 Reutilizar el builder y sus diagnostics; no añadir campos al final ni al ledger 1. Conservar context.model_usage_reference y el sidecar seleccionado/hash, fuera de review_inputs.sources. Registrar metadata disponible en los puntos observados, o unknown cuando el participante existe pero su modelo no fue expuesto. Un modelo solicitado por runner/dispatch es configuración; observado requiere su fuente explícita.
 
 La ausencia/metadata sobredimensionada no bloquea el análisis del producto y queda visible. Un sidecar seleccionado ilegible, manipulado o de otro review/harness conserva su gate actual. Capturar no cambia modelos, presupuestos, límites ni topología; no repetir reviewers para completar metadata.
 
-- [ ] **Step 4: Presentar datos privados y vincular entregas**
+- [x] **Step 4: Presentar datos privados y vincular entregas**
 
 Usar model_summary en informe privado y local full/brief: campos claros por participante/fase, ambos modelos cuando existan, estado y fuente/ausencia. El resumen de delivery elimina rutas privadas y liga el digest del ledger, sin copiarlo íntegro; no altera la forma del review.json portable. Comentario público y handoff público siguen excluidos. Si sólo hay un record histórico sin sidecar, indicar «modelo no registrado», sin inventar participantes ni modelos.
 
-- [ ] **Step 5: Verificar verde y regresión**
+- [x] **Step 5: Verificar verde y regresión**
 
 Run: `python -B -m unittest test_review_model_capture test_review_model_usage test_review_archive8 test_review_setup test_review_disclosure_integration test_review_topology_integration test_review_traceability_comments test_script_cli test_script_dependencies`.
 Expected: PASS; cubrir con datos sintéticos el ciclo real de captura hasta las vistas y los negativos de integridad, sin telemetría ni llamadas de modelo pagadas.
 
-- [ ] **Step 6: Commit futuro**
+- [x] **Step 6: Commit futuro**
 
 Mensaje: `feat(trazabilidad): registrar y mostrar modelos por participante`. Staging sólo de propietarios y tests de esta task.
 
@@ -439,27 +439,27 @@ Mensaje: `feat(trazabilidad): registrar y mostrar modelos por participante`. Sta
 
 **Interfaces:** consumir Tasks 1–7 y la forma publicada de 11; producir instrucciones coherentes para finales nuevos 12, exposición de checks y captura privada de modelos, sin reescribir historia.
 
-- [ ] **Step 1: Actualizar perfiles y contrato**
+- [x] **Step 1: Actualizar perfiles y contrato**
 
 Describir deep 2, extended 3–5 y uno/dos finales; conservar standard condicional, escalación autorizada y excepción de gates de proyecto. Incorporar separación histórica/final, agregado de todas las activas y despacho original. Declarar 12 con forma de 11; congelar 1–11. Preservar propósito, catálogo de dimensiones, prioridades justificadas en impact y admisión/reutilización añadidos por main.
 
-- [ ] **Step 2: Actualizar creación, retención y presentación**
+- [x] **Step 2: Actualizar creación, retención y presentación**
 
 Nuevos finales schema 12 en SKILL, workers y guía; retención `python <skill>/scripts artifacts retain ... --expected-schema 12`. Archive 8 acepta 10/11/12 con sus reglas propias. Mantener recibos de comandos 2, introducir draft 3 y receipt de delivery 2 con sus digests, y preservar versiones históricas. Explicar clasificación pública de propósito/flows, comandos y origen de recursos; describir modelos configurado/observado/unknown en vistas privadas y su exclusión pública. Sustituir expresamente la instrucción pasiva/opcional de captura en artifacts.md/worker-packets.md por el recorrido de Task 7: registrar metadata o ausencia por participante observado, con límites y diagnóstico no bloqueante. No declarar que 12 tiene forma de 10 ni publicar internals en comentarios.
 
-- [ ] **Step 3: Añadir ejemplos completos y comprobar coherencia normativa**
+- [x] **Step 3: Añadir ejemplos completos y comprobar coherencia normativa**
 
 Los ejemplos mantenidos deben mostrar un test original con comando saneado y una reproducción CCR explicada; incluir captura de coordinación/reviewers, caso unknown, selección/retención de sidecars y vistas resultantes. Usar metadata sintética etiquetada, nunca modelos atribuidos retrospectivamente a corridas reales. Vincular cada ejemplo a pruebas de Tasks 6/7.
 
 Run: `rg -n 'schema.?11|schema.?12|expected-schema|four or five|two to five|a third only|one grouped verification batch' SKILL.md references/`.
 Expected: revisar cada coincidencia; 11 queda como contrato publicado compatible, las instrucciones nuevas usan 12, los conteos aplican a finales y las excepciones por perfil son correctas. Los comandos activos no usan fachadas retiradas.
 
-- [ ] **Step 4: Verificar referencias y políticas preservadas**
+- [x] **Step 4: Verificar referencias y políticas preservadas**
 
 Run: `python -B -m unittest test_reference_layout test_review_references test_review_reference_index test_review_priority_policy test_review_reuse_flow test_review_traceability_policy`.
 Expected: PASS. Sin nuevas mediciones, rondas de revisión ni cambios a prioridad/reutilización.
 
-- [ ] **Step 5: Commit futuro**
+- [x] **Step 5: Commit futuro**
 
 Mensaje: `docs(contratos): describir topologia y adopcion de final 12`, sólo los documentos operativos de esta task.
 
@@ -471,28 +471,28 @@ Mensaje: `docs(contratos): describir topologia y adopcion de final 12`, sólo lo
 
 **Interfaces:** versión propuesta de skill 3.5.0, a confirmar con main antes de publicar; esta task no autoriza publicación ni merge remoto.
 
-- [ ] **Step 1: Actualizar uso y changelog**
+- [x] **Step 1: Actualizar uso y changelog**
 
 Tablas con conteos finales; explicar conservación de historia, schema 12 y compatibilidad congelada de 11 con propósito/dimensiones. Documentar entrada modular vigente. Changelog añade una sección nueva, sin modificar 3.4.0 ni sus evidencias; incluir exposición selectiva y modelos además de topología, y fechar la publicación real. La versión propuesta 3.5.0 sustituye la antigua propuesta 2.15.0.
 
-- [ ] **Step 2: Verificar todas las superficies actuales**
+- [x] **Step 2: Verificar todas las superficies actuales**
 
 Run: `python -B -m unittest test_review_profile_topology test_review_topology_integration test_script_layout test_script_dependencies test_script_contract_boundaries test_script_pure_validation test_script_cli test_review_priority_policy test_review_priority_roundtrip test_review_reuse_context test_review_reuse_flow test_review_check_disclosure test_review_disclosure_integration test_review_model_capture`.
 Expected: PASS; imports no recrean fachadas ni ciclos. Revisar inventario final de guards 11/12, ejemplos CLI y expected_schema; no confundir final con archive/receipt/draft.
 
-- [ ] **Step 3: Ejecutar suite completa una vez**
+- [x] **Step 3: Ejecutar suite completa una vez**
 
 Run: `python -B -m unittest discover -s .`.
 Expected: PASS; registrar número real, duración, skips y limitaciones observados. La validación no afirma soporte de un viewer externo sin probarlo.
 
-- [ ] **Step 4: Revisar diff y commit futuro**
+- [x] **Step 4: Revisar diff y commit futuro**
 
 Run desde raíz: `git diff --check`.
 Expected: sin errores. Mensaje: `chore(release): preparar la version 3.5.0`, sujeto a verificar versión disponible; no crear release, tag ni push sin autorización.
 
 ## Matriz de trazabilidad y cierre documental
 
-| Requisito del spec | Task / comprobación futura |
+| Requisito del spec | Task / comprobación ejecutada |
 |---|---|
 | §1/§7: colisión de 11, forma de 12 y módulo vigente | 1/2; purpose/dimensiones obligatorios y consumidores actuales |
 | §3/§4: decisiones y cardinalidad de descubrimiento | 3; fronteras explicit/automatic y congelación 10/11 |
@@ -509,4 +509,4 @@ Expected: sin errores. Mensaje: `chore(release): preparar la version 3.5.0`, suj
 
 Los seis hallazgos de la revisión anterior siguen cubiertos: historia (Task 5), orden degraded (5), adopción operativa (2/8), fixture de fallback (4/5), ubicación de validadores y orden de tareas (1/4/5) y regresión histórica (3/5). La adaptación añade colisión de esquema, modularización, despacho original y trazabilidad actual. La ampliación del 2026-10-28 añade Tasks 6/7 y spec §10–§12; no sustituye esos controles.
 
-Antes de implementar: confirmar que main no haya avanzado ocupando final 12; si cambió, fijar nueva base y resolver compatibilidad, sin renumerar registros históricos. Todas las tareas permanecen pendientes. Los resultados de esta actualización documental sólo acreditan la coherencia del spec/plan y la integración de main, no una implementación ni una publicación.
+Las nueve tareas están completadas con revisiones independientes, correcciones verificadas y la repetición completa de las 1048 pruebas descubiertas. La ejecución secuencial y la corrección del fixture CLI se documentan sin presentarlas como una suite aprobada; la repetición íntegra posterior terminó sin fallos. Se conserva la rama y el worktree. La versión 3.5.0 está preparada sobre la base indicada; antes de una publicación futura habrá que comprobar si main avanzó, sin renumerar registros históricos. No se realizó publicación remota.

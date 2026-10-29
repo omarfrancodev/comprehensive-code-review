@@ -12,6 +12,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Mostrar comandos y recursos acreditados del proyecto con ocultación selectiva en comentarios y entregas; explicar las comprobaciones creadas por CCR o de origen desconocido, con draft 3 y recibo de delivery 2 ligados a evidencia seleccionada.
 - Capturar modelos configurados/observados o ausencia explícita por participante; conservar el ledger privado schema 1 y presentar su resumen en informe y delivery local, sin backfill histórico ni consultas adicionales.
 
+Validación de la implementación: [informe y límites](docs/validation/2026-10-28-profile-session-topology-implementation.md), con 1048 pruebas cubiertas y tres omisiones por privilegios de symlink.
+
 ## 3.4.0 — 2026-10-26
 
 ### Changed

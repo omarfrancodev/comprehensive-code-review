@@ -1,8 +1,8 @@
 # Topología de sesiones, checks publicables y modelos en CCR
 
-Estado: decisiones funcionales aprobadas el 2026-10-21; correcciones documentales del 2026-10-22 y adaptación a main del 2026-10-26. No se ha implementado esta topología.
+Estado: decisiones funcionales aprobadas el 2026-10-21; correcciones documentales del 2026-10-22 y adaptación a main del 2026-10-26. Implementación y correcciones de revisión completadas; cierre del 2026-10-28 con 1048 pruebas cubiertas, cero fallos y tres omisiones por privilegios de symlink. Véase el [informe de validación](../../validation/2026-10-28-profile-session-topology-implementation.md).
 
-Ampliación solicitada el 2026-10-28: conservar comandos/recursos acreditados del proyecto en comentarios y delivery con ocultación selectiva de datos sensibles, y registrar/presentar la procedencia del modelo por participante. Las decisiones de topología siguen vigentes; los formatos auxiliares propuestos más abajo forman parte del diseño pendiente de implementación.
+Ampliación solicitada el 2026-10-28: conservar comandos/recursos acreditados del proyecto en comentarios y delivery con ocultación selectiva de datos sensibles, y registrar/presentar la procedencia del modelo por participante. Las decisiones de topología siguen vigentes; los formatos auxiliares descritos más abajo se incorporaron a la implementación revisada y verificada.
 
 Base vigente: `main`/`origin/main`, commit `1d2626048a882cab510a59fd10fdbca7cf16dda5` (CCR 3.4.0), integrado en este worktree mediante `67633cf`. Worktree: `.worktrees/profile-session-topology`; rama: `docs/profile-session-topology`. Los archivos conservan su fecha y nombre originales para mantener los enlaces.
 
@@ -243,7 +243,7 @@ Ejemplos normativos, con datos sintéticos:
 
 La forma de final 12 sigue siendo la de final 11. Su `checks[].command` interno conserva la ejecución original; no se añade un campo de origen a coverage.execution ni se cambia el recibo de comandos 2.
 
-Introducir `evidence/check-disclosure.json` schema 1 como sidecar privado seleccionado y ligado al run. Envelope: `{schema_version, review_id, source_sha256, input_identity, checks}`, donde input_identity contiene las identidades head/snapshot fijadas. Cada fila: `{id, command_sha256, execution_reference, mode, command, resources, explanation, evidence_reference}`.
+Introducir `evidence/check-disclosure.json` schema 1 como sidecar privado seleccionado y ligado al run. Envelope: `{schema_version, review_id, source_sha256, input_identity, checks}`, donde input_identity contiene las identidades head/snapshot fijadas y, cuando existe mapa inicial, su resource_manifest_sha256 capturado antes del trabajo y fijado en registro. Una ruta standalone requiere prueba Git verificable o el run con esa identidad inicial contrastada. Cada fila: `{id, command_sha256, execution_reference, mode, command, resources, explanation, evidence_reference}`.
 
 - mode: `project_command`, `mixed` o `explanation`; command es texto proyectado o null en explanation; explanation siempre es texto concreto no sensible.
 - resources contiene únicamente recursos originales elegibles para proyectar: filas `{path, revision, project_sha256, executed_sha256}`, con path original relativo al proyecto y hashes concordantes cuando se afirma uso de su contenido original. Esa prueba es privada; la vista saneada no copia sus componentes sensibles.
