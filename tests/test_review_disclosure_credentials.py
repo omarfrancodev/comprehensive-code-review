@@ -10,6 +10,63 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_literal_encoded_credential_in_url_is_checked_before_normalization(self):
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        for secret in ('CREDENTIAL%5F123', 'CREDENTIAL&amp;123', r'CREDENTIAL\_123',
+                       'CREDENTIAL)123', 'CREDENTIAL]123'):
+            with self.subTest(secret=secret):
+                record, identity, observations, sources = fixture(
+                    ['pytest', 'tests/test_queue.py', '--token', secret])
+                reference = 'https://example.com/result/' + secret
+                record['checks'][0]['reference'] = reference
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['reference'] = reference
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (safe_text(reference, sensitive_values(sources)),
+                    render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        self.assertNotIn(secret, output)
+                        self.assertNotIn(reference, output)
+
+    def test_literal_redaction_cannot_split_a_url_before_encoded_secret_check(self):
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        secret = 'CREDENTIAL_123'
+        encoded = '%43REDENTIAL_123'
+        for reference in (
+                'https://example.com/result/' + secret + '?note=' + encoded,
+                'https://example.com/result/' + encoded + '?note=' + secret,
+                'https://example.com/result/' + encoded + '?first=' + secret + '&last=' + encoded):
+            with self.subTest(reference=reference):
+                record, identity, observations, sources = fixture(
+                    ['pytest', 'tests/test_queue.py', '--token', secret])
+                record['checks'][0]['reference'] = reference
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['reference'] = reference
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (safe_text(reference, sensitive_values(sources)),
+                    render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        self.assertNotIn(secret, output)
+                        self.assertNotIn(encoded, output)
+                benign = 'https://example.com/result/OTHER_VALUE?note=%4FTHER_VALUE'
+                # An earlier redaction must not affect a later URL's boundaries.
+                output = safe_text(secret + ' ' + reference + ' ' + benign,
+                                   sensitive_values(sources))
+                self.assertNotIn(encoded, output)
+                self.assertIn(benign, output)
+
     def test_known_password_in_encoded_public_reference_is_not_reintroduced(self):
         from urllib.parse import quote
         from ccr.contracts.check_disclosure import safe_text, sensitive_values

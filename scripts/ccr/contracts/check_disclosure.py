@@ -155,8 +155,11 @@ def safe_text(value, secrets=()):
         escaped = html.escape(plain, quote=False)
         spellings.update((secret, plain, escaped,
             re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', escaped)))
-    for secret in sorted((value for value in spellings if value), key=len, reverse=True):
-        value = value.replace(secret, OMITTED)
+    spellings = tuple(sorted((text for text in spellings if text), key=len, reverse=True))
+    def redact(text):
+        for secret in spellings:
+            text = text.replace(secret, OMITTED)
+        return text
     def url(text):
         try:
             # Inspect the displayed URL as well as raw prose; Markdown escapes
@@ -167,7 +170,10 @@ def safe_text(value, secrets=()):
             # Decode URL escapes for comparison only; '+' stays literal and
             # benign references retain their original spelling.
             decoded = unquote(displayed)
-            if any(secret in decoded for secret in secrets):
+            # Normalization can also change a literal credential containing
+            # escapes. Check original and displayed forms before discarding them.
+            if any(secret in candidate for candidate in (text, displayed, decoded)
+                   for secret in spellings):
                 return '[URL omitida]'
             if (parsed.username or parsed.password or not parsed.hostname
                     or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
@@ -177,14 +183,18 @@ def safe_text(value, secrets=()):
             return text
         except ValueError:
             return '[URL omitida]'
-    # Separate spans avoid placeholder collisions with caller-controlled text.
+    # Split original text before inserting any markers: their ']' must never
+    # truncate a URL and hide a later encoded occurrence from its policy check.
     spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
     for index in range(0, len(spans), 2):
+        spans[index] = redact(spans[index])
         spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
         spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
     for index in range(1, len(spans), 2):
         spans[index] = url(spans[index])
-    value = ''.join(spans)
+    # A literal credential can cross an original delimiter boundary. Redact it
+    # after URL decisions; these markers can no longer affect URL recognition.
+    value = redact(''.join(spans))
     value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
     value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', value)
     return value
