@@ -18,6 +18,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
 - Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
 
+F013: ocultar copias porcentuales conocidas también fuera del segmento URL, conservando el texto de origen ajeno al secreto. [Validación](docs/validation/2026-10-29-pr34-f013.md).
+
 F012: decidir sobre las URLs originales antes de insertar marcadores y conservar la ocultación de credenciales literales entre segmentos. [Validación](docs/validation/2026-10-29-pr34-f012.md).
 
 F011: ocultar credenciales conocidas aunque la codificación Markdown de una referencia cambie su grafía URL. [Validación](docs/validation/2026-10-29-pr34-f011.md).
