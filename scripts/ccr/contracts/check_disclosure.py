@@ -9,7 +9,7 @@ import json
 import ntpath
 import re
 import shlex
-from urllib.parse import urlsplit, parse_qsl, unquote_plus
+from urllib.parse import urlsplit, unquote, unquote_plus
 
 FIELDS = {'schema_version', 'review_id', 'source_sha256', 'input_identity', 'checks'}
 ROW_FIELDS = {'id', 'command_sha256', 'execution_reference', 'mode', 'command', 'resources', 'explanation', 'evidence_reference'}
@@ -19,6 +19,7 @@ EXPLANATION_COMMAND = '[comprobación explicada; comando no acreditado]'
 MAX_BYTES = 1024 * 1024
 RESOURCE_OPERAND = re.compile(r'(?i)\.(?:json|ya?ml|toml|ini|cfg|conf|config|xml|csv|tsv|txt|dat|bin|py|js|mjs|cjs|sh|ps1|dll|exe|csproj|sln|mk)$')
 RESOURCE_FLAGS = {'--fixture', '--input', '--data', '--config', '--settings', '--file', '--output', '-o'}
+SENSITIVE_URL_KEY = re.compile(r'(?i)(?:token|password|secret|api.?key|auth|credential)')
 
 
 def digest(raw):
@@ -61,12 +62,27 @@ def _secret_argument(argument):
         r'(?i)(?:token|password|secret|api[-_]?key|authorization|credential)', key))
 
 
-def _argument_secrets(argument):
-    """Extract credential values, including later and encoded URL query pairs."""
+def _url_secrets(parsed):
+    """Share URL classification and wire/decoded credential learning."""
     values = set()
-    key_pattern = r'(?i)(?:token|password|secret|api.?key|auth|credential)'
+    for component in (parsed.query, parsed.fragment):
+        for pair in component.split('&'):
+            key, separator, value = pair.partition('=')
+            # A fragment can carry OAuth parameters directly or an SPA route
+            # followed by '?'. Matching the decoded key also covers that prefix.
+            if separator and SENSITIVE_URL_KEY.search(unquote_plus(key)):
+                values.update((value, unquote_plus(value)))
+    if parsed.password:
+        # Userinfo preserves literal '+', unlike form query/fragment values.
+        values.update((parsed.password, unquote(parsed.password)))
+    return values
+
+
+def _argument_secrets(argument):
+    """Extract credential values, including encoded URL queries/fragments."""
+    values = set()
     header = re.fullmatch(r'(?:--header=|-H)?([\w-]+)\s*:\s*(.+)', argument)
-    if header and re.search(key_pattern, header.group(1)):
+    if header and SENSITIVE_URL_KEY.search(header.group(1)):
         credential = header.group(2).strip()
         values.add(credential)
         # Authentication schemes are public; the credential can be repeated on
@@ -75,14 +91,7 @@ def _argument_secrets(argument):
     for text in re.findall(r'https?://[^\s<>\]\)]+', argument, re.IGNORECASE):
         try:
             parsed = urlsplit(html.unescape(text))
-            for pair in parsed.query.split('&'):
-                key, separator, value = pair.partition('=')
-                if separator and re.search(key_pattern, unquote_plus(key)):
-                    # Retain both reversible wire bytes and displayed text: a
-                    # credential can be repeated elsewhere in either spelling.
-                    values.update((value, unquote_plus(value)))
-            if parsed.password:
-                values.add(parsed.password)
+            values.update(_url_secrets(parsed))
         except ValueError:
             continue
     return values
@@ -155,8 +164,7 @@ def safe_text(value, secrets=()):
             if (parsed.username or parsed.password or not parsed.hostname
                     or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
                     or parsed.hostname.lower().endswith(('.local', '.internal'))
-                    or any(re.search(r'(?i)token|password|secret|api.?key|credential|auth', key)
-                           for key, _ in parse_qsl(parsed.query))):
+                    or _url_secrets(parsed)):
                 return '[URL omitida]'
             return text
         except ValueError:

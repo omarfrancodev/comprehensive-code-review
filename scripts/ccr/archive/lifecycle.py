@@ -1,4 +1,5 @@
 """Ordinary archive preparation, profile, operation, and closure lifecycle."""
+import base64
 import copy
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -791,7 +792,7 @@ def _close_recovery_contents(run, manifest):
     """Reconstruct only the exact owned old/planned cleanup transaction."""
     from ccr.archive.evidence import selected_source_bytes
     from ccr.archive.retention import rebind_disclosure_for_cleanup, retained_model_context
-    from ccr.contracts.check_disclosure import source_digest
+    from ccr.archive.intent_contracts import close_previous_disclosure_bytes
 
     context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
     reference = context.get('check_disclosure_reference')
@@ -816,11 +817,13 @@ def _close_recovery_contents(run, manifest):
     observation = manifest['close_observation']
     value['resources'].update(cleanup=observation['cleanup'], residuals=observation['residuals'])
 
-    disclosure = read_json(run / reference)
-    disclosure['source_sha256'] = source_digest(previous)
-    old_disclosure = _json_bytes(disclosure)
-    if _digest(old_disclosure) != manifest['hashes'].get(reference):
-        raise ValueError('interrupted close cannot reconstruct the owned previous disclosure')
+    old_disclosure = close_previous_disclosure_bytes(manifest)
+    if old_disclosure is None:
+        # A still-surviving original needs no backup. Never infer its encoding
+        # from the planned replacement: selected JSON bytes need not be canonical.
+        old_disclosure = (run / reference).read_bytes()
+        if _digest(old_disclosure) != manifest['hashes'].get(reference):
+            raise ValueError('interrupted close has no owned previous disclosure bytes')
     old_sources = {reference: old_disclosure}
     contents = {'review.json': _json_bytes(value)}
     contents.update(rebind_disclosure_for_cleanup(previous, value, context,
@@ -932,9 +935,8 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         raise ValueError('; '.join(errors))
     from ccr.archive.retention import retained_model_context
     report = render_review(value, model_usage_context=retained_model_context(run, manifest, record=value)).encode('utf-8')
-    if durable_close is not None and manifest.get('close_observation') != durable_close:
-        manifest['close_observation'] = durable_close
-        marker = _save_manifest(run, manifest, marker)
+    contents = None
+    previous_disclosure = None
     if value != read_json(run / 'review.json') or pending_close:
         contents = {'review.json': _json_bytes(value), 'informe.md': report}
         from ccr.archive.retention import rebind_disclosure_for_cleanup
@@ -945,6 +947,25 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
             lambda name: selected_source_bytes(run, manifest, {}, name)))
         if 'handoff.md' in manifest['hashes']:
             contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+        reference = retained_context.get('check_disclosure_reference')
+        if durable_close is not None and reference in contents:
+            from ccr.contracts.check_disclosure import MAX_BYTES
+            original = selected_source_bytes(run, manifest, {}, reference)
+            # The selected JSON contract bounds canonical size; its whitespace
+            # may be larger. Reject an unbounded recovery copy before any intent
+            # write, preserving the already valid retained archive unchanged.
+            if len(original) > MAX_BYTES:
+                raise ValueError('previous disclosure bytes exceed the ' + str(MAX_BYTES) + '-byte recovery limit')
+            previous_disclosure = {
+                'reference': reference, 'base64': base64.b64encode(original).decode('ascii')}
+    if durable_close is not None and manifest.get('close_observation') != durable_close:
+        manifest['close_observation'] = durable_close
+        marker = _save_manifest(run, manifest, marker)
+    if contents is not None:
+        # Persist exact selected bytes inside the owned old/planned intent
+        # before any sidecar replacement makes the original unavailable.
+        if previous_disclosure is not None:
+            manifest['close_previous_disclosure'] = previous_disclosure
         manifest = _retain_data(run, manifest, marker, contents, record_retention=False)
         run, manifest, marker = _load_run(run)
     manifest.update(cleanup=cleanup, residuals=residuals,

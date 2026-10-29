@@ -427,6 +427,7 @@ def _retain_data(run, manifest, marker, contents, *, record_retention=True):
         atomic_write(run / name, data)
     hashes = dict(manifest['hashes'])
     hashes.update(manifest.pop('planned_hashes'))
+    manifest.pop('close_previous_disclosure', None)
     manifest.update(state='closing', retained=True, hashes=hashes)
     events = []
     if record_retention:

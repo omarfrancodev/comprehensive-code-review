@@ -1,7 +1,9 @@
 """Interrupted cleanup close must recover only the owned coherent disclosure pair."""
 import argparse
+import base64
 import copy
 import hashlib
+import json
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -18,7 +20,7 @@ workspace = workspace_api()
 
 
 class DisclosureCloseRecoveryTests(unittest.TestCase):
-    def retained_cleaned_run(self, optional_evidence=False):
+    def retained_cleaned_run(self, optional_evidence=False, disclosure_format=None):
         helper = topology_tests.TopologyIntegrationTests()
         case = helper.archive()
         self.addCleanup(case.doCleanups)
@@ -26,7 +28,23 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
             repo=str(case.repo), ref='HEAD', mode='commit', role=['review'], include_untracked=[]))['session_dir'])
         run = case.prepare(temporary_paths=[str(session)])
         real_retain = topology_tests.artifacts.retain
+        selected_disclosure = []
         def retain_with_optional_evidence(*args, **kwargs):
+            if disclosure_format is not None:
+                path = next(path for path in kwargs['evidence_inputs']
+                            if Path(path).name == 'check-disclosure.json')
+                value = case.read(path)
+                if disclosure_format == 'compact':
+                    raw = json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+                elif disclosure_format in ('at_bound', 'over_bound'):
+                    from ccr.contracts.check_disclosure import MAX_BYTES
+                    raw = json.dumps(value).encode('utf-8')
+                    size = MAX_BYTES + (disclosure_format == 'over_bound')
+                    raw += b' ' * (size - len(raw))
+                else:
+                    raw = (' \n' + json.dumps(value, ensure_ascii=False, indent=3) + '\n\t').encode('utf-8')
+                Path(path).write_bytes(raw)
+                selected_disclosure.append(raw)
             if optional_evidence:
                 from ccr.workflow.builders import build_model_usage_update
                 manifest = case.read(run / 'cierre.json')
@@ -40,7 +58,13 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
                 kwargs['handoff'] = True
             return real_retain(*args, **kwargs)
         with patch.object(topology_tests.artifacts, 'retain', side_effect=retain_with_optional_evidence):
-            helper.retain12(case, run, record12('focused', 'automatic', discovery=1))
+            value = record12('focused', 'automatic', discovery=1)
+            if disclosure_format is not None:
+                value['resources'].update(cleanup='pending', residuals=[str(session)])
+            helper.retain12(case, run, value)
+        self.assertTrue(lifecycle.validate(run, require_retained=True)['retained'])
+        if selected_disclosure:
+            self.assertEqual((run / 'evidence/check-disclosure.json').read_bytes(), selected_disclosure[0])
         previous = case.read(run / 'review.json')
         self.assertEqual(previous['resources']['cleanup'], 'pending')
         self.assertEqual(previous['resources']['residuals'], [str(session)])
@@ -72,8 +96,25 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
     def test_close_recovers_with_selected_model_sidecar_and_handoff(self):
         self.assert_recovers('before', optional_evidence=True)
 
-    def assert_recovers(self, boundary, optional_evidence=False):
-        case, run, previous = self.retained_cleaned_run(optional_evidence)
+    def test_close_recovers_exact_noncanonical_selected_disclosure(self):
+        for formatting in ('compact', 'noncanonical'):
+            for boundary in ('before', 'after'):
+                with self.subTest(formatting=formatting, boundary=boundary):
+                    self.assert_recovers(boundary, disclosure_format=formatting)
+
+    def test_close_recovers_padded_selected_disclosure_at_byte_bound(self):
+        self.assert_recovers('after', disclosure_format='at_bound')
+
+    def test_oversized_selected_disclosure_close_refuses_before_intent_writes(self):
+        case, run, _ = self.retained_cleaned_run(disclosure_format='over_bound')
+        before = case.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'previous disclosure.*byte.*limit'):
+            lifecycle.close(run, cleanup='complete')
+        self.assertEqual(case.snapshot(run), before)
+        self.assertTrue(lifecycle.validate(run, require_retained=True)['retained'])
+
+    def assert_recovers(self, boundary, optional_evidence=False, disclosure_format=None):
+        case, run, previous = self.retained_cleaned_run(optional_evidence, disclosure_format)
         model_bytes = (run / 'evidence/model-usage.json').read_bytes() if optional_evidence else None
         old_disclosure = case.read(run / 'evidence/check-disclosure.json')
         self.interrupt(case, run, boundary)
@@ -112,6 +153,43 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             lifecycle.close(run, cleanup='complete')
         self.assertEqual(case.snapshot(run), before)
+
+    def test_invalid_previous_disclosure_evidence_is_rejected_without_writes(self):
+        case, run, _ = self.retained_cleaned_run()
+        old_bytes = (run / 'evidence/check-disclosure.json').read_bytes()
+        self.interrupt(case, run, 'after')
+        manifest = case.read(run / 'cierre.json')
+        interrupted = case.snapshot(run)
+        from ccr.contracts.check_disclosure import MAX_BYTES
+        invalid = [
+            None,
+            {'reference': 'evidence/check-disclosure.json', 'base64': '!invalid!'},
+            {'reference': 'evidence/check-disclosure.json', 'base64': 'A' * (4 * ((MAX_BYTES + 2) // 3) + 4)},
+            {'reference': 'evidence/check-disclosure.json', 'base64': base64.b64encode(old_bytes + b' ').decode('ascii')},
+            {'reference': 'evidence/unselected.json', 'base64': base64.b64encode(old_bytes).decode('ascii')},
+        ]
+        for evidence in invalid:
+            with self.subTest(evidence_kind=type(evidence).__name__, reference=(evidence or {}).get('reference')):
+                for name, raw in interrupted.items():
+                    (run / name).write_bytes(raw)
+                changed = copy.deepcopy(manifest)
+                changed['close_previous_disclosure'] = evidence
+                lifecycle._save_manifest(run, changed, case.read(run / '.review-ownership.json'))
+                before = case.snapshot(run)
+                with self.assertRaises(ValueError):
+                    lifecycle.close(run, cleanup='complete')
+                self.assertEqual(case.snapshot(run), before)
+
+    def test_repeated_close_interruption_keeps_exact_previous_disclosure(self):
+        case, run, _ = self.retained_cleaned_run(disclosure_format='noncanonical')
+        old_bytes = (run / 'evidence/check-disclosure.json').read_bytes()
+        self.interrupt(case, run, 'after')
+        self.interrupt(case, run, 'before')
+        self.assertEqual(base64.b64decode(case.read(run / 'cierre.json')[
+            'close_previous_disclosure']['base64']), old_bytes)
+        lifecycle.close(run, cleanup='complete')
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+        self.assertNotIn('close_previous_disclosure', case.read(run / 'cierre.json'))
 
     def test_changed_planned_inventory_cannot_be_adopted(self):
         case, run, _ = self.retained_cleaned_run()
