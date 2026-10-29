@@ -1,0 +1,13 @@
+{
+  "tested_commit": "a3ff64008ae65e19f008486f2826235b78a27270",
+  "scope": "F011 affected regression, not full repository suite",
+  "command": "python -B -m unittest test_review_check_disclosure test_review_disclosure_credentials test_review_delivery_sensitive_urls test_review_disclosure_integration test_review_delivery test_review_traceability_delivery test_review_publication_policy test_review_priority_roundtrip test_script_reporting_boundaries test_script_dependencies test_script_pure_validation -v",
+  "ran": 106,
+  "passed": 106,
+  "skipped": 0,
+  "failures": 0,
+  "errors": 0,
+  "exit_code": 0,
+  "duration_seconds": 61.801,
+  "source_sha256": "feac363e714004075f396551ace5949f1c93631d3b0da8a0a0d3ecacb32fbd99"
+}

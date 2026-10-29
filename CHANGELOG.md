@@ -18,6 +18,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
 - Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
 
+F011: ocultar credenciales conocidas aunque la codificación Markdown de una referencia cambie su grafía URL. [Validación](docs/validation/2026-10-29-pr34-f011.md).
+
 Seguimiento del re-review: ocultar también contraseñas userinfo decodificadas y tokens en fragmentos URL; conservar bytes exactos del sidecar en cierres interrumpidos. [Evidencia y límites](docs/validation/2026-10-29-pr34-rereview.md).
 
 Correcciones del PR #34: [validación y reintentos](docs/validation/2026-10-28-pr34-review-fixes.md).
