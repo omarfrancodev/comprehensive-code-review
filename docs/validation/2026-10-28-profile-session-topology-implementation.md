@@ -37,7 +37,7 @@ La primera ejecución global se interrumpió deliberadamente cuando la revisión
 
 Una ejecución dentro del sandbox encontró tres fallos al crear clones parciales: Windows bloqueó `sh.exe` de Git antes de las aserciones del producto. Las tres pruebas exactas pasaron fuera del sandbox, sin cambios de código. La ejecución global usa ese entorno capaz de crear los fixtures, con Git 2.45.0.windows.1 y un temporal aislado.
 
-La ejecución del ejemplo mantenido detectó después que su montaje aún construía final 10 mientras el comando documentado exigía 12. Se actualizó únicamente ese caso de productor actual a final 12 sin checks ejecutados, preservando los builders y escenarios históricos; la prueba pasó y una revisión independiente aprobó el ajuste. Los intentos interrumpidos se conservaron como diagnóstico, sin presentarlos como ejecuciones globales aprobadas.
+La ejecución del ejemplo mantenido detectó después que su montaje aún construía final 10 mientras el comando documentado exigía 12. Se actualizó únicamente ese caso de productor actual a final 12 sin checks ejecutados, preservando los builders y escenarios históricos; la prueba pasó y una revisión independiente aprobó el ajuste. Los intentos interrumpidos se usaron únicamente como diagnóstico, sin presentarlos como ejecuciones globales aprobadas.
 
 La primera ejecución global que llegó al final ejecutó 1048 pruebas en 2380.097 s: 1044 aprobadas, tres omitidas por privilegios de symlink y un fallo en el inventario CLI esperado. El diff recursivo aisló exclusivamente las ampliaciones autorizadas: schema 12, flags de disclosure y las dos operaciones nuevas de setup. Se actualizó ese fixture conservando la comparación exacta de todo el inventario; 35 pruebas enfocadas pasaron en 18.629 s y la revisión independiente aprobó el diff. No cambió código de producción. La repetición completa distribuye las mismas 1048 identidades únicas descubiertas en 98 módulos entre cuatro procesos, con temporales separados; cada módulo debe conservar su conteo y terminar con código cero. La repetición terminó con código cero, 1048 pruebas cubiertas, tres omisiones y ningún fallo ni error. El descubrimiento equivale a `python -B -m unittest discover -s . -v`; cada uno de los 98 módulos se ejecutó una vez mediante `python -B -m unittest <módulo> -v`, con cuatro procesos y verificación de sus conteos. El código probado corresponde a `5bb712f`; el código de producción no cambió desde `a5365c2`.
 
@@ -54,17 +54,21 @@ La primera ejecución global que llegó al final ejecutó 1048 pruebas en 2380.0
 
 Las revisiones finales no dejaron hallazgos Critical/Important abiertos ni una lista de comportamientos descartados sin juzgar. El resultado global confirmó el cierre sin nuevas correcciones de producción. `git diff --check` terminó sin errores; los fixtures congelados `recovery_fixtures.py`, `traceability_fixtures.py` y `test_review_execution_policy.py` siguen idénticos a main. Los cambios posteriores a la suite se limitan al estado documental y su evidencia.
 
-## Decisiones de implementación
+## Decisiones tomadas y sus costes
 
-1. Se usa final 12 porque main ya publicó 11 con propósito y dimensiones. No se reutiliza un número publicado ni se cambian registros históricos.
-2. El entorno no pudo iniciar Git Bash para los helpers de seguimiento; se conservó un registro equivalente por plan y se ejecutaron las pruebas directamente con Python.
-3. Se usó un temporal corto tras observar permisos y límites de longitud de rutas de Windows. Esto no cambia código ni expectativas del producto.
-4. La operación de modelos, independiente de disclosure, se completó antes de cerrar toda la exposición; la integración y los digests se verificaron en conjunto.
-5. Las tareas de exposición y modelos comparten retención, cierre y rendering; se integraron en un commit conjunto conservando informes y revisiones separados.
-6. La lectura de fuentes queda en ejecución/CLI; los contratos y la proyección pura no hacen IO. La identidad inicial no puede sustituirse por hashes declarados después del check.
-7. Los adapters de tareas son deliberadamente acotados: un helper anidado necesita prueba de bytes originales; shells, invocaciones dinámicas o selectores de otro manifiesto no acreditados usan explicación. No se construyó un intérprete ni un servicio de análisis de dependencias.
-8. La captura de modelos depende de invocar la operación del coordinador con metadata real o ausencia explícita. No se sondean APIs, historiales, costes ni configuración global. Ignorar la captura deja unknown visible, sin cambiar el veredicto del producto.
-9. Las revisiones y pruebas globales se prepararon contra código congelado; la aceptación siempre requiere ambos resultados. Las correcciones finales requieren nueva verificación de su código.
+Se trasladan aquí todos los rulings del registro temporal, en su orden original:
+
+1. Sustituir los helpers de Git Bash bloqueados por registro equivalente y Python incluido. Coste: sin automatización de briefs ni cierre de tareas de esos helpers.
+2. Reubicar TEMP/TMP para permitir las pruebas; después se usó un temporal corto. Coste si se interpreta fuera de contexto: los resultados dependen de las capacidades documentadas del host.
+3. Activar en 12 el guard de obligaciones del perfil descubierto durante Task 2, con prueba RED→GREEN. Coste si fuera incorrecto: rechazar registros 12; omitirlo habría permitido eludir obligaciones adquiridas.
+4. Añadir un helper separado para retención de 12 y conservar los fixtures congelados 10/11. Coste: mantenimiento de una fixture adicional y necesidad de una ruta temporal corta en Windows.
+5. Devolver diagnósticos de binding/historia inválidos antes de clasificar lotes. Coste: un input inválido no recibe diagnósticos derivados de la clasificación posterior; se evita una excepción sin relajar gates.
+6. Implementar la operación independiente model-usage de Task 7 antes de Task 6. Coste: su aceptación integral se aplazó hasta verificar captura, vistas, retención e integración.
+7. Continuar con agentes separados para auditoría, disclosure y modelos, coordinando rendering/delivery compartidos. Coste: coordinación adicional en archivos comunes, resuelta antes de las revisiones y pruebas finales.
+8. Preparar 3.5.0 frente a main/origin-main 3.4.0, sin publicación, tag ni push. Coste: habrá que comprobar de nuevo la disponibilidad de versión antes de publicar.
+9. Capturar modelos mediante instrucciones del coordinador y setup, sin hook automático del dispatcher. Coste: ignorar las instrucciones deja unknown visible; no altera el veredicto ni inventa modelos.
+10. Integrar Tasks 6/7 juntas por compartir selección de fuentes, rendering, cierre y digests, conservando informes y revisiones separados. Coste: sus rangos de Git se superponen y tienen menor granularidad por tarea.
+11. Revisar la rama y ejecutar pruebas concurrentemente sobre código congelado, exigiendo ambas aprobaciones. Coste: cualquier corrección invalida la evidencia previa afectada; las correcciones se revisaron y la suite completa se repitió antes del cierre.
 
 ## Límites
 
