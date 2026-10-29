@@ -1,0 +1,184 @@
+{
+  "tested_commit": "90750108735773f6191dc74246831fd67048a09a",
+  "success": true,
+  "scope": "affected regression, not a repeat of the full repository suite",
+  "ran": 298,
+  "skipped": 1,
+  "module_count": 21,
+  "duration_seconds": 281.328,
+  "modules": [
+    {
+      "module": "test_review_archive8",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 12.187
+    },
+    {
+      "module": "test_review_artifacts",
+      "expected": 54,
+      "ran": 54,
+      "exit_code": 0,
+      "skipped": 1,
+      "duration_seconds": 100.047
+    },
+    {
+      "module": "test_review_atomic_recovery",
+      "expected": 8,
+      "ran": 8,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 16.922
+    },
+    {
+      "module": "test_review_check_disclosure",
+      "expected": 21,
+      "ran": 21,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 6.453
+    },
+    {
+      "module": "test_review_closure_consistency",
+      "expected": 25,
+      "ran": 25,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 164.39
+    },
+    {
+      "module": "test_review_delivery",
+      "expected": 29,
+      "ran": 29,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 64.906
+    },
+    {
+      "module": "test_review_delivery_sensitive_urls",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.907
+    },
+    {
+      "module": "test_review_disclosure_close_recovery",
+      "expected": 12,
+      "ran": 12,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 180.015
+    },
+    {
+      "module": "test_review_disclosure_credentials",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 1.078
+    },
+    {
+      "module": "test_review_disclosure_integration",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 7.985
+    },
+    {
+      "module": "test_review_publication_policy",
+      "expected": 17,
+      "ran": 17,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 1.234
+    },
+    {
+      "module": "test_review_recovery",
+      "expected": 58,
+      "ran": 58,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 221.828
+    },
+    {
+      "module": "test_review_topology_integration",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 11.734
+    },
+    {
+      "module": "test_review_traceability_archive",
+      "expected": 17,
+      "ran": 17,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 45.781
+    },
+    {
+      "module": "test_review_traceability_delivery",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 11.641
+    },
+    {
+      "module": "test_script_characterization",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.937
+    },
+    {
+      "module": "test_script_contract_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.281
+    },
+    {
+      "module": "test_script_dependencies",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 2.36
+    },
+    {
+      "module": "test_script_layout",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.531
+    },
+    {
+      "module": "test_script_pure_validation",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.375
+    },
+    {
+      "module": "test_script_reporting_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "skipped": 0,
+      "duration_seconds": 0.844
+    }
+  ],
+  "interrupted_attempt": "Previous process interrupted before producing aggregate result; no code or expectations changed before clean restart.",
+  "skipped_tests": [
+    "test_symlink_roots_inputs_and_archived_files_are_refused (test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused)"
+  ],
+  "skip_reason": "Windows symlink creation privilege unavailable (WinError 1314)"
+}

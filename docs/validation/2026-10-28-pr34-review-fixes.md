@@ -4,6 +4,8 @@ Estado: los siete hallazgos están corregidos y el recheck independiente está a
 
 Fuente: [comentario de revisión CR-c0d69fe2d3e74f599f85](https://github.com/omarfrancodev/comprehensive-code-review/pull/34#issuecomment-6488607760), sobre `27842fe`. Se contrastaron los siete hallazgos y todos requirieron corrección. La rama sigue siendo `docs/profile-session-topology`, con destino `main`.
 
+Seguimiento posterior: el re-review CR-6d34c327244c4e8eb021 confirmó seis causas resueltas y detectó una variante restante de F003 y las causas nuevas F008/F009. Las afirmaciones de este informe describen los escenarios probados en su commit; el cierre posterior y sus límites se registran en [el seguimiento del re-review](2026-10-29-pr34-rereview.md).
+
 ## Cambios y comprobaciones
 
 | Hallazgo | Corrección y regresión |

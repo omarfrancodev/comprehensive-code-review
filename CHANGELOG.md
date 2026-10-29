@@ -18,6 +18,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
 - Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
 
+Seguimiento del re-review: ocultar también contraseñas userinfo decodificadas y tokens en fragmentos URL; conservar bytes exactos del sidecar en cierres interrumpidos. [Evidencia y límites](docs/validation/2026-10-29-pr34-rereview.md).
+
 Correcciones del PR #34: [validación y reintentos](docs/validation/2026-10-28-pr34-review-fixes.md).
 
 Validación de la implementación: [informe y límites](docs/validation/2026-10-28-profile-session-topology-implementation.md), con 1048 pruebas cubiertas y tres omisiones por privilegios de symlink.
