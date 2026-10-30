@@ -18,6 +18,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
 - Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
 
+F015: conservar el aprendizaje de credenciales query/fragment/userinfo aunque otra entidad numérica del URL sea larga, reutilizando la conversión HTML acotada sin alterar las fuentes ni la omisión segura del URL. [Validación](docs/validation/2026-10-30-pr34-f015.md).
+
 F014: normalizar entidades numéricas en la comparación sin convertir enteros de tamaño arbitrario; conservar la prosa ajena al secreto y ocultar credenciales con ceros iniciales largos. [Validación](docs/validation/2026-10-30-pr34-f014.md).
 
 F013: ocultar copias porcentuales conocidas también fuera del segmento URL, conservando el texto de origen ajeno al secreto. [Validación](docs/validation/2026-10-29-pr34-f013.md).
