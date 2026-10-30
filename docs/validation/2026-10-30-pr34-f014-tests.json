@@ -1,0 +1,855 @@
+{
+  "scope": "Full unittest discovery; all modules run in isolated subprocesses",
+  "command": "python -B -m unittest <each discovered module> -v",
+  "discovery": "unittest.TestLoader().discover(\".\", pattern=\"test*.py\")",
+  "workers": 4,
+  "discovered": 1090,
+  "ran": 1090,
+  "skipped": 3,
+  "module_count": 101,
+  "success": true,
+  "duration_seconds": 1988.281,
+  "modules": [
+    {
+      "module": "test_artifact_lifecycle_policy",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 7.734
+    },
+    {
+      "module": "test_reference_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.875
+    },
+    {
+      "module": "test_review_archive8",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 21.25
+    },
+    {
+      "module": "test_review_areas",
+      "expected": 16,
+      "ran": 16,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.546
+    },
+    {
+      "module": "test_review_artifact_layout",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 95.953
+    },
+    {
+      "module": "test_review_artifacts",
+      "expected": 54,
+      "ran": 54,
+      "skipped": 1,
+      "exit_code": 0,
+      "duration_seconds": 281.266
+    },
+    {
+      "module": "test_review_atomic_recovery",
+      "expected": 8,
+      "ran": 8,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 27.422
+    },
+    {
+      "module": "test_review_authority_and_claim_safety",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 128.203
+    },
+    {
+      "module": "test_review_change_scope",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 237.547
+    },
+    {
+      "module": "test_review_check_disclosure",
+      "expected": 21,
+      "ran": 21,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 21.125
+    },
+    {
+      "module": "test_review_check_provenance",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 46.547
+    },
+    {
+      "module": "test_review_check_purpose",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.89
+    },
+    {
+      "module": "test_review_check_receipts",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 44.25
+    },
+    {
+      "module": "test_review_checkpoints",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 114.578
+    },
+    {
+      "module": "test_review_closure_consistency",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 359.438
+    },
+    {
+      "module": "test_review_comment",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 13.828
+    },
+    {
+      "module": "test_review_contract",
+      "expected": 34,
+      "ran": 34,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.515
+    },
+    {
+      "module": "test_review_coordination_errors",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 34.391
+    },
+    {
+      "module": "test_review_coordination_types",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.672
+    },
+    {
+      "module": "test_review_delivery",
+      "expected": 29,
+      "ran": 29,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 130.047
+    },
+    {
+      "module": "test_review_delivery_sensitive_urls",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.859
+    },
+    {
+      "module": "test_review_dimensions",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.36
+    },
+    {
+      "module": "test_review_disclosure_close_recovery",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 364.406
+    },
+    {
+      "module": "test_review_disclosure_credentials",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 4.516
+    },
+    {
+      "module": "test_review_disclosure_integration",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 15.656
+    },
+    {
+      "module": "test_review_dispatch",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.219
+    },
+    {
+      "module": "test_review_effective_changes",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.218
+    },
+    {
+      "module": "test_review_execution_policy",
+      "expected": 36,
+      "ran": 36,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 27.954
+    },
+    {
+      "module": "test_review_extended",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 2.906
+    },
+    {
+      "module": "test_review_flow_v24",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 31.89
+    },
+    {
+      "module": "test_review_flow_v27",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 9.266
+    },
+    {
+      "module": "test_review_harness",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 22.25
+    },
+    {
+      "module": "test_review_history",
+      "expected": 15,
+      "ran": 15,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 5.078
+    },
+    {
+      "module": "test_review_inputs",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.031
+    },
+    {
+      "module": "test_review_latest",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 30.641
+    },
+    {
+      "module": "test_review_layout_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.266
+    },
+    {
+      "module": "test_review_lock_file_safety",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.593
+    },
+    {
+      "module": "test_review_metrics",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 2.422
+    },
+    {
+      "module": "test_review_model_capture",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 16.813
+    },
+    {
+      "module": "test_review_model_usage",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.0
+    },
+    {
+      "module": "test_review_operational_summary",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 39.375
+    },
+    {
+      "module": "test_review_packets",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.687
+    },
+    {
+      "module": "test_review_preflight",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 16.469
+    },
+    {
+      "module": "test_review_presentation",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.516
+    },
+    {
+      "module": "test_review_priority_corpus",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 12.14
+    },
+    {
+      "module": "test_review_priority_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.203
+    },
+    {
+      "module": "test_review_priority_roundtrip",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.594
+    },
+    {
+      "module": "test_review_profile_names",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 5.485
+    },
+    {
+      "module": "test_review_profile_topology",
+      "expected": 32,
+      "ran": 32,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.718
+    },
+    {
+      "module": "test_review_profiles",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.485
+    },
+    {
+      "module": "test_review_publication_policy",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.593
+    },
+    {
+      "module": "test_review_recovery",
+      "expected": 58,
+      "ran": 58,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 392.0
+    },
+    {
+      "module": "test_review_recovery_diagnostics",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 219.0
+    },
+    {
+      "module": "test_review_recovery_exit_guidance",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 157.625
+    },
+    {
+      "module": "test_review_recovery_followup",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 155.484
+    },
+    {
+      "module": "test_review_recovery_reservations",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 160.938
+    },
+    {
+      "module": "test_review_recovery_route_consistency",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 145.484
+    },
+    {
+      "module": "test_review_recovery_sequences",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 40.766
+    },
+    {
+      "module": "test_review_reference_index",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.625
+    },
+    {
+      "module": "test_review_references",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.578
+    },
+    {
+      "module": "test_review_resource_claims",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 217.391
+    },
+    {
+      "module": "test_review_restart",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.516
+    },
+    {
+      "module": "test_review_restart_phase_consistency",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 69.75
+    },
+    {
+      "module": "test_review_restart_refusals",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 189.125
+    },
+    {
+      "module": "test_review_restart_resources",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1104.875
+    },
+    {
+      "module": "test_review_restart_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 25.016
+    },
+    {
+      "module": "test_review_reuse_archive",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 65.5
+    },
+    {
+      "module": "test_review_reuse_context",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 20.64
+    },
+    {
+      "module": "test_review_reuse_decision",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.5
+    },
+    {
+      "module": "test_review_reuse_flow",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 377.797
+    },
+    {
+      "module": "test_review_run_lock",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.594
+    },
+    {
+      "module": "test_review_scenarios",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.234
+    },
+    {
+      "module": "test_review_session_operations",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 56.625
+    },
+    {
+      "module": "test_review_setup",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 12.828
+    },
+    {
+      "module": "test_review_source_selection",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.281
+    },
+    {
+      "module": "test_review_topology_integration",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 20.641
+    },
+    {
+      "module": "test_review_trace",
+      "expected": 31,
+      "ran": 31,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 104.234
+    },
+    {
+      "module": "test_review_traceability_archive",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 94.781
+    },
+    {
+      "module": "test_review_traceability_comments",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.906
+    },
+    {
+      "module": "test_review_traceability_contract",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.657
+    },
+    {
+      "module": "test_review_traceability_contract11",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.64
+    },
+    {
+      "module": "test_review_traceability_delivery",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 13.547
+    },
+    {
+      "module": "test_review_traceability_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.578
+    },
+    {
+      "module": "test_review_traceability_preflight",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.907
+    },
+    {
+      "module": "test_review_traceability_reference_semantics",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.953
+    },
+    {
+      "module": "test_review_traceability_rendering",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.969
+    },
+    {
+      "module": "test_script_archive_reader",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.828
+    },
+    {
+      "module": "test_script_archive_transactions",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.718
+    },
+    {
+      "module": "test_script_characterization",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 1.079
+    },
+    {
+      "module": "test_script_cli",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 17.625
+    },
+    {
+      "module": "test_script_contract_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.391
+    },
+    {
+      "module": "test_script_dependencies",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 2.312
+    },
+    {
+      "module": "test_script_execution_boundaries",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 8.391
+    },
+    {
+      "module": "test_script_layout",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.469
+    },
+    {
+      "module": "test_script_pure_validation",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.406
+    },
+    {
+      "module": "test_script_read_only_flows",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.609
+    },
+    {
+      "module": "test_script_reporting_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.75
+    },
+    {
+      "module": "test_script_resource_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.531
+    },
+    {
+      "module": "test_script_restart_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.516
+    },
+    {
+      "module": "test_script_shared",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 0.313
+    },
+    {
+      "module": "test_workspace_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "duration_seconds": 11.859
+    }
+  ],
+  "tested_commit": "c9bbb2227a013c1292681bd335ea7818a4fc247e",
+  "base_commit": "e2ff4e4e04d81b6b35bc85c44261e95548c5a74f",
+  "passed": 1087,
+  "failures": 0,
+  "errors": 0,
+  "exit_code": 0,
+  "interpreter": "Python 3.12.14; default decimal conversion limit unchanged",
+  "source_sha256": {
+    "scripts/ccr/contracts/check_disclosure.py": "298c6c2856e21bb39787664ec2b4e0b99de32dc9cbe9788db8c1fc7bf78624cb",
+    "tests/test_review_disclosure_credentials.py": "049217e294697a20c4ca6f42406dc3220187868c21dca38f5d9ac1e7043eeb88"
+  },
+  "red_reproduction": {
+    "tests": 2,
+    "subcase_errors": 3,
+    "cause": "ValueError: decimal integer conversion limit"
+  },
+  "independent_review": {
+    "verdict": "approved for focused F014 change",
+    "actionable_findings": 0,
+    "credential_tests": 11,
+    "contract_integration_tests": 32,
+    "numeric_reference_cases": 3078,
+    "long_layered_cases": 15,
+    "counts_added_to_suite_total": false
+  },
+  "skipped_details": {
+    "reason": "Windows symlink privilege unavailable, WinError 1314; separate 3-test recheck confirmed all skips",
+    "tests": [
+      "test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused",
+      "test_review_lock_file_safety.LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target",
+      "test_review_lock_file_safety.LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused"
+    ]
+  }
+}
