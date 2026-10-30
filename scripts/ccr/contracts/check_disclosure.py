@@ -203,6 +203,20 @@ def _redact_encoded_values(text, spellings):
         shown, starts, ends = ''.join(parts), next_starts, next_ends
         collect()
 
+    def decode_entity(match):
+        value = match.group()
+        if value.startswith('&#'):
+            number = value[2:].rstrip(';')
+            prefix = number[0] if number[0] in 'xX' else ''
+            digits = number[len(prefix):].lstrip('0') or '0'
+            # Normalize only the comparison view. Avoid arbitrarily large int
+            # conversions, including zero-padded valid code points, without
+            # changing the interpreter's decimal safety limit or source bytes.
+            if len(digits) > (6 if prefix else 7):
+                return '\ufffd'  # Outside Unicode, as in HTML numeric decoding.
+            value = '&#' + prefix + digits + ';'
+        return html.unescape(value)
+
     markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
     # First preserve a credential's literal HTML/Markdown escape spelling.
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
@@ -211,13 +225,13 @@ def _redact_encoded_values(text, spellings):
     ends = array('I', range(1, len(text) + 1))
     # Display escapes can surround URL escapes, or be URL-escaped themselves.
     # This independent view also decodes percent escapes only once.
-    transform(entity, lambda match: html.unescape(match.group()))
+    transform(entity, decode_entity)
     transform(markdown_escape, lambda match: match.group(1))
     # A renderer can escape the entity spelling already present in source prose.
-    transform(entity, lambda match: html.unescape(match.group()))
+    transform(entity, decode_entity)
     transform(markdown_escape, lambda match: match.group(1))
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
-    transform(entity, lambda match: html.unescape(match.group()))
+    transform(entity, decode_entity)
     transform(markdown_escape, lambda match: match.group(1))
     if not ranges:
         return text

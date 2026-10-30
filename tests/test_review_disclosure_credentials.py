@@ -10,6 +10,45 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_long_numeric_entities_preserve_prose_and_redact_other_credentials(self):
+        from ccr.contracts.check_disclosure import safe_text
+        secret = 'CREDENTIAL)123'
+        for entity in ('&#' + '9' * 5000 + ';', '&#' + '9' * 5000,
+                       '&#x' + 'F' * 5000 + ';'):
+            with self.subTest(entity_prefix=entity[:4], semicolon=entity.endswith(';')):
+                repeated = 'Observed ' + entity + ' and %43REDENTIAL%29123'
+                self.assertEqual(safe_text(repeated, {secret}),
+                                 'Observed ' + entity + ' and [omitido]')
+                record, identity, observations, sources = fixture(
+                    ['pytest', 'tests/test_queue.py', '--token', secret])
+                record['verdict_reason'] += ' ' + repeated
+                record['checks'][0]['evidence'] = repeated
+                observations[record['checks'][0]['id']]['explanation'] = repeated
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['evidence'] = repeated
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (
+                    render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        self.assertIn('9' * 5000 if entity.startswith('&#9') else 'F' * 5000, output)
+                        self.assertNotIn(secret, output)
+                        self.assertNotIn('%43REDENTIAL%29123', output)
+                        self.assertIn('omitido', output)
+
+    def test_zero_padded_numeric_entities_cannot_hide_known_credentials(self):
+        from ccr.contracts.check_disclosure import safe_text
+        for entity in ('&#' + '0' * 5000 + '67;', '&#x' + '0' * 5000 + '43;'):
+            with self.subTest(hexadecimal=entity.startswith('&#x')):
+                value = 'prefix ' + entity + 'REDENTIAL)123 suffix'
+                self.assertEqual(safe_text(value, {'CREDENTIAL)123'}),
+                                 'prefix [omitido] suffix')
+
     def test_encoded_redaction_preserves_source_text_outside_matching_runs(self):
         from urllib.parse import quote
         from ccr.contracts.check_disclosure import safe_text
