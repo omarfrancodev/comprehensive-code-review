@@ -80,6 +80,21 @@ def _url_secrets(parsed):
     return values
 
 
+def _bounded_html_unescape(text):
+    """Apply HTML semantics without arbitrary-sized numeric conversions."""
+    def bounded_number(match):
+        number = match.group()[2:].rstrip(';')
+        prefix = number[0] if number[0] in 'xX' else ''
+        digits = number[len(prefix):].lstrip('0') or '0'
+        # Canonicalize the comparison input, never the selected source bytes.
+        # Every larger significant value lies outside Unicode. Let HTML handle
+        # the bounded replacement and all named/control-character semantics.
+        if len(digits) > (6 if prefix else 7):
+            return '&#1114112;'
+        return '&#' + prefix + digits + ';'
+    return html.unescape(re.sub(r'&#(?:[xX][0-9a-fA-F]+|[0-9]+);?', bounded_number, text))
+
+
 def _argument_secrets(argument):
     """Extract credential values, including encoded URL queries/fragments."""
     values = set()
@@ -92,7 +107,7 @@ def _argument_secrets(argument):
         values.add(re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', credential))
     for text in re.findall(r'https?://[^\s<>\]\)]+', argument, re.IGNORECASE):
         try:
-            parsed = urlsplit(html.unescape(text))
+            parsed = urlsplit(_bounded_html_unescape(text))
             values.update(_url_secrets(parsed))
         except ValueError:
             continue
@@ -203,20 +218,6 @@ def _redact_encoded_values(text, spellings):
         shown, starts, ends = ''.join(parts), next_starts, next_ends
         collect()
 
-    def decode_entity(match):
-        value = match.group()
-        if value.startswith('&#'):
-            number = value[2:].rstrip(';')
-            prefix = number[0] if number[0] in 'xX' else ''
-            digits = number[len(prefix):].lstrip('0') or '0'
-            # Normalize only the comparison view. Avoid arbitrarily large int
-            # conversions, including zero-padded valid code points, without
-            # changing the interpreter's decimal safety limit or source bytes.
-            if len(digits) > (6 if prefix else 7):
-                return '\ufffd'  # Outside Unicode, as in HTML numeric decoding.
-            value = '&#' + prefix + digits + ';'
-        return html.unescape(value)
-
     markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
     # First preserve a credential's literal HTML/Markdown escape spelling.
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
@@ -225,13 +226,13 @@ def _redact_encoded_values(text, spellings):
     ends = array('I', range(1, len(text) + 1))
     # Display escapes can surround URL escapes, or be URL-escaped themselves.
     # This independent view also decodes percent escapes only once.
-    transform(entity, decode_entity)
+    transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
     # A renderer can escape the entity spelling already present in source prose.
-    transform(entity, decode_entity)
+    transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
-    transform(entity, decode_entity)
+    transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
     if not ranges:
         return text

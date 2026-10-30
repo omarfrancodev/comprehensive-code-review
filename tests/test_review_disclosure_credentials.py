@@ -10,6 +10,55 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_url_credentials_are_learned_despite_unrelated_long_entities(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        for entity in ('&#' + '9' * 5000 + ';', '&#' + '9' * 5000,
+                       '&#x' + 'F' * 5000 + ';', '&#' + '0' * 5000 + '65;'):
+            for url, expected in (
+                    ('https://example.com/?note=' + entity + '&token=ENTITY%53ECRET123',
+                     {'ENTITY%53ECRET123', 'ENTITYSECRET123'}),
+                    ('https://example.com/#/route?note=' + entity + '&amp;%74oken=ENTITY%53ECRET123',
+                     {'ENTITY%53ECRET123', 'ENTITYSECRET123'}),
+                    ('https://user:USER+PASSWORD%5F123@example.com/?note=' + entity,
+                     {'USER+PASSWORD%5F123', 'USER+PASSWORD_123'})):
+                with self.subTest(entity_prefix=entity[:4], expected=expected):
+                    self.assertLessEqual(len(url), 8192)
+                    _, _, _, sources = fixture(['pytest', 'tests/test_queue.py', url])
+                    self.assertTrue(expected.issubset(sensitive_values(sources)))
+
+    def test_url_credentials_with_long_entities_stay_private_in_all_views(self):
+        from ccr.contracts.check_disclosure import safe_text, sensitive_values
+        entity = '&#' + '9' * 5000 + ';'
+        for url, wire, decoded in (
+                ('https://example.com/?note=' + entity + '&token=ENTITYSECRET123',
+                 'ENTITYSECRET123', 'ENTITYSECRET123'),
+                ('https://example.com/#/route?note=' + entity + '&amp;%74oken=ENTITY%53ECRET%5F123',
+                 'ENTITY%53ECRET%5F123', 'ENTITYSECRET_123'),
+                ('https://user:USER+PASSWORD%5F123@example.com/?note=' + entity,
+                 'USER+PASSWORD%5F123', 'USER+PASSWORD_123')):
+            with self.subTest(wire=wire):
+                record, identity, observations, sources = fixture(['pytest', 'tests/test_queue.py', url])
+                repeated = 'Observed ' + wire + ' and ' + decoded
+                record['verdict_reason'] += ' ' + repeated
+                record['checks'][0]['evidence'] = repeated
+                observations[record['checks'][0]['id']]['explanation'] = repeated
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['evidence'] = repeated
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (
+                    render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        for value in (wire, decoded, markdown_text(wire), markdown_text(decoded)):
+                            self.assertNotIn(value, output)
+                        self.assertIn('omitido', output)
+                self.assertEqual(safe_text(url, sensitive_values(sources)), '[URL omitida]')
+
     def test_long_numeric_entities_preserve_prose_and_redact_other_credentials(self):
         from ccr.contracts.check_disclosure import safe_text
         secret = 'CREDENTIAL)123'
