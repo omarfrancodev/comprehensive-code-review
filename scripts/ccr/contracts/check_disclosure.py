@@ -95,6 +95,40 @@ def _bounded_html_unescape(text):
     return html.unescape(re.sub(r'&#(?:[xX][0-9a-fA-F]+|[0-9]+);?', bounded_number, text))
 
 
+def _userinfo_spellings(text):
+    # Read the original authority before HTML decoding can introduce URI
+    # delimiters, or urlsplit can discard tabs/newlines in a password.
+    # Numeric references are indivisible here: their '#' is part of the
+    # original spelling, not an authority/fragment boundary for learning.
+    authority = re.match(r'(?:&#(?:[xX][0-9a-fA-F]+|[0-9]+);?|[^/?#])*',
+                         text.partition('://')[2]).group()
+    userinfo, at, _ = authority.rpartition('@')
+    _, colon, password = userinfo.partition(':')
+    passwords = {password} if at and colon and password else set()
+    # Delimiters can themselves be HTML references. Locate their interpreted
+    # positions without discarding the source spelling between them. Keep the
+    # literal delimiter frame too: decoding a username can move the first ':'.
+    first_colon_end = last_at_start = None
+    reference = r'&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
+    for match in re.finditer(reference + r'|[:@]', authority):
+        separator = _bounded_html_unescape(match.group())
+        if separator == ':' and first_colon_end is None:
+            first_colon_end = match.end()
+        elif separator == '@':
+            last_at_start = match.start()
+    if first_colon_end is not None and last_at_start is not None and first_colon_end < last_at_start:
+        passwords.add(authority[first_colon_end:last_at_start])
+    values = set()
+    for password in passwords:
+        decoded = unquote(password)  # Userinfo '+' is always literal.
+        displayed = _bounded_html_unescape(password)
+        values.update((password, decoded, displayed, unquote(displayed),
+                       _bounded_html_unescape(decoded)))
+    # urlsplit strips these controls. Retain that presentation independently
+    # of any component changes introduced elsewhere in the interpreted URI.
+    return (values | {re.sub(r'[\r\n\t]', '', value) for value in values}) - {''}
+
+
 def _argument_secrets(argument):
     """Extract credential values, including encoded URL queries/fragments."""
     values = set()
@@ -105,12 +139,17 @@ def _argument_secrets(argument):
         # Authentication schemes are public; the credential can be repeated on
         # its own in results, paths, or prose and must be redacted there too.
         values.add(re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', credential))
-    for text in re.findall(r'https?://[^\s<>\]\)]+', argument, re.IGNORECASE):
-        try:
-            parsed = urlsplit(_bounded_html_unescape(text))
-            values.update(_url_secrets(parsed))
-        except ValueError:
-            continue
+    # argv is exact input, not Markdown prose: ')' is legal in URI components
+    # and ']' closes an IPv6 authority. Editorial delimiters must not cut it.
+    for text in re.findall(r'https?://[^\s<>]+', argument, re.IGNORECASE):
+        values.update(_userinfo_spellings(text))
+        # Retain source and interpreted forms independently. A failure to parse
+        # either representation must not discard values learned from the other.
+        for candidate in (text, _bounded_html_unescape(text)):
+            try:
+                values.update(_url_secrets(urlsplit(candidate)))
+            except ValueError:
+                continue
     return values
 
 

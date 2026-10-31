@@ -10,6 +10,142 @@ from ccr.reporting.markdown import markdown_text
 
 
 class DisclosureCredentialTests(unittest.TestCase):
+    def test_html_userinfo_separators_keep_password_spellings_private(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        separators = [('user', colon, at)
+                      for colon in (':', '&colon;', '&#58;', '&#x3a;')
+                      for at in ('@', '&commat;', '&#64;', '&#x40;')]
+        separators.append(('user&colon;name', ':', '@'))
+        for username, colon, at in separators:
+            for entity in ('&NewLine;', '&#10;'):
+                with self.subTest(username=username, colon=colon, at=at, entity=entity):
+                    password = 'ALPHA' + entity + 'OMEGA42'
+                    expected = {password, 'ALPHA\nOMEGA42', 'ALPHAOMEGA42'}
+                    if username != 'user':
+                        expected.update(('name:ALPHA\nOMEGA42', 'name:ALPHAOMEGA42'))
+                    url = 'https://' + username + colon + password + at + 'example.com/'
+                    record, identity, observations, sources = fixture(['pytest', 'tests/test_queue.py', url])
+                    with self.subTest(stage='learning'):
+                        self.assertTrue(expected.issubset(sensitive_values(sources)))
+                    repeated = 'Observed ' + ' and '.join(sorted(expected))
+                    record['verdict_reason'] += ' ' + repeated
+                    record['checks'][0]['evidence'] = repeated
+                    observations[record['checks'][0]['id']]['explanation'] = repeated
+                    disclosure = build_check_disclosure(record, identity, observations, sources)
+                    contexts = contexts12(record)
+                    contexts['check_publication_context']['checks'][0]['evidence'] = repeated
+                    kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                    portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                    outputs = (
+                        render.render(record, 'comment', **contexts, **kwargs),
+                        render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                        comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                        json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                    for index, output in enumerate(outputs):
+                        with self.subTest(view=index):
+                            self.assertNotIn('ALPHA', output)
+                            self.assertNotIn('OMEGA42', output)
+
+    def test_userinfo_spellings_are_captured_before_component_changes(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        for password, spellings in (
+                ('PREFIX&sol;SECRET42', {'PREFIX&sol;SECRET42', 'PREFIX/SECRET42'}),
+                ('PREFIX&quest;SECRET42', {'PREFIX&quest;SECRET42', 'PREFIX?SECRET42'}),
+                ('PREFIX&num;SECRET42', {'PREFIX&num;SECRET42', 'PREFIX#SECRET42'}),
+                ('PREFIX&colon;SECRET42', {'PREFIX&colon;SECRET42', 'PREFIX:SECRET42'}),
+                ('PREFIX&#47;SECRET42', {'PREFIX&#47;SECRET42', 'PREFIX/SECRET42'}),
+                ('PREFIX&#x2f;SECRET42', {'PREFIX&#x2f;SECRET42', 'PREFIX/SECRET42'}),
+                ('PREFIX&#63;SECRET42', {'PREFIX&#63;SECRET42', 'PREFIX?SECRET42'}),
+                ('PREFIX&#x3F;SECRET42', {'PREFIX&#x3F;SECRET42', 'PREFIX?SECRET42'}),
+                ('PREFIX&#35;SECRET42', {'PREFIX&#35;SECRET42', 'PREFIX#SECRET42'}),
+                ('PREFIX&#x23;SECRET42', {'PREFIX&#x23;SECRET42', 'PREFIX#SECRET42'}),
+                ('PREFIX&#58;SECRET42', {'PREFIX&#58;SECRET42', 'PREFIX:SECRET42'}),
+                ('PREFIX&#' + '0' * 5000 + '10;SECRET42', {'PREFIX&#' + '0' * 5000 + '10;SECRET42', 'PREFIX\nSECRET42', 'PREFIXSECRET42'}),
+                ('PREFIX%26NewLine%3BSECRET42', {'PREFIX%26NewLine%3BSECRET42', 'PREFIX&NewLine;SECRET42', 'PREFIX\nSECRET42'}),
+                ('PREFIX+&Tab;SECRET42', {'PREFIX+&Tab;SECRET42', 'PREFIX+\tSECRET42'})):
+            with self.subTest(password=password):
+                _, _, _, sources = fixture(['pytest', 'tests/test_queue.py',
+                                            'https://user:' + password + '@example.com/'])
+                learned = sensitive_values(sources)
+                self.assertTrue(spellings.issubset(learned))
+                if '+' in password:
+                    self.assertNotIn(password.replace('+', ' '), learned)
+
+    def test_userinfo_password_spellings_survive_html_control_normalization(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        for entity, interpreted in (('&NewLine;', 'ALPHA\nOMEGA42'),
+                                    ('&Tab;', 'ALPHA\tOMEGA42'),
+                                    ('&#10;', 'ALPHA\nOMEGA42'),
+                                    ('&#xA;', 'ALPHA\nOMEGA42'),
+                                    ('&#9;', 'ALPHA\tOMEGA42'),
+                                    ('&#x9;', 'ALPHA\tOMEGA42'),
+                                    ('&#10', 'ALPHA\nOMEGA42')):
+            password = 'ALPHA' + entity + 'OMEGA42'
+            for noise in ('', '?note=&#' + '9' * 5000 + ';'):
+                with self.subTest(entity=entity, long_entity=bool(noise)):
+                    url = 'https://user:' + password + '@example.com/' + noise
+                    record, identity, observations, sources = fixture(['pytest', 'tests/test_queue.py', url])
+                    expected = {password, interpreted, 'ALPHAOMEGA42'}
+                    with self.subTest(stage='learning'):
+                        self.assertTrue(expected.issubset(sensitive_values(sources)))
+                    _, _, _, control_sources = fixture(['pytest', 'tests/test_queue.py', '--token', password])
+                    self.assertIn(password, sensitive_values(control_sources))
+                    repeated = 'Observed ' + password + ' and ' + interpreted + ' and ALPHAOMEGA42'
+                    record['verdict_reason'] += ' ' + repeated
+                    record['checks'][0]['evidence'] = repeated
+                    observations[record['checks'][0]['id']]['explanation'] = repeated
+                    disclosure = build_check_disclosure(record, identity, observations, sources)
+                    contexts = contexts12(record)
+                    contexts['check_publication_context']['checks'][0]['evidence'] = repeated
+                    kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                    portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                    outputs = (
+                        render.render(record, 'comment', **contexts, **kwargs),
+                        render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                        comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                        json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                    for index, output in enumerate(outputs):
+                        with self.subTest(view=index):
+                            # The unique credential parts must not survive any
+                            # reversible HTML/Markdown/JSON representation.
+                            self.assertNotIn('ALPHA', output)
+                            self.assertNotIn('OMEGA42', output)
+                            self.assertIn('omitido', output)
+
+    def test_uri_delimiters_in_argv_do_not_truncate_credential_learning(self):
+        from ccr.contracts.check_disclosure import sensitive_values
+        for url, control, secret in (
+                ('https://u)ser:USERINFOTOKEN123@example.com/',
+                 'https://user:USERINFOTOKEN123@example.com/', 'USERINFOTOKEN123'),
+                ('https://[2001:db8::1]/?note=public&token=IPV6TOKEN123',
+                 'https://example.com/?note=public&token=IPV6TOKEN123', 'IPV6TOKEN123'),
+                ('https://example.com/?note=public)value&token=QUERYTOKEN123',
+                 'https://example.com/?note=publicvalue&token=QUERYTOKEN123', 'QUERYTOKEN123')):
+            with self.subTest(url=url):
+                record, identity, observations, sources = fixture(['pytest', 'tests/test_queue.py', url])
+                repeated = 'Observed ' + secret
+                record['verdict_reason'] += ' ' + repeated
+                record['checks'][0]['evidence'] = repeated
+                observations[record['checks'][0]['id']]['explanation'] = repeated
+                with self.subTest(stage='learning'):
+                    self.assertIn(secret, sensitive_values(sources))
+                _, _, _, control_sources = fixture(['pytest', 'tests/test_queue.py', control])
+                self.assertIn(secret, sensitive_values(control_sources))
+                disclosure = build_check_disclosure(record, identity, observations, sources)
+                contexts = contexts12(record)
+                contexts['check_publication_context']['checks'][0]['evidence'] = repeated
+                kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
+                portable = delivery._Projection(record, {}, None, 'a' * 64, **kwargs).value(record)
+                outputs = (
+                    render.render(record, 'comment', **contexts, **kwargs),
+                    render.render_handoff(record, {'decisions_pending': [repeated]}, audience='comment', **contexts, **kwargs),
+                    comment.prepare_public_comment(record, **contexts, **kwargs)['body'],
+                    json.dumps(portable), render.render_portable(portable, {}), delivery._brief(portable))
+                for index, output in enumerate(outputs):
+                    with self.subTest(view=index):
+                        self.assertNotIn(secret, output)
+                        self.assertIn('omitido', output)
+
     def test_url_credentials_are_learned_despite_unrelated_long_entities(self):
         from ccr.contracts.check_disclosure import sensitive_values
         for entity in ('&#' + '9' * 5000 + ';', '&#' + '9' * 5000,
