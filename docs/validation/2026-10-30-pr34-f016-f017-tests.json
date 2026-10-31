@@ -1,0 +1,1177 @@
+{
+  "scope": "Complete discovery coverage from latest module results; initial full invocation failed and is retained below. Not a single error-free full-suite invocation.",
+  "success": true,
+  "success_scope": "latest per-module validation gates",
+  "single_full_invocation_passed": false,
+  "discovered": 1096,
+  "ran": 1096,
+  "passed": 1093,
+  "skipped": 3,
+  "failures": 0,
+  "errors": 0,
+  "errors_scope": "latest results; initial full invocation had one error",
+  "module_count": 101,
+  "source_sha256": {
+    "scripts/ccr/contracts/check_disclosure.py": "340d6f8993e78ba636c1a4f1d9f21299460b1ee2280cbc18b08d88012d83780f",
+    "tests/test_review_disclosure_credentials.py": "73743506c3f80b7edfb272b72567576399d6ff4e0d9d925e6a6a548f146391e7"
+  },
+  "source_unchanged": true,
+  "full_attempt": {
+    "scope": "Full unittest discovery; all modules run in isolated subprocesses",
+    "command": "python -B -m unittest <each discovered module> -v",
+    "discovery": "unittest.TestLoader().discover(\".\", pattern=\"test*.py\")",
+    "workers": 4,
+    "scheduling": "Longest prior module durations first; no tests excluded",
+    "discovered": 1096,
+    "ran": 1096,
+    "skipped": 3,
+    "module_count": 101,
+    "source_sha256": {
+      "scripts/ccr/contracts/check_disclosure.py": "340d6f8993e78ba636c1a4f1d9f21299460b1ee2280cbc18b08d88012d83780f",
+      "tests/test_review_disclosure_credentials.py": "73743506c3f80b7edfb272b72567576399d6ff4e0d9d925e6a6a548f146391e7"
+    },
+    "source_unchanged": true,
+    "success": false,
+    "duration_seconds": 973.765,
+    "exit_code": 1,
+    "passed": 1092,
+    "failures": 0,
+    "errors": 1,
+    "failed_modules": [
+      {
+        "module": "test_review_recovery",
+        "expected": 58,
+        "ran": 58,
+        "skipped": 0,
+        "exit_code": 1,
+        "skipped_tests": [],
+        "duration_seconds": 184.297,
+        "output": "test_active_descriptor_retry_after_commit_and_retirement (test_review_recovery.ReviewRecoveryTests.test_active_descriptor_retry_after_commit_and_retirement) ... ok\ntest_adopt_context_object_before_successor_creation (test_review_recovery.ReviewRecoveryTests.test_adopt_context_object_before_successor_creation) ... ok\ntest_base_description_requirements_or_profile_change_visible (test_review_recovery.ReviewRecoveryTests.test_base_description_requirements_or_profile_change_visible) ... ok\ntest_changed_head_restart_recovers_only_the_reserved_inputs (test_review_recovery.ReviewRecoveryTests.test_changed_head_restart_recovers_only_the_reserved_inputs) ... ok\ntest_cleanup_conflicts_with_transfer (test_review_recovery.ReviewRecoveryTests.test_cleanup_conflicts_with_transfer) ... ok\ntest_cleanup_crash_after_delete_recovers_own_intent (test_review_recovery.ReviewRecoveryTests.test_cleanup_crash_after_delete_recovers_own_intent) ... ok\ntest_cleanup_records_receipt_before_return (test_review_recovery.ReviewRecoveryTests.test_cleanup_records_receipt_before_return) ... ERROR\ntest_cli_pause_reads_structured_authority_without_shell_execution (test_review_recovery.ReviewRecoveryTests.test_cli_pause_reads_structured_authority_without_shell_execution) ... ok\ntest_close_refuses_reappeared_released_workspace (test_review_recovery.ReviewRecoveryTests.test_close_refuses_reappeared_released_workspace) ... ok\ntest_close_same_cleanup_observation_after_interruption_and_complete (test_review_recovery.ReviewRecoveryTests.test_close_same_cleanup_observation_after_interruption_and_complete) ... ok\ntest_complete_and_legacy_source_bytes_remain_unchanged_on_restart (test_review_recovery.ReviewRecoveryTests.test_complete_and_legacy_source_bytes_remain_unchanged_on_restart) ... ok\ntest_completed_repeat_preserves_original (test_review_recovery.ReviewRecoveryTests.test_completed_repeat_preserves_original) ... ok\ntest_cross_harness_resume_preserves_prior_worker_identity (test_review_recovery.ReviewRecoveryTests.test_cross_harness_resume_preserves_prior_worker_identity) ... ok\ntest_explicit_pause_requires_continue_authority (test_review_recovery.ReviewRecoveryTests.test_explicit_pause_requires_continue_authority) ... ok\ntest_foreign_reserved_target_is_not_adopted (test_review_recovery.ReviewRecoveryTests.test_foreign_reserved_target_is_not_adopted) ... ok\ntest_incomplete_offers_resume_or_restart (test_review_recovery.ReviewRecoveryTests.test_incomplete_offers_resume_or_restart) ... ok\ntest_inspect_is_read_only_for_all_states (test_review_recovery.ReviewRecoveryTests.test_inspect_is_read_only_for_all_states) ... ok\ntest_internal_outputs_are_not_external_sources (test_review_recovery.ReviewRecoveryTests.test_internal_outputs_are_not_external_sources) ... ok\ntest_known_description_identity_omitted_is_unknown (test_review_recovery.ReviewRecoveryTests.test_known_description_identity_omitted_is_unknown) ... ok\ntest_late_profile_remains_provisional (test_review_recovery.ReviewRecoveryTests.test_late_profile_remains_provisional) ... ok\ntest_legacy_description_identity_is_not_reconstructed_as_current_input (test_review_recovery.ReviewRecoveryTests.test_legacy_description_identity_is_not_reconstructed_as_current_input) ... ok\ntest_legacy_recovery_refuses_linked_restart_without_mutation (test_review_recovery.ReviewRecoveryTests.test_legacy_recovery_refuses_linked_restart_without_mutation) ... ok\ntest_lookup_cli_returns_json_page_without_selecting_candidate (test_review_recovery.ReviewRecoveryTests.test_lookup_cli_returns_json_page_without_selecting_candidate) ... ok\ntest_lookup_cursor_is_scoped_and_truncation_visible (test_review_recovery.ReviewRecoveryTests.test_lookup_cursor_is_scoped_and_truncation_visible) ... ok\ntest_lookup_finds_changed_head_by_stable_merge_request_reference (test_review_recovery.ReviewRecoveryTests.test_lookup_finds_changed_head_by_stable_merge_request_reference) ... ok\ntest_lookup_never_opens_another_repository_group (test_review_recovery.ReviewRecoveryTests.test_lookup_never_opens_another_repository_group) ... ok\ntest_missing_without_receipt_is_reported_as_unknown (test_review_recovery.ReviewRecoveryTests.test_missing_without_receipt_is_reported_as_unknown) ... ok\ntest_multiple_candidates_are_not_selected_by_timestamp (test_review_recovery.ReviewRecoveryTests.test_multiple_candidates_are_not_selected_by_timestamp) ... ok\ntest_nonobject_final_retention_is_structured_error (test_review_recovery.ReviewRecoveryTests.test_nonobject_final_retention_is_structured_error) ... ok\ntest_pending_checkpoint_with_changed_head_can_restart (test_review_recovery.ReviewRecoveryTests.test_pending_checkpoint_with_changed_head_can_restart) ... ok\ntest_pending_cleanup_is_visible_and_recovery_does_not_delete (test_review_recovery.ReviewRecoveryTests.test_pending_cleanup_is_visible_and_recovery_does_not_delete) ... ok\ntest_pending_close_advances_after_cleanup_receipt (test_review_recovery.ReviewRecoveryTests.test_pending_close_advances_after_cleanup_receipt) ... ok\ntest_pending_restart_blocks_other_source_mutations (test_review_recovery.ReviewRecoveryTests.test_pending_restart_blocks_other_source_mutations) ... ok\ntest_prepare_captures_external_review_inputs_without_replacing_profile_history (test_review_recovery.ReviewRecoveryTests.test_prepare_captures_external_review_inputs_without_replacing_profile_history) ... ok\ntest_recover_completes_the_exact_pending_restart (test_review_recovery.ReviewRecoveryTests.test_recover_completes_the_exact_pending_restart) ... ok\ntest_recover_original_pending_bytes_without_backdating (test_review_recovery.ReviewRecoveryTests.test_recover_original_pending_bytes_without_backdating) ... ok\ntest_recover_owned_bytes_with_changed_inputs_cannot_continue (test_review_recovery.ReviewRecoveryTests.test_recover_owned_bytes_with_changed_inputs_cannot_continue) ... ok\ntest_recover_records_controller_takeover (test_review_recovery.ReviewRecoveryTests.test_recover_records_controller_takeover) ... ok\ntest_recovery_plan_does_not_dispatch_or_execute (test_review_recovery.ReviewRecoveryTests.test_recovery_plan_does_not_dispatch_or_execute) ... ok\ntest_register_can_capture_external_inputs_before_assignment_work (test_review_recovery.ReviewRecoveryTests.test_register_can_capture_external_inputs_before_assignment_work) ... ok\ntest_restart_each_reservation_boundary_reuses_the_same_destination (test_review_recovery.ReviewRecoveryTests.test_restart_each_reservation_boundary_reuses_the_same_destination) ... ok\ntest_restart_link_failure_retry_reuses_reserved_successor (test_review_recovery.ReviewRecoveryTests.test_restart_link_failure_retry_reuses_reserved_successor) ... ok\ntest_restart_links_source_without_relabelling_results (test_review_recovery.ReviewRecoveryTests.test_restart_links_source_without_relabelling_results) ... ok\ntest_restart_missing_owned_resource_links_without_claiming_cleanup (test_review_recovery.ReviewRecoveryTests.test_restart_missing_owned_resource_links_without_claiming_cleanup) ... ok\ntest_restart_requires_and_transfers_the_exact_owned_workspace (test_review_recovery.ReviewRecoveryTests.test_restart_requires_and_transfers_the_exact_owned_workspace) ... ok\ntest_restart_uses_current_harness_identity (test_review_recovery.ReviewRecoveryTests.test_restart_uses_current_harness_identity) ... ok\ntest_restart_with_new_boundaries_derives_destination_identity (test_review_recovery.ReviewRecoveryTests.test_restart_with_new_boundaries_derives_destination_identity) ... ok\ntest_resume_rejects_changed_scope_without_mutation (test_review_recovery.ReviewRecoveryTests.test_resume_rejects_changed_scope_without_mutation) ... ok\ntest_same_inputs_shape_for_lookup_inspect_and_resume (test_review_recovery.ReviewRecoveryTests.test_same_inputs_shape_for_lookup_inspect_and_resume) ... ok\ntest_same_scope_complete_offers_show_or_new (test_review_recovery.ReviewRecoveryTests.test_same_scope_complete_offers_show_or_new) ... ok\ntest_schema1_and_schema2_inspect_without_run_id (test_review_recovery.ReviewRecoveryTests.test_schema1_and_schema2_inspect_without_run_id) ... ok\ntest_show_report_has_no_review_or_cleanup_side_effects (test_review_recovery.ReviewRecoveryTests.test_show_report_has_no_review_or_cleanup_side_effects) ... ok\ntest_tampered_run_is_not_adopted (test_review_recovery.ReviewRecoveryTests.test_tampered_run_is_not_adopted) ... ok\ntest_two_process_restarts_have_one_successor (test_review_recovery.ReviewRecoveryTests.test_two_process_restarts_have_one_successor) ... ok\ntest_unknown_concurrent_controller_blocks_takeover (test_review_recovery.ReviewRecoveryTests.test_unknown_concurrent_controller_blocks_takeover) ... ok\ntest_unknown_freshness_is_not_current (test_review_recovery.ReviewRecoveryTests.test_unknown_freshness_is_not_current) ... ok\ntest_unknown_inputs_cannot_resume (test_review_recovery.ReviewRecoveryTests.test_unknown_inputs_cannot_resume) ... ok\ntest_unknown_legacy_inputs_remain_unknown (test_review_recovery.ReviewRecoveryTests.test_unknown_legacy_inputs_remain_unknown) ... ok\n\n======================================================================\nERROR: test_cleanup_records_receipt_before_return (test_review_recovery.ReviewRecoveryTests.test_cleanup_records_receipt_before_return)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"[worktree]/tests/test_review_recovery.py\", line 1011, in test_cleanup_records_receipt_before_return\n    artifacts.register(run, [str(session)], context_input=self.write('cleanup-register-context.json', context))\n  File \"[worktree]/scripts/ccr/archive/coordination.py\", line 19, in wrapped\n    return target(run_dir, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"[worktree]/scripts/ccr/archive/lifecycle.py\", line 490, in register\n    return _register_locked(run_dir, temporary, context_input=context_input, authority=authority)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"[worktree]/scripts/ccr/archive/lifecycle.py\", line 617, in _register_locked\n    _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))\n  File \"[worktree]/scripts/ccr/archive/transactions.py\", line 57, in _append_trace\n    return _append_trace_events(run, manifest, marker, [event], helper=helper)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"[worktree]/scripts/ccr/archive/transactions.py\", line 78, in _append_trace_events\n    return recover_trace(run, manifest, marker)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"[worktree]/scripts/ccr/archive/transactions.py\", line 50, in recover_trace\n    _archive_write(run, manifest, review_trace.NAME, planned)\n  File \"[worktree]/scripts/ccr/archive/transactions.py\", line 23, in _archive_write\n    atomic_write(run / name, data, **({'staging_path': stage} if stage else {}))\n  File \"[worktree]/scripts/ccr/shared/json_io.py\", line 64, in atomic_write\n    os.replace(staging, path)\nPermissionError: [WinError 5] Acceso denegado: '[temporales]' -> '[temporales]'\n\n----------------------------------------------------------------------\nRan 58 tests in 184.007s\n\nFAILED (errors=1)\n",
+        "original_output_sha256": "0936a9c4969d1edd18d09ce025a9eda7e603c66f32065c2d20e03a215fe8337f",
+        "output_privacy_filtered": true
+      }
+    ]
+  },
+  "selective_rechecks": [
+    {
+      "module": "test_review_recovery",
+      "command": "python -B -m unittest test_review_recovery -v",
+      "expected": 58,
+      "ran": 58,
+      "exit_code": 0,
+      "duration_seconds": 165.157,
+      "source_sha256": {
+        "scripts/ccr/contracts/check_disclosure.py": "340d6f8993e78ba636c1a4f1d9f21299460b1ee2280cbc18b08d88012d83780f",
+        "tests/test_review_disclosure_credentials.py": "73743506c3f80b7edfb272b72567576399d6ff4e0d9d925e6a6a548f146391e7"
+      },
+      "source_sha256_after": {
+        "scripts/ccr/contracts/check_disclosure.py": "340d6f8993e78ba636c1a4f1d9f21299460b1ee2280cbc18b08d88012d83780f",
+        "tests/test_review_disclosure_credentials.py": "73743506c3f80b7edfb272b72567576399d6ff4e0d9d925e6a6a548f146391e7"
+      },
+      "source_unchanged": true,
+      "reason": "Single full-module recheck after initial WinError 5; no source changes; original error retained",
+      "counts_added_to_unique_total": false,
+      "success": true
+    }
+  ],
+  "modules": [
+    {
+      "module": "test_artifact_lifecycle_policy",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.562,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_reference_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.328,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_archive8",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 10.547,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_areas",
+      "expected": 16,
+      "ran": 16,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.016,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_artifact_layout",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 28.234,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_artifacts",
+      "expected": 54,
+      "ran": 54,
+      "skipped": 1,
+      "exit_code": 0,
+      "skipped_tests": [
+        "test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused"
+      ],
+      "duration_seconds": 95.468,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_atomic_recovery",
+      "expected": 8,
+      "ran": 8,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 8.907,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_authority_and_claim_safety",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 54.625,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_change_scope",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 88.703,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_check_disclosure",
+      "expected": 21,
+      "ran": 21,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 14.203,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_check_provenance",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 23.047,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_check_purpose",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.609,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_check_receipts",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 18.421,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_checkpoints",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 48.219,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_closure_consistency",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 159.469,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_comment",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 7.562,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_contract",
+      "expected": 34,
+      "ran": 34,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.093,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_coordination_errors",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 36.625,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_coordination_types",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.453,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_delivery",
+      "expected": 29,
+      "ran": 29,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 74.157,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_delivery_sensitive_urls",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.703,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_dimensions",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.25,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_disclosure_close_recovery",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 168.797,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_disclosure_credentials",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.813,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_disclosure_integration",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 8.547,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_dispatch",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.172,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_effective_changes",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.141,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_execution_policy",
+      "expected": 36,
+      "ran": 36,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 11.782,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_extended",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.75,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_flow_v24",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 38.657,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_flow_v27",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 4.86,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_harness",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 12.297,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_history",
+      "expected": 15,
+      "ran": 15,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.312,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_inputs",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.515,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_latest",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 16.906,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_layout_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.172,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_lock_file_safety",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 2,
+      "exit_code": 0,
+      "skipped_tests": [
+        "test_review_lock_file_safety.LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target",
+        "test_review_lock_file_safety.LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused"
+      ],
+      "duration_seconds": 0.359,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_metrics",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.828,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_model_capture",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 7.985,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_model_usage",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.625,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_operational_summary",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 42.312,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_packets",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.625,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_preflight",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 9.797,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_presentation",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.36,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_priority_corpus",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 7.141,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_priority_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.61,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_priority_roundtrip",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.547,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_profile_names",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.047,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_profile_topology",
+      "expected": 32,
+      "ran": 32,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.734,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_profiles",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_publication_policy",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.063,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery",
+      "expected": 58,
+      "ran": 58,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 165.157,
+      "attempt": "single selective full-module recheck"
+    },
+    {
+      "module": "test_review_recovery_diagnostics",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 94.282,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery_exit_guidance",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 59.172,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery_followup",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 83.875,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery_reservations",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 100.094,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery_route_consistency",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 93.39,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_recovery_sequences",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 43.359,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_reference_index",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.453,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_references",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.563,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_resource_claims",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 134.906,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_restart",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.625,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_restart_phase_consistency",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 44.344,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_restart_refusals",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 119.563,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_restart_resources",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 973.266,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_restart_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 43.328,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_reuse_archive",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 42.578,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_reuse_context",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 19.125,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_reuse_decision",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.516,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_reuse_flow",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 228.547,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_run_lock",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.437,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_scenarios",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.125,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_session_operations",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 49.234,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_setup",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 10.969,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_source_selection",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.171,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_topology_integration",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 21.906,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_trace",
+      "expected": 31,
+      "ran": 31,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 60.203,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_archive",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 49.562,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_comments",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_contract",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.454,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_contract11",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.438,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_delivery",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 6.593,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.329,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_preflight",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.454,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_reference_semantics",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.484,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_review_traceability_rendering",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.468,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_archive_reader",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.343,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_archive_transactions",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.25,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_characterization",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.703,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_cli",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 8.828,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_contract_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.156,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_dependencies",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.984,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_execution_boundaries",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.953,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_layout",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.235,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_pure_validation",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.265,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_read_only_flows",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.437,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_reporting_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.407,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_resource_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.453,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_restart_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.297,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_script_shared",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.125,
+      "attempt": "initial full invocation"
+    },
+    {
+      "module": "test_workspace_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 11.406,
+      "attempt": "initial full invocation"
+    }
+  ],
+  "interrupted_prior_attempts": [
+    {
+      "outcome": "interrupted before completion",
+      "reason": "Independent review confirmed numeric HTML entity residual in F017; not a complete-suite result",
+      "source_sha256": {
+        "scripts/ccr/contracts/check_disclosure.py": "a456a637e92c25785b4e3b044df40eda556f518decfe3571840d3c4a80998ec8",
+        "tests/test_review_disclosure_credentials.py": "068081c48e3c76ed9f35a5e1f588bae5901427d891938a33a27b53090b7e3533"
+      },
+      "completed_modules": [
+        {
+          "module": "test_review_closure_consistency",
+          "expected": 25,
+          "ran": 25,
+          "skipped": 0,
+          "exit_code": 0,
+          "skipped_tests": [],
+          "duration_seconds": 145.484
+        }
+      ],
+      "ran": 25,
+      "counts_added_to_final_total": false
+    }
+  ],
+  "command": "python -B -m unittest <each discovered module> -v",
+  "discovery": "unittest.TestLoader().discover(\".\", pattern=\"test*.py\")",
+  "workers": 4,
+  "interpreter": "Python 3.12.14; UTF-8; -B; isolated temporaries",
+  "counts_policy": "Unique test coverage only; do not add focused, interrupted or recheck executions",
+  "tested_commit": "dd8e88dcddcfe20ef11dc9e8c2ed65b0b67da49b",
+  "base_commit": "a37de2d66e179b56127d5b240158787106aa1434",
+  "validation_target": "Working-tree checks; tested_commit records byte-identical scripts/tests afterward. Documentary evidence finalized separately.",
+  "source_sha256_after": {
+    "scripts/ccr/contracts/check_disclosure.py": "340d6f8993e78ba636c1a4f1d9f21299460b1ee2280cbc18b08d88012d83780f",
+    "tests/test_review_disclosure_credentials.py": "73743506c3f80b7edfb272b72567576399d6ff4e0d9d925e6a6a548f146391e7"
+  },
+  "focused": {
+    "command": "python -B -m unittest test_review_disclosure_credentials test_review_delivery_sensitive_urls -v",
+    "ran": 23,
+    "passed": 23,
+    "duration_seconds": 1.577,
+    "added_to_unique_total": false
+  },
+  "independent_review": {
+    "verdict": "scoped review passes; no remaining concrete findings",
+    "focused_tests": 23,
+    "duration_seconds": 1.59,
+    "numeric_probe_max_digits": 64000,
+    "checks": [
+      "literal and interpreted userinfo frames",
+      "raw authority boundaries",
+      "literal plus",
+      "one percent-decoding pass",
+      "six disclosure views"
+    ],
+    "added_to_unique_total": false
+  },
+  "red_reproductions": [
+    {
+      "stage": "F016 complete argv boundary",
+      "tests": 1,
+      "subcase_failures": 21
+    },
+    {
+      "stage": "F017 named controls",
+      "tests": 1,
+      "subcase_failures": 28
+    },
+    {
+      "stage": "F017 component-changing spellings",
+      "tests": 1,
+      "subcase_failures": 6
+    },
+    {
+      "stage": "F017 numeric-reference residual",
+      "tests": 2,
+      "subcase_failures": 78
+    },
+    {
+      "stage": "F017 encoded-separator residual",
+      "tests": 1,
+      "subcase_failures": 224
+    }
+  ]
+}

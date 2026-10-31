@@ -219,7 +219,7 @@ def is_receipt_reference(reference, check_id) -> bool:
 def validate_record_receipts(record: dict, sources: dict[str, bytes],
                              executors: list[dict]) -> list[ReferenceIssue]:
     """Validate only checks that explicitly reference a named receipt artifact."""
-    if not isinstance(record, dict) or record.get('schema_version') not in (9, 10, 11):
+    if not isinstance(record, dict) or record.get('schema_version') not in (9, 10, 11, 12):
         return []
     checks = record.get('checks')
     if not isinstance(checks, list):
@@ -249,7 +249,7 @@ def validate_record_receipts(record: dict, sources: dict[str, bytes],
             issues.append(_issue(field, reference, 'selected check receipt is not UTF-8 JSON',
                                  'a schema 1 check receipt'))
             continue
-        if (record.get('schema_version') == 11 and check.get('reused') is False
+        if (record.get('schema_version') in (11, 12) and check.get('reused') is False
                 and isinstance(check.get('execution'), dict) and check['execution'].get('kind') == 'local'
                 and (not isinstance(receipt, dict) or receipt.get('schema_version') != 2)):
             issues.append(_issue(field, reference, 'new local check requires a purpose-bound schema 2 receipt',

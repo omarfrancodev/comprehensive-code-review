@@ -1,4 +1,6 @@
 """Archive ownership intent and receipt contracts."""
+import base64
+import binascii
 import copy
 from datetime import datetime
 import hashlib
@@ -37,8 +39,35 @@ def _validate_controller(value):
             or len(value['source']) > 500 or any(ord(char) < 32 for char in value['source'])):
         raise ValueError('controller requires a trace identity and nonempty source')
 
+def close_previous_disclosure_bytes(manifest):
+    """Decode only bounded prior bytes bound to an owned close replacement."""
+    if 'close_previous_disclosure' not in manifest:
+        return None
+    from ccr.contracts.check_disclosure import MAX_BYTES
+    evidence = manifest['close_previous_disclosure']
+    reference = 'evidence/check-disclosure.json'
+    if (manifest.get('schema_version') != 8 or manifest.get('state') != 'retaining'
+            or not isinstance(manifest.get('close_observation'), dict)
+            or 'cleanup_receipts' not in manifest or 'resource_cleanup' not in manifest
+            or not isinstance(evidence, dict) or set(evidence) != {'reference', 'base64'}
+            or evidence.get('reference') != reference
+            or reference not in manifest.get('hashes', {})
+            or reference not in manifest.get('planned_hashes', {})
+            or not isinstance(evidence.get('base64'), str)
+            or len(evidence['base64']) > 4 * ((MAX_BYTES + 2) // 3)):
+        raise ValueError('invalid owned previous disclosure byte evidence')
+    try:
+        raw = base64.b64decode(evidence['base64'], validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError('invalid previous disclosure base64 bytes') from exc
+    if len(raw) > MAX_BYTES or _digest(raw) != manifest['hashes'][reference]:
+        raise ValueError('previous disclosure bytes differ from the owned original hash')
+    return raw
+
+
 def _validate_cleanup_metadata(manifest):
     """Validate native cleanup intent and its bounded receipt inventory."""
+    close_previous_disclosure_bytes(manifest)
     if ('cleanup_receipts' in manifest) != ('resource_cleanup' in manifest):
         raise ValueError('resource cleanup metadata fields must be introduced together')
     receipts = manifest.get('cleanup_receipts', [])

@@ -1,0 +1,868 @@
+{
+  "success": true,
+  "tested_commit": "22fb3807e5d30bfdfa112882df2d3b80d98a6a87",
+  "discovered": 1075,
+  "ran": 1075,
+  "skipped": 3,
+  "module_count": 101,
+  "workers": 4,
+  "test_ids_sha256": "eaafa4a73703b458cfdc7f5f36106632d111a14d1718e41bb4cbc357fcf24efe",
+  "modules": [
+    {
+      "module": "test_artifact_lifecycle_policy",
+      "expected": 1,
+      "ran": 1,
+      "exit_code": 0,
+      "duration_seconds": 3.797,
+      "skipped": 0
+    },
+    {
+      "module": "test_reference_layout",
+      "expected": 1,
+      "ran": 1,
+      "exit_code": 0,
+      "duration_seconds": 0.297,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_archive8",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "duration_seconds": 14.016,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_areas",
+      "expected": 16,
+      "ran": 16,
+      "exit_code": 0,
+      "duration_seconds": 1.313,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_artifact_layout",
+      "expected": 17,
+      "ran": 17,
+      "exit_code": 0,
+      "duration_seconds": 72.703,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_artifacts",
+      "expected": 54,
+      "ran": 54,
+      "exit_code": 0,
+      "duration_seconds": 202.516,
+      "skipped": 1
+    },
+    {
+      "module": "test_review_atomic_recovery",
+      "expected": 8,
+      "ran": 8,
+      "exit_code": 0,
+      "duration_seconds": 11.468,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_authority_and_claim_safety",
+      "expected": 14,
+      "ran": 14,
+      "exit_code": 0,
+      "duration_seconds": 86.594,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_change_scope",
+      "expected": 27,
+      "ran": 27,
+      "exit_code": 0,
+      "duration_seconds": 143.953,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_check_disclosure",
+      "expected": 21,
+      "ran": 21,
+      "exit_code": 0,
+      "duration_seconds": 12.734,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_check_provenance",
+      "expected": 12,
+      "ran": 12,
+      "exit_code": 0,
+      "duration_seconds": 41.032,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_check_purpose",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.516,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_check_receipts",
+      "expected": 13,
+      "ran": 13,
+      "exit_code": 0,
+      "duration_seconds": 32.563,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_checkpoints",
+      "expected": 14,
+      "ran": 14,
+      "exit_code": 0,
+      "duration_seconds": 89.563,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_closure_consistency",
+      "expected": 25,
+      "ran": 25,
+      "exit_code": 0,
+      "duration_seconds": 152.891,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_comment",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 9.516,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_contract",
+      "expected": 34,
+      "ran": 34,
+      "exit_code": 0,
+      "duration_seconds": 1.594,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_coordination_errors",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 26.391,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_coordination_types",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 0.5,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_delivery",
+      "expected": 29,
+      "ran": 29,
+      "exit_code": 0,
+      "duration_seconds": 103.36,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_delivery_sensitive_urls",
+      "expected": 5,
+      "ran": 5,
+      "exit_code": 0,
+      "duration_seconds": 0.687,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_dimensions",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.359,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_disclosure_close_recovery",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "duration_seconds": 103.0,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_disclosure_credentials",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.625,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_disclosure_integration",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "duration_seconds": 11.562,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_dispatch",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "duration_seconds": 0.25,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_effective_changes",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 0.344,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_execution_policy",
+      "expected": 36,
+      "ran": 36,
+      "exit_code": 0,
+      "duration_seconds": 25.203,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_extended",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 3.078,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_flow_v24",
+      "expected": 10,
+      "ran": 10,
+      "exit_code": 0,
+      "duration_seconds": 22.609,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_flow_v27",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 7.0,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_harness",
+      "expected": 14,
+      "ran": 14,
+      "exit_code": 0,
+      "duration_seconds": 16.531,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_history",
+      "expected": 15,
+      "ran": 15,
+      "exit_code": 0,
+      "duration_seconds": 7.062,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_inputs",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "duration_seconds": 0.578,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_latest",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 22.281,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_layout_v2",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 0.203,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_lock_file_safety",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.453,
+      "skipped": 2
+    },
+    {
+      "module": "test_review_metrics",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 1.89,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_model_capture",
+      "expected": 19,
+      "ran": 19,
+      "exit_code": 0,
+      "duration_seconds": 21.297,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_model_usage",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 0.781,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_operational_summary",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "duration_seconds": 32.781,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_packets",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "duration_seconds": 0.781,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_preflight",
+      "expected": 19,
+      "ran": 19,
+      "exit_code": 0,
+      "duration_seconds": 24.89,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_presentation",
+      "expected": 12,
+      "ran": 12,
+      "exit_code": 0,
+      "duration_seconds": 0.406,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_priority_corpus",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "duration_seconds": 10.765,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_priority_policy",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.688,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_priority_roundtrip",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 0.594,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_profile_names",
+      "expected": 10,
+      "ran": 10,
+      "exit_code": 0,
+      "duration_seconds": 2.687,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_profile_topology",
+      "expected": 32,
+      "ran": 32,
+      "exit_code": 0,
+      "duration_seconds": 0.89,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_profiles",
+      "expected": 25,
+      "ran": 25,
+      "exit_code": 0,
+      "duration_seconds": 0.484,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_publication_policy",
+      "expected": 17,
+      "ran": 17,
+      "exit_code": 0,
+      "duration_seconds": 2.11,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery",
+      "expected": 58,
+      "ran": 58,
+      "exit_code": 0,
+      "duration_seconds": 329.766,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_diagnostics",
+      "expected": 10,
+      "ran": 10,
+      "exit_code": 0,
+      "duration_seconds": 129.61,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_exit_guidance",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 87.437,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_followup",
+      "expected": 22,
+      "ran": 22,
+      "exit_code": 0,
+      "duration_seconds": 129.203,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_reservations",
+      "expected": 12,
+      "ran": 12,
+      "exit_code": 0,
+      "duration_seconds": 167.25,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_route_consistency",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 126.969,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_recovery_sequences",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 35.484,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_reference_index",
+      "expected": 13,
+      "ran": 13,
+      "exit_code": 0,
+      "duration_seconds": 0.75,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_references",
+      "expected": 7,
+      "ran": 7,
+      "exit_code": 0,
+      "duration_seconds": 0.5,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_resource_claims",
+      "expected": 22,
+      "ran": 22,
+      "exit_code": 0,
+      "duration_seconds": 270.516,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_restart",
+      "expected": 5,
+      "ran": 5,
+      "exit_code": 0,
+      "duration_seconds": 0.657,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_restart_phase_consistency",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 51.688,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_restart_refusals",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 158.297,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_restart_resources",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 1408.797,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_restart_v2",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 30.438,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_reuse_archive",
+      "expected": 10,
+      "ran": 10,
+      "exit_code": 0,
+      "duration_seconds": 66.766,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_reuse_context",
+      "expected": 11,
+      "ran": 11,
+      "exit_code": 0,
+      "duration_seconds": 23.266,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_reuse_decision",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.547,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_reuse_flow",
+      "expected": 27,
+      "ran": 27,
+      "exit_code": 0,
+      "duration_seconds": 379.078,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_run_lock",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.578,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_scenarios",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.281,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_session_operations",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 49.281,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_setup",
+      "expected": 12,
+      "ran": 12,
+      "exit_code": 0,
+      "duration_seconds": 13.094,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_source_selection",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.281,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_topology_integration",
+      "expected": 9,
+      "ran": 9,
+      "exit_code": 0,
+      "duration_seconds": 12.125,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_trace",
+      "expected": 31,
+      "ran": 31,
+      "exit_code": 0,
+      "duration_seconds": 102.625,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_archive",
+      "expected": 17,
+      "ran": 17,
+      "exit_code": 0,
+      "duration_seconds": 100.015,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_comments",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.594,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_contract",
+      "expected": 19,
+      "ran": 19,
+      "exit_code": 0,
+      "duration_seconds": 0.5,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_contract11",
+      "expected": 6,
+      "ran": 6,
+      "exit_code": 0,
+      "duration_seconds": 0.594,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_delivery",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 10.312,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_policy",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.438,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_preflight",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.656,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_reference_semantics",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.656,
+      "skipped": 0
+    },
+    {
+      "module": "test_review_traceability_rendering",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.547,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_archive_reader",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.266,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_archive_transactions",
+      "expected": 1,
+      "ran": 1,
+      "exit_code": 0,
+      "duration_seconds": 0.266,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_characterization",
+      "expected": 4,
+      "ran": 4,
+      "exit_code": 0,
+      "duration_seconds": 0.656,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_cli",
+      "expected": 5,
+      "ran": 5,
+      "exit_code": 0,
+      "duration_seconds": 12.046,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_contract_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.172,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_dependencies",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 1.797,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_execution_boundaries",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 5.359,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_layout",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.25,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_pure_validation",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.281,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_read_only_flows",
+      "expected": 3,
+      "ran": 3,
+      "exit_code": 0,
+      "duration_seconds": 0.641,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_reporting_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.484,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_resource_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.391,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_restart_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.438,
+      "skipped": 0
+    },
+    {
+      "module": "test_script_shared",
+      "expected": 2,
+      "ran": 2,
+      "exit_code": 0,
+      "duration_seconds": 0.265,
+      "skipped": 0
+    },
+    {
+      "module": "test_workspace_layout",
+      "expected": 1,
+      "ran": 1,
+      "exit_code": 0,
+      "duration_seconds": 10.156,
+      "skipped": 0
+    }
+  ],
+  "initial_success": false,
+  "initial_duration_seconds": 1409.047,
+  "initial_error": {
+    "module": "test_review_closure_consistency",
+    "test": "test_closing_annotation_rejects_invalid_fragment_and_executor_without_writes",
+    "exception": "PermissionError",
+    "winerror": 5,
+    "operation": "os.replace of the owned trazabilidad.jsonl fixture",
+    "failures": 0,
+    "errors": 1,
+    "exit_code": 1
+  },
+  "isolated_case_repeat": {
+    "ran": 1,
+    "exit_code": 0,
+    "duration_seconds": 29.58
+  },
+  "module_repeats": [
+    {
+      "initial": {
+        "module": "test_review_closure_consistency",
+        "expected": 25,
+        "ran": 25,
+        "exit_code": 1,
+        "duration_seconds": 267.156,
+        "skipped": 0
+      },
+      "repeat": {
+        "module": "test_review_closure_consistency",
+        "expected": 25,
+        "ran": 25,
+        "exit_code": 0,
+        "duration_seconds": 152.891,
+        "skipped": 0
+      },
+      "command": "python -B -m unittest test_review_closure_consistency -v",
+      "source_changes_between_attempts": false
+    }
+  ],
+  "status": "passed_after_module_repeat",
+  "passed": 1072,
+  "skipped_tests": [
+    "test_symlink_roots_inputs_and_archived_files_are_refused (test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused)",
+    "test_existing_final_symlink_is_refused_without_touching_target (test_review_lock_file_safety.LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target)",
+    "test_final_link_replacement_after_identity_check_is_refused (test_review_lock_file_safety.LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused)"
+  ],
+  "skip_reason": "Windows symlink privilege unavailable (WinError 1314)",
+  "execution": "Discover the full suite, run each module once with four isolated processes, then repeat the single module with an OS I/O error in a fresh process without concurrency; check exact discovered IDs, module counts and final exit codes. No tests excluded and no code/expectations changed between attempts."
+}

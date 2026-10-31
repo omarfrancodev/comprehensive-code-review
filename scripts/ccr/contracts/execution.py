@@ -5,6 +5,23 @@ from ccr.workflow.profiles import (
 )
 
 
+PROFILE_SCHEMAS = (10, 11, 12)
+NEW_TOPOLOGY_SCHEMAS = (12,)
+NEW_PROFILE_LIMITS = {'focused': (1, 1), 'standard': (1, 1),
+                      'deep': (2, 2), 'extended': (3, 5)}
+
+
+def verification_status(verification, observed, missing):
+    """Aggregate every active verification, without classifying final batches."""
+    if not verification:
+        return None
+    if any(row['id'] not in observed for row in verification):
+        return 'unavailable'
+    if any(row['id'] in missing or row['independent'] is not True for row in verification):
+        return 'same_session'
+    return 'independent'
+
+
 def validate_execution(record):
     errors = []
     coverage = record.get('coverage', {})
@@ -29,7 +46,7 @@ def validate_execution(record):
 
     schema_version = record.get('schema_version')
     execution_fields = {'selection_source', 'status', 'plan', 'results', 'fallbacks'}
-    if schema_version in (10, 11):
+    if schema_version in PROFILE_SCHEMAS:
         execution_fields.add('profile_history')
     if not isinstance(execution, dict) or set(execution) != execution_fields:
         return [prefix + ': exact execution fields required']
@@ -38,7 +55,7 @@ def validate_execution(record):
     if not isinstance(execution['status'], str) or execution['status'] not in ('fulfilled', 'degraded'):
         fail('invalid status')
     plan_fields = {'id', 'role', 'independent', 'required', 'reference'}
-    if schema_version in (10, 11):
+    if schema_version in PROFILE_SCHEMAS:
         plan_fields |= {'selection_id', 'superseded_by'}
     plan = rows('plan', plan_fields)
     results = rows('results', {'assignment_id', 'reviewer_context', 'provider_id', 'reference'})
@@ -57,17 +74,17 @@ def validate_execution(record):
         if type(row['independent']) is not bool or type(row['required']) is not bool:
             fail('assignment flags must be booleans')
             continue
-        if schema_version in (10, 11) and (not isinstance(row.get('selection_id'), str)
+        if schema_version in PROFILE_SCHEMAS and (not isinstance(row.get('selection_id'), str)
                                      or row.get('superseded_by') is not None
                                      and not isinstance(row.get('superseded_by'), str)):
             fail('assignment selection/supersession IDs must be text or null')
             continue
-        if row['required'] is not True and not (schema_version in (10, 11) and row['required'] is False
+        if row['required'] is not True and not (schema_version in PROFILE_SCHEMAS and row['required'] is False
                                                  and isinstance(row.get('superseded_by'), str)):
             fail('planned assignments must be required; omit unnecessary passes')
         if row['role'] == 'project_gate' and row['independent'] is not True:
             fail('project_gate must be independent with a policy reference')
-        if schema_version in (10, 11) and row.get('superseded_by') is not None and row.get('role') == 'project_gate':
+        if schema_version in PROFILE_SCHEMAS and row.get('superseded_by') is not None and row.get('role') == 'project_gate':
             fail('project_gate cannot be superseded')
     if errors:
         return errors
@@ -76,7 +93,7 @@ def validate_execution(record):
     verification = [row for row in active_plan if row['role'] == 'verification']
     profile = record.get('profile') if isinstance(record.get('profile'), str) else None
     profile_source = execution['selection_source']
-    if schema_version in (10, 11) and isinstance(execution.get('profile_history'), list):
+    if schema_version in PROFILE_SCHEMAS and isinstance(execution.get('profile_history'), list):
         history_by_id = {row.get('id'): row for row in execution['profile_history']
                          if isinstance(row, dict) and isinstance(row.get('id'), str)}
         active_rows = [row for row in plan if row.get('superseded_by') is None]
@@ -94,7 +111,7 @@ def validate_execution(record):
                              if isinstance(row, dict) and row.get('profile') == profile), None)
             if selected is not None:
                 profile_source = selected.get('selection_source', profile_source)
-    if schema_version in (10, 11) and profile == 'extended' and isinstance(execution.get('profile_history'), list):
+    if schema_version in PROFILE_SCHEMAS and profile == 'extended' and isinstance(execution.get('profile_history'), list):
         history_by_id = {row.get('id'): row for row in execution['profile_history']
                          if isinstance(row, dict) and isinstance(row.get('id'), str)}
         if any(row.get('superseded_by') is None and isinstance(row.get('selection_id'), str)
@@ -104,9 +121,11 @@ def validate_execution(record):
             profile_source = 'automatic'
     limits = {'focused': (1, 1), 'standard': (1, 1), 'deep': (2, 3),
               'extended': (4, 5) if profile_source == 'automatic' else (2, 5)}
+    if schema_version in NEW_TOPOLOGY_SCHEMAS:
+        limits = NEW_PROFILE_LIMITS
     minimum, maximum = limits.get(profile, (0, 0)) if isinstance(profile, str) else (0, 0)
     qualifying_discovery = ([row for row in discovery if row['independent'] is True]
-                            if schema_version in (10, 11) and profile in ('deep', 'extended') else discovery)
+                            if schema_version in PROFILE_SCHEMAS and profile in ('deep', 'extended') else discovery)
     if not minimum <= len(qualifying_discovery) <= maximum:
         fail('discovery cardinality does not match profile/selection')
     independent_profile = profile in ('deep', 'extended')
@@ -117,7 +136,7 @@ def validate_execution(record):
                    if isinstance(coverage.get(key), list))
     needs_fresh = independent_profile or profile == 'standard' and (substantive or material)
     needs_verifier = profile == 'focused' or needs_fresh or coverage.get('verification') not in ('skipped', 'unavailable')
-    if schema_version in (10, 11):
+    if schema_version in PROFILE_SCHEMAS:
         if needs_verifier and not verification:
             fail('verification requires a grouped assignment when applicable')
         if independent_profile and not any(row['independent'] is True for row in verification):
@@ -131,7 +150,7 @@ def validate_execution(record):
             fail('discovery independence required by profile')
         if needs_fresh and any(row['independent'] is not True for row in verification):
             fail('verification independence required by profile')
-    if profile == 'focused' and (schema_version not in (10, 11) or not independent_profile) and any(
+    if profile == 'focused' and (schema_version not in PROFILE_SCHEMAS or not independent_profile) and any(
             row['independent'] is not False for row in discovery + verification):
         fail('focused uses one discovery and same-context skeptical verification')
     observed = {}
@@ -182,7 +201,9 @@ def validate_execution(record):
     if execution['status'] == 'degraded':
         # An observed fallback pass does not satisfy the planned fresh context.
         missing.update(impeded)
-    if schema_version in (10, 11):
+    if schema_version in NEW_TOPOLOGY_SCHEMAS:
+        effective = verification_status(verification, observed, missing)
+    elif schema_version in PROFILE_SCHEMAS:
         latest_verifier = verification[-1] if verification else None
         latest_result = observed.get(latest_verifier['id']) if latest_verifier is not None else None
         effective = ('unavailable' if latest_result is None else 'independent' if
@@ -202,13 +223,53 @@ def validate_execution(record):
         fail('unmet required project_gate needs a material coverage gap')
     return errors
 
+def verification_batches(record, trace_events):
+    """Classify active verifications using profile bindings and observed completion."""
+    execution = record['coverage']['execution']
+    active = [row for row in execution['plan'] if row.get('superseded_by') is None]
+    history = {row['id']: row for row in execution['profile_history']}
+    rank = {'focused': 0, 'standard': 1, 'deep': 2, 'extended': 3}
+    profiles = [history[row['selection_id']]['profile'] for row in active if row['selection_id'] in history]
+    profiles.append(record['profile'])
+    strongest = max(profiles, key=rank.get)
+    results = {row['assignment_id']: row for row in execution['results']}
+
+    def completions(row, kind):
+        result = results.get(row['id'])
+        if result is None:
+            return []
+        return [event['sequence'] for event in trace_events
+                if isinstance(event, dict) and event.get('kind') == kind
+                and event.get('status') in ('completed', 'passed')
+                and result['reference'] in event.get('evidence', [])
+                and isinstance(event.get('actor'), dict)
+                and event['actor'].get('name') == result['reviewer_context']
+                and event['actor'].get('provider_id') == result['provider_id']
+                and type(event.get('sequence')) is int]
+
+    discovery = [sequence for row in active if row['role'] == 'discovery'
+                 for sequence in completions(row, 'discovery')]
+    boundary = max(discovery, default=-1)
+    historical, final = [], []
+    for row in active:
+        if row['role'] != 'verification':
+            continue
+        selected = history.get(row['selection_id'], {}).get('profile')
+        sequences = completions(row, 'grouped-verification')
+        if (selected in rank and rank[selected] < rank[strongest]) or (sequences and max(sequences) <= boundary):
+            historical.append(row)
+        else:
+            final.append(row)
+    return historical, final, boundary
+
+
 def validate_execution_sources(record, context, trace_events, retained_references, *, assignment_registry=None):
     """Contrast declared passes with retained facts and existing trace milestones."""
     errors = validate_execution(record)
     if errors:
         return errors
     execution = record['coverage']['execution']
-    schema10 = record.get('schema_version') in (10, 11)
+    schema10 = record.get('schema_version') in PROFILE_SCHEMAS
     prefix = 'coverage.execution.sources: '
     if not isinstance(context, dict) or context.get('profile') != record.get('profile'):
         return [prefix + 'context profile differs from final profile']
@@ -226,6 +287,8 @@ def validate_execution_sources(record, context, trace_events, retained_reference
         errors.extend(validate_profile_execution(record, trace_events, assignment_registry=registry))
         if context.get('profile_history') != execution.get('profile_history'):
             errors.append(prefix + 'profile history differs from the captured context')
+        if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS and errors:
+            return errors
     history = (execution.get('profile_history') if schema10 else
                context.get('profile_history', [dict(profile=context.get('profile'), reference=context.get('profile_reference'))]))
     if not isinstance(history, list) or not history:
@@ -242,7 +305,8 @@ def validate_execution_sources(record, context, trace_events, retained_reference
                 not isinstance(item, str) for item in event.get('evidence', [])):
             errors.append(prefix + f'trace event {index} evidence must be an array of text references')
             current = dict(current, evidence=[])
-        if current.get('sequence') is not None and type(current.get('sequence')) is not int:
+        if (type(current.get('sequence')) is not int and
+                (current.get('sequence') is not None or record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS)):
             errors.append(prefix + f'trace event {index} sequence must be an integer')
             current = dict(current, sequence=-1)
         normalized_events.append(current)
@@ -377,62 +441,126 @@ def validate_execution_sources(record, context, trace_events, retained_reference
             if sequences:
                 discovery_sequences.append(max(sequences))
         last_discovery = max(discovery_sequences, default=-1)
-        final_candidates = []
-        require_independent = strongest in ('deep', 'extended') or (
-            strongest == 'standard' and (substantive or material))
-        for assignment in active_plan:
-            if assignment.get('role') != 'verification' or (require_independent
-                    and assignment.get('independent') is not True):
-                continue
-            assignment_selection = history_by_id.get(assignment.get('selection_id'), {})
-            if assignment_selection.get('profile') != strongest:
-                continue
-            result = next((item for item in execution['results']
-                           if item.get('assignment_id') == assignment['id']), None)
-            if result is None:
-                continue
-            completions = [event for event in trace_events if isinstance(event, dict)
-                           and event.get('kind') == 'grouped-verification'
-                           and event.get('status') in ('completed', 'passed')
-                           and isinstance(event.get('evidence'), list)
-                           and result['reference'] in event['evidence']
-                           and isinstance(event.get('actor'), dict)
-                           and (event.get('actor') or {}).get('name') == result['reviewer_context']
-                           and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
-            starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
-                                   and event.get('status') == 'started'
-                                   and event.get('kind') in ('agent', 'grouped-verification')
-                                   and isinstance(event.get('evidence'), list)
-                                   and assignment['reference'] in event['evidence']
-                                   and ((isinstance(event.get('executor'), dict)
-                                         and event['executor'].get('name') == result['reviewer_context'])
-                                        or (isinstance(event.get('actor'), dict)
-                                            and event['actor'].get('name') == result['reviewer_context']))]
-            fresh = False
-            for completion in completions:
-                completed_sequence = completion.get('sequence')
-                if type(completed_sequence) is not int or completed_sequence <= last_discovery:
+        if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS:
+            historical, final_batches, last_discovery = verification_batches(record, trace_events)
+            require_independent = strongest in ('deep', 'extended') or (
+                strongest == 'standard' and (substantive or material))
+            minimum = 0 if strongest == 'standard' and not (substantive or material) else 1
+            maximum = 2 if strongest == 'extended' else 1
+            if len(final_batches) < minimum:
+                errors.append(prefix + f'{strongest} requires at least {minimum} final verification batches')
+            if len(final_batches) > maximum:
+                errors.append(prefix + f'{strongest} permits at most {maximum} final verification batches')
+            fallback_ids = {item for row in execution['fallbacks'] for item in row['assignments']}
+            for assignment in final_batches:
+                if history_by_id.get(assignment.get('selection_id'), {}).get('profile') != strongest:
+                    errors.append(prefix + 'final verification batch must bind to the strongest profile')
+                if require_independent and assignment.get('independent') is not True:
+                    errors.append(prefix + 'final verification batch requires planned independence')
+                result = next((row for row in execution['results'] if row['assignment_id'] == assignment['id']), None)
+                if result is None:
+                    # Missing completion does not erase a dispatch already
+                    # observed for this final assignment. Projected starts
+                    # retain original name/provider identity and sequence.
+                    if any(event.get('kind') == 'agent' and event.get('status') == 'started'
+                           and assignment['reference'] in event.get('evidence', [])
+                           and isinstance(event.get('executor'), dict)
+                           and type(event.get('sequence')) is int
+                           and event['sequence'] <= last_discovery
+                           for event in observed_starts):
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
+                    coordinator = history[0].get('actor', {})
+                    if (assignment['independent'] is False or assignment['id'] in fallback_ids) and any(
+                            event.get('kind') == 'grouped-verification'
+                            and event.get('status') in ('started', 'completed', 'passed')
+                            and assignment['reference'] in event.get('evidence', [])
+                            and isinstance(event.get('actor'), dict)
+                            and all(event['actor'].get(key) == coordinator.get(key)
+                                    for key in ('name', 'provider_id'))
+                            and type(event.get('sequence')) is int
+                            and event['sequence'] <= last_discovery for event in trace_events):
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
                     continue
-                if assignment.get('independent') is True:
+                completions = [event for event in trace_events if event.get('kind') == 'grouped-verification'
+                               and event.get('status') in ('completed', 'passed')
+                               and result['reference'] in event.get('evidence', [])
+                               and isinstance(event.get('actor'), dict)
+                               and event['actor'].get('name') == result['reviewer_context']
+                               and event['actor'].get('provider_id') == result['provider_id']
+                               and type(event.get('sequence')) is int]
+                for completion in completions:
                     start = original_dispatch(assignment, result, completion)
-                    fresh = start is not None and start['sequence'] > last_discovery
-                else:
-                    fresh = any(type(event.get('sequence')) is int
-                                and last_discovery < event['sequence'] < completed_sequence
-                                for event in starts_for_verifier)
-                if fresh:
-                    break
-            if fresh:
-                final_candidates.append(assignment)
-        if len(final_candidates) != 1:
-            if execution.get('status') == 'fulfilled':
-                errors.append(prefix + 'fulfilled review requires one fresh verifier after the final discovery batch')
-            elif record.get('coverage', {}).get('verification') != 'unavailable':
-                errors.append(prefix + 'degraded review without a fresh final-batch verifier must report verification unavailable')
+                    coordinator = history[0].get('actor', {}).get('name')
+                    if start is None and (assignment['independent'] is False or (
+                            assignment['id'] in fallback_ids and result['reviewer_context'] == coordinator)):
+                        stages = [event for event in observed_starts if event.get('kind') == 'grouped-verification'
+                                  and event.get('status') == 'started'
+                                  and assignment['reference'] in event.get('evidence', [])
+                                  and isinstance(event.get('actor'), dict)
+                                  and event['actor'].get('name') == result['reviewer_context']
+                                  and event['actor'].get('provider_id') == result['provider_id']
+                                  and type(event.get('sequence')) is int
+                                  and event['sequence'] < completion['sequence']]
+                        start = min(stages, key=lambda event: event['sequence'], default=None)
+                    if start is None or not last_discovery < start['sequence'] < completion['sequence']:
+                        errors.append(prefix + 'final verification batch must start and complete after the final discovery batch')
         else:
-            expected = 'independent' if final_candidates[0].get('independent') is True else 'same_session'
-            if record.get('coverage', {}).get('verification') != expected:
-                errors.append(prefix + 'fresh final-batch verifier status contradicts its independent context')
+            final_candidates = []
+            require_independent = strongest in ('deep', 'extended') or (
+                strongest == 'standard' and (substantive or material))
+            for assignment in active_plan:
+                if assignment.get('role') != 'verification' or (require_independent
+                        and assignment.get('independent') is not True):
+                    continue
+                assignment_selection = history_by_id.get(assignment.get('selection_id'), {})
+                if assignment_selection.get('profile') != strongest:
+                    continue
+                result = next((item for item in execution['results']
+                               if item.get('assignment_id') == assignment['id']), None)
+                if result is None:
+                    continue
+                completions = [event for event in trace_events if isinstance(event, dict)
+                               and event.get('kind') == 'grouped-verification'
+                               and event.get('status') in ('completed', 'passed')
+                               and isinstance(event.get('evidence'), list)
+                               and result['reference'] in event['evidence']
+                               and isinstance(event.get('actor'), dict)
+                               and (event.get('actor') or {}).get('name') == result['reviewer_context']
+                               and (event.get('actor') or {}).get('provider_id') == result['provider_id']]
+                starts_for_verifier = [event for event in observed_starts if isinstance(event, dict)
+                                       and event.get('status') == 'started'
+                                       and event.get('kind') in ('agent', 'grouped-verification')
+                                       and isinstance(event.get('evidence'), list)
+                                       and assignment['reference'] in event['evidence']
+                                       and ((isinstance(event.get('executor'), dict)
+                                             and event['executor'].get('name') == result['reviewer_context'])
+                                            or (isinstance(event.get('actor'), dict)
+                                                and event['actor'].get('name') == result['reviewer_context']))]
+                fresh = False
+                for completion in completions:
+                    completed_sequence = completion.get('sequence')
+                    if type(completed_sequence) is not int or completed_sequence <= last_discovery:
+                        continue
+                    if assignment.get('independent') is True:
+                        start = original_dispatch(assignment, result, completion)
+                        fresh = start is not None and start['sequence'] > last_discovery
+                    else:
+                        fresh = any(type(event.get('sequence')) is int
+                                    and last_discovery < event['sequence'] < completed_sequence
+                                    for event in starts_for_verifier)
+                    if fresh:
+                        break
+                if fresh:
+                    final_candidates.append(assignment)
+            if len(final_candidates) != 1:
+                if execution.get('status') == 'fulfilled':
+                    errors.append(prefix + 'fulfilled review requires one fresh verifier after the final discovery batch')
+                elif record.get('coverage', {}).get('verification') != 'unavailable':
+                    errors.append(prefix + 'degraded review without a fresh final-batch verifier must report verification unavailable')
+            else:
+                expected = 'independent' if final_candidates[0].get('independent') is True else 'same_session'
+                if record.get('coverage', {}).get('verification') != expected:
+                    errors.append(prefix + 'fresh final-batch verifier status contradicts its independent context')
     for row in execution['fallbacks']:
         if row['source'] not in retained_references or not any(event.get('kind') in ('agent', 'interruption')
                 and event.get('status') in ('failed', 'blocked', 'skipped') and row['source'] in event.get('evidence', [])
@@ -443,7 +571,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
 def validate_profile_execution(record: dict, trace_events: list[dict] | None = None, *,
                                assignment_registry: list[dict] | None = None) -> list[str]:
     """Validate schema-10 history linkage and obligations that cannot be downgraded away."""
-    if not isinstance(record, dict) or record.get('schema_version') not in (10, 11):
+    if not isinstance(record, dict) or record.get('schema_version') not in PROFILE_SCHEMAS:
         return []
     coverage = record.get('coverage')
     execution = coverage.get('execution') if isinstance(coverage, dict) else None
@@ -580,6 +708,8 @@ def validate_profile_execution(record: dict, trace_events: list[dict] | None = N
                                      and row['selection_source'] == 'automatic' for row in history)
     minimum = {'focused': 1, 'standard': 1, 'deep': 2,
                'extended': 4 if acquired_extended_auto or source == 'automatic' else 2}[strongest]
+    if record.get('schema_version') in NEW_TOPOLOGY_SCHEMAS:
+        minimum = NEW_PROFILE_LIMITS[strongest][0]
     qualifying_discovery = discovery
     if strongest in {'deep', 'extended'}:
         qualifying_discovery = [row for row in discovery if row.get('independent') is True]

@@ -54,7 +54,7 @@ def patches(repo):
     return (out(repo, "diff", "--cached", "--binary", "--full-index", "HEAD", "--"),
             out(repo, "diff", "--binary", "--full-index", "--"))
 
-def tracked_fingerprint(repo):
+def tracked_fingerprint(repo, resource_files=None):
     """Read actual bytes/types; Git diffs can hide changes through index flags."""
     entries = []
     for encoded in out(repo, "ls-files", "-z").split(b"\0"):
@@ -71,6 +71,8 @@ def tracked_fingerprint(repo):
             raise ReviewError(f"Tracked path is an unsupported reparse point: {path}")
         elif path.is_file():
             value = [name, "file", path.stat().st_mode, digest(path.read_bytes())]
+            if resource_files is not None:
+                resource_files[name.replace('\\', '/')] = value[-1]
         elif path.is_dir():
             # Submodule contents are out of this helper's automatic capture coverage.
             value = [name, "directory"]
@@ -129,10 +131,10 @@ def registrations(repo):
             items.append(Path(os.fsdecode(entry[9:])).resolve())
     return items
 
-def view_hashes(workspace):
+def view_hashes(workspace, resource_files=None):
     staged, unstaged = patches(workspace)
     return {"staged_sha256": digest(staged), "unstaged_sha256": digest(unstaged),
-            "tracked_fingerprint": tracked_fingerprint(workspace),
+            "tracked_fingerprint": tracked_fingerprint(workspace, resource_files),
             "index_flags_sha256": digest(out(workspace, "ls-files", "-v", "-z"))}
 
 def untracked(workspace):
@@ -204,8 +206,14 @@ def prepare(args):
                         raise ReviewError(f"Included file collides in snapshot: {name}")
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(data)
-            entry["view_baseline"] = view_hashes(workspace)
+            resource_files = {}
+            entry["view_baseline"] = view_hashes(workspace, resource_files)
             entry["initial_untracked"] = {name: digest((workspace / name).read_bytes()) for name in untracked(workspace)}
+            resource_files.update(entry['initial_untracked'])
+            # Reuse the initial fingerprint scan, before CCR may create/alter fixtures.
+            entry['resource_baseline'] = {'head': head, 'files': resource_files}
+            from ccr.contracts.check_disclosure import canonical
+            entry['resource_baseline_sha256'] = digest(canonical(entry['resource_baseline']))
             save(manifest)
         if state(repo, session, selected) != baseline:
             raise ReviewError("Main checkout changed during capture; retry with a fresh snapshot")

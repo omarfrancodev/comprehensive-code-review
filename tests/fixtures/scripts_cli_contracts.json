@@ -2021,7 +2021,7 @@
                 "type": null
               },
               {
-                "choices": "range(1, 12)",
+                "choices": "range(1, 13)",
                 "const": null,
                 "default": null,
                 "dest": "expected_schema",
@@ -2656,6 +2656,38 @@
                 ],
                 "required": false,
                 "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "check_disclosure_context",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--check-disclosure-context"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "check_disclosure_sources",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--check-disclosure-sources"
+                ],
+                "required": false,
+                "type": null
               }
             ],
             "defaults": {},
@@ -2741,6 +2773,38 @@
                 "nargs": 0,
                 "options": [
                   "--remote"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "check_disclosure_context",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--check-disclosure-context"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "check_disclosure_sources",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--check-disclosure-sources"
                 ],
                 "required": false,
                 "type": null
@@ -2909,6 +2973,38 @@
         ],
         "required": false,
         "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "check_disclosure_context",
+        "help": null,
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--check-disclosure-context"
+        ],
+        "required": false,
+        "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "check_disclosure_sources",
+        "help": null,
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--check-disclosure-sources"
+        ],
+        "required": false,
+        "type": null
       }
     ],
     "defaults": {},
@@ -3013,6 +3109,38 @@
         "nargs": null,
         "options": [
           "--context"
+        ],
+        "required": false,
+        "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "check_disclosure_context",
+        "help": null,
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--check-disclosure-context"
+        ],
+        "required": false,
+        "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "check_disclosure_sources",
+        "help": null,
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--check-disclosure-sources"
         ],
         "required": false,
         "type": null
@@ -3759,7 +3887,9 @@
           "inputs",
           "changes",
           "materials",
-          "reuse-context"
+          "reuse-context",
+          "model-usage",
+          "check-disclosure"
         ],
         "const": null,
         "default": null,
@@ -3773,6 +3903,62 @@
         "required": true,
         "subparsers": {
           "changes": {
+            "actions": [
+              {
+                "choices": null,
+                "const": null,
+                "default": "<argparse.SUPPRESS>",
+                "dest": "help",
+                "help": "show this help message and exit",
+                "kind": "_HelpAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": 0,
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "input",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--input"
+                ],
+                "required": true,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "output",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--output"
+                ],
+                "required": true,
+                "type": null
+              }
+            ],
+            "defaults": {},
+            "description": null,
+            "mutually_exclusive_groups": []
+          },
+          "check-disclosure": {
             "actions": [
               {
                 "choices": null,
@@ -3997,6 +4183,62 @@
             "mutually_exclusive_groups": []
           },
           "materials": {
+            "actions": [
+              {
+                "choices": null,
+                "const": null,
+                "default": "<argparse.SUPPRESS>",
+                "dest": "help",
+                "help": "show this help message and exit",
+                "kind": "_HelpAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": 0,
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "input",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--input"
+                ],
+                "required": true,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "output",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--output"
+                ],
+                "required": true,
+                "type": null
+              }
+            ],
+            "defaults": {},
+            "description": null,
+            "mutually_exclusive_groups": []
+          },
+          "model-usage": {
             "actions": [
               {
                 "choices": null,

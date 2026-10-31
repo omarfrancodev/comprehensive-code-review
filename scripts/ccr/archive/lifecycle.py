@@ -1,4 +1,5 @@
 """Ordinary archive preparation, profile, operation, and closure lifecycle."""
+import base64
 import copy
 from contextlib import ExitStack
 from datetime import datetime, timezone
@@ -504,6 +505,7 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     executors = _executors(context_input, manifest, temporary)
     assignment_registry = list(manifest.get('assignment_registry', []))
     review_input_capture = manifest.get('review_inputs')
+    disclosure_identity = manifest.get('check_disclosure_input_identity')
     claim_manifest = copy.deepcopy(manifest)
     claim_manifest.update(temporary_paths=temporary, temporary_manifests=manifests,
                           _claim_run_dir=str(run))
@@ -523,6 +525,32 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
         if not isinstance(context.get('execution_plan'), list):
             raise ValueError('archive 8 registration requires captured context.execution_plan')
         existing_trace = [json.loads(line) for line in (run / review_trace.NAME).read_bytes().splitlines()]
+        supplied_disclosure_identity = context.get('check_disclosure_input_identity')
+        if supplied_disclosure_identity is not None:
+            from ccr.contracts.check_disclosure import input_identity_for
+            scope_identity = {key: manifest['scope'].get(key) for key in ('head', 'snapshot')}
+            if (not isinstance(supplied_disclosure_identity, dict)
+                    or any(supplied_disclosure_identity.get(key) != value for key, value in scope_identity.items())):
+                raise ValueError('disclosure identity differs from pinned scope')
+            if disclosure_identity is not None and disclosure_identity != supplied_disclosure_identity:
+                raise ValueError('disclosure identity cannot replace its initial capture')
+            if disclosure_identity is None:
+                if any(row.get('kind') in {'agent', 'discovery', 'grouped-verification', 'check'}
+                       and row.get('status') in {'started', 'completed', 'passed', 'failed'} for row in existing_trace):
+                    raise ValueError('disclosure inputs must be pinned before review work starts')
+                baseline_hash = supplied_disclosure_identity.get('resource_manifest_sha256')
+                if baseline_hash is not None:
+                    from ccr.execution import workspaces as workspace_ops
+                    baseline_hashes = set()
+                    for executor in executors:
+                        if executor.get('manifest'):
+                            owned = workspace_ops.load(executor['manifest'])
+                            baseline_hashes.update(row.get('resource_baseline_sha256') for row in owned['workspaces']
+                                if row['path'] == executor['workspace'])
+                    captured_hashes = set((review_input_capture or {}).get('sources', {}).values())
+                    if baseline_hash not in baseline_hashes | captured_hashes:
+                        raise ValueError('disclosure resource map is not part of the initially captured workspace/inputs')
+                disclosure_identity = copy.deepcopy(supplied_disclosure_identity)
         if 'assignment_registry' not in manifest and any(
                 row.get('kind') in {'agent', 'discovery', 'grouped-verification'}
                 and row.get('status') in {'started', 'completed', 'passed', 'failed', 'blocked', 'skipped'}
@@ -584,6 +612,8 @@ def _register_locked(run_dir, temporary_paths, *, context_input=None, authority=
     if manifest['schema_version'] == 8:
         manifest.update(resource_claims=rows, assignment_registry=assignment_registry,
                         review_inputs=review_input_capture)
+        if disclosure_identity is not None:
+            manifest['check_disclosure_input_identity'] = disclosure_identity
     _append_trace(run, manifest, marker, _milestone('register', 'Coordinator-owned temporary resources registered'))
     return manifest
 
@@ -734,11 +764,11 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9, 10, 11) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11):
-            raise ValueError('archive 8 requires final review schema 10 or 11')
-        if value.get('schema_version') in (8, 9, 10, 11):
+        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12):
+            raise ValueError('archive 8 requires final review schema 10, 11 or 12')
+        if value.get('schema_version') in (8, 9, 10, 11, 12):
             _execution_gate(run, manifest, value, {})
     if require_complete:
         if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
@@ -758,6 +788,55 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             'state': manifest['state'], 'retained': manifest.get('retained') is True,
             'cleanup': manifest['cleanup']}
 
+def _close_recovery_contents(run, manifest):
+    """Reconstruct only the exact owned old/planned cleanup transaction."""
+    from ccr.archive.evidence import selected_source_bytes
+    from ccr.archive.retention import rebind_disclosure_for_cleanup, retained_model_context
+    from ccr.archive.intent_contracts import close_previous_disclosure_bytes
+
+    context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
+    reference = context.get('check_disclosure_reference')
+    if reference is None:
+        return None
+    if reference != 'evidence/check-disclosure.json':
+        raise ValueError('invalid close disclosure reference')
+    current = read_json(run / 'review.json')
+    # _verify_files has already checked every surviving file against old/planned
+    # hashes. Reconstruct the old canonical record from its bounded cleanup facts,
+    # accepting it only if its bytes match the original retained inventory.
+    previous = None
+    for cleanup in ('pending', 'complete', 'not_needed'):
+        candidate = copy.deepcopy(current)
+        candidate['resources'].update(cleanup=cleanup, residuals=manifest['residuals'])
+        if _digest(_json_bytes(candidate)) == manifest['hashes'].get('review.json'):
+            previous = candidate
+            break
+    if previous is None:
+        raise ValueError('interrupted close cannot reconstruct the owned previous review')
+    value = copy.deepcopy(previous)
+    observation = manifest['close_observation']
+    value['resources'].update(cleanup=observation['cleanup'], residuals=observation['residuals'])
+
+    old_disclosure = close_previous_disclosure_bytes(manifest)
+    if old_disclosure is None:
+        # A still-surviving original needs no backup. Never infer its encoding
+        # from the planned replacement: selected JSON bytes need not be canonical.
+        old_disclosure = (run / reference).read_bytes()
+        if _digest(old_disclosure) != manifest['hashes'].get(reference):
+            raise ValueError('interrupted close has no owned previous disclosure bytes')
+    old_sources = {reference: old_disclosure}
+    contents = {'review.json': _json_bytes(value)}
+    contents.update(rebind_disclosure_for_cleanup(previous, value, context,
+        lambda name: selected_source_bytes(run, manifest, old_sources, name)))
+    contents['informe.md'] = render_review(value, model_usage_context=retained_model_context(
+        run, manifest, contents, record=value)).encode('utf-8')
+    if 'handoff.md' in manifest['hashes']:
+        contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+    if {name: _digest(raw) for name, raw in contents.items()} != manifest.get('planned_hashes'):
+        raise ValueError('interrupted close differs from the exact planned inventory')
+    return contents
+
+
 @_locked_run
 def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
     """Observe exact registered resources and persist closure; never remove resources."""
@@ -772,14 +851,18 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         atomic_write(run / MARKER, _json_bytes(marker))
     pending_close = (manifest['state'] == 'retaining'
                      and isinstance(manifest.get('close_observation'), dict))
+    recovery_contents = None
     if pending_close:
         _verify_files(run, manifest)
-        candidate = read_json(run / 'review.json')
+        if manifest['schema_version'] == 8:
+            recovery_contents = _close_recovery_contents(run, manifest)
+        candidate = (json.loads(recovery_contents['review.json']) if recovery_contents is not None
+                     else read_json(run / 'review.json'))
         errors = review_contract.validate(candidate) if isinstance(candidate, dict) else ['retained review is not an object']
         if errors or candidate.get('stage') != 'final' or candidate.get('scope') != manifest['scope']:
             raise ValueError('; '.join(errors) if errors else 'interrupted close has no valid retained final review')
         if manifest['schema_version'] == 8:
-            _execution_gate(run, manifest, candidate, {})
+            _execution_gate(run, manifest, candidate, recovery_contents or {})
     else:
         validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
     if (cleanup_file is None) == (cleanup is None):
@@ -836,6 +919,12 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
         if cleanup != manifest['cleanup'] or residuals != manifest['residuals']:
             raise ValueError('completed review history cannot be reopened')
         return manifest
+    if recovery_contents is not None:
+        # Observation/claim checks above must succeed before any recovery writes.
+        # Every byte and selected source was gated against the owned intent.
+        _retain_data(run, manifest, marker, recovery_contents, record_retention=False)
+        run, manifest, marker = _load_run(run)
+        pending_close = False
     value = read_json(run / 'review.json')
     if value.get('scope') != manifest['scope']:
         raise ValueError('retained review scope differs from manifest')
@@ -844,14 +933,39 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     errors = review_contract.validate(value)
     if errors:
         raise ValueError('; '.join(errors))
-    report = render_review(value).encode('utf-8')
+    from ccr.archive.retention import retained_model_context
+    report = render_review(value, model_usage_context=retained_model_context(run, manifest, record=value)).encode('utf-8')
+    contents = None
+    previous_disclosure = None
+    if value != read_json(run / 'review.json') or pending_close:
+        contents = {'review.json': _json_bytes(value), 'informe.md': report}
+        from ccr.archive.retention import rebind_disclosure_for_cleanup
+        from ccr.archive.evidence import selected_source_bytes
+        retained_context = (json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
+                            if 'evidence/context.json' in manifest['hashes'] else {})
+        contents.update(rebind_disclosure_for_cleanup(read_json(run / 'review.json'), value, retained_context,
+            lambda name: selected_source_bytes(run, manifest, {}, name)))
+        if 'handoff.md' in manifest['hashes']:
+            contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+        reference = retained_context.get('check_disclosure_reference')
+        if durable_close is not None and reference in contents:
+            from ccr.contracts.check_disclosure import MAX_BYTES
+            original = selected_source_bytes(run, manifest, {}, reference)
+            # The selected JSON contract bounds canonical size; its whitespace
+            # may be larger. Reject an unbounded recovery copy before any intent
+            # write, preserving the already valid retained archive unchanged.
+            if len(original) > MAX_BYTES:
+                raise ValueError('previous disclosure bytes exceed the ' + str(MAX_BYTES) + '-byte recovery limit')
+            previous_disclosure = {
+                'reference': reference, 'base64': base64.b64encode(original).decode('ascii')}
     if durable_close is not None and manifest.get('close_observation') != durable_close:
         manifest['close_observation'] = durable_close
         marker = _save_manifest(run, manifest, marker)
-    if value != read_json(run / 'review.json') or pending_close:
-        contents = {'review.json': _json_bytes(value), 'informe.md': report}
-        if 'handoff.md' in manifest['hashes']:
-            contents['handoff.md'] = render_handoff(value, manifest.get('handoff_context')).encode('utf-8')
+    if contents is not None:
+        # Persist exact selected bytes inside the owned old/planned intent
+        # before any sidecar replacement makes the original unavailable.
+        if previous_disclosure is not None:
+            manifest['close_previous_disclosure'] = previous_disclosure
         manifest = _retain_data(run, manifest, marker, contents, record_retention=False)
         run, manifest, marker = _load_run(run)
     manifest.update(cleanup=cleanup, residuals=residuals,

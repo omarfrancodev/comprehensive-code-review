@@ -2,6 +2,54 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.5.0 — 2026-10-30
+
+### Added
+
+#### Artefactos y contratos
+
+- Introducir final schema 12 y el sidecar de disclosure 1, conservando propósito, las 27 dimensiones y la forma de final 11; mantener congelados los contratos publicados 1–11.
+
+#### Reportes y entregas
+
+- Mostrar comandos y recursos originales acreditados mediante ocultación selectiva; explicar las comprobaciones creadas por CCR o de origen desconocido. Vincular draft público 3 y recibo de delivery 2 a las fuentes seleccionadas.
+
+#### Harness e integraciones
+
+- Capturar modelos configurados, observados o desconocidos por participante mediante setup y coordinación; conservar ledger privado 1 y su resumen en informe y delivery local, excluido de la proyección pública y sin backfill ni hook automático del proveedor.
+
+### Changed
+
+#### Perfiles y ejecución
+
+- Fijar deep en dos descubridores y extended en tres a cinco, en selección automática o explícita. Permitir uno o dos lotes finales particionados en candidatos e invariantes después de todo el descubrimiento, con posible ejecución paralela.
+- Agregar todas las verificaciones activas, incluidas las históricas, y vincular la frescura al despacho original, sin ampliar coverage.execution ni cambiar coverage.verification escalar.
+
+#### Distribución y documentación
+
+- Actualizar instrucciones, ejemplos y guías para final 12, disclosure y captura de modelos; distribuir la versión con ZIP verificable y preservar los bytes de evidencia histórica.
+
+### Fixed
+
+#### Perfiles y ejecución
+
+- Rechazar el despacho final prematuro también cuando falta su resultado, manteniendo fallback y ejecución degradada coherentes.
+
+#### Ciclo de vida y recuperación
+
+- Recuperar cierres interrumpidos con review y sidecar como una transacción coherente, conservando los bytes seleccionados exactos y sus hashes autorizados.
+
+#### Reportes y entregas
+
+- Ocultar credenciales de headers y URLs en las seis vistas, incluidas grafías originales, HTML y porcentuales, fragmentos, userinfo y delimitadores URI completos. Conservar passwords antes de normalizaciones que eliminan controles o cambian componentes y mantener enlaces benignos y texto ajeno al secreto.
+- Explicar wrappers cuyo ejecutable no está acreditado, sin presentarlos como un comando ordinario del proyecto.
+
+#### Harness e integraciones
+
+- Conservar el diagnóstico de modelos para reviewers homónimos de procesos y aceptar los ledgers válidos de setup dentro de sus límites originales.
+
+Se mantienen archive 8/layout 2, trace 1, packet 1 y recibo de comandos 2; no hay migración ni backfill. El viewer externo no está certificado. Evidencia: [implementación](docs/validation/2026-10-28-profile-session-topology-implementation.md), [recheck final del PR](docs/validation/2026-10-30-pr34-f016-f017.md) y [preparación de publicación](docs/validation/2026-10-30-v3-5-0-release-validation.md).
+
 ## 3.4.0 — 2026-10-26
 
 ### Changed

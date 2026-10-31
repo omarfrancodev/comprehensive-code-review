@@ -1,12 +1,12 @@
 # Compact worker packets — packet version 1
 
-Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 11; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
+Workers load this contract and their stage, plus the pinned brief/raw artifacts and project instructions. The coordinator owns profiles, ABCDE coverage, durable archives, reports and cleanup. New final records use result-contract.md schema 12; legacy full schema 1/2 workers remain supported. Packet version is independent of final schema; workers do not produce author registries, presentation identities or durable closure records.
 
 ## Common envelope
 
 Available dispatch/tool timestamps and session IDs are coordinator observations for the archive trace, not new required packet fields. Keep missing times/IDs unknown; do not query provider history, emit extra logs or write durable milestones. The coordinator uses existing results under [lifecycle-trace.md](../archive/lifecycle-trace.md).
 
-Model metadata is also optional coordinator-owned provenance. Preserve a model already exposed by a dispatch or result with its source; do not add required worker fields, infer the effective model from the harness/provider ID, or query history when the value is absent. The coordinator links eligible observations through the private sidecar in [artifacts.md](../archive/artifacts.md).
+Model provenance is coordinator-owned. For new reviews the coordinator records supplied metadata or an explicit unknown for coordination and each actually dispatched discovery, verification or gate assignment. Preserve a model already exposed by a dispatch or result with its source; do not add required worker fields, infer the effective model from the harness/provider ID, or query history when the value is absent. The coordinator links eligible observations through the private sidecar in [artifacts.md](../archive/artifacts.md).
 
 Required: packet_version (integer 1), stage (discovery/verification), context_id (coordinator-supplied nonempty identity binding exact scope/code/description inputs), check_ids (distinct assigned/referenced IDs), coverage: flows (text array), limitations (array of {detail: nonempty text, material: boolean}). Changed inputs need a new identity. Assignment briefs name applicable ABCDE areas and relevant subaspects in existing text; workers describe observed flows/evidence in the existing packet fields and do not add required aspect fields. Use role-qualified provisional finding IDs; the coordinator maps them consistently under identifiers.md before finalization. For receipt-bound checks, the coordinator allocates the canonical check ID before execution: never rename a check ID after capture. Workers reference the assigned check IDs. Fields are required unless marked optional; empty arrays are valid.
 
@@ -45,7 +45,7 @@ The coordinator uses `scripts setup profile` before prepare and `scripts setup c
 
 For an independent `agent/started`, the coordinator records the observed executor name; an unknown provider ID stays null. If an earlier dispatch was already run without an executor identity, the coordinator may add one `dispatch-identity/unchanged` annotation tied to the original start and a selected local dispatch/result metadata object. Workers do not add packets or repeat work to recover that identity. The annotation does not create another start or result, and the same replay is a no-op.
 
-Workers keep assigned check ownership/observed execution facts in packets; the coordinator binds final schemas 9/10/11 check.execution to registered executor identities. A role or trace actor is not automatically a writing executor. No new required worker field or workspace per worker.
+Workers keep assigned check ownership/observed execution facts in packets; the coordinator binds final schemas 9/10/11/12 check.execution to registered executor identities. A role or trace actor is not automatically a writing executor. No new required worker field or workspace per worker.
 
 ## Scenario evidence and reuse context
 
@@ -55,4 +55,4 @@ When the coordinator is preparing reusable MR/PR evidence, preserve the list of 
 
 ## Traceability without a packet migration
 
-Packet version 1 stays unchanged. Put dimension IDs and inspected flows/pending reasons into existing coverage.flows/limitations text; report decisive static evidence with check_id=null and executed evidence with its real assigned check ID. The coordinator consolidates all 27 decisions in final 11 and keeps purpose in the neutral check ledger. It supplies `context.check_schema_version=11` when merging the new check shape; a missing selector still means legacy schema 2. Do not add required dimension/purpose fields to packet 1 or fabricate separate checks for static observations. An unbound legacy provisional check ID may still be canonicalized before capture; receipt-bound IDs remain stable across merge and retention.
+Packet version 1 stays unchanged. Put dimension IDs and inspected flows/pending reasons into existing coverage.flows/limitations text; report decisive static evidence with check_id=null and executed evidence with its real assigned check ID. The coordinator consolidates all 27 decisions in final 12 and keeps purpose in the neutral check ledger. It supplies `context.check_schema_version=12` when merging the new check shape; a missing selector still means legacy schema 2. Do not add required dimension/purpose fields to packet 1 or fabricate separate checks for static observations. An unbound legacy provisional check ID may still be canonicalized before capture; receipt-bound IDs remain stable across merge and retention.

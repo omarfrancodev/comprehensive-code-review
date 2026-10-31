@@ -8,6 +8,7 @@ from ccr.execution import workspaces as workspace_ops
 from ccr.execution.candidates import write_new_json
 from ccr.reporting.comment import (_read_body, _read_json, prepare_public_comment,
                                    verify_public_comment)
+from ccr.execution.disclosure import read_selected_disclosure
 
 def main(argv=None, *, prog=None):
     parser = argparse.ArgumentParser(prog=prog, description=__doc__)
@@ -24,7 +25,18 @@ def main(argv=None, *, prog=None):
     verify.add_argument('--draft', required=True)
     verify.add_argument('--body', required=True)
     verify.add_argument('--remote', action='store_true')
+    for item in (prepare, verify):
+        item.add_argument('--check-disclosure-context')
+        item.add_argument('--check-disclosure-sources')
     args = parser.parse_args(argv)
+    try:
+        if bool(args.check_disclosure_context) != bool(args.check_disclosure_sources):
+            raise ValueError('check disclosure context and source catalog must be supplied together')
+        disclosure, disclosure_sources = (read_selected_disclosure(args.check_disclosure_context, args.check_disclosure_sources)
+            if args.check_disclosure_context else (None, None))
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
+        return 2
     if args.command == 'prepare':
         try:
             record = _read_json(args.input, 'record')
@@ -42,7 +54,8 @@ def main(argv=None, *, prog=None):
             draft = prepare_public_comment(
                 record, publication_context=publication_context,
                 check_publication_context=check_context,
-                coverage_publication_context=coverage_context)
+                coverage_publication_context=coverage_context,
+                check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources)
         except (ValueError, TypeError) as exc:
             print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
             return 1
@@ -65,7 +78,8 @@ def main(argv=None, *, prog=None):
         print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
     try:
-        result = verify_public_comment(record, draft, body, remote=args.remote)
+        result = verify_public_comment(record, draft, body, remote=args.remote,
+            check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources)
     except (ValueError, TypeError) as exc:
         print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 1

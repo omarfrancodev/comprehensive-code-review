@@ -113,6 +113,64 @@ def _file_identity(path):
             size += len(chunk)
     return digest.hexdigest(), size
 
+
+def _capture_disclosure_inputs(worktree, argv, check_id, revision):
+    """Read only literal referenced resources against the preparation-time map."""
+    manifest = workspace_ops.load(worktree.parent / 'manifest.json')
+    entry = next(row for row in manifest['workspaces'] if Path(row['path']).absolute() == worktree)
+    pinned = entry.get('resource_baseline')
+    if pinned is None:
+        return None, None  # Old owned sessions have no pre-CCR origin proof.
+    from ccr.contracts.check_disclosure import canonical, digest, MAX_BYTES
+    if digest(canonical(pinned)) != entry.get('resource_baseline_sha256'):
+        raise ValueError('pinned resource baseline was changed')
+    if len(canonical(pinned)) > MAX_BYTES:
+        return None, None
+    # The executable can itself be an original project resource. Its byte proof
+    # is independent of whether a disclosure adapter can explain its behavior.
+    candidates = list(argv)
+    tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
+    if tool == 'npm': candidates.append('package.json')
+    if tool == 'make': candidates.append('Makefile')
+    resources = []; seen = set(); total = 0
+    for argument in candidates:
+        if argument.startswith('-'):
+            continue
+        try:
+            path = Path(argument)
+            path = path if path.is_absolute() else worktree / path
+            path = workspace_ops.no_links(path.absolute())
+            relative = path.relative_to(worktree).as_posix()
+            if relative not in pinned['files'] or relative in seen or not path.is_file():
+                continue
+            if path.stat().st_size > MAX_BYTES // 4:
+                continue
+            content = path.read_bytes(); total += len(content)
+            if total > MAX_BYTES // 3:
+                break
+            resource = dict(path=relative, executed_sha256=digest(content), content=content.hex())
+            if manifest.get('mode') == 'commit':
+                objects = {}
+                commit = workspace_ops.out(worktree, 'cat-file', 'commit', manifest['head'])
+                objects[manifest['head']] = dict(kind='commit', data=commit.hex())
+                oid = commit.split(b'\n', 1)[0].split(b' ', 1)[1].decode()
+                for depth, component in enumerate(relative.split('/')):
+                    raw = workspace_ops.out(worktree, 'cat-file', 'tree', oid)
+                    objects[oid] = dict(kind='tree', data=raw.hex())
+                    target_path = '/'.join(relative.split('/')[:depth + 1])
+                    oid = workspace_ops.out(worktree, 'rev-parse', manifest['head'] + ':' + target_path).decode().strip()
+                blob = workspace_ops.out(worktree, 'cat-file', 'blob', oid)
+                objects[oid] = dict(kind='blob', data=blob.hex())
+                resource['git_objects'] = objects
+            resources.append(resource)
+            seen.add(relative)
+        except (ValueError, OSError, workspace_ops.ReviewError):
+            continue
+    observation = dict(check_id=check_id, revision=revision, argv=list(argv), cwd=str(worktree), resources=resources)
+    if len(canonical(observation)) > MAX_BYTES:
+        observation['resources'] = []
+    return pinned, observation
+
 def capture_check(*, check_id: str, purpose: str, argv: list[str], command: str, cwd: str,
                   executor_workspace: str, revision: str, executor: str,
                   output_dir: str) -> dict:
@@ -125,12 +183,17 @@ def capture_check(*, check_id: str, purpose: str, argv: list[str], command: str,
         executor_workspace=executor_workspace, revision=revision,
         executor=executor, output_dir=output_dir)
     prefix = target.name + '-' + check_id
+    pinned, disclosure_observation = _capture_disclosure_inputs(worktree, argv, check_id, revision)
     stdout_name, stderr_name = prefix + '-out.log', prefix + '-err.log'
     receipt_name = prefix + '-receipt.json'
     output_reference = 'evidence/' + stdout_name
     error_reference = 'evidence/' + stderr_name
     started_at = _now()
     target.mkdir()
+    if pinned is not None:
+        from ccr.contracts.check_disclosure import canonical
+        (target / (prefix + '-inputs.json')).write_bytes(canonical(pinned))
+        (target / (prefix + '-disclosure.json')).write_bytes(canonical(disclosure_observation))
     exit_code = None
     finished_at = None
     try:

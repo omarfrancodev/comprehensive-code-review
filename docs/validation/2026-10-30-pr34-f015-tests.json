@@ -1,0 +1,970 @@
+{
+  "scope": "Full unittest discovery; all modules run in isolated subprocesses",
+  "command": "python -B -m unittest <each discovered module> -v",
+  "discovery": "unittest.TestLoader().discover(\".\", pattern=\"test*.py\")",
+  "workers": 4,
+  "scheduling": "Longest prior module durations first; no tests excluded",
+  "discovered": 1092,
+  "ran": 1092,
+  "skipped": 3,
+  "module_count": 101,
+  "success": true,
+  "duration_seconds": 1295.422,
+  "modules": [
+    {
+      "module": "test_artifact_lifecycle_policy",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.906
+    },
+    {
+      "module": "test_reference_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.375
+    },
+    {
+      "module": "test_review_archive8",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 10.516
+    },
+    {
+      "module": "test_review_areas",
+      "expected": 16,
+      "ran": 16,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.047
+    },
+    {
+      "module": "test_review_artifact_layout",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 71.656
+    },
+    {
+      "module": "test_review_artifacts",
+      "expected": 54,
+      "ran": 54,
+      "skipped": 1,
+      "exit_code": 0,
+      "skipped_tests": [
+        "test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused"
+      ],
+      "duration_seconds": 146.797
+    },
+    {
+      "module": "test_review_atomic_recovery",
+      "expected": 8,
+      "ran": 8,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 15.172
+    },
+    {
+      "module": "test_review_authority_and_claim_safety",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 76.797
+    },
+    {
+      "module": "test_review_change_scope",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 125.61
+    },
+    {
+      "module": "test_review_check_disclosure",
+      "expected": 21,
+      "ran": 21,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 9.375
+    },
+    {
+      "module": "test_review_check_provenance",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 28.266
+    },
+    {
+      "module": "test_review_check_purpose",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.593
+    },
+    {
+      "module": "test_review_check_receipts",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 19.078
+    },
+    {
+      "module": "test_review_checkpoints",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 62.11
+    },
+    {
+      "module": "test_review_closure_consistency",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 221.406
+    },
+    {
+      "module": "test_review_comment",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 11.297
+    },
+    {
+      "module": "test_review_contract",
+      "expected": 34,
+      "ran": 34,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.078
+    },
+    {
+      "module": "test_review_coordination_errors",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 26.547
+    },
+    {
+      "module": "test_review_coordination_types",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.422
+    },
+    {
+      "module": "test_review_delivery",
+      "expected": 29,
+      "ran": 29,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 105.968
+    },
+    {
+      "module": "test_review_delivery_sensitive_urls",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.672
+    },
+    {
+      "module": "test_review_dimensions",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.218
+    },
+    {
+      "module": "test_review_disclosure_close_recovery",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 209.594
+    },
+    {
+      "module": "test_review_disclosure_credentials",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.25
+    },
+    {
+      "module": "test_review_disclosure_integration",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 14.969
+    },
+    {
+      "module": "test_review_dispatch",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.218
+    },
+    {
+      "module": "test_review_effective_changes",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.14
+    },
+    {
+      "module": "test_review_execution_policy",
+      "expected": 36,
+      "ran": 36,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 17.453
+    },
+    {
+      "module": "test_review_extended",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.015
+    },
+    {
+      "module": "test_review_flow_v24",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 26.297
+    },
+    {
+      "module": "test_review_flow_v27",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 4.453
+    },
+    {
+      "module": "test_review_harness",
+      "expected": 14,
+      "ran": 14,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 17.375
+    },
+    {
+      "module": "test_review_history",
+      "expected": 15,
+      "ran": 15,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.703
+    },
+    {
+      "module": "test_review_inputs",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.531
+    },
+    {
+      "module": "test_review_latest",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 23.813
+    },
+    {
+      "module": "test_review_layout_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.188
+    },
+    {
+      "module": "test_review_lock_file_safety",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 2,
+      "exit_code": 0,
+      "skipped_tests": [
+        "test_review_lock_file_safety.LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target",
+        "test_review_lock_file_safety.LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused"
+      ],
+      "duration_seconds": 0.344
+    },
+    {
+      "module": "test_review_metrics",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.781
+    },
+    {
+      "module": "test_review_model_capture",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 12.766
+    },
+    {
+      "module": "test_review_model_usage",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.578
+    },
+    {
+      "module": "test_review_operational_summary",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 36.094
+    },
+    {
+      "module": "test_review_packets",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.562
+    },
+    {
+      "module": "test_review_preflight",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 14.235
+    },
+    {
+      "module": "test_review_presentation",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.344
+    },
+    {
+      "module": "test_review_priority_corpus",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 7.859
+    },
+    {
+      "module": "test_review_priority_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.641
+    },
+    {
+      "module": "test_review_priority_roundtrip",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.515
+    },
+    {
+      "module": "test_review_profile_names",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 2.172
+    },
+    {
+      "module": "test_review_profile_topology",
+      "expected": 32,
+      "ran": 32,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.594
+    },
+    {
+      "module": "test_review_profiles",
+      "expected": 25,
+      "ran": 25,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.36
+    },
+    {
+      "module": "test_review_publication_policy",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.875
+    },
+    {
+      "module": "test_review_recovery",
+      "expected": 58,
+      "ran": 58,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 245.969
+    },
+    {
+      "module": "test_review_recovery_diagnostics",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 108.547
+    },
+    {
+      "module": "test_review_recovery_exit_guidance",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 123.188
+    },
+    {
+      "module": "test_review_recovery_followup",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 154.203
+    },
+    {
+      "module": "test_review_recovery_reservations",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 190.797
+    },
+    {
+      "module": "test_review_recovery_route_consistency",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 164.297
+    },
+    {
+      "module": "test_review_recovery_sequences",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 42.234
+    },
+    {
+      "module": "test_review_reference_index",
+      "expected": 13,
+      "ran": 13,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.485
+    },
+    {
+      "module": "test_review_references",
+      "expected": 7,
+      "ran": 7,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.563
+    },
+    {
+      "module": "test_review_resource_claims",
+      "expected": 22,
+      "ran": 22,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 215.25
+    },
+    {
+      "module": "test_review_restart",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.422
+    },
+    {
+      "module": "test_review_restart_phase_consistency",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 60.859
+    },
+    {
+      "module": "test_review_restart_refusals",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 171.766
+    },
+    {
+      "module": "test_review_restart_resources",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1294.61
+    },
+    {
+      "module": "test_review_restart_v2",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 27.094
+    },
+    {
+      "module": "test_review_reuse_archive",
+      "expected": 10,
+      "ran": 10,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 55.187
+    },
+    {
+      "module": "test_review_reuse_context",
+      "expected": 11,
+      "ran": 11,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 24.109
+    },
+    {
+      "module": "test_review_reuse_decision",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.375
+    },
+    {
+      "module": "test_review_reuse_flow",
+      "expected": 27,
+      "ran": 27,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 297.922
+    },
+    {
+      "module": "test_review_run_lock",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.39
+    },
+    {
+      "module": "test_review_scenarios",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.156
+    },
+    {
+      "module": "test_review_session_operations",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 54.734
+    },
+    {
+      "module": "test_review_setup",
+      "expected": 12,
+      "ran": 12,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 11.266
+    },
+    {
+      "module": "test_review_source_selection",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.188
+    },
+    {
+      "module": "test_review_topology_integration",
+      "expected": 9,
+      "ran": 9,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 10.64
+    },
+    {
+      "module": "test_review_trace",
+      "expected": 31,
+      "ran": 31,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 113.891
+    },
+    {
+      "module": "test_review_traceability_archive",
+      "expected": 17,
+      "ran": 17,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 101.969
+    },
+    {
+      "module": "test_review_traceability_comments",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5
+    },
+    {
+      "module": "test_review_traceability_contract",
+      "expected": 19,
+      "ran": 19,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.406
+    },
+    {
+      "module": "test_review_traceability_contract11",
+      "expected": 6,
+      "ran": 6,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.485
+    },
+    {
+      "module": "test_review_traceability_delivery",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 11.843
+    },
+    {
+      "module": "test_review_traceability_policy",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.375
+    },
+    {
+      "module": "test_review_traceability_preflight",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5
+    },
+    {
+      "module": "test_review_traceability_reference_semantics",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.485
+    },
+    {
+      "module": "test_review_traceability_rendering",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.484
+    },
+    {
+      "module": "test_script_archive_reader",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.375
+    },
+    {
+      "module": "test_script_archive_transactions",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.328
+    },
+    {
+      "module": "test_script_characterization",
+      "expected": 4,
+      "ran": 4,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.672
+    },
+    {
+      "module": "test_script_cli",
+      "expected": 5,
+      "ran": 5,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 12.453
+    },
+    {
+      "module": "test_script_contract_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.172
+    },
+    {
+      "module": "test_script_dependencies",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 1.875
+    },
+    {
+      "module": "test_script_execution_boundaries",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 3.844
+    },
+    {
+      "module": "test_script_layout",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.218
+    },
+    {
+      "module": "test_script_pure_validation",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.219
+    },
+    {
+      "module": "test_script_read_only_flows",
+      "expected": 3,
+      "ran": 3,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5
+    },
+    {
+      "module": "test_script_reporting_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.5
+    },
+    {
+      "module": "test_script_resource_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.391
+    },
+    {
+      "module": "test_script_restart_boundaries",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.281
+    },
+    {
+      "module": "test_script_shared",
+      "expected": 2,
+      "ran": 2,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 0.156
+    },
+    {
+      "module": "test_workspace_layout",
+      "expected": 1,
+      "ran": 1,
+      "skipped": 0,
+      "exit_code": 0,
+      "skipped_tests": [],
+      "duration_seconds": 9.063
+    }
+  ],
+  "tested_commit": "21e7bf3230721e8479e3ad160cd51ee732eba46d",
+  "base_commit": "d2073c4d1fbc3b702dc7a1c8505abf434460fcd5",
+  "validation_target": "Working tree; tested_commit identifies byte-identical scripts/tests registered after execution. Documentation/evidence finalized separately.",
+  "passed": 1089,
+  "failures": 0,
+  "errors": 0,
+  "exit_code": 0,
+  "interpreter": "Python 3.12.14",
+  "source_sha256": {
+    "scripts/ccr/contracts/check_disclosure.py": "582c593dbd7babd35f08da1d73277a7b778f95e81543509cc514537d042bd306",
+    "tests/test_review_disclosure_credentials.py": "cc25f21f414b1f8584d2685a519482b748645ea6a886a053c6efbb727657e02e"
+  },
+  "red_reproduction": {
+    "tests": 2,
+    "subcase_failures": 27,
+    "learning_failures": 9,
+    "six_view_failures": 18
+  },
+  "focused": {
+    "command": "python -B -m unittest test_review_disclosure_credentials test_review_delivery_sensitive_urls -v",
+    "ran": 19,
+    "passed": 19,
+    "duration_seconds": 1.071,
+    "added_to_full_total": false
+  },
+  "independent_review": {
+    "verdict": "ready for scoped F015 fix",
+    "actionable_findings": 0,
+    "focused_tests": 19,
+    "differential_html_cases": 21843,
+    "differential_cases_passed": true,
+    "long_decimal_hex_zero_padding_learning": "passed across query, fragment, userinfo",
+    "decimal_conversion_limit": 4300,
+    "added_to_full_total": false
+  },
+  "skipped_tests": [
+    "test_review_artifacts.ArchiveTests.test_symlink_roots_inputs_and_archived_files_are_refused",
+    "test_review_lock_file_safety.LockFileSafetyTests.test_existing_final_symlink_is_refused_without_touching_target",
+    "test_review_lock_file_safety.LockFileSafetyTests.test_final_link_replacement_after_identity_check_is_refused"
+  ],
+  "skip_scope": "Three existing Windows symlink capability omissions, not counted as passed"
+}

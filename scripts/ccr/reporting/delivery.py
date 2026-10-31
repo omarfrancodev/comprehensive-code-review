@@ -13,6 +13,8 @@ from ccr.archive.lifecycle import validate as validate_archive
 from ccr.contracts import review as review_contract, validation
 from ccr.reporting import markdown
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
+from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, safe_text, private_values
 from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
@@ -76,20 +78,35 @@ class _Projection:
         responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
 
-    def __init__(self, record, manifest, project, source_hash):
+    def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None, check_disclosure_sources=None):
         self.source_hash = source_hash
+        self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+        self.disclosure_rows = {row['id']: row for row in self.disclosure['checks']} if self.disclosure else {}
+        self.check_ids = [check['id'] for check in record['checks']]
+        self.secrets = private_values(record, self.disclosure, check_disclosure_sources or {})
         self.commands = sorted({check['command'] for check in record['checks']}, key=len, reverse=True)
-        self.repo_roots = [str(project), manifest['repository_path']]
-        self.private_roots = [manifest['archive_root']]
+        self.repo_roots = [str(project), manifest.get('repository_path', '')]
+        self.private_roots = [manifest.get('archive_root', '')]
         self.changed = []
 
     def retained(self, value):
         # A provenance label, not a path/URL or a new human review identity.
         return 'retained:' + self.source_hash + '#ref-' + _hash(value.encode('utf-8'))[:16]
 
+    def public_url(self, value):
+        if not _public_url(value):
+            return None
+        # Syntax alone does not make a locator safe to share. Apply the same
+        # secret policy as prose, including legacy deliveries without a sidecar.
+        candidate = re.sub(r'^https?:', lambda match: match.group().lower(),
+                           value, flags=re.IGNORECASE)
+        return value if safe_text(candidate, self.secrets) == candidate else None
+
     def reference(self, value):
-        if _public_url(value):
+        if self.public_url(value):
             return value
+        if _public_url(value):
+            return self.retained(value)
         projected = self.text(value, omit_commands=False)
         if re.match(r'^(?:[A-Za-z]:[\\/]|[\\/]|file:)', projected):
             return self.retained(value)
@@ -102,12 +119,15 @@ class _Projection:
             r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
+                or any(_public_url(span) and self.public_url(span) is None for span in spans)
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
             raise ValueError('private structural value cannot be delivered: ' + path)
         return value
 
     def text(self, value, omit_commands=True):
+        if self.disclosure:
+            value = safe_text(value, self.secrets)
         for command in self.commands if omit_commands else ():
             value = value.replace(command, '[comprobación registrada; comando omitido]')
             value = value.replace(markdown.markdown_text(command), '[comprobación registrada; comando omitido]')
@@ -116,11 +136,15 @@ class _Projection:
             value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
             value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
             for root in self.private_roots:
+                if not root:
+                    continue
                 normalized = root.replace('\\', '/')
                 for spelling in dict.fromkeys((root, normalized)):
                     value = re.sub(re.escape(spelling) + r'(?:[/\\][^\s;|<>\)\]]*)?',
                                    lambda match: self.retained(match.group()), value, flags=re.IGNORECASE)
             for root in self.repo_roots:
+                if not root:
+                    continue
                 for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
                     value = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', value, flags=re.IGNORECASE)
                     value = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', value, flags=re.IGNORECASE)
@@ -136,11 +160,11 @@ class _Projection:
         # Sanitize URL and non-URL spans separately; placeholders could collide
         # with caller content and accidentally restore a private path.
         spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
-        value = ''.join(span if _public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
+        value = ''.join(span if self.public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
                         else segment(span) for span in spans)
         # Relative Markdown links cannot resolve from the delivery directory.
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
-                       lambda match: match.group() if _public_url(match[2]) else match[1] + ' · ' + match[2], value)
+                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
         return value
 
     def value(self, value, path='record'):
@@ -159,11 +183,13 @@ class _Projection:
         elif field == 'description.status':
             projected = self.structural(value, path)
         elif field == 'checks[].command':
-            projected = '[comprobación registrada; comando omitido]'
+            index = int(re.search(r'checks\[(\d+)\]', path)[1])
+            row = self.disclosure_rows.get(self.check_ids[index])
+            projected = (row['command'] or EXPLANATION_COMMAND) if row else '[comprobación registrada; comando omitido]'
         elif path.endswith(('.url', '.previous_url')):
-            projected = value if _public_url(value) else None
+            projected = self.public_url(value)
         elif (path.endswith(('.reference', '.previous_reference')) or field == 'coverage.execution.fallbacks[].source') and field != 'scope.reference':
-            projected = value if _public_url(value) else self.retained(value)
+            projected = self.public_url(value) or self.retained(value)
         elif path == 'record.scope.reference':
             projected = self.reference(value)
         elif field == 'findings[].location.path':
@@ -239,7 +265,7 @@ def _brief(record, *, evidence_by_finding=None):
              + markdown.markdown_text(scope['head'] or scope['snapshot']),
              '- **Verificación:** ' + validation.VERIFICATION[record['coverage']['verification']],
              '- **Cobertura obsoleta:** ' + ('sí' if record['coverage']['stale'] else 'no')]
-    if record['schema_version'] in (8, 9, 10, 11):
+    if record['schema_version'] in (8, 9, 10, 11, 12):
         status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
         lines.append('- **Ejecución del perfil:** ' + status)
     if scope['snapshot']:
@@ -275,6 +301,8 @@ def _brief(record, *, evidence_by_finding=None):
         lines.append('- **' + check['id'] + '** · ' + validation.CHECK_STATUS[check['status']] + ' · versión: '
                      + markdown.markdown_text(check['revision']))
         lines.append('  - **Propósito:** ' + markdown.markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
+        if record['schema_version'] == 12:
+            lines.append('  - **Comando saneado:** ' + markdown.markdown_text(check['command']))
         lines.append('  - **Resultado:** ' + markdown.markdown_text(check['evidence'] or 'Sin ejecución'))
         if check.get('reference'):
             lines.append('  - Referencia: ' + markdown.reference_text(check['reference']))
@@ -285,7 +313,7 @@ def _brief(record, *, evidence_by_finding=None):
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
     lines.extend(['', *coverage_lines(record['coverage']['flows'])])
-    if record['schema_version'] == 11:
+    if record['schema_version'] in (11, 12):
         lines.extend(['', '### Dimensiones de cobertura', ''])
         for area in record['coverage']['areas']:
             for row in area['dimensions']:
@@ -313,7 +341,8 @@ def _write_file(path, data, owned_files):
         stream.flush()
         os.fsync(stream.fileno())
 
-def deliver(run_dir, delivery, project_root, output_root=None, context=None):
+def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
+            check_disclosure_context=None, check_disclosure_sources=None, model_usage_context=None):
     """Return a new delivery directory, refusing every implicit or unsafe destination."""
     if delivery not in {'full', 'brief'}:
         raise ValueError('an explicit delivery full|brief is required')
@@ -340,7 +369,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     source = (run / 'review.json').read_bytes()
     record = read_json(run / 'review.json')
     source_hash = _hash(source)
-    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11) else manifest.get('run_id', run.name.rpartition('-')[2])
+    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else manifest.get('run_id', run.name.rpartition('-')[2])
     if not isinstance(identifier, str) or not re.fullmatch(r'(?:CR-)?[0-9a-f]{20}', identifier):
         raise ValueError('known review/run identity required')
     destination = safe_path(root / run.parent.name / identifier)
@@ -348,7 +377,39 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
         raise ValueError('delivery destination overlaps its retained archive or temporary resources')
     if destination.exists():
         raise ValueError('delivery destination already exists')
-    projection = _Projection(record, manifest, project, source_hash)
+    from ccr.archive.evidence import selected_source_bytes
+    from ccr.archive.trace import NAME as TRACE_NAME
+    from ccr.reporting import models
+    retained_context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json')) if 'evidence/context.json' in manifest['hashes'] else {}
+    from ccr.execution.disclosure import SelectedDisclosureSources
+    selected = SelectedDisclosureSources(check_disclosure_sources or {})
+    reference = retained_context.get('check_disclosure_reference')
+    if reference is not None:
+        if reference != 'evidence/check-disclosure.json':
+            raise ValueError('invalid check disclosure reference')
+        selected[reference] = selected_source_bytes(run, manifest, {}, reference)
+        retained_disclosure = json.loads(selected[reference])
+        if check_disclosure_context is not None and check_disclosure_context != retained_disclosure:
+            raise ValueError('disclosure differs from the retained selection')
+        check_disclosure_context = retained_disclosure
+        for row in retained_disclosure['checks']:
+            for field in ('execution_reference', 'evidence_reference'):
+                if row[field] is not None:
+                    selected[row[field]] = selected_source_bytes(run, manifest, {}, row[field])
+        if retained_disclosure['input_identity'] != retained_context.get('check_disclosure_input_identity'):
+            raise ValueError('disclosure input identity differs from retained context')
+        if retained_disclosure['input_identity'].get('resource_manifest_sha256') is not None:
+            if retained_disclosure['input_identity'] != manifest.get('check_disclosure_input_identity'):
+                raise ValueError('disclosure input map was not registered before review work')
+            selected.input_identity = manifest['check_disclosure_input_identity']
+    events = [json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()] if TRACE_NAME in manifest['hashes'] else None
+    retained_models = models.model_usage_context(retained_context,
+        lambda name: selected_source_bytes(run, manifest, {}, name), manifest, record=record, events=events)
+    if model_usage_context is not None and model_usage_context != retained_models:
+        raise ValueError('supplied model usage differs from retained selection')
+    model_usage_context = retained_models
+    projection = _Projection(record, manifest, project, source_hash,
+        check_disclosure_context=check_disclosure_context, check_disclosure_sources=selected)
     # Exact-source equality and origin grouping must precede lossy prose
     # sanitization: distinct private paths can project to the same text.
     ledger = {check['id']: check for check in record['checks']}
@@ -362,18 +423,34 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None):
     errors = review_contract.validate(portable)
     if errors:
         raise ValueError('portable record is invalid: ' + '; '.join(errors))
-    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11) else 'identidad de archivo ' + identifier
+    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'identidad de archivo ' + identifier
     notice = ('\n> Proyección portable de la revisión retenida (' + source_label + '). No es una nueva revisión ni una nueva ejecución. '
               'Comandos y referencias privadas omitidos; la procedencia e integridad se registran en .ccr-delivery.json.\n')
     files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable, evidence_by_finding)) + notice).encode('utf-8')}
              if delivery == 'full' else {'resumen.md': (_human(_brief(portable, evidence_by_finding=evidence_by_finding)) + notice).encode('utf-8')})
+    additional = []
+    if projection.disclosure:
+        additional.extend(['', '### Detalle acreditado de checks', ''])
+        for row in projection.disclosure['checks']:
+            additional.append('- **' + row['id'] + '**')
+            additional.extend(disclosure_lines(row))
+    additional.extend(models.model_lines(model_usage_context, sanitize=lambda value: projection.text(safe_text(value))))
+    report_name = 'informe.md' if delivery == 'full' else 'resumen.md'
+    if additional:
+        files[report_name] += ('\n'.join(additional) + '\n').encode('utf-8')
     contextual = _context_markdown(context, projection)
     if contextual is not None:
         files['contexto.md'] = _human(contextual.decode('utf-8')).encode('utf-8')
-    files['.ccr-delivery.json'] = _json({'schema_version': 1, 'delivery': delivery, 'source_id': identifier,
-        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11) else 'run_id',
+    new_policy = record['schema_version'] == 12 or projection.disclosure is not None or model_usage_context.get('sha256') is not None
+    receipt = {'schema_version': 2 if new_policy else 1, 'delivery': delivery, 'source_id': identifier,
+        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'run_id',
         'source_hash': source_hash, 'source_schema_version': record['schema_version'], 'projection': 'portable',
-        'projected_fields': projection.changed, 'hashes': {name: _hash(data) for name, data in files.items()}})
+        'projected_fields': projection.changed, 'hashes': {name: _hash(data) for name, data in files.items()}}
+    if new_policy:
+        receipt.update(projection_policy='project-resources-v1',
+            check_disclosure_sha256=projection.disclosure['check_disclosure_sha256'] if projection.disclosure else None,
+            model_usage_sha256=model_usage_context.get('sha256'))
+    files['.ccr-delivery.json'] = _json(receipt)
     # Finish every read/validation/render before creating anything. Validate again
     # to catch archive changes during projection, without recording a checkpoint.
     validate_archive(run, require_retained=True)

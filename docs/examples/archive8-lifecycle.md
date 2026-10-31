@@ -42,7 +42,7 @@ python /absolute/skill/scripts artifacts prepare \
   --scope-file /absolute/owned/session/evidence/scope.json \
   --current-inputs /absolute/owned/session/evidence/current-inputs.json \
   --profile-input /absolute/owned/session/evidence/profile-selection.json \
-  --skill-version 3.3.0 --harness unknown \
+  --skill-version 3.5.0 --harness unknown \
   --temporary-path /absolute/owned/session --output-root /absolute/archive
 ```
 
@@ -179,7 +179,7 @@ python /absolute/skill/scripts artifacts preflight \
 ```sh
 # ccr-example: retain
 python /absolute/skill/scripts artifacts retain \
-  --run-dir /absolute/returned/run --expected-schema 10
+  --run-dir /absolute/returned/run --expected-schema 12
 ```
 
 ```sh
@@ -203,3 +203,5 @@ python /absolute/skill/scripts artifacts validate \
 ```
 
 If any step fails, preserve this exact run/session and inspect its reported transaction. A different request is not a retry. Recovery and explicitly abandoned unprepared restarts are documented in [recovery.md](../../references/archive/recovery.md). `archive7-lifecycle.md` remains historical guidance only.
+
+For new schema-12 runs, capture coordination and each actually dispatched reviewer’s model metadata or explicit unknown before selecting the context and model-usage sidecar for checkpoint/retention. The helper returns a candidate rather than changing the archive automatically. For checks, retain selected input/argv/resource proof before cleanup and use the same validated disclosure in public and portable views. See [check disclosure and model provenance](check-disclosure-and-models.md) for the supplied-metadata/unknown example and the difference between an original test and a CCR reproduction. The example model values are synthetic; never backfill a real historical run.

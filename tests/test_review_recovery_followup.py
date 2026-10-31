@@ -440,7 +440,11 @@ a.restart(source, **request)
             return json.loads(result.stdout)
         source = Path(execute('prepare')['run_dir'])
         substitutions['/absolute/returned/run'] = source
-        final = record10('standard')
+        from profile_topology_fixtures import record12
+        final = record12('standard', 'automatic', discovery=1)
+        # This case executes the maintained current-producer example with no
+        # executed checks; frozen record10 scenarios remain unchanged above.
+        final['checks'] = []
         final.update(scope=self.read(self.scope), review_id='CR-' + self.read(source / 'cierre.json')['run_id'])
         final['description'] = {'status': 'not_applicable', 'identity': None, 'details': ''}
         def refresh_context():

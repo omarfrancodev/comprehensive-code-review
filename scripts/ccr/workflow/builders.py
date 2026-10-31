@@ -19,6 +19,19 @@ from ccr.workflow import profiles as review_profiles
 REFERENCE_INDEX = 'evidence/reference-index.json'
 SHA256 = re.compile(r'[0-9a-f]{64}')
 
+
+def build_check_disclosure(record, input_identity, execution_observations, sources):
+    """Construct the sidecar solely from previously captured selected bytes."""
+    from ccr.contracts.check_disclosure import build_disclosure_row, source_digest, validate_check_disclosure
+    value = dict(schema_version=1, review_id=record.get('review_id'), source_sha256=source_digest(record),
+                 input_identity=copy.deepcopy(input_identity), checks=[
+                     build_disclosure_row(check, execution_observations.get(check['id']), sources, input_identity)
+                     for check in record['checks']])
+    errors = validate_check_disclosure(record, value, sources, input_identity)
+    if errors:
+        raise ValueError('; '.join(errors))
+    return value
+
 def _issues_message(result):
     return '; '.join(issue['message'] for issue in result.get('issues', []))
 
@@ -210,6 +223,8 @@ def build_model_usage_update(context: dict, ledger: dict | None, metadata: dict,
         observation = None
     else:
         try:
+            if isinstance(actor, dict) and actor.get('kind') in {'process', 'tool'}:
+                metadata = dict(metadata, source={'kind': 'not_applicable', 'reference': None})
             observation = review_model_usage.observation_from_metadata(
                 metadata, actor=actor, phase=phase, activity=activity,
                 assignment_id=assignment_id, check_id=check_id)
@@ -219,9 +234,12 @@ def build_model_usage_update(context: dict, ledger: dict | None, metadata: dict,
             error = str(exc)
         else:
             updated_context['model_usage_reference'] = expected_reference
-            return updated_context, updated_ledger
+            if observation['status'] != 'unknown':
+                return updated_context, updated_ledger
+            ledger = updated_ledger
+            error = 'model not exposed for ' + actor['name'] + ((' / ' + assignment_id) if assignment_id else '')
 
-    diagnostics = context.get('model_usage_diagnostics', [])
+    diagnostics = updated_context.get('model_usage_diagnostics', [])
     if not isinstance(diagnostics, list):
         diagnostics = []
     diagnostics = [item[:500] for item in diagnostics
