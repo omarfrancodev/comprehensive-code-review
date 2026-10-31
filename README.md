@@ -98,7 +98,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [Instalación y actualización](docs/installation.md): npx, ZIP, actualización y desinstalación.
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
-- [Release 3.4.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.4.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Release 3.5.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.5.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
 
 ## Contribuciones
 

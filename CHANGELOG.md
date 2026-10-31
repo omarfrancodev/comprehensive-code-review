@@ -2,39 +2,53 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## 3.5.0 — Sin publicación registrada
+## 3.5.0 — 2026-10-30
+
+### Added
+
+#### Artefactos y contratos
+
+- Introducir final schema 12 y el sidecar de disclosure 1, conservando propósito, las 27 dimensiones y la forma de final 11; mantener congelados los contratos publicados 1–11.
+
+#### Reportes y entregas
+
+- Mostrar comandos y recursos originales acreditados mediante ocultación selectiva; explicar las comprobaciones creadas por CCR o de origen desconocido. Vincular draft público 3 y recibo de delivery 2 a las fuentes seleccionadas.
+
+#### Harness e integraciones
+
+- Capturar modelos configurados, observados o desconocidos por participante mediante setup y coordinación; conservar ledger privado 1 y su resumen en informe y delivery local, excluido de la proyección pública y sin backfill ni hook automático del proveedor.
 
 ### Changed
 
-- Introducir final schema 12 conservando propósito, las 27 dimensiones y la forma de schema 11; congelar los contratos publicados 1–11.
-- Fijar deep en dos descubridores y extended en tres a cinco para selección automática o explícita; permitir uno o dos lotes finales particionados y conservar verificaciones históricas en el agregado.
-- Vincular la frescura al despacho original y exigir orden final aun en ejecución degradada; mantener fuentes, bindings, gates y retención.
-- Mostrar comandos y recursos acreditados del proyecto con ocultación selectiva en comentarios y entregas; explicar las comprobaciones creadas por CCR o de origen desconocido, con draft 3 y recibo de delivery 2 ligados a evidencia seleccionada.
-- Capturar modelos configurados/observados o ausencia explícita por participante; conservar el ledger privado schema 1 y presentar su resumen en informe y delivery local, sin backfill histórico ni consultas adicionales.
+#### Perfiles y ejecución
+
+- Fijar deep en dos descubridores y extended en tres a cinco, en selección automática o explícita. Permitir uno o dos lotes finales particionados en candidatos e invariantes después de todo el descubrimiento, con posible ejecución paralela.
+- Agregar todas las verificaciones activas, incluidas las históricas, y vincular la frescura al despacho original, sin ampliar coverage.execution ni cambiar coverage.verification escalar.
+
+#### Distribución y documentación
+
+- Actualizar instrucciones, ejemplos y guías para final 12, disclosure y captura de modelos; distribuir la versión con ZIP verificable y preservar los bytes de evidencia histórica.
 
 ### Fixed
 
-- Ocultar credenciales de headers y URLs, incluidas sus formas codificadas repetidas, y sanear referencias de entregas; explicar wrappers con ejecutable no acreditado.
-- Rechazar trabajo final temprano aun sin resultado y recuperar cierres interrumpidos con sidecar mediante los contenidos e inventarios autorizados.
-- Conservar el diagnóstico de modelos para reviewers homónimos de procesos y admitir en setup los ledgers válidos dentro de sus límites originales.
+#### Perfiles y ejecución
 
-F016/F017: conservar delimitadores URI de argv y capturar passwords originales e interpretados antes del parser, incluidas referencias numéricas y separadores HTML, sin modificar las fuentes ni la política editorial de URLs. [Validación](docs/validation/2026-10-30-pr34-f016-f017.md).
+- Rechazar el despacho final prematuro también cuando falta su resultado, manteniendo fallback y ejecución degradada coherentes.
 
-F015: conservar el aprendizaje de credenciales query/fragment/userinfo aunque otra entidad numérica del URL sea larga, reutilizando la conversión HTML acotada sin alterar las fuentes ni la omisión segura del URL. [Validación](docs/validation/2026-10-30-pr34-f015.md).
+#### Ciclo de vida y recuperación
 
-F014: normalizar entidades numéricas en la comparación sin convertir enteros de tamaño arbitrario; conservar la prosa ajena al secreto y ocultar credenciales con ceros iniciales largos. [Validación](docs/validation/2026-10-30-pr34-f014.md).
+- Recuperar cierres interrumpidos con review y sidecar como una transacción coherente, conservando los bytes seleccionados exactos y sus hashes autorizados.
 
-F013: ocultar copias porcentuales conocidas también fuera del segmento URL, conservando el texto de origen ajeno al secreto. [Validación](docs/validation/2026-10-29-pr34-f013.md).
+#### Reportes y entregas
 
-F012: decidir sobre las URLs originales antes de insertar marcadores y conservar la ocultación de credenciales literales entre segmentos. [Validación](docs/validation/2026-10-29-pr34-f012.md).
+- Ocultar credenciales de headers y URLs en las seis vistas, incluidas grafías originales, HTML y porcentuales, fragmentos, userinfo y delimitadores URI completos. Conservar passwords antes de normalizaciones que eliminan controles o cambian componentes y mantener enlaces benignos y texto ajeno al secreto.
+- Explicar wrappers cuyo ejecutable no está acreditado, sin presentarlos como un comando ordinario del proyecto.
 
-F011: ocultar credenciales conocidas aunque la codificación Markdown de una referencia cambie su grafía URL. [Validación](docs/validation/2026-10-29-pr34-f011.md).
+#### Harness e integraciones
 
-Seguimiento del re-review: ocultar también contraseñas userinfo decodificadas y tokens en fragmentos URL; conservar bytes exactos del sidecar en cierres interrumpidos. [Evidencia y límites](docs/validation/2026-10-29-pr34-rereview.md).
+- Conservar el diagnóstico de modelos para reviewers homónimos de procesos y aceptar los ledgers válidos de setup dentro de sus límites originales.
 
-Correcciones del PR #34: [validación y reintentos](docs/validation/2026-10-28-pr34-review-fixes.md).
-
-Validación de la implementación: [informe y límites](docs/validation/2026-10-28-profile-session-topology-implementation.md), con 1048 pruebas cubiertas y tres omisiones por privilegios de symlink.
+Se mantienen archive 8/layout 2, trace 1, packet 1 y recibo de comandos 2; no hay migración ni backfill. El viewer externo no está certificado. Evidencia: [implementación](docs/validation/2026-10-28-profile-session-topology-implementation.md), [recheck final del PR](docs/validation/2026-10-30-pr34-f016-f017.md) y [preparación de publicación](docs/validation/2026-10-30-v3-5-0-release-validation.md).
 
 ## 3.4.0 — 2026-10-26
 
