@@ -237,6 +237,22 @@ def _compact_identity(request, logical_scope, created_at):
             'logical_scope_identity': logical_scope['identity'], 'created_at': created_at}
 
 
+def bind_compact_record(prepared, record):
+    """Return the reservation-bound final before hashing any dependent sidecar."""
+    stage, _ = _validate_prepared(prepared)
+    if _read_prepared(stage) != prepared:
+        raise ValueError('compact preparation differs from the pinned reservation')
+    record = copy.deepcopy(record)
+    identity = _compact_identity(prepared['request'], prepared['logical_scope'], prepared['created_at'])
+    if 'compact_identity' in record and record['compact_identity'] != identity:
+        raise ValueError('compact result identity differs from its preparation')
+    record['compact_identity'] = identity
+    _validate_compact_record(record)
+    if record.get('scope') != prepared['request']['scope'] or record.get('review_id') != prepared['review_id']:
+        raise ValueError('compact result differs from its pinned scope or identity')
+    return record
+
+
 def _validate_compact_sources(record, request, selected):
     """Verify selected observed milestones; never synthesize execution history."""
     try:
@@ -400,21 +416,12 @@ def create_compact(prepared, record, report, current_inputs, sources):
 
 def _create_compact_locked(prepared, record, report, current_inputs, sources):
     stage, target = _validate_prepared(prepared)
-    if _read_prepared(stage) != prepared:
-        raise ValueError('compact preparation differs from the pinned reservation')
+    record = bind_compact_record(prepared, record)
     request = prepared['request']
     current = normalize_inputs(current_inputs)
     current.setdefault('logical_scope_identity', prepared['logical_scope']['identity'])
     if current != request['review_inputs']:
         raise ValueError('compact current inputs differ from the pinned inputs')
-    record = copy.deepcopy(record)
-    expected_identity = _compact_identity(request, prepared['logical_scope'], prepared['created_at'])
-    if 'compact_identity' in record and record['compact_identity'] != expected_identity:
-        raise ValueError('compact result identity differs from its preparation')
-    record['compact_identity'] = expected_identity
-    _validate_compact_record(record)
-    if record.get('scope') != request['scope'] or record.get('review_id') != prepared['review_id']:
-        raise ValueError('compact result differs from its pinned scope or identity')
     selected = _source_bytes(sources)
     index = _validate_compact_sources(record, request, selected)
     for reference, expected in request['review_inputs']['sources'].items():

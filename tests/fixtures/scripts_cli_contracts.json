@@ -31,6 +31,7 @@
         "choices": [
           "select-persistence",
           "prepare-compact",
+          "bind-compact",
           "retain-compact",
           "promote-compact",
           "prepare",
@@ -320,6 +321,62 @@
                 "dest": "harness_source_file",
                 "nargs": null,
                 "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "bind-compact": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--prepared-input"
+                ],
+                "dest": "prepared_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
+                "nargs": null,
+                "required": true,
                 "default": null,
                 "type": null,
                 "choices": null,

@@ -134,14 +134,15 @@ class _Projection:
 
     def text(self, value, omit_commands=True):
         if self.new_policy:
-            value = safe_text(value, self.secrets)
+            # Keep secret/URL filtering, then apply the typed path policy below:
+            # known repository roots become relative and HTTP routes survive.
+            value = safe_text(value, self.secrets, redact_paths=False)
         for command in self.commands if omit_commands else ():
             value = value.replace(command, '[comprobación registrada; comando omitido]')
             value = value.replace(markdown.markdown_text(command), '[comprobación registrada; comando omitido]')
 
         def segment(value):
             value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
-            value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
             for root in self.private_roots:
                 if not root:
                     continue
@@ -155,6 +156,7 @@ class _Projection:
                 for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
                     value = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', value, flags=re.IGNORECASE)
                     value = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', value, flags=re.IGNORECASE)
+            value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'\\\\[^\s;|<>\)\]]+', '[ruta privada]', value)
             # Preserve HTTP business paths expressed without a host.
@@ -436,7 +438,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
             if retained_disclosure['input_identity'] != manifest.get('check_disclosure_input_identity'):
                 raise ValueError('disclosure input map was not registered before review work')
             selected.input_identity = manifest['check_disclosure_input_identity']
-    elif compact_mode and record.get('checks'):
+    elif (compact_mode or record.get('schema_version') == 13) and record.get('checks'):
         # No project-resource proof was pinned; disclose an explanation only.
         from ccr.workflow.builders import build_check_disclosure
         identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}

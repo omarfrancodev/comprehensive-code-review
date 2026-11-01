@@ -289,8 +289,8 @@ def _redact_encoded_values(text, spellings):
     return ''.join(result)
 
 
-def safe_text(value, secrets=()):
-    """Bounded privacy filter used across every new-policy prose field."""
+def safe_text(value, secrets=(), *, redact_paths=True):
+    """Filter private prose; typed projections may apply their own path policy."""
     if not isinstance(value, str):
         return value
     secrets = tuple(secret for secret in secrets if secret)
@@ -336,8 +336,9 @@ def safe_text(value, secrets=()):
     spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
     for index in range(0, len(spans), 2):
         spans[index] = redact(spans[index])
-        spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
-        spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
+        if redact_paths:
+            spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
+            spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
     for index in range(1, len(spans), 2):
         spans[index] = url(spans[index])
     # A literal credential can cross an original delimiter boundary. Redact it

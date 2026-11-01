@@ -18,6 +18,12 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 - Comprobar los límites del registro, contenido y metadatos compactos antes de persistir la intención de publicación, conservando la reserva utilizable cuando se rechaza un exceso.
 - Derivar la cobertura para reutilización de full13 desde sus grupos, conservando los gates de incertidumbre material y linaje ordinario de re-review.
+- Vincular el final compacto a su reserva antes de construir sidecars mediante `artifacts bind-compact`, conservando el hash del registro completo y los anclajes iniciales.
+
+#### Reportes y entregas
+
+- Conservar endpoints HTTP y ubicaciones relativas del repositorio en las entregas 13, manteniendo el filtro de secretos y rutas privadas.
+- Generar la explicación segura de checks también al entregar full13 sin disclosure seleccionado, sin acreditar comandos o recursos desconocidos.
 
 ## 3.5.0 — 2026-10-30
 

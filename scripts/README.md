@@ -1,7 +1,7 @@
 # Mapa de módulos de `scripts/ccr`
 
 - `scripts/ccr/workflow/persistence.py`: selección proporcional conservadora y decisión de promoción.
-- `scripts/ccr/archive/compact.py`: preparación, publicación y lectura verificadas de artifacts compactos.
+- `scripts/ccr/archive/compact.py`: preparación, binding previo a sidecars, publicación y lectura verificadas de artifacts compactos; `bind_compact_record(prepared, record)` devuelve una copia canónica sin publicar ni cambiar la entrada.
 - `scripts/ccr/archive/promotion.py`: intención durable y preparación de un sucesor completo.
 
 - `scripts/ccr/contracts/checks.py`: contrato puro de propósito de checks y recibos nuevos.

@@ -65,6 +65,9 @@ def main(argv=None, *, prog=None):
     compact_prepare.add_argument('--logical-scope-input')
     compact_prepare.add_argument('--harness-id')
     compact_prepare.add_argument('--harness-source-file')
+    compact_bind = commands.add_parser('bind-compact', help='Bind a compact final before building dependent sidecars; emit JSON')
+    for name in ('prepared-input', 'input'):
+        compact_bind.add_argument('--' + name, required=True)
     compact_retain = commands.add_parser('retain-compact', help='Publish a prepared compact review')
     for name in ('prepared-input', 'input', 'current-inputs', 'sources-input'):
         compact_retain.add_argument('--' + name, required=True)
@@ -242,6 +245,10 @@ def main(argv=None, *, prog=None):
                 profile_input=read_json(args.profile_input), skill_version=args.skill_version, harness=args.harness,
                 harness_id=args.harness_id,
                 harness_source=read_json(args.harness_source_file) if args.harness_source_file else None)
+        elif args.command == 'bind-compact':
+            from ccr.archive.compact import bind_compact_record
+            result = bind_compact_record(read_json(args.prepared_input),
+                read_json(args.input, max_bytes=CHECKPOINT_METADATA_LIMIT))
         elif args.command == 'retain-compact':
             from ccr.archive.compact import create_compact
             from ccr.reporting.render import render
