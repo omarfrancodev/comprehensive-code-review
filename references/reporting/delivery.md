@@ -17,6 +17,8 @@ The export omits logs, fixtures, reproductions, trace/closure and dependency tre
 
 For privacy, learn explicitly sensitive credential values from retained canonical check commands even without argv proof, including quoted values, authorization headers and credential URLs. This only authorizes redaction of repeated values in prose, evidence, collected context and portable JSON; it establishes no execution, resource or provenance claim and changes no source digest or input anchor. A secret in a structural identity makes delivery fail before writing, rather than rewriting that identity. Preserve the explanatory fallback when proof is absent.
 
+Inspect quoted script bodies such as `sh -c` and nested command text lexically, including shell separators; never execute, expand or evaluate them. Deduplicate inspected text and bound total lexical work by the original input size. If that bound is exceeded, refuse the projection rather than export with partially learned secrets. HTTP-list continuity retains editorial commas and Markdown delimiters without splitting private local filenames into exposed fragments; mixed lists still conceal non-HTTP absolute paths.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available

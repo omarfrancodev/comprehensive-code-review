@@ -183,18 +183,34 @@ def sensitive_values(sources):
 
 def _command_sensitive_values(command):
     """Learn redactions from retained text, never execution or resource proof."""
-    values = _argument_secrets(command)
-    for posix in (True, False):
-        lexer = shlex.shlex(command, posix=posix)
-        lexer.whitespace_split = True
-        lexer.commenters = ''
-        arguments = []
-        try:
-            arguments.extend(lexer)
-        except ValueError:
-            # A malformed tail must not discard credentials already observed.
-            pass
-        values.update(_argv_sensitive_values(arguments))
+    values, seen, pending = set(), set(), [command]
+    # Nested quoted scripts are text, not argv proof. Bound total lexical work
+    # by input size and fail closed rather than silently skipping inner secrets.
+    remaining = 16 * max(1, len(command))
+    while pending:
+        text = pending.pop()
+        if text in seen:
+            continue
+        if len(text) > remaining:
+            raise ValueError('retained command privacy analysis exceeds its work bound')
+        remaining -= len(text)
+        seen.add(text)
+        values.update(_argument_secrets(text))
+        for posix in (True, False):
+            lexer = shlex.shlex(text, posix=posix, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ''
+            arguments = []
+            try:
+                arguments.extend(lexer)
+            except ValueError:
+                # Preserve both prior arguments and an unterminated quoted body.
+                if lexer.token:
+                    arguments.append(lexer.token)
+            values.update(_argv_sensitive_values(arguments))
+            pending.extend(argument for argument in arguments
+                           if argument != text and any(char in argument for char in ' \t\r\n\'"')
+                           and SENSITIVE_URL_KEY.search(argument))
     return values | {re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', value) for value in values}
 
 

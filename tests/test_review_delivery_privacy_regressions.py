@@ -1,6 +1,7 @@
 """Retained commands teach redaction only; HTTP context distinguishes paths."""
 import json
 import copy
+import shlex
 import unittest
 
 import test_review_archive_full13 as full13
@@ -19,10 +20,10 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
     def snapshot(self, run):
         return {p.relative_to(run): p.read_bytes() for p in run.rglob('*') if p.is_file()}
 
-    def test_full13_fallback_redacts_loose_command_secrets_in_reports_json_and_context(self):
+    def assert_command_secret_redacted(self, command):
         secret = 'SYNTHETIC_COMMAND_TOKEN_6789'
         def update(record):
-            record['checks'][0]['command'] = 'probe --token ' + secret
+            record['checks'][0]['command'] = command
             record['checks'][0]['evidence'] = 'Observed ' + secret
             record['verdict_reason'] = 'Observed ' + secret
             record['coverage']['flows'] = ['Response carrying ' + secret]
@@ -41,6 +42,33 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                 portable = json.loads((target / 'review.json').read_bytes())
                 self.assertEqual(portable['checks'][0]['command'], EXPLANATION_COMMAND)
                 self.assertIn('[omitido]', portable['checks'][0]['evidence'])
+            self.assertEqual(before, self.snapshot(run))
+
+    def test_full13_fallback_redacts_loose_command_secrets_in_reports_json_and_context(self):
+        self.assert_command_secret_redacted('probe --token SYNTHETIC_COMMAND_TOKEN_6789')
+
+    def test_full13_fallback_redacts_secret_inside_a_quoted_shell_script(self):
+        self.assert_command_secret_redacted("sh -c 'probe --token SYNTHETIC_COMMAND_TOKEN_6789; printf done'")
+
+    def test_http_lists_preserve_comma_delimited_endpoints_in_both_deliveries(self):
+        prose = ('GET /api/orders, /v2/orders y /v3/orders; '
+                 'Archivo local /api/private,secret.key')
+        def update(record):
+            record['verdict_reason'] = prose
+            record['coverage']['flows'] = [prose]
+        case, run = self.complete_archive(record_update=update)
+        before = self.snapshot(run)
+        context = {'pending': [{'text': prose, 'references': ['retained-review'], 'version': 'retained-head'}]}
+        for mode in ('full', 'brief'):
+            target = delivery.deliver(run, mode, case.repo, case.root / mode, context=context)
+            for name in ('contexto.md', 'informe.md' if mode == 'full' else 'resumen.md'):
+                text = (target / name).read_text(encoding='utf-8')
+                for endpoint in ('/api/orders', '/v2/orders', '/v3/orders'):
+                    self.assertIn(endpoint, text)
+                self.assertNotIn('secret.key', text)
+            if mode == 'full':
+                portable = json.loads((target / 'review.json').read_bytes())
+                self.assertIn('/v2/orders', portable['verdict_reason'])
             self.assertEqual(before, self.snapshot(run))
 
     def test_local_api_and_versioned_paths_are_private_while_http_routes_survive(self):
@@ -77,6 +105,12 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                 "probe --authorization 'Bearer " + secret + "'",
                 "probe -H 'Authorization: Bearer " + secret + "'",
                 'probe https://example.test/?token=' + secret,
+                "sh -c 'probe --token " + secret + "'",
+                "sh -c 'probe --token " + secret + "; printf done'",
+                'bash -lc "probe --password=\'' + secret + '\'"',
+                shlex.join(['sh', '-c', shlex.join(['sh', '-c', 'probe --token ' + secret])]),
+                'cmd /c "probe --token ' + secret + '"',
+                "sh -c 'API_KEY=" + secret + " probe'",
                 'probe --token ' + secret + ' "unfinished'):
             with self.subTest(command=command):
                 record = record13()
@@ -98,9 +132,16 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                 private = '/v2/' if '/v2/' in text else '/api/'
                 self.assertNotIn(private, result)
         for text in ('GET /api/orders.json', 'Endpoint /v2/orders', 'HTTP route /api/orders',
+                     'GET /api/orders, /v2/orders, /v3/orders',
+                     'GET `/api/orders`, `/v2/orders`', 'GET "/api/orders", "/v2/orders"',
+                     'GET /api/orders,/v2/orders',
                      'Ruta HTTP /api/orders y /v2/orders'):
             self.assertEqual(projection.text(text), text)
         self.assertEqual(projection.text('Archivo /known/repo/src/api.py'), 'Archivo src/api.py')
+        self.assertEqual(projection.text('GET /api/orders,/srv/private/file,/v2/orders'),
+                         'GET /api/orders,[ruta privada],/v2/orders')
+        self.assertEqual(projection.text('GET /api/orders, /srv/private/file, /v2/orders'),
+                         'GET /api/orders, [ruta privada], /v2/orders')
 
     def test_a_secret_in_a_structural_identity_is_refused_instead_of_exported(self):
         record = record13()

@@ -171,9 +171,23 @@ class _Projection:
                     (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''', prefix)
                 continuation = (last_http_end is not None and re.fullmatch(
                     r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
-                if re.match(r'^/(?:api|v[0-9]+)(?:/|$)', match.group()) and (explicit or continuation):
-                    last_http_end = match.end()
-                    return match.group()
+                if explicit or continuation:
+                    # Keep editorial separators available to the next match;
+                    # private paths still get redacted as a whole, commas too.
+                    parts = re.split(r'''(,)(?=[`'"]*/)''', match.group())
+                    projected, offset = [], match.start()
+                    for part in parts:
+                        if part == ',':
+                            projected.append(part)
+                        elif re.match(r'^/(?:api|v[0-9]+)(?:/|$)', part.lstrip("`'\"")):
+                            projected.append(part)
+                            last_http_end = offset + len(part.rstrip(",`'\""))
+                        else:
+                            core = part.rstrip(",`'\"")
+                            projected.append('[ruta privada]' + part[len(core):])
+                            last_http_end = offset + len(core)
+                        offset += len(part)
+                    return ''.join(projected)
                 last_http_end = None
                 return '[ruta privada]'
             value = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>\)\]]+', posix_path, value)
