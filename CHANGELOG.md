@@ -12,6 +12,13 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Seleccionar automáticamente persistencia compacta o completa según los hechos observados; mantener la entrega breve o completa como decisión independiente.
 - Añadir lectura, validación, entrega y promoción de artifacts compactos, conservando los contratos publicados.
 
+### Fixed
+
+#### Artefactos y contratos
+
+- Comprobar los límites del registro, contenido y metadatos compactos antes de persistir la intención de publicación, conservando la reserva utilizable cuando se rechaza un exceso.
+- Derivar la cobertura para reutilización de full13 desde sus grupos, conservando los gates de incertidumbre material y linaje ordinario de re-review.
+
 ## 3.5.0 — 2026-10-30
 
 ### Added

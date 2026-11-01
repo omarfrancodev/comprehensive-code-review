@@ -48,7 +48,7 @@ class ReuseFlowTests(unittest.TestCase):
         return dict(current_inputs=inputs,effective_changes=descriptor,current_materials=material_map,current_sources=sources)
 
     def archive(self,guided=True,complete=True,kind='review',identities=None,
-                capture=None,final_update=None,previous_run=None,context_files=None):
+                capture=None,final_update=None,previous_run=None,context_files=None,schema13=False):
         capture=capture or self.capture()
         sources=copy.deepcopy(capture['current_sources'])
         inputs=copy.deepcopy(capture['current_inputs'])
@@ -65,11 +65,24 @@ class ReuseFlowTests(unittest.TestCase):
         run=Path(archive_tests.artifacts.prepare(self.repo,self.scope,'3.1.0','codex',
             output_root=self.output,profile_input=selection_input(),current_inputs=inputs,previous_run=previous_run))
         if complete:
-            if kind!='review' or final_update is not None:
+            if kind!='review' or final_update is not None or schema13:
                 final=self.read(self.final)
                 final['presentation']['kind']=kind
                 if final_update is not None:
                     final_update(final)
+                if schema13:
+                    from ccr.contracts.dimensions import DIMENSIONS
+                    final['schema_version']=13
+                    final['coverage']['evidence']=[dict(id='EV001',kind='static',detail='Inspected flow',check_id=None,reference=None)]
+                    final['coverage']['areas']=[dict(area=row['area'],
+                        applicability='not_applicable' if row['status']=='not_applicable' else 'applicable',
+                        applicability_reason=row['details'] if row['status']=='not_applicable' else None,
+                        groups=[dict(ids=list(DIMENSIONS[row['area']]),status=row['status'],
+                            reason=None if row['status']=='covered' else row['details'],
+                            evidence_ids=['EV001'] if row['status']=='covered' else [],
+                            finding_ids=row['finding_ids'],material=row['material'])]) for row in final['coverage']['areas']]
+                    for check in final['checks']:
+                        check['purpose']='Verify the reviewed flow'
                 self.final=self.write('partial-final.json',final)
             paths=[]
             for ref,raw in sources.items():
@@ -209,7 +222,7 @@ class ReuseFlowTests(unittest.TestCase):
         self.assertEqual(self.assess()['action'],'offer_choice')
 
     def linked_rereview(self, parent_gap=False, changed_y=False, empty_commit=False,
-                        rebase=False, claimed_parent_id=None):
+                        rebase=False, claimed_parent_id=None, schema13=False):
         from test_review_effective_changes import b64
         template=self.read(self.final)
         if changed_y:
@@ -230,7 +243,7 @@ class ReuseFlowTests(unittest.TestCase):
                 record['coverage']['areas'][1].update(status='partial',material=True,
                     details='Independent flow Y remains pending')
                 record['verdict']='insufficient_evidence'
-        parent=self.archive(final_update=ordinary,context_files=[dict(side='head',path_b64=b64(name))
+        parent=self.archive(final_update=ordinary,schema13=schema13,context_files=[dict(side='head',path_b64=b64(name))
             for name in (b'code.txt',b'flow-y.py')])
         parent_record=self.read(parent/'review.json')
         if changed_y:
@@ -259,7 +272,7 @@ class ReuseFlowTests(unittest.TestCase):
             for row in record['coverage']['areas']:
                 row.update(status='covered',material=False,details='Inspected within flow X follow-up')
         child=self.archive(kind='rereview',previous_run=parent,final_update=followup,
-            context_files=[dict(side='head',path_b64=b64(b'code.txt'))])
+            schema13=schema13,context_files=[dict(side='head',path_b64=b64(b'code.txt'))])
         self.assertEqual(self.read(child/'cierre.json')['previous_run'],str(parent))
         self.assertEqual(self.read(child/'review.json')['previous_reviews'][0]['review_id'],
                          claimed_parent_id or parent_record['review_id'])
@@ -363,6 +376,17 @@ class ReuseFlowTests(unittest.TestCase):
         self.assertIn(CONTEXT,self.read(run/'cierre.json')['hashes'])
         result=self.assess(capture)
         self.assertEqual(result['action'],'offer_choice',result)
+
+    def test_full13_ordinary_result_remains_reusable(self):
+        run=self.archive(schema13=True)
+        self.assertEqual(self.read(run/'review.json')['schema_version'],13)
+        self.assertEqual(self.assess()['action'],'offer_choice')
+
+    def test_rereview_inherits_complete_full13_ordinary_coverage(self):
+        parent,child=self.linked_rereview(schema13=True)
+        self.assertEqual(self.read(parent/'review.json')['schema_version'],13)
+        self.assertEqual(self.read(child/'review.json')['schema_version'],13)
+        self.assertEqual(self.assess()['action'],'offer_choice')
 
 
 if __name__=='__main__':

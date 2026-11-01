@@ -171,6 +171,9 @@ def coverage_reuse_issue(record, *, ordinary_coverage_verified=False):
     if kind not in ('review','rereview') or coverage.get('adequate') is not True or coverage.get('stale') is not False:
         return dict(code='previous_coverage_incomplete',detail='Previous coverage is unknown, inadequate or stale.')
     areas=coverage.get('areas')
+    if record.get('schema_version') == 13 and isinstance(areas, list):
+        from ccr.contracts.dimensions import summarize_area13
+        areas = [dict(area=area['area'], **summarize_area13(area)) for area in areas]
     if (not isinstance(areas,list) or len(areas)!=5
             or {r.get('area') for r in areas}!=set('ABCDE')
             or any(r.get('material') is True or r.get('status') not in ('covered','not_applicable') for r in areas)

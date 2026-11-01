@@ -23,6 +23,23 @@ from ccr.shared.json_io import atomic_write, read_bounded, read_json
 from ccr.shared.paths import safe_path
 from ccr.workflow.inputs import normalize_inputs
 
+RECORD_BYTES_LIMIT = 16 * 1024 * 1024
+CONTENT_BYTES_LIMIT = 80 * 1024 * 1024
+METADATA_BYTES_LIMIT = 1024 * 1024
+EVIDENCE_BYTES_LIMIT = 64 * 1024 * 1024
+
+
+def _validate_content_sizes(sizes):
+    """Apply the same serialized-output limits before publishing and reading."""
+    if not {'review.json', 'informe.md'}.issubset(sizes) or len(sizes) > 66:
+        raise ValueError('compact file inventory is invalid')
+    if sizes['review.json'] > RECORD_BYTES_LIMIT:
+        raise ValueError('compact record exceeds size limit')
+    if sum(sizes.values()) > CONTENT_BYTES_LIMIT:
+        raise ValueError('compact content exceeds aggregate size limit')
+    if sum(size for name, size in sizes.items() if name.startswith('evidence/')) > EVIDENCE_BYTES_LIMIT:
+        raise ValueError('compact evidence exceeds size limit')
+
 
 def _digest(value):
     return hashlib.sha256(compact_bytes(value)).hexdigest()
@@ -194,7 +211,7 @@ def _source_bytes(sources):
         if fragment is not None or not path.startswith('evidence/') or not isinstance(data, bytes):
             raise ValueError('compact source must be selected evidence bytes without fragments')
         total += len(data)
-        if total > 64 * 1024 * 1024:
+        if total > EVIDENCE_BYTES_LIMIT:
             raise ValueError('compact evidence exceeds 64 MiB')
         result[path] = data
     return result
@@ -412,6 +429,7 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
     if not isinstance(report, str) or report not in (render(record), canonical_report):
         raise ValueError('compact report does not match the canonical result')
     files = {'review.json': archive_bytes(record), 'informe.md': canonical_report.encode('utf-8'), **selected}
+    _validate_content_sizes({name: len(data) for name, data in files.items()})
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
     manifest = {'schema_version': 1, 'mode': 'compact', 'state': 'complete',
                 'request': request, 'logical_scope': prepared['logical_scope'],
@@ -422,6 +440,8 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
               'run_dir': prepared['run_dir'], 'manifest_sha256': hashlib.sha256(manifest_data).hexdigest()}
     files['manifest.json'] = manifest_data
     files['.review-ownership.json'] = archive_bytes(marker)
+    if any(len(files[name]) > METADATA_BYTES_LIMIT for name in ('manifest.json', '.review-ownership.json')):
+        raise ValueError('compact metadata exceeds size limit')
     if target.exists():
         retained = read_compact(target)
         if retained['manifest'] != manifest:
@@ -458,8 +478,8 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
 def read_compact(run_dir):
     """Validate a compact artifact without repairing or changing it."""
     run = safe_path(run_dir)
-    marker = read_json(run / '.review-ownership.json', max_bytes=1024 * 1024)
-    manifest_data = read_bounded(run / 'manifest.json', 1024 * 1024)
+    marker = read_json(run / '.review-ownership.json', max_bytes=METADATA_BYTES_LIMIT)
+    manifest_data = read_bounded(run / 'manifest.json', METADATA_BYTES_LIMIT)
     if (not isinstance(marker, dict)
             or set(marker) != {'schema_version', 'mode', 'run_id', 'run_dir', 'manifest_sha256'}
             or type(marker.get('schema_version')) is not int or marker['schema_version'] != 1
@@ -486,22 +506,24 @@ def read_compact(run_dir):
     hashes = manifest.get('hashes')
     if not isinstance(hashes, dict) or not {'review.json', 'informe.md'}.issubset(hashes) or len(hashes) > 66:
         raise ValueError('compact file inventory is invalid')
+    for name in hashes:
+        if name not in ('review.json', 'informe.md'):
+            _source_bytes({name: b''})
     _validate_payload_inventory(run, set(hashes) | {'manifest.json', '.review-ownership.json'})
+    _validate_content_sizes({name: safe_path(run / name).stat().st_size for name in hashes})
     content = {}
     total = 0
     for name, digest in hashes.items():
-        if name not in ('review.json', 'informe.md'):
-            _source_bytes({name: b''})
         path = safe_path(run / name)
         size = path.stat().st_size
         total += size
-        if total > 80 * 1024 * 1024 or not path.is_file() or not isinstance(digest, str):
+        if total > CONTENT_BYTES_LIMIT or not path.is_file() or not isinstance(digest, str):
             raise ValueError('compact file exceeds bounds or is not regular')
-        data = read_bounded(path, min(80 * 1024 * 1024, 80 * 1024 * 1024 - total + size))
+        data = read_bounded(path, CONTENT_BYTES_LIMIT - total + size)
         if hashlib.sha256(data).hexdigest() != digest:
             raise ValueError('compact file hash differs')
         content[name] = data
-    if len(content['review.json']) > 16 * 1024 * 1024:
+    if len(content['review.json']) > RECORD_BYTES_LIMIT:
         raise ValueError('compact record exceeds size limit')
     record = _decode_json(content['review.json'])
     _validate_compact_record(record)
