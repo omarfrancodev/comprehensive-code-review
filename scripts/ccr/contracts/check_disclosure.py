@@ -153,6 +153,21 @@ def _argument_secrets(argument):
     return values
 
 
+def _argv_sensitive_values(argv):
+    values = set()
+    secret_next = False
+    for argument in argv if isinstance(argv, list) else []:
+        if not isinstance(argument, str):
+            continue
+        values.update(_argument_secrets(argument))
+        if secret_next:
+            values.add(argument); secret_next = False
+        if _secret_argument(argument):
+            if '=' in argument: values.add(argument.split('=', 1)[1])
+            else: secret_next = True
+    return {value for value in values if value}
+
+
 def sensitive_values(sources):
     values = set()
     for raw in sources.values():
@@ -162,22 +177,31 @@ def sensitive_values(sources):
             continue
         if not isinstance(item, dict):
             continue
-        argv = item.get('argv', [])
-        secret_next = False
-        for argument in argv if isinstance(argv, list) else []:
-            if not isinstance(argument, str):
-                continue
-            values.update(_argument_secrets(argument))
-            if secret_next:
-                values.add(argument); secret_next = False
-            if _secret_argument(argument):
-                if '=' in argument: values.add(argument.split('=', 1)[1])
-                else: secret_next = True
-    return {value for value in values if value}
+        values.update(_argv_sensitive_values(item.get('argv', [])))
+    return values
+
+
+def _command_sensitive_values(command):
+    """Learn redactions from retained text, never execution or resource proof."""
+    values = _argument_secrets(command)
+    for posix in (True, False):
+        lexer = shlex.shlex(command, posix=posix)
+        lexer.whitespace_split = True
+        lexer.commenters = ''
+        arguments = []
+        try:
+            arguments.extend(lexer)
+        except ValueError:
+            # A malformed tail must not discard credentials already observed.
+            pass
+        values.update(_argv_sensitive_values(arguments))
+    return values | {re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', value) for value in values}
 
 
 def private_values(record, view, sources):
     values = sensitive_values(sources)
+    for check in record.get('checks', []):
+        values.update(_command_sensitive_values(check['command']))
     rows = {row['id']: row for row in view['checks']} if view else {}
     for raw in sources.values():
         try:

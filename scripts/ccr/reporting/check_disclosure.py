@@ -1,5 +1,5 @@
 """One proof-validated public check view for every audience."""
-from ccr.contracts.check_disclosure import (canonical, digest, safe_text, sensitive_values,
+from ccr.contracts.check_disclosure import (canonical, digest, safe_text, private_values,
                                            validate_check_disclosure)
 
 
@@ -12,9 +12,9 @@ def project_check_disclosure(record, disclosure, sources, input_identity):
         import json
         if json.loads(raw) != disclosure:
             raise ValueError('selected check disclosure bytes differ from the supplied sidecar')
-    secrets = sensitive_values(sources)
+    secrets = private_values(record, None, sources)
     return dict(source_sha256=disclosure['source_sha256'], check_disclosure_sha256=digest(raw if raw is not None else canonical(disclosure)),
-        checks=[dict(id=row['id'], mode=row['mode'], command=row['command'],
+        checks=[dict(id=row['id'], mode=row['mode'], command=safe_text(row['command'], secrets),
                      resources=[safe_text(resource['path'], secrets) for resource in row['resources']],
                      explanation=safe_text(row['explanation'], secrets)) for row in disclosure['checks']])
 

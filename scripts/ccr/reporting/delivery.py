@@ -126,6 +126,7 @@ class _Projection:
             r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
+                or (self.secrets and safe_text(value, self.secrets, redact_paths=False) != value)
                 or any(_public_url(span) and self.public_url(span) is None for span in spans)
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
@@ -159,9 +160,23 @@ class _Projection:
             value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'\\\\[^\s;|<>\)\]]+', '[ruta privada]', value)
-            # Preserve HTTP business paths expressed without a host.
-            value = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>\)\]]+',
-                           lambda match: match.group() if re.match(r'^/(?:api|v[0-9]+)(?:/|$)', match.group()) else '[ruta privada]', value)
+            # A prefix alone cannot distinguish a local file from an endpoint.
+            # Preserve explicit HTTP routes and adjacent lists of those routes.
+            last_http_end = None
+            def posix_path(match):
+                nonlocal last_http_end
+                prefix = value[max(0, match.start() - 128):match.start()]
+                explicit = re.search(
+                    r'''(?ix)(?<![\w-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
+                    (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''', prefix)
+                continuation = (last_http_end is not None and re.fullmatch(
+                    r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
+                if re.match(r'^/(?:api|v[0-9]+)(?:/|$)', match.group()) and (explicit or continuation):
+                    last_http_end = match.end()
+                    return match.group()
+                last_http_end = None
+                return '[ruta privada]'
+            value = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>\)\]]+', posix_path, value)
             value = re.sub(r'(?<![\w/\\])(?:evidence|_?archive)[/\\][^\s;|<>\)\]]+',
                            lambda match: self.retained(match.group()), value)
             return value

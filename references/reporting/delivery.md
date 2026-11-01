@@ -15,6 +15,10 @@ Default root is docs/ccr/reviews in the explicitly identified persistent project
 
 The export omits logs, fixtures, reproductions, trace/closure and dependency trees. Those remain in the internal archive. Avoid private absolute paths, environment commands and links that require undistributed evidence files. Preserve repository-relative code locations and useful verified URLs. The portable JSON is identified as a projection through the receipt; unavailable private source references remain explicitly withheld instead of becoming invented URLs or verification results. It cannot replace the original record for archive retention/closure.
 
+For privacy, learn explicitly sensitive credential values from retained canonical check commands even without argv proof, including quoted values, authorization headers and credential URLs. This only authorizes redaction of repeated values in prose, evidence, collected context and portable JSON; it establishes no execution, resource or provenance claim and changes no source digest or input anchor. A secret in a structural identity makes delivery fail before writing, rather than rewriting that identity. Preserve the explanatory fallback when proof is absent.
+
+A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
+
 ## Additional context, when available
 
 Use only facts already collected in the review or supplied continuation context; create no discovery/verification agents or additional inspection pass for these sections.

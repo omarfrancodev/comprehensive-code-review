@@ -22,8 +22,15 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Reportes y entregas
 
-- Conservar endpoints HTTP y ubicaciones relativas del repositorio en las entregas 13, manteniendo el filtro de secretos y rutas privadas.
+- Conservar endpoints HTTP y ubicaciones relativas del repositorio en las entregas 13.
 - Generar la explicación segura de checks también al entregar full13 sin disclosure seleccionado, sin acreditar comandos o recursos desconocidos.
+
+### Security
+
+#### Reportes y entregas
+
+- Ocultar copias de credenciales explícitas del comando retenido aun sin prueba argv, sin acreditar comandos o modificar fuentes; rechazar identidades estructurales sensibles antes de exportar.
+- Exigir contexto HTTP para conservar rutas con prefijos `/api` o `/vN`, evitando exponer archivos locales con esos nombres en prosa, contexto y JSON portable.
 
 ## 3.5.0 — 2026-10-30
 
