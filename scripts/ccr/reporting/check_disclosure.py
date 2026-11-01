@@ -21,8 +21,8 @@ def project_check_disclosure(record, disclosure, sources, input_identity):
 
 def disclosure_view(record, context, sources):
     if context is None:
-        if record.get('schema_version') == 12 and record.get('checks'):
-            raise ValueError('check disclosure context required for schema 12 checks')
+        if record.get('schema_version') in (12, 13) and record.get('checks'):
+            raise ValueError('check disclosure context required for schema 12/13 checks')
         return None
     sources = sources or {}
     identity = context.get('input_identity', {})

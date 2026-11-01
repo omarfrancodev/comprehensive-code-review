@@ -5,10 +5,22 @@ from ccr.workflow.profiles import (
 )
 
 
-PROFILE_SCHEMAS = (10, 11, 12)
-NEW_TOPOLOGY_SCHEMAS = (12,)
+PROFILE_SCHEMAS = (10, 11, 12, 13)
+NEW_TOPOLOGY_SCHEMAS = (12, 13)
 NEW_PROFILE_LIMITS = {'focused': (1, 1), 'standard': (1, 1),
                       'deep': (2, 2), 'extended': (3, 5)}
+
+
+def _material_coverage(coverage, schema_version):
+    material = any(isinstance(row, dict) and row.get('material') is True
+                   for key in ('limitations', 'areas')
+                   for row in (coverage.get(key) if isinstance(coverage.get(key), list) else []))
+    if schema_version == 13 and isinstance(coverage.get('areas'), list):
+        material = material or any(
+            group.get('material') is True
+            for area in coverage['areas'] if isinstance(area, dict) and isinstance(area.get('groups'), list)
+            for group in area['groups'] if isinstance(group, dict))
+    return material
 
 
 def verification_status(verification, observed, missing):
@@ -131,9 +143,7 @@ def validate_execution(record):
     independent_profile = profile in ('deep', 'extended')
     substantive = any(isinstance(row, dict) and row.get('type') == 'code' and row.get('status') in ('confirmed', 'unresolved')
                       for row in (record.get('findings') if isinstance(record.get('findings'), list) else []))
-    material = any(isinstance(row, dict) and row.get('material') is True
-                   for key in ('limitations', 'areas') for row in (coverage.get(key) or [])
-                   if isinstance(coverage.get(key), list))
+    material = _material_coverage(coverage, schema_version)
     needs_fresh = independent_profile or profile == 'standard' and (substantive or material)
     needs_verifier = profile == 'focused' or needs_fresh or coverage.get('verification') not in ('skipped', 'unavailable')
     if schema_version in PROFILE_SCHEMAS:
@@ -422,9 +432,7 @@ def validate_execution_sources(record, context, trace_events, retained_reference
         coverage_data = record.get('coverage') if isinstance(record.get('coverage'), dict) else {}
         substantive = any(isinstance(row, dict) and row.get('type') == 'code'
                          and row.get('status') in ('confirmed', 'unresolved') for row in findings_rows)
-        material = any(isinstance(row, dict) and row.get('material') is True
-                       for key in ('limitations', 'areas')
-                       for row in (coverage_data.get(key) if isinstance(coverage_data.get(key), list) else []))
+        material = _material_coverage(coverage_data, record.get('schema_version'))
         final_discoveries = [row for row in active_plan if row.get('role') == 'discovery']
         discovery_sequences = []
         for assignment in final_discoveries:

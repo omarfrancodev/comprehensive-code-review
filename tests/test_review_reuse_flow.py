@@ -85,6 +85,14 @@ class ReuseFlowTests(unittest.TestCase):
         capture=capture or self.capture()
         return assess_reuse(self.repo,capture['current_inputs']['scope'],archive_root=self.output,**capture)
 
+    def test_compact_candidate_never_implies_full_inventory_equivalence(self):
+        with patch.object(reuse, 'latest_verified_candidate', return_value={
+                'status': 'selected', 'selected': {'artifact_mode': 'compact', 'run_dir': 'compact'}}):
+            result = self.assess()
+        self.assertEqual(result['action'], 'new_review')
+        self.assertEqual(result['code_equivalence'], 'unknown')
+        self.assertTrue(any('Compact result' in row['detail'] for row in result['reasons']))
+
     def test_empty_commit_reuses_verified_result_without_relabeling_checks(self):
         run=self.archive()
         before={p.relative_to(run):p.read_bytes() for p in run.rglob('*') if p.is_file()}

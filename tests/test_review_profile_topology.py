@@ -99,7 +99,7 @@ class ProfileTopologyTests(unittest.TestCase):
         self.assertEqual(sum(len(area['dimensions']) for area in record['coverage']['areas']), 27)
         self.assertTrue(all(check['purpose'] for check in record['checks']))
         unsupported = copy.deepcopy(record)
-        unsupported['schema_version'] = 13
+        unsupported['schema_version'] = 14
         self.assertTrue(any('unsupported version' in error for error in review.validate(unsupported)))
 
     def test_schema12_rejects_missing_purpose_and_dimension(self):

@@ -51,6 +51,10 @@ class _Projection:
         coverage.areas[].finding_ids[] coverage.limitations[].kind
         coverage.areas[].dimensions[].id coverage.areas[].dimensions[].status
         coverage.areas[].dimensions[].finding_ids[]
+        coverage.areas[].applicability coverage.areas[].groups[].ids[]
+        coverage.areas[].groups[].status coverage.areas[].groups[].evidence_ids[]
+        coverage.areas[].groups[].finding_ids[] coverage.evidence[].id
+        coverage.evidence[].kind coverage.evidence[].check_id
         coverage.execution.selection_source coverage.execution.status
         coverage.execution.plan[].id coverage.execution.plan[].role
         coverage.execution.plan[].selection_id coverage.execution.plan[].superseded_by
@@ -65,6 +69,7 @@ class _Projection:
         coverage.execution.fallbacks[].reason responsible.name responsible.username
         change_authors[].name change_authors[].username change_authors[].commits[]
         presentation.kind description.identity previous_reviews[].review_id
+        compact_identity.inputs_sha256 compact_identity.logical_scope_identity compact_identity.created_at
         grandfathered_ids.findings[] grandfathered_ids.checks[]
         rereview[].id rereview[].status rereview[].previous_review_id
         rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
@@ -74,6 +79,7 @@ class _Projection:
         checks[].purpose checks[].evidence checks[].reuse_reason checks[].rerun_reason
         coverage.flows[] coverage.limitations[].detail coverage.limitations[].public_summary
         coverage.areas[].details coverage.areas[].dimensions[].details coverage.execution.fallbacks[].detail
+        coverage.areas[].applicability_reason coverage.areas[].groups[].reason coverage.evidence[].detail
         coverage.execution.profile_history[].reason coverage.execution.profile_history[].authority
         responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
@@ -81,6 +87,7 @@ class _Projection:
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None, check_disclosure_sources=None):
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+        self.new_policy = record.get('schema_version') == 13 or self.disclosure is not None
         self.disclosure_rows = {row['id']: row for row in self.disclosure['checks']} if self.disclosure else {}
         self.check_ids = [check['id'] for check in record['checks']]
         self.secrets = private_values(record, self.disclosure, check_disclosure_sources or {})
@@ -126,7 +133,7 @@ class _Projection:
         return value
 
     def text(self, value, omit_commands=True):
-        if self.disclosure:
+        if self.new_policy:
             value = safe_text(value, self.secrets)
         for command in self.commands if omit_commands else ():
             value = value.replace(command, '[comprobación registrada; comando omitido]')
@@ -265,7 +272,7 @@ def _brief(record, *, evidence_by_finding=None):
              + markdown.markdown_text(scope['head'] or scope['snapshot']),
              '- **Verificación:** ' + validation.VERIFICATION[record['coverage']['verification']],
              '- **Cobertura obsoleta:** ' + ('sí' if record['coverage']['stale'] else 'no')]
-    if record['schema_version'] in (8, 9, 10, 11, 12):
+    if record['schema_version'] in (8, 9, 10, 11, 12, 13):
         status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
         lines.append('- **Ejecución del perfil:** ' + status)
     if scope['snapshot']:
@@ -301,7 +308,7 @@ def _brief(record, *, evidence_by_finding=None):
         lines.append('- **' + check['id'] + '** · ' + validation.CHECK_STATUS[check['status']] + ' · versión: '
                      + markdown.markdown_text(check['revision']))
         lines.append('  - **Propósito:** ' + markdown.markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
-        if record['schema_version'] == 12:
+        if record['schema_version'] in (12, 13):
             lines.append('  - **Comando saneado:** ' + markdown.markdown_text(check['command']))
         lines.append('  - **Resultado:** ' + markdown.markdown_text(check['evidence'] or 'Sin ejecución'))
         if check.get('reference'):
@@ -322,7 +329,11 @@ def _brief(record, *, evidence_by_finding=None):
     uncertainties = ['**' + item['id'] + '**: ' + markdown.markdown_text(item['title'] + ' · ' + item['scenario'])
                      for item in record['findings'] if item['status'] == 'unresolved']
     uncertainties.extend(markdown.markdown_text(item['detail']) for item in record['coverage']['limitations'])
-    uncertainties.extend(markdown.markdown_text(row['details']) for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'})
+    coverage_areas = record['coverage'].get('areas', [])
+    if record['schema_version'] == 13:
+        from ccr.contracts.dimensions import display_areas13
+        coverage_areas = display_areas13(coverage_areas)
+    uncertainties.extend(markdown.markdown_text(row['details']) for row in coverage_areas if row['status'] in {'partial', 'not_evaluated'})
     uncertainties.extend(markdown.markdown_text(item) for item in record['reservations'])
     if uncertainties:
         lines.extend(['', '### Incertidumbres y reservas', ''])
@@ -348,8 +359,21 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
         raise ValueError('an explicit delivery full|brief is required')
     validate_archive(run_dir, require_retained=True)
     run = safe_path(run_dir)
-    manifest_bytes = (run / 'cierre.json').read_bytes()
-    manifest = read_json(run / 'cierre.json')
+    compact_mode = (run / 'manifest.json').is_file()
+    manifest_path = run / ('manifest.json' if compact_mode else 'cierre.json')
+    manifest_bytes = manifest_path.read_bytes()
+    compact_sources = None
+    if compact_mode:
+        from ccr.archive.compact import read_compact
+        compact = read_compact(run)
+        compact_manifest = compact['manifest']
+        request = compact_manifest['request']
+        compact_sources = compact['sources']
+        manifest = {'repository_identity': request['repository_identity'],
+                    'archive_root': request['archive_root'], 'run_id': compact_manifest['run_id'],
+                    'hashes': compact_manifest['hashes'], 'temporary_paths': []}
+    else:
+        manifest = read_json(manifest_path)
     project = safe_path(project_root)
     selected = Path(output_root) if output_root is not None else project / 'docs' / 'ccr' / 'reviews'
     if not selected.is_absolute() and selected.drive:
@@ -369,7 +393,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     source = (run / 'review.json').read_bytes()
     record = read_json(run / 'review.json')
     source_hash = _hash(source)
-    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else manifest.get('run_id', run.name.rpartition('-')[2])
+    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else manifest.get('run_id', run.name.rpartition('-')[2])
     if not isinstance(identifier, str) or not re.fullmatch(r'(?:CR-)?[0-9a-f]{20}', identifier):
         raise ValueError('known review/run identity required')
     destination = safe_path(root / run.parent.name / identifier)
@@ -377,12 +401,22 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
         raise ValueError('delivery destination overlaps its retained archive or temporary resources')
     if destination.exists():
         raise ValueError('delivery destination already exists')
-    from ccr.archive.evidence import selected_source_bytes
+    from ccr.archive.evidence import selected_source_bytes as archive_source_bytes
+    def selected_source_bytes(source_run, source_manifest, overlay, name):
+        if compact_sources is not None:
+            if name not in compact_sources:
+                raise ValueError('compact retained source is unavailable: ' + name)
+            return compact_sources[name]
+        return archive_source_bytes(source_run, source_manifest, overlay, name)
     from ccr.archive.trace import NAME as TRACE_NAME
     from ccr.reporting import models
     retained_context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json')) if 'evidence/context.json' in manifest['hashes'] else {}
+    if compact_mode:
+        manifest['harness_id'] = request['producer']['harness_id']
     from ccr.execution.disclosure import SelectedDisclosureSources
     selected = SelectedDisclosureSources(check_disclosure_sources or {})
+    if compact_sources is not None:
+        selected.update(compact_sources)
     reference = retained_context.get('check_disclosure_reference')
     if reference is not None:
         if reference != 'evidence/check-disclosure.json':
@@ -398,11 +432,18 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
                     selected[row[field]] = selected_source_bytes(run, manifest, {}, row[field])
         if retained_disclosure['input_identity'] != retained_context.get('check_disclosure_input_identity'):
             raise ValueError('disclosure input identity differs from retained context')
-        if retained_disclosure['input_identity'].get('resource_manifest_sha256') is not None:
+        if retained_disclosure['input_identity'].get('resource_manifest_sha256') is not None and not compact_mode:
             if retained_disclosure['input_identity'] != manifest.get('check_disclosure_input_identity'):
                 raise ValueError('disclosure input map was not registered before review work')
             selected.input_identity = manifest['check_disclosure_input_identity']
-    events = [json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()] if TRACE_NAME in manifest['hashes'] else None
+    elif compact_mode and record.get('checks'):
+        # No project-resource proof was pinned; disclose an explanation only.
+        from ccr.workflow.builders import build_check_disclosure
+        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+        check_disclosure_context = build_check_disclosure(record, identity, {}, selected)
+    events = ([json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()]
+              if TRACE_NAME in manifest['hashes'] else
+              json.loads(compact_sources['evidence/compact-execution.json']) if compact_mode else None)
     retained_models = models.model_usage_context(retained_context,
         lambda name: selected_source_bytes(run, manifest, {}, name), manifest, record=record, events=events)
     if model_usage_context is not None and model_usage_context != retained_models:
@@ -423,7 +464,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     errors = review_contract.validate(portable)
     if errors:
         raise ValueError('portable record is invalid: ' + '; '.join(errors))
-    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'identidad de archivo ' + identifier
+    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else 'identidad de archivo ' + identifier
     notice = ('\n> Proyección portable de la revisión retenida (' + source_label + '). No es una nueva revisión ni una nueva ejecución. '
               'Comandos y referencias privadas omitidos; la procedencia e integridad se registran en .ccr-delivery.json.\n')
     files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable, evidence_by_finding)) + notice).encode('utf-8')}
@@ -441,20 +482,22 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     contextual = _context_markdown(context, projection)
     if contextual is not None:
         files['contexto.md'] = _human(contextual.decode('utf-8')).encode('utf-8')
-    new_policy = record['schema_version'] == 12 or projection.disclosure is not None or model_usage_context.get('sha256') is not None
-    receipt = {'schema_version': 2 if new_policy else 1, 'delivery': delivery, 'source_id': identifier,
-        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'run_id',
+    new_policy = record['schema_version'] in (12, 13) or projection.disclosure is not None or model_usage_context.get('sha256') is not None
+    receipt = {'schema_version': 3 if compact_mode else 2 if new_policy else 1, 'delivery': delivery, 'source_id': identifier,
+        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else 'run_id',
         'source_hash': source_hash, 'source_schema_version': record['schema_version'], 'projection': 'portable',
         'projected_fields': projection.changed, 'hashes': {name: _hash(data) for name, data in files.items()}}
     if new_policy:
         receipt.update(projection_policy='project-resources-v1',
             check_disclosure_sha256=projection.disclosure['check_disclosure_sha256'] if projection.disclosure else None,
             model_usage_sha256=model_usage_context.get('sha256'))
+    if compact_mode:
+        receipt['artifact_mode'] = 'compact'
     files['.ccr-delivery.json'] = _json(receipt)
     # Finish every read/validation/render before creating anything. Validate again
     # to catch archive changes during projection, without recording a checkpoint.
     validate_archive(run, require_retained=True)
-    if (run / 'review.json').read_bytes() != source or (run / 'cierre.json').read_bytes() != manifest_bytes:
+    if (run / 'review.json').read_bytes() != source or manifest_path.read_bytes() != manifest_bytes:
         raise ValueError('source changed during delivery preparation')
     created_dirs, owned_files = [], []
     try:

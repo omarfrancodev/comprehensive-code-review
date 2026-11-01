@@ -62,10 +62,12 @@ When a changed-scope restart supersedes a run without transferring its sessions,
 
 ## Check purpose at capture
 
-Declare purpose before execution, as the behavior/condition/hypothesis to verify. It is required for each new `checks run` request and validated before workspace access or process launch. New capture emits receipt schema 2 and preserves the purpose exactly; copy that value into `evidence/checks.json` and final schema 12. Keep observed output in evidence, separate from purpose and finding impact. Retain receipt and both streams with their existing bindings. Legacy receipt 1 remains valid for historical results; it cannot demonstrate a purpose captured for a fresh local final-11/12 check. Never overwrite earlier receipts to add it.
+Declare purpose before execution, as the behavior/condition/hypothesis to verify. It is required for each new `checks run` request and validated before workspace access or process launch. New capture emits receipt schema 2 and preserves the purpose exactly; copy that value into `evidence/checks.json` and final schema 13. Keep observed output in evidence, separate from purpose and finding impact. Retain receipt and both streams with their existing bindings. Legacy receipt 1 remains valid for historical results; it cannot demonstrate a purpose captured for a fresh local final-11/12/13 check. Never overwrite earlier receipts to add it.
 
 Complete synthetic request shape (paths/revision must be replaced by observed owned-session facts):
 
 ```json
 {"check_id":"C001","purpose":"Verify that simultaneous claims accept only one owner.","argv":["python","-m","unittest","test_claim"],"command":"python -m unittest test_claim","cwd":"C:/owned/session/review","executor_workspace":"C:/owned/session/review","revision":"head-456","executor":"X1"}
 ```
+
+A compact artifact does not grant execution or cleanup authority. Local/writing executors and their owned resources currently require a full archive; promote before dependent work if this need appears.

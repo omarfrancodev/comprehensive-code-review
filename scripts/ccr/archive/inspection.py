@@ -190,6 +190,29 @@ def inspect_run(run_dir, *, current_inputs=None):
             'operation': {'disposition': 'unknown'}, 'known_sources': [], 'missing_sources': [],
             'resources': [], 'pending_transaction': [], 'freshness': {'status': 'unknown', 'reasons': []},
             'actions': [_action('preserve', 'Run identity has not been verified.')], 'activity': 'unknown'}
+    if (run_path / 'manifest.json').is_file():
+        try:
+            from ccr.archive.compact import read_compact
+            from ccr.workflow.inputs import compare_inputs
+            compact = read_compact(run_path)
+            manifest, record = compact['manifest'], compact['record']
+            freshness = {'status': 'unknown', 'reasons': []}
+            if current_inputs is not None:
+                retained = copy.deepcopy(manifest['request']['review_inputs'])
+                retained['profile'] = record['profile']
+                current = copy.deepcopy(current_inputs)
+                current.setdefault('logical_scope_identity', manifest['logical_scope']['identity'])
+                comparison = compare_inputs(retained, current)
+                freshness = {'status': comparison['applicability'], 'reasons': comparison['differences']}
+            base.update(artifact_mode='compact', run_id=manifest['run_id'], review_id=manifest['review_id'],
+                        integrity={'status': 'verified', 'errors': []}, phase='complete',
+                        operation={'disposition': 'complete'}, freshness=freshness, activity='completed',
+                        known_sources=sorted(compact['sources']),
+                        actions=[_action('show', 'Show the verified compact report.'),
+                                 _action('new_review', 'Start a linked review if needed.')])
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            base['integrity']['errors'] = [str(exc)[:1000]]
+        return base
     try:
         run, manifest, marker = _load_run(run_path)
     except (OSError, ValueError, TypeError, KeyError) as exc:

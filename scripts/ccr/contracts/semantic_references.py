@@ -68,9 +68,21 @@ def validate_semantic_references(record: dict, packets: list[dict],
 
     coverage = record.get('coverage')
     if isinstance(coverage, dict):
+        if record.get('schema_version') == 13:
+            shared = coverage.get('evidence')
+            for number, row in enumerate(shared if isinstance(shared, list) else []):
+                if isinstance(row, dict):
+                    scan_text(row.get('detail'), f'coverage.evidence[{number}].detail')
+                    local_reference(row.get('reference'), f'coverage.evidence[{number}].reference')
         for number, area in enumerate(coverage.get('areas', []) if isinstance(coverage.get('areas'), list) else []):
             if isinstance(area, dict):
                 scan_text(area.get('details'), f'coverage.areas[{number}].details')
+                if record.get('schema_version') == 13:
+                    scan_text(area.get('applicability_reason'), f'coverage.areas[{number}].applicability_reason')
+                    groups = area.get('groups')
+                    for group_number, group in enumerate(groups if isinstance(groups, list) else []):
+                        if isinstance(group, dict):
+                            scan_text(group.get('reason'), f'coverage.areas[{number}].groups[{group_number}].reason')
                 dimensions = area.get('dimensions')
                 for dimension_number, dimension in enumerate(dimensions if isinstance(dimensions, list) else []):
                     if isinstance(dimension, dict):

@@ -103,6 +103,32 @@ def _read_candidate_record(path, expected):
         return None
 
 def _candidate(run_dir, group_name, repo_identity, archive_root, scope, current_inputs, logical):
+    if (Path(run_dir) / 'manifest.json').is_file():
+        from ccr.archive.compact import read_compact
+        compact = read_compact(run_dir)
+        manifest, record = compact['manifest'], compact['record']
+        request = manifest['request']
+        if (request['archive_root'] != str(archive_root)
+                or request['repository_identity'] != repo_identity
+                or review_layout.scope_group(manifest['logical_scope']) != group_name):
+            raise ValueError('compact ownership, repository, or scope group differs from lookup')
+        if manifest['logical_scope']['identity'] != logical['identity']:
+            return None
+        retained = copy.deepcopy(request['review_inputs'])
+        retained['profile'] = record['profile']
+        applicability = ({'applicability': 'unknown', 'differences': [
+            {'field': 'current_inputs', 'status': 'unknown', 'reason': 'Current source identities were not supplied.'}]}
+            if current_inputs is None else review_inputs.compare_inputs(retained, current_inputs))
+        return {'run_dir': str(safe_path(run_dir)), 'run_id': manifest['run_id'],
+                'review_id': manifest['review_id'], 'kind': 'native', 'artifact_mode': 'compact',
+                'scope': copy.deepcopy(request['scope']), 'logical_scope': copy.deepcopy(logical),
+                'state': 'complete', 'created_at': manifest['created_at'], 'phase': 'complete',
+                'operation': {'disposition': 'complete'}, 'profile': record['profile'],
+                'integrity': 'report_verified', 'applicability': applicability['applicability'],
+                'differences': applicability['differences'],
+                'actions': [_action('show_report', 'Show the verified compact report with its recorded limits.'),
+                            _action('new_review', 'Create a linked review when a fresh evaluation is required.')],
+                'pending_transaction': []}
     run, manifest, _ = _load_run(run_dir)
     if (manifest.get('archive_root') != str(archive_root)
             or manifest.get('repository_key') != _digest(repo_identity.encode('utf-8'))[:20]
@@ -366,8 +392,7 @@ def latest_verified_candidate(repo, scope, *, current_inputs, logical_scope_inpu
     verified_inputs = review_inputs.normalize_inputs(current_inputs)
     verified_inputs.setdefault('logical_scope_identity', logical['identity'])
     try:
-        _, manifest, _ = _load_run(selected['run_dir'])
-        checked = _candidate(Path(selected['run_dir']), review_layout.scope_group(manifest['logical_scope']),
+        checked = _candidate(Path(selected['run_dir']), review_layout.scope_group(logical),
                              repository_identity(repo), select_output_root(repo, archive_root),
                              scope, verified_inputs, logical)
     except (OSError, ValueError, TypeError, KeyError):

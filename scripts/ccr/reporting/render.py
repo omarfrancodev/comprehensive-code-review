@@ -4,7 +4,7 @@ import re
 from urllib.parse import quote
 
 from ccr.contracts.review import validate
-from ccr.contracts.dimensions import DIMENSION_LABELS
+from ccr.contracts.dimensions import DIMENSION_LABELS, display_areas13
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
 from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
 from ccr.contracts.validation import (
@@ -99,14 +99,14 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
     lines.append(f'- **{responsibility}:** {person_text(responsible)}')
-    if record['schema_version'] in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+    if record['schema_version'] in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
         authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
         lines.append(f"- **{reference_label}:** {reference_text(scope['reference'])}")
     if audience == 'user':
-        if record['schema_version'] in (10, 11, 12):
+        if record['schema_version'] in (10, 11, 12, 13):
             history = record['coverage']['execution']['profile_history']
             initial = history[0]
             lines.extend([f"- **Perfil inicial:** {PROFILES[initial['profile']]} — {markdown_text(initial['reason'])}.",
@@ -120,7 +120,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         else:
             lines.append(f"- **Perfil:** {PROFILES[record['profile']]} — {markdown_text(record['profile_reason'])}.")
         lines.append(f"- **Verificación:** {VERIFICATION[record['coverage']['verification']]}.")
-        if record['schema_version'] in (8, 9, 10, 11, 12):
+        if record['schema_version'] in (8, 9, 10, 11, 12, 13):
             status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
             lines.append('- **Ejecución del perfil:** ' + status + '.')
     description = record['description']
@@ -178,13 +178,24 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
     lines.extend(['', *coverage_lines(flows)])
     areas = record['coverage'].get('areas', [])
+    if record['schema_version'] == 13:
+        areas = display_areas13(areas)
     if audience == 'user' and areas:
         lines.extend(['', '### Matriz ABCDE', '',
                       '| Área | Estado | Evidencia o motivo | Hallazgos |',
                       '|---|---|---|---|'])
         for row in sorted(areas, key=lambda item: item['area']):
             references = ', '.join(table_cell(identifier) for identifier in row['finding_ids']) or '—'
-            lines.append(f"| {row['area']} — {AREAS[row['area']]} | {AREA_STATUS[row['status']]} | {table_cell(row['details'])} | {references} |")
+            detail = row['details']
+            if record['schema_version'] == 13 and row['evidence_ids']:
+                detail += ' · evidencia: ' + ', '.join(row['evidence_ids'])
+            lines.append(f"| {row['area']} — {AREAS[row['area']]} | {AREA_STATUS[row['status']]} | {table_cell(detail)} | {references} |")
+        if record['schema_version'] == 13 and record['coverage']['evidence']:
+            lines.extend(['', '### Evidencia compartida', ''])
+            for evidence in record['coverage']['evidence']:
+                link = ' · ' + reference_text(evidence['reference']) if evidence['reference'] else ''
+                check = ' · check ' + evidence['check_id'] if evidence['check_id'] else ''
+                lines.append('- **' + evidence['id'] + '**: ' + markdown_text(evidence['detail']) + check + link)
         if record['schema_version'] in (11, 12):
             lines.extend(['', '### Dimensiones de cobertura', '',
                           '| ID | Dimensión | Estado | Evidencia o motivo | Hallazgos |',
@@ -294,7 +305,10 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
     uncertainties += [item['detail'] for item in limitations]
     if audience == 'user':
-        uncertainties += [row['details'] for row in record['coverage'].get('areas', [])
+        areas = record['coverage'].get('areas', [])
+        if record['schema_version'] == 13:
+            areas = display_areas13(areas)
+        uncertainties += [row['details'] for row in areas
                           if row['status'] in {'partial', 'not_evaluated'}]
     pending = context.get('decisions_pending', [])
     if not isinstance(pending, list) or any(not isinstance(item, str) for item in pending):

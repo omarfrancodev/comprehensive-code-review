@@ -1,5 +1,9 @@
 # Mapa de módulos de `scripts/ccr`
 
+- `scripts/ccr/workflow/persistence.py`: selección proporcional conservadora y decisión de promoción.
+- `scripts/ccr/archive/compact.py`: preparación, publicación y lectura verificadas de artifacts compactos.
+- `scripts/ccr/archive/promotion.py`: intención durable y preparación de un sucesor completo.
+
 - `scripts/ccr/contracts/checks.py`: contrato puro de propósito de checks y recibos nuevos.
 
 - `scripts/ccr/contracts/dimensions.py`: catálogo y coherencia de las 27 dimensiones de final 11/12, sin IO.

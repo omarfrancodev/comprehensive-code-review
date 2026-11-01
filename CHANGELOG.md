@@ -2,6 +2,16 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## unreleased
+
+### Added
+
+#### Artefactos y contratos
+
+- Introducir schema final 13 con decisiones de cobertura agrupadas y evidencia compartida, conservando las 27 dimensiones.
+- Seleccionar automáticamente persistencia compacta o completa según los hechos observados; mantener la entrega breve o completa como decisión independiente.
+- Añadir lectura, validación, entrega y promoción de artifacts compactos, conservando los contratos publicados.
+
 ## 3.5.0 — 2026-10-30
 
 ### Added

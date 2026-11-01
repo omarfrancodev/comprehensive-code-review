@@ -17,3 +17,5 @@ Description-only changes refresh its consistency result against the same code. C
 Finish with exact current scope, findings/uncertainties and concise ID changes. Blocked checks or unknown requirements are not resolved. Freshness, responsibility, report and remote authorization rules still apply.
 
 For each correction, identify the mechanism it adds, changed contracts/defaults, consumers and lifecycle obligations. Reassess state transitions, old persisted data, cleanup and repeated work when those mechanisms are present. Reusing the original finding's passing regression does not establish the correction's adjacent behavior. Preserve a relevant nonblocking finding or uncertainty instead of dropping it because the original blocker was fixed.
+
+A verified compact report may be cited as a prior result, but does not acquire archive-8 recovery or prove equivalence from an absent full inventory. Reassess the actual scope and preserve only facts and identities supported by retained sources.
