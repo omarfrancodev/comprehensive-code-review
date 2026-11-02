@@ -1,6 +1,7 @@
 """Explicitly deliver a portable projection of a retained review; never review again."""
 import argparse
 import hashlib
+import heapq
 import html
 import json
 import os
@@ -14,7 +15,7 @@ from ccr.contracts import review as review_contract, validation
 from ccr.reporting import markdown
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
 from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
-from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, safe_text, private_values
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, private_values, sensitive_text_ranges
 from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
@@ -23,6 +24,7 @@ from ccr.shared.paths import contains, safe_path
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+_COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
 
 
 def _relative_to_root(value, root):
@@ -108,10 +110,6 @@ class _Projection:
         self.secrets = private_values(record, self.disclosure, check_disclosure_sources or {})
         commands = {check['command'] for check in record['checks']}
         commands.update(markdown.markdown_text(command) for command in tuple(commands))
-        if self.new_policy:
-            # Redaction comes first; recognize the sanitized command copy too
-            # so its remaining tool/arguments still receive the whole omission.
-            commands.update(safe_text(command, self.secrets, redact_paths=False) for command in tuple(commands))
         self.commands = sorted(commands, key=len, reverse=True)
         self.repo_roots = [str(project), manifest.get('repository_path', '')]
         self.private_roots = [manifest.get('archive_root', '')]
@@ -154,14 +152,48 @@ class _Projection:
             raise ValueError('private structural value cannot be delivered: ' + path)
         return value
 
+    def _redact_source_copies(self, value, omit_commands):
+        # Recognize copies globally in original coordinates. Expanding an
+        # intersected quoted path protects its whole filename, even if a copy
+        # consists only of a delimiter or extends across several members.
+        streams = []
+        if self.new_policy and self.secrets:
+            streams.append(((*span, False) for span in sensitive_text_ranges(value, self.secrets)))
+        if omit_commands and self.commands:
+            streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
+        if not streams:
+            return value
+        members = iter(re.finditer(_QUOTED_PATH, value))
+        member = next(members, None)
+        chunks, cursor, pending = [], 0, None
+        def emit(first, last, command):
+            nonlocal cursor
+            chunks.extend((value[cursor:first], _COMMAND_OMISSION if command else OMITTED))
+            cursor = last
+        for first, last, command in heapq.merge(*streams):
+            while member is not None and member.end() <= first:
+                member = next(members, None)
+            while member is not None and member.start() < last:
+                first, last = min(first, member.start()), max(last, member.end())
+                member = next(members, None)
+            if pending is not None and first <= pending[1]:
+                pending = pending[0], max(last, pending[1]), command or pending[2]
+            else:
+                if pending is not None:
+                    emit(*pending)
+                pending = first, last, command
+        if pending is not None:
+            emit(*pending)
+        chunks.append(value[cursor:])
+        return ''.join(chunks)
+
     def text(self, value, omit_commands=True):
+        value = self._redact_source_copies(value, omit_commands)
         def redact(text):
             # Apply only after original quotation boundaries have been read,
             # but before a root rewrite could erase part of a sensitive value.
             if self.new_policy:
                 text = safe_text(text, self.secrets, redact_paths=False)
-            for command in self.commands if omit_commands else ():
-                text = text.replace(command, '[comprobación registrada; comando omitido]')
             return text
 
         def segment(value):
@@ -196,7 +228,9 @@ class _Projection:
                     r'''(?ix)(?<![\w-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
                     (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''', prefix)
                 continuation = (last_http_end is not None and re.fullmatch(
-                    r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
+                    rf'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*
+                    (?:(?:{re.escape(OMITTED)}|{re.escape(_COMMAND_OMISSION)})[ \t`'"]*)?)+''',
+                    value[last_http_end:match.start()]))
                 quoted = match.group('quoted_path')
                 if quoted is not None:
                     closing = match.group('closing') or ''

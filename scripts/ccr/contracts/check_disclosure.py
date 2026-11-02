@@ -4,6 +4,7 @@ The expected input identity is a trust anchor captured before review execution.
 The resource manifest is hashed at workspace preparation, never after a check.
 """
 import hashlib
+import heapq
 from array import array
 from bisect import bisect_left, bisect_right
 import html
@@ -241,15 +242,15 @@ def private_values(record, view, sources):
     return values
 
 
-def _redact_encoded_values(text, spellings):
-    """Redact known encoded copies using source offsets, never decoded output."""
+def _encoded_value_ranges(text, spellings):
+    """Locate encoded copies in original source coordinates."""
     if not spellings:
-        return text
+        return []
     entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
     encoded_starts = sorted({match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
                            | {match.start() for match in re.finditer(entity, text)})
     if not encoded_starts:
-        return text
+        return []
     shown = text
     starts = array('I', range(len(text)))
     ends = array('I', range(1, len(text) + 1))
@@ -315,25 +316,27 @@ def _redact_encoded_values(text, spellings):
     transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
     if not ranges:
-        return text
+        return []
     merged = []
     for first, last in sorted(ranges):
         if merged and first <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
         else:
             merged.append((first, last))
+    return merged
+
+
+def _redact_encoded_values(text, spellings):
+    """Redact known encoded copies using source offsets, never decoded output."""
     result, cursor = [], 0
-    for first, last in merged:
+    for first, last in _encoded_value_ranges(text, spellings):
         result.extend((text[cursor:first], OMITTED))
         cursor = last
     result.append(text[cursor:])
     return ''.join(result)
 
 
-def safe_text(value, secrets=(), *, redact_paths=True):
-    """Filter private prose; typed projections may apply their own path policy."""
-    if not isinstance(value, str):
-        return value
+def _secret_spellings(secrets):
     secrets = tuple(secret for secret in secrets if secret)
     spellings = set()
     for secret in secrets:
@@ -341,7 +344,41 @@ def safe_text(value, secrets=(), *, redact_paths=True):
         escaped = html.escape(plain, quote=False)
         spellings.update((secret, plain, escaped,
             re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', escaped)))
-    spellings = tuple(sorted((text for text in spellings if text), key=len, reverse=True))
+    return tuple(sorted((text for text in spellings if text), key=len, reverse=True))
+
+
+def sensitive_text_ranges(text, secrets):
+    """Yield merged sensitive intervals before callers transform source text.
+
+    Literal matches stream, including overlaps, rather than allocating one
+    tuple for every character of a repetitive value. Encoded matches share the
+    existing source-offset decoder; no decoded text is returned to a renderer.
+    """
+    spellings = _secret_spellings(secrets)
+    def literal(secret):
+        position = text.find(secret)
+        while position != -1:
+            yield position, position + len(secret)
+            position = text.find(secret, position + 1)
+    streams = [literal(secret) for secret in spellings]
+    streams.append(iter(_encoded_value_ranges(text, spellings)))
+    pending = None
+    for first, last in heapq.merge(*streams):
+        if pending is not None and first <= pending[1]:
+            pending = pending[0], max(last, pending[1])
+        else:
+            if pending is not None:
+                yield pending
+            pending = first, last
+    if pending is not None:
+        yield pending
+
+
+def safe_text(value, secrets=(), *, redact_paths=True):
+    """Filter private prose; typed projections may apply their own path policy."""
+    if not isinstance(value, str):
+        return value
+    spellings = _secret_spellings(secrets)
     def redact(text):
         # Copies may be outside a recognized URL, including after an original
         # delimiter. Match their source spelling and preserve everything else.
