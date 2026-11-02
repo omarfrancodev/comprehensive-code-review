@@ -29,8 +29,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Reportes y entregas
 
-- Ocultar copias de credenciales explícitas del comando retenido, incluidos scripts shell citados y anidados, aun sin prueba argv; no acreditar comandos ni modificar fuentes y rechazar identidades estructurales sensibles antes de exportar.
-- Exigir contexto HTTP para conservar rutas con prefijos `/api` o `/vN`, evitando exponer archivos locales con esos nombres en prosa, contexto y JSON portable.
+- Ocultar copias de credenciales explícitas del comando retenido, incluidos scripts shell citados y anidados con claves escapadas, aun sin prueba argv; no acreditar comandos ni modificar fuentes y rechazar identidades estructurales sensibles antes de exportar.
+- Exigir contexto HTTP para conservar rutas con prefijos `/api` o `/vN` y mantener como unidad las rutas citadas con comas internas, evitando exponer archivos locales o sus fragmentos en prosa, contexto y JSON portable.
 
 ## 3.5.0 — 2026-10-30
 

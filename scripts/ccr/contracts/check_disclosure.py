@@ -208,9 +208,10 @@ def _command_sensitive_values(command):
                 if lexer.token:
                     arguments.append(lexer.token)
             values.update(_argv_sensitive_values(arguments))
+            # Outer spellings can hide sensitive keys through escapes/quoting.
+            # Inspect candidate text before classifying its normalized tokens.
             pending.extend(argument for argument in arguments
-                           if argument != text and any(char in argument for char in ' \t\r\n\'"')
-                           and SENSITIVE_URL_KEY.search(argument))
+                           if argument != text and any(char in argument for char in ' \t\r\n\\\'"'))
     return values | {re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', value) for value in values}
 
 

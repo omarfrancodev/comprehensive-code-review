@@ -171,6 +171,14 @@ class _Projection:
                     (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''', prefix)
                 continuation = (last_http_end is not None and re.fullmatch(
                     r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
+                quoted = match.group('quoted_path')
+                if quoted is not None:
+                    closing = match.group('closing') or ''
+                    route = (closing and (explicit or continuation)
+                             and not any(char.isspace() for char in quoted)
+                             and re.match(r'^/(?:api|v[0-9]+)(?:/|$)', quoted))
+                    last_http_end = match.end() if closing and (explicit or continuation) else None
+                    return match.group('quote') + (quoted if route else '[ruta privada]') + closing
                 if explicit or continuation:
                     # Keep editorial separators available to the next match;
                     # private paths still get redacted as a whole, commas too.
@@ -190,7 +198,10 @@ class _Projection:
                     return ''.join(projected)
                 last_http_end = None
                 return '[ruta privada]'
-            value = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>\)\]]+', posix_path, value)
+            # Quoted paths are indivisible, even with spaces or internal commas.
+            # Unterminated quoted paths fail closed through the end of the span.
+            value = re.sub(r'''(?P<quote>[`'"])(?P<quoted_path>/(?!/)(?:\\[\s\S]|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)|(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+''',
+                           posix_path, value)
             value = re.sub(r'(?<![\w/\\])(?:evidence|_?archive)[/\\][^\s;|<>\)\]]+',
                            lambda match: self.retained(match.group()), value)
             return value

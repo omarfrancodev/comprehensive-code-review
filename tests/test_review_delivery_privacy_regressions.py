@@ -20,8 +20,7 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
     def snapshot(self, run):
         return {p.relative_to(run): p.read_bytes() for p in run.rglob('*') if p.is_file()}
 
-    def assert_command_secret_redacted(self, command):
-        secret = 'SYNTHETIC_COMMAND_TOKEN_6789'
+    def assert_command_secret_redacted(self, command, secret='SYNTHETIC_COMMAND_TOKEN_6789'):
         def update(record):
             record['checks'][0]['command'] = command
             record['checks'][0]['evidence'] = 'Observed ' + secret
@@ -49,6 +48,62 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
 
     def test_full13_fallback_redacts_secret_inside_a_quoted_shell_script(self):
         self.assert_command_secret_redacted("sh -c 'probe --token SYNTHETIC_COMMAND_TOKEN_6789; printf done'")
+
+    def test_full13_fallback_redacts_lexically_escaped_sensitive_flag(self):
+        secret = 'Q7r8P2m9'
+        self.assert_command_secret_redacted("sh -c 'probe --to\\ken " + secret + "'", secret)
+
+    def test_shell_learning_normalizes_before_selecting_sensitive_keys(self):
+        secret = 'Q7r8P2m9'
+        script = r'probe --to\ken ' + secret
+        for command in (shlex.join(['sh', '-c', script]),
+                        shlex.join(['sh', '-c', shlex.join(['sh', '-c', script])]),
+                        "sh -c 'probe --to\"ke\"n " + secret + "'",
+                        "sh -c '--to\\ken=" + secret + "'"):
+            with self.subTest(command=command):
+                record = record13()
+                record['checks'][0]['command'] = command
+                self.assertIn(secret, private_values(record, None, {}))
+
+    def test_quoted_private_path_does_not_export_a_filename_suffix(self):
+        private = '/private/cache,/api/Q7r8P2m9.txt'
+        prose = 'GET /api/orders, "' + private + '", /v2/orders'
+        def update(record):
+            record['verdict_reason'] = prose
+            record['coverage']['flows'] = [prose]
+        case, run = self.complete_archive(record_update=update)
+        before = self.snapshot(run)
+        context = {'pending': [{'text': prose, 'references': ['retained-review'], 'version': 'retained-head'}]}
+        for mode in ('full', 'brief'):
+            target = delivery.deliver(run, mode, case.repo, case.root / mode, context=context)
+            for path in target.glob('*'):
+                if path.suffix in ('.md', '.json'):
+                    text = path.read_text(encoding='utf-8')
+                    self.assertNotIn('Q7r8P2m9', text)
+            for name in ('contexto.md', 'informe.md' if mode == 'full' else 'resumen.md'):
+                text = (target / name).read_text(encoding='utf-8')
+                self.assertIn('/api/orders', text)
+                self.assertIn('/v2/orders', text)
+            self.assertEqual(before, self.snapshot(run))
+
+    def test_quoted_path_units_keep_internal_commas_private(self):
+        record = record13()
+        record['checks'] = []
+        projection = delivery._Projection(record, {}, None, 'a' * 64)
+        for quote in ('"', "'", '`'):
+            for separator in (', ', ','):
+                for private in ('/private/cache,/api/Q7r8P2m9.txt',
+                                '/private/cache,/v2/Q7r8P2m9.txt',
+                                '/private cache,/api/Q7r8P2m9.txt'):
+                    text = 'GET /api/orders' + separator + quote + private + quote + separator + quote + '/v2/orders' + quote
+                    with self.subTest(quote=quote, separator=separator, private=private):
+                        projected = projection.text(text)
+                        self.assertNotIn('Q7r8P2m9', projected)
+                        self.assertIn('/api/orders', projected)
+                        self.assertIn('/v2/orders', projected)
+        for text in ('GET /api/orders, "/private/cache,/api/Q7r8P2m9.txt',
+                     'GET "/api/orders Q7r8P2m9'):
+            self.assertNotIn('Q7r8P2m9', projection.text(text))
 
     def test_http_lists_preserve_comma_delimited_endpoints_in_both_deliveries(self):
         prose = ('GET /api/orders, /v2/orders y /v3/orders; '

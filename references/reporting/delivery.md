@@ -19,6 +19,8 @@ For privacy, learn explicitly sensitive credential values from retained canonica
 
 Inspect quoted script bodies such as `sh -c` and nested command text lexically, including shell separators; never execute, expand or evaluate them. Deduplicate inspected text and bound total lexical work by the original input size. If that bound is exceeded, refuse the projection rather than export with partially learned secrets. HTTP-list continuity retains editorial commas and Markdown delimiters without splitting private local filenames into exposed fragments; mixed lists still conceal non-HTTP absolute paths.
 
+Inspect lexical candidates before deciding whether their keys are sensitive: escaped or concatenated spellings can normalize to credential flags. A path enclosed in quotes or backticks is one member, so internal commas cannot introduce another endpoint. Preserve quoted HTTP neighbors and treat unterminated quoted paths as private through the end of their text span.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available
