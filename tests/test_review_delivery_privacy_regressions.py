@@ -105,11 +105,13 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                      'GET "/api/orders Q7r8P2m9'):
             self.assertNotIn('Q7r8P2m9', projection.text(text))
 
-    def assert_quoted_member_private(self, prose, marker):
+    def assert_quoted_member_private(self, prose, marker, command=None):
         def update(record):
             record['verdict_reason'] = prose
             record['coverage']['flows'] = [prose]
-        case, run = self.complete_archive(record_update=update)
+            if command is not None:
+                record['checks'][0]['command'] = command
+        case, run = self.complete_archive(with_checks=command is not None, record_update=update)
         before = self.snapshot(run)
         context = {'pending': [{'text': prose, 'references': ['retained-review'], 'version': 'retained-head'}]}
         for mode in ('full', 'brief'):
@@ -122,6 +124,42 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                 self.assertIn('/api/orders', text)
                 self.assertIn('https://public.example.test/guide', text)
             self.assertEqual(before, self.snapshot(run))
+
+    def test_command_omission_cannot_destroy_quoted_filename_boundaries(self):
+        for quote in ('"', "'", '`'):
+            with self.subTest(command=quote):
+                self.assert_quoted_member_private(
+                    'GET /api/orders, ' + quote + '/private/cache/https://files.example.test/M62qv.txt tail'
+                    + quote + ', /v2/orders; https://public.example.test/guide', 'M62qv', command=quote)
+
+    def test_path_shaped_secret_is_redacted_before_repository_relativization(self):
+        for quoted in (False, True):
+            with self.subTest(quoted=quoted):
+                marker = 'credential314159'
+                def update(record, repo):
+                    secret = repo.as_posix() + '/' + marker
+                    record['checks'][0]['command'] = shlex.join(['probe', '--token', secret])
+                    shown = '"' + secret + '"' if quoted else secret
+                    prose = ('Observed ' + shown + '; GET /api/orders; '
+                             'https://public.example.test/guide')
+                    record['checks'][0]['evidence'] = prose
+                    record['verdict_reason'] = prose
+                    record['coverage']['flows'] = [prose]
+                    self.assertIn(secret, private_values(record, None, {}))
+                case, run = self.complete_archive(with_checks=True, repository_record_update=update)
+                before = self.snapshot(run)
+                context = {'pending': [{'text': json.loads((run / 'review.json').read_bytes())['verdict_reason'],
+                    'references': ['C001'], 'version': 'retained-head'}]}
+                for mode in ('full', 'brief'):
+                    target = delivery.deliver(run, mode, case.repo, case.root / mode, context=context)
+                    for path in target.glob('*'):
+                        if path.suffix in ('.md', '.json'):
+                            self.assertNotIn(marker, path.read_text(encoding='utf-8'), path.name)
+                    for name in ('contexto.md', 'informe.md' if mode == 'full' else 'resumen.md'):
+                        text = (target / name).read_text(encoding='utf-8')
+                        self.assertIn('/api/orders', text)
+                        self.assertIn('https://public.example.test/guide', text)
+                    self.assertEqual(before, self.snapshot(run))
 
     def test_unclosed_private_quote_with_terminal_backslash_is_one_member(self):
         self.assert_quoted_member_private(
@@ -163,6 +201,41 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
         projection = delivery._Projection(record, {}, None, 'a' * 64, check_disclosure_context=disclosure)
         result = projection.text('GET /api/orders, "/private/cache/https://files.example.test/M62qv.txt tail"')
         self.assertNotIn('M62qv', result)
+
+    def test_sensitive_path_is_one_copy_before_root_and_url_transforms(self):
+        for root in ('/known/repo', r'C:\known\repo', r'\\server\known\repo'):
+            for suffix in ('/credential314159', '/https://files.example.test/credential314159'):
+                secret = root + suffix
+                record = record13()
+                record['checks'][0]['command'] = shlex.join(['probe', '--token', secret])
+                identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+                disclosure = build_check_disclosure(record, identity, {}, {})
+                projection = delivery._Projection(record, {'repository_path': root}, None, 'a' * 64,
+                    check_disclosure_context=disclosure)
+                for quote in ('', '"', "'", '`'):
+                    with self.subTest(root=root, suffix=suffix, quote=quote):
+                        text = ('Observed ' + quote + secret + quote
+                                + '; GET /api/orders; https://public.example.test/guide')
+                        result = projection.text(text)
+                        self.assertNotIn('credential314159', result)
+                        self.assertIn('/api/orders', result)
+                        self.assertIn('https://public.example.test/guide', result)
+
+    def test_command_omission_cannot_split_a_longer_learned_secret(self):
+        record = record13()
+        secret = '/known/repo/credential314159'
+        record['checks'][0]['command'] = shlex.join(['probe', '--token', secret])
+        other = copy.deepcopy(record['checks'][0])
+        other.update(id='C002', command='/')
+        record['checks'].append(other)
+        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+        disclosure = build_check_disclosure(record, identity, {}, {})
+        projection = delivery._Projection(record, {'repository_path': '/known/repo'}, None, 'a' * 64,
+            check_disclosure_context=disclosure)
+        self.assertNotIn('credential314159', projection.text('Observed ' + secret))
+        command_copy = projection.text('Command: ' + record['checks'][0]['command'])
+        self.assertNotIn('probe', command_copy)
+        self.assertIn('comando omitido', command_copy)
 
     def test_http_lists_preserve_comma_delimited_endpoints_in_both_deliveries(self):
         prose = ('GET /api/orders, /v2/orders y /v3/orders; '

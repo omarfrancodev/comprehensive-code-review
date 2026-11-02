@@ -13,7 +13,7 @@ from test_review_traceability_contract import check as static_check
 
 
 class Full13ArchiveTests(unittest.TestCase):
-    def complete_archive(self, with_checks=False, record_update=None):
+    def complete_archive(self, with_checks=False, record_update=None, repository_record_update=None):
         class Checkpoint13(checkpoints.CheckpointTests):
             def final_record(self, run, profile='focused', late_profile=False):
                 value = super().final_record(run, profile, late_profile)
@@ -29,6 +29,8 @@ class Full13ArchiveTests(unittest.TestCase):
                     check['purpose'] = PURPOSE
                 if record_update is not None:
                     record_update(value)
+                if repository_record_update is not None:
+                    repository_record_update(value, self.repo)
                 return value
 
         case = Checkpoint13('test_valid_final_checkpoint_can_be_promoted_without_external_files')

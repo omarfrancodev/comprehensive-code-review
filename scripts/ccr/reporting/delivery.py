@@ -106,7 +106,13 @@ class _Projection:
         self.disclosure_rows = {row['id']: row for row in self.disclosure['checks']} if self.disclosure else {}
         self.check_ids = [check['id'] for check in record['checks']]
         self.secrets = private_values(record, self.disclosure, check_disclosure_sources or {})
-        self.commands = sorted({check['command'] for check in record['checks']}, key=len, reverse=True)
+        commands = {check['command'] for check in record['checks']}
+        commands.update(markdown.markdown_text(command) for command in tuple(commands))
+        if self.new_policy:
+            # Redaction comes first; recognize the sanitized command copy too
+            # so its remaining tool/arguments still receive the whole omission.
+            commands.update(safe_text(command, self.secrets, redact_paths=False) for command in tuple(commands))
+        self.commands = sorted(commands, key=len, reverse=True)
         self.repo_roots = [str(project), manifest.get('repository_path', '')]
         self.private_roots = [manifest.get('archive_root', '')]
         self.changed = []
@@ -149,9 +155,14 @@ class _Projection:
         return value
 
     def text(self, value, omit_commands=True):
-        for command in self.commands if omit_commands else ():
-            value = value.replace(command, '[comprobación registrada; comando omitido]')
-            value = value.replace(markdown.markdown_text(command), '[comprobación registrada; comando omitido]')
+        def redact(text):
+            # Apply only after original quotation boundaries have been read,
+            # but before a root rewrite could erase part of a sensitive value.
+            if self.new_policy:
+                text = safe_text(text, self.secrets, redact_paths=False)
+            for command in self.commands if omit_commands else ():
+                text = text.replace(command, '[comprobación registrada; comando omitido]')
+            return text
 
         def segment(value):
             def normalize_roots(text):
@@ -194,7 +205,12 @@ class _Projection:
                              and re.match(r'^/(?:api|v[0-9]+)(?:/|$)', quoted))
                     last_http_end = match.end() if closing and (explicit or continuation) else None
                     shown = quoted if route else '[ruta privada]'
-                    if closing:
+                    if redact(match.group()) != match.group():
+                        # A sensitive copy can include the quotes themselves.
+                        # Keep the original member opaque; never reparse its
+                        # redacted spelling or relativize its remaining suffix.
+                        shown = '[ruta privada]'
+                    elif closing:
                         if any(_relative_to_root(quoted, root) is not None for root in self.private_roots):
                             shown = self.retained(quoted)
                         else:
@@ -235,6 +251,15 @@ class _Projection:
                            lambda match: self.retained(match.group()), value)
             return value
 
+        # Read original quotation boundaries before redaction can change them.
+        # Redact ordinary text before URL splitting too: a single learned
+        # credential can span a repository root and a URL-shaped substring.
+        chunks, cursor = [], 0
+        for member in re.finditer(_QUOTED_PATH, value):
+            chunks.extend((redact(value[cursor:member.start()]), member.group()))
+            cursor = member.end()
+        value = ''.join(chunks) + redact(value[cursor:])
+
         # Recognize quoted members before URLs. Keep those members in their
         # surrounding ordinary text so HTTP-list context is not lost. No input
         # placeholders are restored into an already sanitized result.
@@ -249,12 +274,9 @@ class _Projection:
         # Relative Markdown links cannot resolve from the delivery directory.
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
                        lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
-        if self.new_policy:
-            # Classify with original boundaries first: a secret can itself be a
-            # quote. URL candidates were checked above; redact loose/encoded
-            # copies only after private members can no longer become URLs.
-            value = safe_text(value, self.secrets, redact_paths=False)
-        return value
+        # Cover copies crossing segment boundaries and original delimiters;
+        # private members and original root-bearing copies are already hidden.
+        return redact(value)
 
     def value(self, value, path='record'):
         if isinstance(value, dict):

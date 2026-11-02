@@ -23,6 +23,8 @@ Inspect lexical candidates before deciding whether their keys are sensitive: esc
 
 Recognize quoted members before URL preservation, root rewriting or redaction that could alter their delimiters. A URL-shaped substring of a private filename is not an independent public reference. A terminal backslash remains part of an unfinished member; do not fall back to interpreting its suffix as an HTTP list. Normalize known repository locations as whole members, with private archive roots taking precedence, and retain independent URLs outside private members.
 
+This boundary rule also applies to omitting canonical command copies, including commands consisting only of a quote. Redact sensitive copies in ordinary text before splitting URLs or rewriting roots; a learned credential can itself span a repository path and a URL-shaped substring. Classify each original quoted member as a whole: when its original spelling contains a sensitive copy, withhold the whole member before relativizing it. Never reparse a redacted spelling as a new public reference or export a credential suffix after removing its root. A final redaction pass covers remaining copies across output boundaries.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available
