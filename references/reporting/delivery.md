@@ -21,6 +21,8 @@ Inspect quoted script bodies such as `sh -c` and nested command text lexically, 
 
 Inspect lexical candidates before deciding whether their keys are sensitive: escaped or concatenated spellings can normalize to credential flags. A path enclosed in quotes or backticks is one member, so internal commas cannot introduce another endpoint. Preserve quoted HTTP neighbors and treat unterminated quoted paths as private through the end of their text span.
 
+Recognize quoted members before URL preservation, root rewriting or redaction that could alter their delimiters. A URL-shaped substring of a private filename is not an independent public reference. A terminal backslash remains part of an unfinished member; do not fall back to interpreting its suffix as an HTTP list. Normalize known repository locations as whole members, with private archive roots taking precedence, and retain independent URLs outside private members.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available

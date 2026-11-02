@@ -20,6 +20,21 @@ from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import contains, safe_path
 
+# One shared boundary for classification and for excluding filename substrings
+# from URL recognition. A lone terminal backslash still belongs to the member.
+_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+
+
+def _relative_to_root(value, root):
+    if not root:
+        return None
+    root = root.rstrip('/\\')
+    normalized, prefix = value.replace('\\', '/').lower(), root.replace('\\', '/').lower()
+    if normalized == prefix:
+        return ''
+    return value[len(root) + 1:] if normalized.startswith(prefix + '/') else None
+
+
 def _hash(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -134,32 +149,32 @@ class _Projection:
         return value
 
     def text(self, value, omit_commands=True):
-        if self.new_policy:
-            # Keep secret/URL filtering, then apply the typed path policy below:
-            # known repository roots become relative and HTTP routes survive.
-            value = safe_text(value, self.secrets, redact_paths=False)
         for command in self.commands if omit_commands else ():
             value = value.replace(command, '[comprobación registrada; comando omitido]')
             value = value.replace(markdown.markdown_text(command), '[comprobación registrada; comando omitido]')
 
         def segment(value):
-            value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
-            for root in self.private_roots:
-                if not root:
-                    continue
-                normalized = root.replace('\\', '/')
-                for spelling in dict.fromkeys((root, normalized)):
-                    value = re.sub(re.escape(spelling) + r'(?:[/\\][^\s;|<>\)\]]*)?',
-                                   lambda match: self.retained(match.group()), value, flags=re.IGNORECASE)
-            for root in self.repo_roots:
-                if not root:
-                    continue
-                for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
-                    value = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', value, flags=re.IGNORECASE)
-                    value = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', value, flags=re.IGNORECASE)
-            value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
-            value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
-            value = re.sub(r'\\\\[^\s;|<>\)\]]+', '[ruta privada]', value)
+            def normalize_roots(text):
+                for root in self.private_roots:
+                    if not root:
+                        continue
+                    for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
+                        text = re.sub(re.escape(spelling) + r'(?:[/\\][^\s;|<>\)\]]*)?',
+                                      lambda match: self.retained(match.group()), text, flags=re.IGNORECASE)
+                for root in self.repo_roots:
+                    if not root:
+                        continue
+                    for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
+                        text = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', text, flags=re.IGNORECASE)
+                        text = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', text, flags=re.IGNORECASE)
+                return text
+            # Root rewriting must not truncate a quoted filename before its
+            # privacy decision. Normalize ordinary text and whole members apart.
+            chunks, cursor = [], 0
+            for member in re.finditer(_QUOTED_PATH, value):
+                chunks.extend((normalize_roots(value[cursor:member.start()]), member.group()))
+                cursor = member.end()
+            value = ''.join(chunks) + normalize_roots(value[cursor:])
             # A prefix alone cannot distinguish a local file from an endpoint.
             # Preserve explicit HTTP routes and adjacent lists of those routes.
             last_http_end = None
@@ -178,7 +193,17 @@ class _Projection:
                              and not any(char.isspace() for char in quoted)
                              and re.match(r'^/(?:api|v[0-9]+)(?:/|$)', quoted))
                     last_http_end = match.end() if closing and (explicit or continuation) else None
-                    return match.group('quote') + (quoted if route else '[ruta privada]') + closing
+                    shown = quoted if route else '[ruta privada]'
+                    if closing:
+                        if any(_relative_to_root(quoted, root) is not None for root in self.private_roots):
+                            shown = self.retained(quoted)
+                        else:
+                            for root in self.repo_roots:
+                                relative = _relative_to_root(quoted, root)
+                                if relative is not None:
+                                    shown = relative or '[repositorio revisado]'
+                                    break
+                    return match.group('quote') + shown + closing
                 if explicit or continuation:
                     # Keep editorial separators available to the next match;
                     # private paths still get redacted as a whole, commas too.
@@ -200,20 +225,35 @@ class _Projection:
                 return '[ruta privada]'
             # Quoted paths are indivisible, even with spaces or internal commas.
             # Unterminated quoted paths fail closed through the end of the span.
-            value = re.sub(r'''(?P<quote>[`'"])(?P<quoted_path>/(?!/)(?:\\[\s\S]|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)|(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+''',
+            value = re.sub(_QUOTED_PATH + r'''|(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+''',
                            posix_path, value)
+            value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
+            value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
+            value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
+            value = re.sub(r'\\\\[^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'(?<![\w/\\])(?:evidence|_?archive)[/\\][^\s;|<>\)\]]+',
                            lambda match: self.retained(match.group()), value)
             return value
 
-        # Sanitize URL and non-URL spans separately; placeholders could collide
-        # with caller content and accidentally restore a private path.
-        spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
-        value = ''.join(span if self.public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
-                        else segment(span) for span in spans)
+        # Recognize quoted members before URLs. Keep those members in their
+        # surrounding ordinary text so HTTP-list context is not lost. No input
+        # placeholders are restored into an already sanitized result.
+        chunks, cursor = [], 0
+        for span in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE):
+            if span.group('url') is None:
+                continue
+            chunks.extend((segment(value[cursor:span.start()]),
+                           span.group() if self.public_url(span.group()) else '[referencia privada]'))
+            cursor = span.end()
+        value = ''.join(chunks) + segment(value[cursor:])
         # Relative Markdown links cannot resolve from the delivery directory.
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
                        lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
+        if self.new_policy:
+            # Classify with original boundaries first: a secret can itself be a
+            # quote. URL candidates were checked above; redact loose/encoded
+            # copies only after private members can no longer become URLs.
+            value = safe_text(value, self.secrets, redact_paths=False)
         return value
 
     def value(self, value, path='record'):

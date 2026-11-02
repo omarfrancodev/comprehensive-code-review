@@ -105,6 +105,65 @@ class DeliveryPrivacyRegressionTests(unittest.TestCase):
                      'GET "/api/orders Q7r8P2m9'):
             self.assertNotIn('Q7r8P2m9', projection.text(text))
 
+    def assert_quoted_member_private(self, prose, marker):
+        def update(record):
+            record['verdict_reason'] = prose
+            record['coverage']['flows'] = [prose]
+        case, run = self.complete_archive(record_update=update)
+        before = self.snapshot(run)
+        context = {'pending': [{'text': prose, 'references': ['retained-review'], 'version': 'retained-head'}]}
+        for mode in ('full', 'brief'):
+            target = delivery.deliver(run, mode, case.repo, case.root / mode, context=context)
+            for path in target.glob('*'):
+                if path.suffix in ('.md', '.json'):
+                    self.assertNotIn(marker, path.read_text(encoding='utf-8'), path.name)
+            for name in ('contexto.md', 'informe.md' if mode == 'full' else 'resumen.md'):
+                text = (target / name).read_text(encoding='utf-8')
+                self.assertIn('/api/orders', text)
+                self.assertIn('https://public.example.test/guide', text)
+            self.assertEqual(before, self.snapshot(run))
+
+    def test_unclosed_private_quote_with_terminal_backslash_is_one_member(self):
+        self.assert_quoted_member_private(
+            'https://public.example.test/guide; GET /api/orders, "/private/cache,/api/M62qv.txt' + '\\', 'M62qv')
+
+    def test_url_shaped_filename_inside_private_quote_is_not_a_public_url(self):
+        self.assert_quoted_member_private(
+            'GET /api/orders, "/private/cache/https://files.example.test/M62qv.txt", /v2/orders; '
+            'https://public.example.test/guide', 'M62qv')
+
+    def test_quoted_member_precedes_url_and_escape_classification(self):
+        record = record13()
+        record['checks'] = []
+        projection = delivery._Projection(record, {'repository_path': '/known/repo',
+            'archive_root': '/known/repo/_archive'}, None, 'a' * 64)
+        for quote in ('"', "'", '`'):
+            for count in range(4):
+                text = 'GET /api/orders, ' + quote + '/private/cache,/api/M62qv.txt' + '\\' * count
+                self.assertNotIn('M62qv', projection.text(text))
+            for private in ('/private/cache/https://files.example.test/M62qv.txt',
+                            '/private cache/https://files.example.test/M62qv.txt',
+                            r'C:\private cache\https://files.example.test/M62qv.txt',
+                            r'\\server\private cache\https://files.example.test/M62qv.txt',
+                            '/known/repo/_archive/private cache/https://files.example.test/M62qv.txt'):
+                text = ('GET /api/orders, ' + quote + private + quote + ', /v2/orders; '
+                        'https://public.example.test/guide')
+                with self.subTest(quote=quote, private=private):
+                    result = projection.text(text)
+                    self.assertNotIn('M62qv', result)
+                    self.assertIn('/v2/orders', result)
+                    self.assertIn('https://public.example.test/guide', result)
+        self.assertEqual(projection.text('Archivo "/known/repo/src/api.py"'), 'Archivo "src/api.py"')
+
+    def test_secret_redaction_cannot_destroy_quoted_filename_boundaries(self):
+        record = record13()
+        record['checks'][0]['command'] = shlex.join(['probe', '--token', '"'])
+        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+        disclosure = build_check_disclosure(record, identity, {}, {})
+        projection = delivery._Projection(record, {}, None, 'a' * 64, check_disclosure_context=disclosure)
+        result = projection.text('GET /api/orders, "/private/cache/https://files.example.test/M62qv.txt tail"')
+        self.assertNotIn('M62qv', result)
+
     def test_http_lists_preserve_comma_delimited_endpoints_in_both_deliveries(self):
         prose = ('GET /api/orders, /v2/orders y /v3/orders; '
                  'Archivo local /api/private,secret.key')
