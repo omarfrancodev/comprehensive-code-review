@@ -25,6 +25,9 @@ from ccr.shared.paths import contains, safe_path
 # from URL recognition. A lone terminal backslash still belongs to the member.
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
+_LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)[^\s;|<>\)\]`'"]*'''
+_SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
+                            + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
 
 
@@ -157,21 +160,26 @@ class _Projection:
         """Classify HTTP-list members in original coordinates, before omission."""
         last_http_end = None
         context_start = 0
-        for match in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|' + _POSIX_PATH,
-                                 value, flags=re.IGNORECASE):
+        for match in _SOURCE_TOKENS.finditer(value):
             if match.group('url') is not None:
                 last_http_end = None
                 context_start = match.end()
                 continue
             prefix = value[max(context_start, match.start() - 128):match.start()]
             explicit = re.search(
-                r'''(?ix)(?<![\w-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
+                r'''(?ix)(?<![\w:/\\.-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
                 (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''',
                 prefix)
             continuation = (last_http_end is not None and re.fullmatch(
                 r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
             quoted = match.group('quoted_path')
-            if quoted is not None:
+            local = match.group('local')
+            if local is not None:
+                # A method inside a filename cannot lend authority. An actual
+                # method before this member still anchors its HTTP-list peers.
+                last_http_end = match.start() + len(local.rstrip(',')) if explicit or continuation else None
+                candidates = []
+            elif quoted is not None:
                 active = match.group('closing') and (explicit or continuation)
                 last_http_end = match.end() if active else None
                 candidates = [(match.start(), match.end(), quoted)] if active and not any(
@@ -195,6 +203,22 @@ class _Projection:
                                     for root in self.private_roots + self.repo_roots)):
                     yield first, last
 
+    def _local_members(self, value):
+        for match in _SOURCE_TOKENS.finditer(value):
+            if match.group('local') is not None:
+                yield match.span()
+
+    def _local_text(self, value):
+        core = value.rstrip(',')
+        suffix = value[len(core):]
+        if any(_relative_to_root(core, root) is not None for root in self.private_roots):
+            return self.retained(core) + suffix
+        for root in self.repo_roots:
+            relative = _relative_to_root(core, root)
+            if relative is not None:
+                return (relative or '[repositorio revisado]') + suffix
+        return ('[referencia privada]' if core.lower().startswith('file:') else '[ruta privada]') + suffix
+
     def _source_omissions(self, value, omit_commands):
         # Recognize copies globally in original coordinates. Expanding an
         # intersected quoted path protects its whole filename, even if a copy
@@ -207,7 +231,7 @@ class _Projection:
         if not streams:
             return
         members = heapq.merge((match.span() for match in re.finditer(_QUOTED_PATH, value)),
-                              self._http_members(value))
+                              self._http_members(value), self._local_members(value))
         member = next(members, None)
         pending = None
         for first, last, command in heapq.merge(*streams):
@@ -232,6 +256,7 @@ class _Projection:
         events = heapq.merge(
             ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands)),
             ((*span, 'http', False) for span in self._http_members(value)),
+            ((*span, 'local', False) for span in self._local_members(value)),
             key=lambda event: (event[0], event[2] != 'omission'))
         chunks, cursor = [], 0
         for first, last, kind, command in events:
@@ -240,6 +265,8 @@ class _Projection:
             chunks.append(self._text_fragment(value[cursor:first]))
             if kind == 'omission':
                 chunks.append(_COMMAND_OMISSION if command else OMITTED)
+            elif kind == 'local':
+                chunks.append(self._local_text(value[first:last]))
             else:
                 route = value[first:last]
                 chunks.append(safe_text(route, self.secrets, redact_paths=False) if self.new_policy else route)

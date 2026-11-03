@@ -34,6 +34,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Reconocer las rutas citadas antes de omitir copias del comando y ocultar credenciales completas antes de dividir URLs o relativizar sus raíces, evitando divulgar sufijos sensibles en las entregas.
 - Conservar intervalos sensibles sobre el texto original completo, incluidas copias que cruzan miembros citados, y omitir comandos canónicos enteros antes de proyectar sus rutas; compartir los offsets del filtro codificado y unir solapamientos sin restaurar texto privado.
 - Enumerar todos los solapamientos codificados para las entregas y clasificar las listas HTTP originales antes de omitir miembros, conservando sus vecinos públicos aun cuando se oculta el primero.
+- Reconocer portadores Windows, UNC y `file:` sin comillas como unidades locales, evitando que un método o URL dentro de su nombre conceda autoridad HTTP o aparezca como referencia independiente.
 
 ## 3.5.0 — 2026-10-30
 

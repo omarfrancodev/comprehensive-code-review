@@ -27,6 +27,8 @@ Locate sensitive values and complete canonical command copies over the entire or
 
 The source interval enumerator includes every overlapping encoded match; it opts into that stronger enumeration without changing the historical `safe_text` replacement policy. Classify HTTP-list members from the original text too, including when its first member will be omitted. Preserve surviving public members by their source spans, with omissions taking precedence over any intersected member. Omission marker text grants no HTTP authority, and a URL or local filename cannot supply the method for a later path. Private archive and known repository roots retain their own path policy.
 
+The shared source lexer also consumes unquoted Windows absolute paths, UNC paths (both slash spellings) and `file:` references as local units before looking for HTTP authority. A terminal method word or an embedded URL in such a unit is part of its name. Independent methods before or after the unit can still identify public HTTP neighbors. Local-unit projection and sensitive-interval expansion use the same boundaries, retaining private-root precedence and whole repository-relative code locations. Method words attached to relative filename punctuation do not establish HTTP context either.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available
