@@ -28,6 +28,9 @@ _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
 _LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)[^\s;|<>\)\]`'"]*'''
 _SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
+_HTTP_CONTEXT = re.compile(
+    r'''(?ix)(?<!\S)(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
+    (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''')
 _COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
 
 
@@ -165,11 +168,10 @@ class _Projection:
                 last_http_end = None
                 context_start = match.end()
                 continue
-            prefix = value[max(context_start, match.start() - 128):match.start()]
-            explicit = re.search(
-                r'''(?ix)(?<![\w:/\\.-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
-                (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''',
-                prefix)
+            # Start/whitespace establishes an independent token; punctuation
+            # inside a filename does not. Search the original string so the
+            # bounded window cannot invent a start-of-text boundary.
+            explicit = _HTTP_CONTEXT.search(value, max(context_start, match.start() - 128), match.start())
             continuation = (last_http_end is not None and re.fullmatch(
                 r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
             quoted = match.group('quoted_path')

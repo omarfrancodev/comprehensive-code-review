@@ -1,5 +1,6 @@
 """Local filename tokens cannot supply authority to a following HTTP-looking path."""
 import unittest
+import string
 
 import test_review_delivery_privacy_regressions as privacy
 from test_review_coverage13 import record13
@@ -25,6 +26,14 @@ class DeliveryLocalAuthorityTests(unittest.TestCase):
                  'Archivo \\\\server\\share\\GET /api/unc314159.key; '
                  'Archivo file:/private/GET /api/file314159.key; '
                  'GET /api/orders; https://public.example.test/guide')
+        self.assert_retained_prose_private(prose)
+
+    def test_relative_filename_method_suffix_stays_private_in_retained_deliveries(self):
+        self.assert_retained_prose_private(
+            'Archivo cache+GET /api/relative314159.key; '
+            'GET /api/orders; https://public.example.test/guide')
+
+    def assert_retained_prose_private(self, prose):
         def update(record):
             record['verdict_reason'] = prose
             record['coverage']['flows'] = [prose]
@@ -43,6 +52,23 @@ class DeliveryLocalAuthorityTests(unittest.TestCase):
                         self.assertIn('/api/orders', text)
                         self.assertIn('https://public.example.test/guide', text)
             self.assertEqual(before, self.snapshot(run))
+
+    def test_http_authority_requires_an_independent_token_across_punctuation_and_window_edges(self):
+        for factory in (record13, record6):
+            projection = self.projection(factory)
+            for punctuation in string.punctuation + '·＋—':
+                for keyword in ('GET', 'POST', 'Endpoint', 'HTTP route', 'Ruta HTTP'):
+                    text = 'Archivo cache' + punctuation + keyword + ' /api/local314159.key'
+                    with self.subTest(schema=factory.__name__, punctuation=punctuation, keyword=keyword):
+                        self.assertNotIn('314159', projection.text(text))
+            text = 'cache+GET' + ' ' * 125 + '/api/local314159.key'
+            self.assertNotIn('314159', projection.text(text))
+            for text in ('GET /v2/orders', 'Detalle: GET /v2/orders',
+                         'cache+GET GET /v2/orders', 'cache; GET /v2/orders',
+                         'GET' + ' ' * 125 + '/v2/orders', 'Endpoint: /v2/orders',
+                         'HTTP route /v2/orders', 'Ruta HTTP /v2/orders'):
+                with self.subTest(schema=factory.__name__, independent=text):
+                    self.assertIn('/v2/orders', projection.text(text))
 
     def test_unquoted_local_tokens_cannot_lend_methods_in_current_or_historical_prose(self):
         for factory in (record13, record6):

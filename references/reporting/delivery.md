@@ -29,6 +29,8 @@ The source interval enumerator includes every overlapping encoded match; it opts
 
 The shared source lexer also consumes unquoted Windows absolute paths, UNC paths (both slash spellings) and `file:` references as local units before looking for HTTP authority. A terminal method word or an embedded URL in such a unit is part of its name. Independent methods before or after the unit can still identify public HTTP neighbors. Local-unit projection and sensitive-interval expansion use the same boundaries, retaining private-root precedence and whole repository-relative code locations. Method words attached to relative filename punctuation do not establish HTTP context either.
 
+An independent method or endpoint-context phrase begins at the original text boundary or after whitespace. Punctuation attached to a relative filename, such as `cache+GET`, is not a substitute for that boundary. The bounded context search runs against original source positions; clipping the search window must not make an attached suffix look like the start of text. Ordinary independent methods, endpoint labels and already established HTTP-list continuity remain supported.
+
 A POSIX path beginning with `/api` or `/vN` is not by itself an HTTP endpoint. Preserve such paths only with explicit HTTP-method or endpoint/HTTP-route context, including an adjacent list of those routes. Ambiguous bare paths and paths described as local files remain private, including in collected context. Normalize known repository roots to relative code locations before masking other absolute paths; keep credential and URL filtering active.
 
 ## Additional context, when available

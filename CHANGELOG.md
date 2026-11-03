@@ -35,6 +35,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Conservar intervalos sensibles sobre el texto original completo, incluidas copias que cruzan miembros citados, y omitir comandos canónicos enteros antes de proyectar sus rutas; compartir los offsets del filtro codificado y unir solapamientos sin restaurar texto privado.
 - Enumerar todos los solapamientos codificados para las entregas y clasificar las listas HTTP originales antes de omitir miembros, conservando sus vecinos públicos aun cuando se oculta el primero.
 - Reconocer portadores Windows, UNC y `file:` sin comillas como unidades locales, evitando que un método o URL dentro de su nombre conceda autoridad HTTP o aparezca como referencia independiente.
+- Exigir un método o contexto HTTP independiente al inicio del texto o después de espacio, evitando autoridad prestada por puntuación de nombres relativos o por el recorte de la ventana de búsqueda.
 
 ## 3.5.0 — 2026-10-30
 
