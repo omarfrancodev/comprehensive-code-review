@@ -47,7 +47,7 @@ def model_usage_context(context, source, manifest, *, record=None, events=None):
     """Bind selected original bytes to their retained review and harness identity."""
     context = copy.deepcopy(context or {})
     reference = context.get('model_usage_reference')
-    capture_visible = bool(record and record.get('schema_version') == 12
+    capture_visible = bool(record and record.get('schema_version') in (12, 13)
                            or context.get('model_usage_diagnostics'))
     if reference is None and not capture_visible:
         return dict(context=context, ledger=None, sha256=None)

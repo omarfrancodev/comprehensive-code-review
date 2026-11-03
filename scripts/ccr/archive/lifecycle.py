@@ -255,7 +255,9 @@ def record_event(run_dir, event_file, execution_metadata=None):
 def prepare(repo, scope_file, skill_version, harness, output_root=None, previous_run=None, temporary_paths=None,
             *, profile_input=None, controller=None, harness_id=None, harness_source=None, current_inputs=None,
             logical_scope_input=None,
-            _restart_reservation=None, _harness_identity=None):
+            _restart_reservation=None, _harness_identity=None, _compact_reservation=None):
+    if _restart_reservation is not None and _compact_reservation is not None:
+        raise ValueError('restart and compact promotion reservations cannot be combined')
     repo = safe_path(repo)
     repo = safe_path(_git(repo, 'rev-parse', '--show-toplevel'))
     scope = _input_object(scope_file, 'scope')
@@ -336,20 +338,44 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                             'source_run': intent['source']['run_dir'],
                             'source_owner_id': intent['source']['owner_id'],
                             'reservation_id': reserved['reservation_id']})
+    if _compact_reservation is not None:
+        from ccr.archive.promotion import validate_intent
+        intent = validate_intent(_compact_reservation)
+        promotion_inputs = copy.deepcopy(intent['request']['inputs'])
+        promotion_profile = promotion_inputs.pop('profile', None)
+        if (promotion_profile is not None and promotion_profile != selection['profile']):
+            raise ValueError('compact promotion profile differs from its pinned inputs')
+        if (intent['request']['scope'] != scope or promotion_inputs != captured_inputs
+                or intent['request']['logical_scope_input'] != logical_scope_input
+                or intent['request']['repository_identity'] != identity
+                or intent['request']['archive_root'] != str(root)
+                or intent['request']['profile_input'] != profile_input
+                or intent['request']['skill_version'] != skill_version
+                or intent['request']['harness'] != harness
+                or intent['request']['controller'] != controller):
+            raise ValueError('compact promotion differs from the reserved inputs or destination')
+        reserved = intent['successor']
+        manifest.update(run_id=reserved['run_id'], owner_id=reserved['owner_id'],
+                        created_at=reserved['created_at'], compact_promotion={
+                            'reservation_id': reserved['reservation_id'],
+                            'operation_id': intent['operation_id'], 'intent_sha256': intent['intent_sha256'],
+                            'source_review_id': intent['source_review_id'],
+                            'source_reservation': intent['source_reservation']})
     manifest['temporary_paths'] = _temporary_paths(temporary_paths, manifest)
     manifest['temporary_manifests'] = _temporary_manifests(manifest['temporary_paths'], manifest)
     scoped = root / _repository_group(identity) / review_layout.scope_group(logical)
     reservation_file = '.review-restart-reservation.json'
-    if _restart_reservation is not None:
-        reserved = _restart_reservation['successor']
+    if _restart_reservation is not None or _compact_reservation is not None:
+        intent = _restart_reservation if _restart_reservation is not None else _compact_reservation
+        reserved = intent['successor']
         run = safe_path(reserved['run_dir'])
         created = datetime.fromisoformat(reserved['created_at'])
         expected_parent = safe_path(scoped)
         if run.parent != expected_parent:
             raise ValueError('reserved successor escaped its repository/scope group')
         _validate_layout(run, manifest)
-        reservation = {'operation_id': _restart_reservation['operation_id'],
-                       'intent_sha256': _restart_reservation['intent_sha256'],
+        reservation = {'operation_id': intent['operation_id'],
+                       'intent_sha256': intent['intent_sha256'],
                        'reservation_id': reserved['reservation_id'], 'run_dir': str(run),
                        'owner_id': reserved['owner_id']}
         reservation_path = run / reservation_file
@@ -366,7 +392,8 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
                 with run_locks([existing]):
                     existing, existing_manifest, existing_marker = _load_run(existing)
                     identity_fields = ('run_id', 'owner_id', 'created_at', 'archive_root',
-                                       'repository_key', 'scope', 'previous_run', 'restart_operation')
+                                       'repository_key', 'scope', 'previous_run', 'restart_operation',
+                                       'compact_promotion', 'review_inputs')
                     if any(existing_manifest.get(key) != manifest.get(key) for key in identity_fields):
                         raise ValueError('reserved successor identity differs from its restart intent')
                     _assert_not_restart_abandoned(existing_manifest)
@@ -746,6 +773,14 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
     """Read-only archive gate; selected evidence is verified, never copied here."""
     if require_complete and record_checkpoint:
         raise ValueError('complete gate is read-only; cannot record a checkpoint')
+    if (Path(run_dir) / 'manifest.json').is_file():
+        if record_checkpoint:
+            raise ValueError('completed compact reviews are immutable')
+        from ccr.archive.compact import read_compact
+        compact = read_compact(run_dir)
+        return {'run_dir': str(safe_path(run_dir)), 'schema_version': 1,
+                'artifact_mode': 'compact', 'state': 'complete', 'retained': True,
+                'cleanup': compact['record']['resources']['cleanup']}
     require_retained = require_retained or require_complete
     run, manifest, marker = _load_run(run_dir)
     superseded = manifest.get('operation', {}).get('disposition') == 'superseded'
@@ -764,11 +799,11 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
             raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
         if value['scope'] != manifest['scope']:
             raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
             raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12):
-            raise ValueError('archive 8 requires final review schema 10, 11 or 12')
-        if value.get('schema_version') in (8, 9, 10, 11, 12):
+        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12, 13):
+            raise ValueError('archive 8 requires final review schema 10, 11, 12 or 13')
+        if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
             _execution_gate(run, manifest, value, {})
     if require_complete:
         if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}

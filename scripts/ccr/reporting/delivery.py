@@ -1,6 +1,7 @@
 """Explicitly deliver a portable projection of a retained review; never review again."""
 import argparse
 import hashlib
+import heapq
 import html
 import json
 import os
@@ -14,11 +15,34 @@ from ccr.contracts import review as review_contract, validation
 from ccr.reporting import markdown
 from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
 from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
-from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, safe_text, private_values
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, private_values, sensitive_text_ranges
 from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import contains, safe_path
+
+# One shared boundary for classification and for excluding filename substrings
+# from URL recognition. A lone terminal backslash still belongs to the member.
+_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+_POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
+_LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)[^\s;|<>\)\]`'"]*'''
+_SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
+                            + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
+_HTTP_CONTEXT = re.compile(
+    r'''(?ix)(?<!\S)(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
+    (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''')
+_COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
+
+
+def _relative_to_root(value, root):
+    if not root:
+        return None
+    root = root.rstrip('/\\')
+    normalized, prefix = value.replace('\\', '/').lower(), root.replace('\\', '/').lower()
+    if normalized == prefix:
+        return ''
+    return value[len(root) + 1:] if normalized.startswith(prefix + '/') else None
+
 
 def _hash(data):
     return hashlib.sha256(data).hexdigest()
@@ -51,6 +75,10 @@ class _Projection:
         coverage.areas[].finding_ids[] coverage.limitations[].kind
         coverage.areas[].dimensions[].id coverage.areas[].dimensions[].status
         coverage.areas[].dimensions[].finding_ids[]
+        coverage.areas[].applicability coverage.areas[].groups[].ids[]
+        coverage.areas[].groups[].status coverage.areas[].groups[].evidence_ids[]
+        coverage.areas[].groups[].finding_ids[] coverage.evidence[].id
+        coverage.evidence[].kind coverage.evidence[].check_id
         coverage.execution.selection_source coverage.execution.status
         coverage.execution.plan[].id coverage.execution.plan[].role
         coverage.execution.plan[].selection_id coverage.execution.plan[].superseded_by
@@ -65,6 +93,7 @@ class _Projection:
         coverage.execution.fallbacks[].reason responsible.name responsible.username
         change_authors[].name change_authors[].username change_authors[].commits[]
         presentation.kind description.identity previous_reviews[].review_id
+        compact_identity.inputs_sha256 compact_identity.logical_scope_identity compact_identity.created_at
         grandfathered_ids.findings[] grandfathered_ids.checks[]
         rereview[].id rereview[].status rereview[].previous_review_id
         rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
@@ -74,6 +103,7 @@ class _Projection:
         checks[].purpose checks[].evidence checks[].reuse_reason checks[].rerun_reason
         coverage.flows[] coverage.limitations[].detail coverage.limitations[].public_summary
         coverage.areas[].details coverage.areas[].dimensions[].details coverage.execution.fallbacks[].detail
+        coverage.areas[].applicability_reason coverage.areas[].groups[].reason coverage.evidence[].detail
         coverage.execution.profile_history[].reason coverage.execution.profile_history[].authority
         responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
@@ -81,10 +111,13 @@ class _Projection:
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None, check_disclosure_sources=None):
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+        self.new_policy = record.get('schema_version') == 13 or self.disclosure is not None
         self.disclosure_rows = {row['id']: row for row in self.disclosure['checks']} if self.disclosure else {}
         self.check_ids = [check['id'] for check in record['checks']]
         self.secrets = private_values(record, self.disclosure, check_disclosure_sources or {})
-        self.commands = sorted({check['command'] for check in record['checks']}, key=len, reverse=True)
+        commands = {check['command'] for check in record['checks']}
+        commands.update(markdown.markdown_text(command) for command in tuple(commands))
+        self.commands = sorted(commands, key=len, reverse=True)
         self.repo_roots = [str(project), manifest.get('repository_path', '')]
         self.private_roots = [manifest.get('archive_root', '')]
         self.changed = []
@@ -119,53 +152,219 @@ class _Projection:
             r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
+                or (self.secrets and safe_text(value, self.secrets, redact_paths=False) != value)
                 or any(_public_url(span) and self.public_url(span) is None for span in spans)
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
             raise ValueError('private structural value cannot be delivered: ' + path)
         return value
 
+    def _http_members(self, value):
+        """Classify HTTP-list members in original coordinates, before omission."""
+        last_http_end = None
+        context_start = 0
+        for match in _SOURCE_TOKENS.finditer(value):
+            if match.group('url') is not None:
+                last_http_end = None
+                context_start = match.end()
+                continue
+            # Start/whitespace establishes an independent token; punctuation
+            # inside a filename does not. Search the original string so the
+            # bounded window cannot invent a start-of-text boundary.
+            explicit = _HTTP_CONTEXT.search(value, max(context_start, match.start() - 128), match.start())
+            continuation = (last_http_end is not None and re.fullmatch(
+                r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
+            quoted = match.group('quoted_path')
+            local = match.group('local')
+            if local is not None:
+                # A method inside a filename cannot lend authority. An actual
+                # method before this member still anchors its HTTP-list peers.
+                last_http_end = match.start() + len(local.rstrip(',')) if explicit or continuation else None
+                candidates = []
+            elif quoted is not None:
+                active = match.group('closing') and (explicit or continuation)
+                last_http_end = match.end() if active else None
+                candidates = [(match.start(), match.end(), quoted)] if active and not any(
+                    char.isspace() for char in quoted) else []
+            elif explicit or continuation:
+                candidates, offset = [], match.start()
+                for part in re.split(r'''(,)(?=[`'"]*/)''', match.group()):
+                    if part != ',':
+                        core = part.rstrip(",`'\"")
+                        candidates.append((offset, offset + len(core), core))
+                        last_http_end = offset + len(core)
+                    offset += len(part)
+            else:
+                last_http_end = None
+                context_start = match.end()
+                continue
+            context_start = match.end()
+            for first, last, path in candidates:
+                if (re.match(r'^/(?:api|v[0-9]+)(?:/|$)', path)
+                        and not any(_relative_to_root(path, root) is not None
+                                    for root in self.private_roots + self.repo_roots)):
+                    yield first, last
+
+    def _local_members(self, value):
+        for match in _SOURCE_TOKENS.finditer(value):
+            if match.group('local') is not None:
+                yield match.span()
+
+    def _local_text(self, value):
+        core = value.rstrip(',')
+        suffix = value[len(core):]
+        if any(_relative_to_root(core, root) is not None for root in self.private_roots):
+            return self.retained(core) + suffix
+        for root in self.repo_roots:
+            relative = _relative_to_root(core, root)
+            if relative is not None:
+                return (relative or '[repositorio revisado]') + suffix
+        return ('[referencia privada]' if core.lower().startswith('file:') else '[ruta privada]') + suffix
+
+    def _source_omissions(self, value, omit_commands):
+        # Recognize copies globally in original coordinates. Expanding an
+        # intersected quoted path protects its whole filename, even if a copy
+        # consists only of a delimiter or extends across several members.
+        streams = []
+        if self.new_policy and self.secrets:
+            streams.append(((*span, False) for span in sensitive_text_ranges(value, self.secrets)))
+        if omit_commands and self.commands:
+            streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
+        if not streams:
+            return
+        members = heapq.merge((match.span() for match in re.finditer(_QUOTED_PATH, value)),
+                              self._http_members(value), self._local_members(value))
+        member = next(members, None)
+        pending = None
+        for first, last, command in heapq.merge(*streams):
+            while member is not None and member[1] <= first:
+                member = next(members, None)
+            while member is not None and member[0] < last:
+                first, last = min(first, member[0]), max(last, member[1])
+                member = next(members, None)
+            if pending is not None and first <= pending[1]:
+                pending = pending[0], max(last, pending[1]), command or pending[2]
+            else:
+                if pending is not None:
+                    yield pending
+                pending = first, last, command
+        if pending is not None:
+            yield pending
+
     def text(self, value, omit_commands=True):
-        if self.disclosure:
-            value = safe_text(value, self.secrets)
-        for command in self.commands if omit_commands else ():
-            value = value.replace(command, '[comprobación registrada; comando omitido]')
-            value = value.replace(markdown.markdown_text(command), '[comprobación registrada; comando omitido]')
+        # Public HTTP members and omissions retain their original source spans.
+        # Omissions take precedence; public neighbors do not need an anchor to
+        # survive in the redacted spelling, nor can input markers create one.
+        events = heapq.merge(
+            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands)),
+            ((*span, 'http', False) for span in self._http_members(value)),
+            ((*span, 'local', False) for span in self._local_members(value)),
+            key=lambda event: (event[0], event[2] != 'omission'))
+        chunks, cursor = [], 0
+        for first, last, kind, command in events:
+            if first < cursor:
+                continue
+            chunks.append(self._text_fragment(value[cursor:first]))
+            if kind == 'omission':
+                chunks.append(_COMMAND_OMISSION if command else OMITTED)
+            elif kind == 'local':
+                chunks.append(self._local_text(value[first:last]))
+            else:
+                route = value[first:last]
+                chunks.append(safe_text(route, self.secrets, redact_paths=False) if self.new_policy else route)
+            cursor = last
+        chunks.append(self._text_fragment(value[cursor:]))
+        value = ''.join(chunks)
+        # Relative Markdown links cannot resolve from the delivery directory.
+        value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
+                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
+        return safe_text(value, self.secrets, redact_paths=False) if self.new_policy else value
+
+    def _text_fragment(self, value):
+        def redact(text):
+            # Apply only after original quotation boundaries have been read,
+            # but before a root rewrite could erase part of a sensitive value.
+            if self.new_policy:
+                text = safe_text(text, self.secrets, redact_paths=False)
+            return text
 
         def segment(value):
+            def normalize_roots(text):
+                for root in self.private_roots:
+                    if not root:
+                        continue
+                    for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
+                        text = re.sub(re.escape(spelling) + r'(?:[/\\][^\s;|<>\)\]]*)?',
+                                      lambda match: self.retained(match.group()), text, flags=re.IGNORECASE)
+                for root in self.repo_roots:
+                    if not root:
+                        continue
+                    for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
+                        text = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', text, flags=re.IGNORECASE)
+                        text = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', text, flags=re.IGNORECASE)
+                return text
+            # Root rewriting must not truncate a quoted filename before its
+            # privacy decision. Normalize ordinary text and whole members apart.
+            chunks, cursor = [], 0
+            for member in re.finditer(_QUOTED_PATH, value):
+                chunks.extend((normalize_roots(value[cursor:member.start()]), member.group()))
+                cursor = member.end()
+            value = ''.join(chunks) + normalize_roots(value[cursor:])
+            # Public HTTP members were classified before segmentation. Every
+            # remaining absolute path needs the private/known-root policy.
+            def posix_path(match):
+                quoted = match.group('quoted_path')
+                if quoted is not None:
+                    closing = match.group('closing') or ''
+                    shown = '[ruta privada]'
+                    if redact(match.group()) != match.group():
+                        # A sensitive copy can include the quotes themselves.
+                        # Keep the original member opaque; never reparse its
+                        # redacted spelling or relativize its remaining suffix.
+                        shown = '[ruta privada]'
+                    elif closing:
+                        if any(_relative_to_root(quoted, root) is not None for root in self.private_roots):
+                            shown = self.retained(quoted)
+                        else:
+                            for root in self.repo_roots:
+                                relative = _relative_to_root(quoted, root)
+                                if relative is not None:
+                                    shown = relative or '[repositorio revisado]'
+                                    break
+                    return match.group('quote') + shown + closing
+                return '[ruta privada]' + match.group()[len(match.group().rstrip(',')):]
+            # Quoted paths are indivisible, even with spaces or internal commas.
+            # Unterminated quoted paths fail closed through the end of the span.
+            value = re.sub(_QUOTED_PATH + '|' + _POSIX_PATH, posix_path, value)
             value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
             value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
-            for root in self.private_roots:
-                if not root:
-                    continue
-                normalized = root.replace('\\', '/')
-                for spelling in dict.fromkeys((root, normalized)):
-                    value = re.sub(re.escape(spelling) + r'(?:[/\\][^\s;|<>\)\]]*)?',
-                                   lambda match: self.retained(match.group()), value, flags=re.IGNORECASE)
-            for root in self.repo_roots:
-                if not root:
-                    continue
-                for spelling in dict.fromkeys((root, root.replace('\\', '/'))):
-                    value = re.sub(re.escape(spelling.rstrip('/\\')) + r'[/\\]', '', value, flags=re.IGNORECASE)
-                    value = re.sub(re.escape(spelling) + r'(?=$|[\s;|<>\)\]])', '[repositorio revisado]', value, flags=re.IGNORECASE)
             value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'\\\\[^\s;|<>\)\]]+', '[ruta privada]', value)
-            # Preserve HTTP business paths expressed without a host.
-            value = re.sub(r'(?<![\w:#/<])/(?!/)[^\s;|<>\)\]]+',
-                           lambda match: match.group() if re.match(r'^/(?:api|v[0-9]+)(?:/|$)', match.group()) else '[ruta privada]', value)
             value = re.sub(r'(?<![\w/\\])(?:evidence|_?archive)[/\\][^\s;|<>\)\]]+',
                            lambda match: self.retained(match.group()), value)
             return value
 
-        # Sanitize URL and non-URL spans separately; placeholders could collide
-        # with caller content and accidentally restore a private path.
-        spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
-        value = ''.join(span if self.public_url(span) else '[referencia privada]' if span.lower().startswith(('http://', 'https://'))
-                        else segment(span) for span in spans)
-        # Relative Markdown links cannot resolve from the delivery directory.
-        value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
-                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
-        return value
+        # Read original quotation boundaries before redaction can change them.
+        # Redact ordinary text before URL splitting too: a single learned
+        # credential can span a repository root and a URL-shaped substring.
+        chunks, cursor = [], 0
+        for member in re.finditer(_QUOTED_PATH, value):
+            chunks.extend((redact(value[cursor:member.start()]), member.group()))
+            cursor = member.end()
+        value = ''.join(chunks) + redact(value[cursor:])
+
+        # Recognize quoted members before URLs. Keep those members in their
+        # surrounding ordinary text so HTTP-list context is not lost. No input
+        # placeholders are restored into an already sanitized result.
+        chunks, cursor = [], 0
+        for span in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE):
+            if span.group('url') is None:
+                continue
+            chunks.extend((segment(value[cursor:span.start()]),
+                           span.group() if self.public_url(span.group()) else '[referencia privada]'))
+            cursor = span.end()
+        value = ''.join(chunks) + segment(value[cursor:])
+        return redact(value)
 
     def value(self, value, path='record'):
         if isinstance(value, dict):
@@ -265,7 +464,7 @@ def _brief(record, *, evidence_by_finding=None):
              + markdown.markdown_text(scope['head'] or scope['snapshot']),
              '- **Verificación:** ' + validation.VERIFICATION[record['coverage']['verification']],
              '- **Cobertura obsoleta:** ' + ('sí' if record['coverage']['stale'] else 'no')]
-    if record['schema_version'] in (8, 9, 10, 11, 12):
+    if record['schema_version'] in (8, 9, 10, 11, 12, 13):
         status = {'fulfilled': 'cumplida', 'degraded': 'degradada'}[record['coverage']['execution']['status']]
         lines.append('- **Ejecución del perfil:** ' + status)
     if scope['snapshot']:
@@ -301,7 +500,7 @@ def _brief(record, *, evidence_by_finding=None):
         lines.append('- **' + check['id'] + '** · ' + validation.CHECK_STATUS[check['status']] + ' · versión: '
                      + markdown.markdown_text(check['revision']))
         lines.append('  - **Propósito:** ' + markdown.markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
-        if record['schema_version'] == 12:
+        if record['schema_version'] in (12, 13):
             lines.append('  - **Comando saneado:** ' + markdown.markdown_text(check['command']))
         lines.append('  - **Resultado:** ' + markdown.markdown_text(check['evidence'] or 'Sin ejecución'))
         if check.get('reference'):
@@ -322,7 +521,11 @@ def _brief(record, *, evidence_by_finding=None):
     uncertainties = ['**' + item['id'] + '**: ' + markdown.markdown_text(item['title'] + ' · ' + item['scenario'])
                      for item in record['findings'] if item['status'] == 'unresolved']
     uncertainties.extend(markdown.markdown_text(item['detail']) for item in record['coverage']['limitations'])
-    uncertainties.extend(markdown.markdown_text(row['details']) for row in record['coverage'].get('areas', []) if row['status'] in {'partial', 'not_evaluated'})
+    coverage_areas = record['coverage'].get('areas', [])
+    if record['schema_version'] == 13:
+        from ccr.contracts.dimensions import display_areas13
+        coverage_areas = display_areas13(coverage_areas)
+    uncertainties.extend(markdown.markdown_text(row['details']) for row in coverage_areas if row['status'] in {'partial', 'not_evaluated'})
     uncertainties.extend(markdown.markdown_text(item) for item in record['reservations'])
     if uncertainties:
         lines.extend(['', '### Incertidumbres y reservas', ''])
@@ -348,8 +551,21 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
         raise ValueError('an explicit delivery full|brief is required')
     validate_archive(run_dir, require_retained=True)
     run = safe_path(run_dir)
-    manifest_bytes = (run / 'cierre.json').read_bytes()
-    manifest = read_json(run / 'cierre.json')
+    compact_mode = (run / 'manifest.json').is_file()
+    manifest_path = run / ('manifest.json' if compact_mode else 'cierre.json')
+    manifest_bytes = manifest_path.read_bytes()
+    compact_sources = None
+    if compact_mode:
+        from ccr.archive.compact import read_compact
+        compact = read_compact(run)
+        compact_manifest = compact['manifest']
+        request = compact_manifest['request']
+        compact_sources = compact['sources']
+        manifest = {'repository_identity': request['repository_identity'],
+                    'archive_root': request['archive_root'], 'run_id': compact_manifest['run_id'],
+                    'hashes': compact_manifest['hashes'], 'temporary_paths': []}
+    else:
+        manifest = read_json(manifest_path)
     project = safe_path(project_root)
     selected = Path(output_root) if output_root is not None else project / 'docs' / 'ccr' / 'reviews'
     if not selected.is_absolute() and selected.drive:
@@ -369,7 +585,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     source = (run / 'review.json').read_bytes()
     record = read_json(run / 'review.json')
     source_hash = _hash(source)
-    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else manifest.get('run_id', run.name.rpartition('-')[2])
+    identifier = record.get('review_id') if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else manifest.get('run_id', run.name.rpartition('-')[2])
     if not isinstance(identifier, str) or not re.fullmatch(r'(?:CR-)?[0-9a-f]{20}', identifier):
         raise ValueError('known review/run identity required')
     destination = safe_path(root / run.parent.name / identifier)
@@ -377,12 +593,22 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
         raise ValueError('delivery destination overlaps its retained archive or temporary resources')
     if destination.exists():
         raise ValueError('delivery destination already exists')
-    from ccr.archive.evidence import selected_source_bytes
+    from ccr.archive.evidence import selected_source_bytes as archive_source_bytes
+    def selected_source_bytes(source_run, source_manifest, overlay, name):
+        if compact_sources is not None:
+            if name not in compact_sources:
+                raise ValueError('compact retained source is unavailable: ' + name)
+            return compact_sources[name]
+        return archive_source_bytes(source_run, source_manifest, overlay, name)
     from ccr.archive.trace import NAME as TRACE_NAME
     from ccr.reporting import models
     retained_context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json')) if 'evidence/context.json' in manifest['hashes'] else {}
+    if compact_mode:
+        manifest['harness_id'] = request['producer']['harness_id']
     from ccr.execution.disclosure import SelectedDisclosureSources
     selected = SelectedDisclosureSources(check_disclosure_sources or {})
+    if compact_sources is not None:
+        selected.update(compact_sources)
     reference = retained_context.get('check_disclosure_reference')
     if reference is not None:
         if reference != 'evidence/check-disclosure.json':
@@ -398,11 +624,18 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
                     selected[row[field]] = selected_source_bytes(run, manifest, {}, row[field])
         if retained_disclosure['input_identity'] != retained_context.get('check_disclosure_input_identity'):
             raise ValueError('disclosure input identity differs from retained context')
-        if retained_disclosure['input_identity'].get('resource_manifest_sha256') is not None:
+        if retained_disclosure['input_identity'].get('resource_manifest_sha256') is not None and not compact_mode:
             if retained_disclosure['input_identity'] != manifest.get('check_disclosure_input_identity'):
                 raise ValueError('disclosure input map was not registered before review work')
             selected.input_identity = manifest['check_disclosure_input_identity']
-    events = [json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()] if TRACE_NAME in manifest['hashes'] else None
+    elif (compact_mode or record.get('schema_version') == 13) and record.get('checks'):
+        # No project-resource proof was pinned; disclose an explanation only.
+        from ccr.workflow.builders import build_check_disclosure
+        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+        check_disclosure_context = build_check_disclosure(record, identity, {}, selected)
+    events = ([json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()]
+              if TRACE_NAME in manifest['hashes'] else
+              json.loads(compact_sources['evidence/compact-execution.json']) if compact_mode else None)
     retained_models = models.model_usage_context(retained_context,
         lambda name: selected_source_bytes(run, manifest, {}, name), manifest, record=record, events=events)
     if model_usage_context is not None and model_usage_context != retained_models:
@@ -423,7 +656,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     errors = review_contract.validate(portable)
     if errors:
         raise ValueError('portable record is invalid: ' + '; '.join(errors))
-    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'identidad de archivo ' + identifier
+    source_label = identifier if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else 'identidad de archivo ' + identifier
     notice = ('\n> Proyección portable de la revisión retenida (' + source_label + '). No es una nueva revisión ni una nueva ejecución. '
               'Comandos y referencias privadas omitidos; la procedencia e integridad se registran en .ccr-delivery.json.\n')
     files = ({'review.json': _json(portable), 'informe.md': (_human(render_record(portable, evidence_by_finding)) + notice).encode('utf-8')}
@@ -441,20 +674,22 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     contextual = _context_markdown(context, projection)
     if contextual is not None:
         files['contexto.md'] = _human(contextual.decode('utf-8')).encode('utf-8')
-    new_policy = record['schema_version'] == 12 or projection.disclosure is not None or model_usage_context.get('sha256') is not None
-    receipt = {'schema_version': 2 if new_policy else 1, 'delivery': delivery, 'source_id': identifier,
-        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12) else 'run_id',
+    new_policy = record['schema_version'] in (12, 13) or projection.disclosure is not None or model_usage_context.get('sha256') is not None
+    receipt = {'schema_version': 3 if compact_mode else 2 if new_policy else 1, 'delivery': delivery, 'source_id': identifier,
+        'source_id_kind': 'review_id' if record['schema_version'] in (6, 7, 8, 9, 10, 11, 12, 13) else 'run_id',
         'source_hash': source_hash, 'source_schema_version': record['schema_version'], 'projection': 'portable',
         'projected_fields': projection.changed, 'hashes': {name: _hash(data) for name, data in files.items()}}
     if new_policy:
         receipt.update(projection_policy='project-resources-v1',
             check_disclosure_sha256=projection.disclosure['check_disclosure_sha256'] if projection.disclosure else None,
             model_usage_sha256=model_usage_context.get('sha256'))
+    if compact_mode:
+        receipt['artifact_mode'] = 'compact'
     files['.ccr-delivery.json'] = _json(receipt)
     # Finish every read/validation/render before creating anything. Validate again
     # to catch archive changes during projection, without recording a checkpoint.
     validate_archive(run, require_retained=True)
-    if (run / 'review.json').read_bytes() != source or (run / 'cierre.json').read_bytes() != manifest_bytes:
+    if (run / 'review.json').read_bytes() != source or manifest_path.read_bytes() != manifest_bytes:
         raise ValueError('source changed during delivery preparation')
     created_dirs, owned_files = [], []
     try:

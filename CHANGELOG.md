@@ -2,6 +2,37 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.6.0 — 2026-11-03
+
+### Added
+
+#### Artefactos y contratos
+
+- Introducir schema final 13 con decisiones de cobertura agrupadas y evidencia compartida, conservando las 27 dimensiones.
+- Seleccionar automáticamente persistencia compacta o completa según los hechos observados; mantener la entrega breve o completa como decisión independiente.
+- Añadir lectura, validación, entrega y promoción de artifacts compactos, conservando los contratos publicados.
+
+### Fixed
+
+#### Artefactos y contratos
+
+- Comprobar los límites del registro, contenido y metadatos compactos antes de persistir la intención de publicación, conservando la reserva utilizable cuando se rechaza un exceso.
+- Derivar la cobertura para reutilización de full13 desde sus grupos, conservando los gates de incertidumbre material y linaje ordinario de re-review.
+- Vincular el final compacto a su reserva antes de construir sidecars mediante `artifacts bind-compact`, conservando el hash del registro completo y los anclajes iniciales.
+
+#### Reportes y entregas
+
+- Conservar endpoints HTTP, listas con comas o delimitadores Markdown y ubicaciones relativas del repositorio en las entregas 13.
+- Generar la explicación segura de checks también al entregar full13 sin disclosure seleccionado, sin acreditar comandos o recursos desconocidos.
+
+### Security
+
+#### Reportes y entregas
+
+- Ocultar copias de credenciales explícitas de comandos retenidos, incluidos scripts shell citados, anidados y con claves escapadas, aun sin prueba argv; no acreditar comandos ni modificar fuentes y rechazar identidades estructurales sensibles antes de exportar.
+- Clasificar secretos y comandos completos sobre intervalos del texto original, incluidas copias codificadas solapadas y valores que cruzan miembros citados; ocultarlos antes de relativizar raíces, dividir URLs o transformar delimitadores, sin restaurar texto privado ni cambiar el redactor histórico.
+- Conservar rutas HTTP y sus vecinos mediante contexto independiente en el texto original, incluso tras omitir el primer miembro. Mantener privados los nombres locales citados, Windows, UNC y `file:`, sus fragmentos URL y las rutas ambiguas, sin aceptar autoridad prestada por puntuación de filenames o por el recorte de la búsqueda.
+
 ## 3.5.0 — 2026-10-30
 
 ### Added

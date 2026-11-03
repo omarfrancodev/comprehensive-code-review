@@ -4,6 +4,7 @@ The expected input identity is a trust anchor captured before review execution.
 The resource manifest is hashed at workspace preparation, never after a check.
 """
 import hashlib
+import heapq
 from array import array
 from bisect import bisect_left, bisect_right
 import html
@@ -153,6 +154,21 @@ def _argument_secrets(argument):
     return values
 
 
+def _argv_sensitive_values(argv):
+    values = set()
+    secret_next = False
+    for argument in argv if isinstance(argv, list) else []:
+        if not isinstance(argument, str):
+            continue
+        values.update(_argument_secrets(argument))
+        if secret_next:
+            values.add(argument); secret_next = False
+        if _secret_argument(argument):
+            if '=' in argument: values.add(argument.split('=', 1)[1])
+            else: secret_next = True
+    return {value for value in values if value}
+
+
 def sensitive_values(sources):
     values = set()
     for raw in sources.values():
@@ -162,22 +178,48 @@ def sensitive_values(sources):
             continue
         if not isinstance(item, dict):
             continue
-        argv = item.get('argv', [])
-        secret_next = False
-        for argument in argv if isinstance(argv, list) else []:
-            if not isinstance(argument, str):
-                continue
-            values.update(_argument_secrets(argument))
-            if secret_next:
-                values.add(argument); secret_next = False
-            if _secret_argument(argument):
-                if '=' in argument: values.add(argument.split('=', 1)[1])
-                else: secret_next = True
-    return {value for value in values if value}
+        values.update(_argv_sensitive_values(item.get('argv', [])))
+    return values
+
+
+def _command_sensitive_values(command):
+    """Learn redactions from retained text, never execution or resource proof."""
+    values, seen, pending = set(), set(), [command]
+    # Nested quoted scripts are text, not argv proof. Bound total lexical work
+    # by input size and fail closed rather than silently skipping inner secrets.
+    remaining = 16 * max(1, len(command))
+    while pending:
+        text = pending.pop()
+        if text in seen:
+            continue
+        if len(text) > remaining:
+            raise ValueError('retained command privacy analysis exceeds its work bound')
+        remaining -= len(text)
+        seen.add(text)
+        values.update(_argument_secrets(text))
+        for posix in (True, False):
+            lexer = shlex.shlex(text, posix=posix, punctuation_chars=True)
+            lexer.whitespace_split = True
+            lexer.commenters = ''
+            arguments = []
+            try:
+                arguments.extend(lexer)
+            except ValueError:
+                # Preserve both prior arguments and an unterminated quoted body.
+                if lexer.token:
+                    arguments.append(lexer.token)
+            values.update(_argv_sensitive_values(arguments))
+            # Outer spellings can hide sensitive keys through escapes/quoting.
+            # Inspect candidate text before classifying its normalized tokens.
+            pending.extend(argument for argument in arguments
+                           if argument != text and any(char in argument for char in ' \t\r\n\\\'"'))
+    return values | {re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', value) for value in values}
 
 
 def private_values(record, view, sources):
     values = sensitive_values(sources)
+    for check in record.get('checks', []):
+        values.update(_command_sensitive_values(check['command']))
     rows = {row['id']: row for row in view['checks']} if view else {}
     for raw in sources.values():
         try:
@@ -200,15 +242,15 @@ def private_values(record, view, sources):
     return values
 
 
-def _redact_encoded_values(text, spellings):
-    """Redact known encoded copies using source offsets, never decoded output."""
+def _encoded_value_ranges(text, spellings, *, overlaps=False):
+    """Locate encoded copies in original source coordinates."""
     if not spellings:
-        return text
+        return []
     entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
     encoded_starts = sorted({match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
                            | {match.start() for match in re.finditer(entity, text)})
     if not encoded_starts:
-        return text
+        return []
     shown = text
     starts = array('I', range(len(text)))
     ends = array('I', range(1, len(text) + 1))
@@ -224,8 +266,9 @@ def _redact_encoded_values(text, spellings):
                     # Literal-only matches are handled by replace below. Do not
                     # retain one range per plain-text occurrence or per view.
                     ranges.add((first, last))
-                    # Only withheld matches make their overlaps safe to skip.
-                    following = position + len(secret)
+                    # The original redactor may skip withheld overlaps. Source
+                    # classification must enumerate them before any rewriting.
+                    following = position + (1 if overlaps else len(secret))
                 elif encoded_index < len(encoded_starts):
                     # Skip literal-only windows, but retain overlaps that can
                     # reach the next source encoding marker after normalization.
@@ -274,25 +317,27 @@ def _redact_encoded_values(text, spellings):
     transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
     if not ranges:
-        return text
+        return []
     merged = []
     for first, last in sorted(ranges):
         if merged and first <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
         else:
             merged.append((first, last))
+    return merged
+
+
+def _redact_encoded_values(text, spellings):
+    """Redact known encoded copies using source offsets, never decoded output."""
     result, cursor = [], 0
-    for first, last in merged:
+    for first, last in _encoded_value_ranges(text, spellings):
         result.extend((text[cursor:first], OMITTED))
         cursor = last
     result.append(text[cursor:])
     return ''.join(result)
 
 
-def safe_text(value, secrets=()):
-    """Bounded privacy filter used across every new-policy prose field."""
-    if not isinstance(value, str):
-        return value
+def _secret_spellings(secrets):
     secrets = tuple(secret for secret in secrets if secret)
     spellings = set()
     for secret in secrets:
@@ -300,7 +345,41 @@ def safe_text(value, secrets=()):
         escaped = html.escape(plain, quote=False)
         spellings.update((secret, plain, escaped,
             re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', escaped)))
-    spellings = tuple(sorted((text for text in spellings if text), key=len, reverse=True))
+    return tuple(sorted((text for text in spellings if text), key=len, reverse=True))
+
+
+def sensitive_text_ranges(text, secrets):
+    """Yield merged sensitive intervals before callers transform source text.
+
+    Literal matches stream, including overlaps, rather than allocating one
+    tuple for every character of a repetitive value. Encoded matches share the
+    existing source-offset decoder; no decoded text is returned to a renderer.
+    """
+    spellings = _secret_spellings(secrets)
+    def literal(secret):
+        position = text.find(secret)
+        while position != -1:
+            yield position, position + len(secret)
+            position = text.find(secret, position + 1)
+    streams = [literal(secret) for secret in spellings]
+    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True)))
+    pending = None
+    for first, last in heapq.merge(*streams):
+        if pending is not None and first <= pending[1]:
+            pending = pending[0], max(last, pending[1])
+        else:
+            if pending is not None:
+                yield pending
+            pending = first, last
+    if pending is not None:
+        yield pending
+
+
+def safe_text(value, secrets=(), *, redact_paths=True):
+    """Filter private prose; typed projections may apply their own path policy."""
+    if not isinstance(value, str):
+        return value
+    spellings = _secret_spellings(secrets)
     def redact(text):
         # Copies may be outside a recognized URL, including after an original
         # delimiter. Match their source spelling and preserve everything else.
@@ -336,8 +415,9 @@ def safe_text(value, secrets=()):
     spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
     for index in range(0, len(spans), 2):
         spans[index] = redact(spans[index])
-        spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
-        spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
+        if redact_paths:
+            spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
+            spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
     for index in range(1, len(spans), 2):
         spans[index] = url(spans[index])
     # A literal credential can cross an original delimiter boundary. Redact it

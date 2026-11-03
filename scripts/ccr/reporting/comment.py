@@ -37,7 +37,7 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
         coverage_publication_context=coverage_publication_context,
         check_disclosure_context=check_disclosure_context, check_disclosure_sources=check_disclosure_sources)
     result = {
-        'schema_version': 3 if view is not None or record.get('schema_version') == 12 else 2,
+        'schema_version': 3 if view is not None or record.get('schema_version') in (12, 13) else 2,
         'source_sha256': source_hash,
         'publication_context': copy.deepcopy(publication_context),
         'check_publication_context': copy.deepcopy(check_publication_context),

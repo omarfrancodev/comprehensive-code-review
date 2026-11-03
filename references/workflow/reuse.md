@@ -56,3 +56,5 @@ Initial sidecars are in `review_inputs.sources`; final review-context is derived
 The 64-file count applies to the same indexed selection used by producers, including the reference index; derived review-context is outside that count. Its bytes still count in the reader's aggregate 64 MiB budget. The indexed limit is enforced by the shared reference selector, including alias targets.
 
 Old archives remain immutable/readable. Reconstruct only an evidenced exact base/head range and complete materials; never assume an arbitrary `delta.diff` is the full MR patch. Without a complete consumed-file inventory, matching whole base/head trees plus verified materials may establish equivalence. Otherwise start a new review. Unsupported layouts remain historical consultation; corrupt/ambiguous runs do not become operational previous-run links. Pending resource transactions are preserved, not adopted or cleaned automatically.
+
+Compact results are verified consultation and delivery sources. The current equivalence admission requires the full archive inventory; a compact candidate has unknown equivalence and starts a new review rather than inventing missing evidence.

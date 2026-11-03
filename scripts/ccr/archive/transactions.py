@@ -17,7 +17,7 @@ def _digest(data):
     return hashlib.sha256(data).hexdigest()
 
 def _archive_write(run, manifest, name, data):
-    reservation_id = manifest.get('restart_operation', {}).get('reservation_id')
+    reservation_id = (manifest.get('restart_operation') or manifest.get('compact_promotion') or {}).get('reservation_id')
     stage = (run / ('.' + name + '.' + reservation_id + '.tmp')
              if reservation_id and (run / '.review-restart-reservation.json').exists() else None)
     atomic_write(run / name, data, **({'staging_path': stage} if stage else {}))

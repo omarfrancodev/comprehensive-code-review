@@ -54,6 +54,28 @@ def main(argv=None, *, prog=None):
             stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(prog=prog, description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
+    persistence_select = commands.add_parser('select-persistence', help='Select persistence from observed review facts')
+    persistence_select.add_argument('--facts-input', required=True)
+    persistence_select.add_argument('--previous-selection', help='Preserve or promote an earlier selection')
+    compact_prepare = commands.add_parser('prepare-compact', help='Reserve a compact review with pinned inputs')
+    for name in ('repo', 'scope-file', 'current-inputs', 'selection-input', 'operation-id',
+                 'profile-input', 'skill-version', 'harness'):
+        compact_prepare.add_argument('--' + name, required=True)
+    compact_prepare.add_argument('--output-root')
+    compact_prepare.add_argument('--logical-scope-input')
+    compact_prepare.add_argument('--harness-id')
+    compact_prepare.add_argument('--harness-source-file')
+    compact_bind = commands.add_parser('bind-compact', help='Bind a compact final before building dependent sidecars; emit JSON')
+    for name in ('prepared-input', 'input'):
+        compact_bind.add_argument('--' + name, required=True)
+    compact_retain = commands.add_parser('retain-compact', help='Publish a prepared compact review')
+    for name in ('prepared-input', 'input', 'current-inputs', 'sources-input'):
+        compact_retain.add_argument('--' + name, required=True)
+    compact_promote = commands.add_parser('promote-compact', help='Reserve and prepare a linked full run')
+    for name in ('repo', 'prepared-input', 'current-inputs', 'operation-id', 'reason',
+                 'profile-input', 'skill-version', 'harness'):
+        compact_promote.add_argument('--' + name, required=True)
+    compact_promote.add_argument('--controller-input')
     create = commands.add_parser('prepare')
     for name in ('repo', 'scope-file', 'skill-version', 'harness'):
         create.add_argument('--' + name, required=True)
@@ -174,7 +196,7 @@ def main(argv=None, *, prog=None):
     keep = commands.add_parser('retain')
     keep.add_argument('--run-dir', required=True)
     keep.add_argument('--input', help='Final review JSON; omit only when promoting the archive-owned final checkpoint')
-    keep.add_argument('--expected-schema', type=int, choices=range(1, 13), help='Require the caller-selected final contract before retention')
+    keep.add_argument('--expected-schema', type=int, choices=range(1, 14), help='Require the caller-selected final contract before retention')
     keep.add_argument('--measurement-input', action='append')
     keep.add_argument('--unavailable-reason')
     keep.add_argument('--temporary-path', action='append')
@@ -200,7 +222,52 @@ def main(argv=None, *, prog=None):
                 authority_input = authority_input['authority']
             if not isinstance(authority_input, str):
                 raise ValueError('authority input must be a JSON string or an object with exactly the authority field')
-        if args.command == 'prepare':
+        if args.command == 'select-persistence':
+            from ccr.workflow.persistence import promotion_decision, select_persistence
+            facts = read_json(args.facts_input)
+            result = (promotion_decision(read_json(args.previous_selection), facts)
+                      if args.previous_selection else select_persistence(facts))
+        elif args.command == 'promote-compact':
+            from ccr.archive.promotion import promote_compact
+            result = promote_compact(repo=args.repo, prepared=read_json(args.prepared_input),
+                current_inputs=read_json(args.current_inputs), operation_id=args.operation_id,
+                reason=args.reason, profile_input=read_json(args.profile_input),
+                skill_version=args.skill_version, harness=args.harness, prepare_full=prepare,
+                controller=read_json(args.controller_input) if args.controller_input else None)
+        elif args.command == 'prepare-compact':
+            from ccr.archive.compact import prepare_compact
+            from ccr.archive.reader import select_output_root
+            from ccr.shared.git import git, repository_identity
+            repo = safe_path(git(args.repo, 'rev-parse', '--show-toplevel'))
+            result = prepare_compact(select_output_root(repo, args.output_root), repository_identity(repo),
+                read_json(args.scope_file), read_json(args.logical_scope_input) if args.logical_scope_input else None,
+                read_json(args.current_inputs), read_json(args.selection_input), args.operation_id,
+                profile_input=read_json(args.profile_input), skill_version=args.skill_version, harness=args.harness,
+                harness_id=args.harness_id,
+                harness_source=read_json(args.harness_source_file) if args.harness_source_file else None)
+        elif args.command == 'bind-compact':
+            from ccr.archive.compact import bind_compact_record
+            result = bind_compact_record(read_json(args.prepared_input),
+                read_json(args.input, max_bytes=CHECKPOINT_METADATA_LIMIT))
+        elif args.command == 'retain-compact':
+            from ccr.archive.compact import create_compact
+            from ccr.reporting.render import render
+            catalog = read_json(args.sources_input, max_bytes=PENDING_CONTEXT_LIMIT)
+            if not isinstance(catalog, dict) or len(catalog) > 64:
+                raise ValueError('compact sources catalog must be a bounded path map')
+            selected = {}
+            total = 0
+            for reference, source in catalog.items():
+                path = safe_path(source)
+                info = path.stat()
+                total += info.st_size
+                if not stat.S_ISREG(info.st_mode) or total > CHECKPOINT_EVIDENCE_LIMIT:
+                    raise ValueError('compact selected sources must be bounded regular files')
+                selected[reference] = path.read_bytes()
+            record = read_json(args.input, max_bytes=CHECKPOINT_METADATA_LIMIT)
+            result = create_compact(read_json(args.prepared_input), record, render(record),
+                                    read_json(args.current_inputs), selected)
+        elif args.command == 'prepare':
             source = read_json(args.harness_source_file) if args.harness_source_file else None
             if args.harness_source_file and (not isinstance(source, dict) or args.harness_id is None):
                 raise ValueError('harness source file requires an object and an explicit --harness-id')

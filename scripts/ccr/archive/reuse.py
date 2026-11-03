@@ -227,6 +227,8 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
     if selected['status']!='selected':
         return finish(reason=selected['status'])
     candidate=selected['selected']
+    if candidate.get('artifact_mode') == 'compact':
+        return finish(reason='Compact result has no verified full-archive equivalence inventory; start a new review.')
     try:
         run,manifest,_=load_run(candidate['run_dir'])
         verify_files(run,manifest)

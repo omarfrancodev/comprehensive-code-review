@@ -43,7 +43,7 @@ def public_checks(record: dict, classification: dict | None = None) -> list[dict
     checks = record.get('checks') if isinstance(record, dict) else None
     if not isinstance(checks, list):
         raise ValueError('checks must be an array for public projection')
-    current = record.get('schema_version') in (11, 12)
+    current = record.get('schema_version') in (11, 12, 13)
     if classification is None:
         if (current and checks) or any(_needs_check_classification(check) for check in checks if isinstance(check, dict)):
             raise ValueError('check publication context required for free-text reasons or internal evidence')
@@ -141,7 +141,7 @@ def public_coverage(record: dict, classification: dict | None = None) -> list[st
 
 def public_limitations(record, classification=None):
     original = record['coverage']['limitations']
-    if record['schema_version'] in (8, 9, 10, 11, 12):
+    if record['schema_version'] in (8, 9, 10, 11, 12, 13):
         if classification is not None:
             raise ValueError('schemas 8–10 already contain limitation classification')
         rows = original
@@ -168,7 +168,23 @@ def public_limitations(record, classification=None):
     # No semantic classification of unmatched prose; area-only gaps remain publishable.
     rows = [dict(row) for row in rows]
     key = lambda detail: ' '.join(detail.split())
-    for area in record['coverage'].get('areas', []):
+    areas = record['coverage'].get('areas', [])
+    if record['schema_version'] == 13:
+        # A grouped area's private details may combine material and unrelated
+        # execution notes. Publish only a source-bound impact summary for each
+        # material decision, never the combined private aggregate.
+        for area in areas:
+            for group in area['groups']:
+                if not group['material']:
+                    continue
+                matches = [row for row in rows if key(row['detail']) == key(group['reason'])
+                           and isinstance(row.get('public_summary'), str) and row['public_summary'].strip()]
+                if not matches:
+                    raise ValueError('material coverage group requires a matching public impact summary')
+                for row in matches:
+                    row['material'] = True
+        areas = []
+    for area in areas:
         if not area['material']:
             continue
         matching = [row for row in rows if key(row['detail']) == key(area['details'])]
@@ -214,10 +230,10 @@ def public_reservations(record, limitations):
 
 def public_projection(text, record, check_disclosure_context=None, check_disclosure_sources=None):
     """Exclude recorded raw commands and private absolute paths from publication."""
-    if check_disclosure_context is not None:
+    if check_disclosure_context is not None or record.get('schema_version') == 13:
         from ccr.contracts.check_disclosure import safe_text, private_values
         typed_lines = {'  - **Comando saneado:** ' + markdown_text(row['command'])
-                       for row in check_disclosure_context['checks'] if row['command']}
+                       for row in (check_disclosure_context or {}).get('checks', []) if row['command']}
         lines = []
         for line in text.splitlines(keepends=True):
             if line.rstrip('\r\n') not in typed_lines:

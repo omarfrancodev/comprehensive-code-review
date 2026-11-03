@@ -1,25 +1,39 @@
 {
   "artifacts": {
+    "description": "Prepare, register, validate, retain and close durable review evidence (Python 3.10+).\n\nMeasurement inputs are an explicit caller assertion of disjoint executions. Duplicate\npaths and execution_id values are refused; semantic overlap is not detectable here.\nTemporary-path authority and ownership belong to the coordinator. This helper never\ndeletes registered resources and must not be used to infer disposal authority.\n",
+    "defaults": {},
     "actions": [
       {
-        "choices": null,
-        "const": null,
-        "default": "<argparse.SUPPRESS>",
-        "dest": "help",
-        "help": "show this help message and exit",
         "kind": "_HelpAction",
-        "metavar": null,
-        "mutex_groups": [],
-        "nargs": 0,
         "options": [
           "-h",
           "--help"
         ],
+        "dest": "help",
+        "nargs": 0,
         "required": false,
-        "type": null
+        "default": "<argparse.SUPPRESS>",
+        "type": null,
+        "choices": null,
+        "const": null,
+        "metavar": null,
+        "help": "show this help message and exit",
+        "mutex_groups": []
       },
       {
+        "kind": "_SubParsersAction",
+        "options": [],
+        "dest": "command",
+        "nargs": "A...",
+        "required": true,
+        "default": null,
+        "type": null,
         "choices": [
+          "select-persistence",
+          "prepare-compact",
+          "bind-compact",
+          "retain-compact",
+          "promote-compact",
           "prepare",
           "register",
           "transfer-resources",
@@ -42,2371 +56,2946 @@
           "close"
         ],
         "const": null,
-        "default": null,
-        "dest": "command",
-        "help": null,
-        "kind": "_SubParsersAction",
         "metavar": null,
+        "help": null,
         "mutex_groups": [],
-        "nargs": "A...",
-        "options": [],
-        "required": true,
         "subparsers": {
-          "abandon-restart": {
+          "select-persistence": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--facts-input"
+                ],
+                "dest": "facts_input",
+                "nargs": null,
+                "required": true,
                 "default": null,
-                "dest": "run_dir",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--previous-selection"
+                ],
+                "dest": "previous_selection",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "intent_input",
-                "help": "Exact intent path returned by inspect; no archive scan",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--intent-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--controller-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "authority_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "reason",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--reason"
-                ],
-                "required": true,
-                "type": null
+                "help": "Preserve or promote an earlier selection",
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "assess-reuse": {
+          "prepare-compact": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "repo",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--repo"
                 ],
+                "dest": "repo",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "scope_file",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--scope-file"
                 ],
+                "dest": "scope_file",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--current-inputs"
                 ],
+                "dest": "current_inputs",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "effective_changes",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--effective-changes"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--selection-input"
+                ],
+                "dest": "selection_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "current_materials",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--current-materials"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--operation-id"
+                ],
+                "dest": "operation_id",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "session",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--session"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--profile-input"
+                ],
+                "dest": "profile_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "archive_root",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--archive-root"
+                  "--skill-version"
                 ],
+                "dest": "skill_version",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness"
+                ],
+                "dest": "harness",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--output-root"
+                ],
+                "dest": "output_root",
+                "nargs": null,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "logical_scope_input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--logical-scope-input"
                 ],
+                "dest": "logical_scope_input",
+                "nargs": null,
                 "required": false,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness-id"
+                ],
+                "dest": "harness_id",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": 10000,
-                "dest": "max_scan",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--max-scan"
+                  "--harness-source-file"
                 ],
+                "dest": "harness_source_file",
+                "nargs": null,
                 "required": false,
-                "type": "int"
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "block": {
+          "bind-compact": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "source",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--source"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "reason",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--reason"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": [
-                  "cleanup",
-                  "close",
-                  "discovery",
-                  "prepare",
-                  "report",
-                  "retain",
-                  "verification"
-                ],
-                "const": null,
-                "default": null,
-                "dest": "phase",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--phase"
-                ],
-                "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "checkpoint": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
                 "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
                 "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--run-dir"
+                  "--prepared-input"
                 ],
+                "dest": "prepared_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "context_input",
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--context-input"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "evidence_input",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--evidence-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "input",
-                "help": "Optional structurally final review JSON; source gates remain mandatory for promotion",
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--input"
                 ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": [
-                  "cleanup",
-                  "close",
-                  "discovery",
-                  "report",
-                  "retain",
-                  "verification"
-                ],
-                "const": null,
-                "default": null,
-                "dest": "phase",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
+                "dest": "input",
                 "nargs": null,
-                "options": [
-                  "--phase"
-                ],
                 "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
                 "default": null,
-                "dest": "diagnostic_input",
-                "help": "Optional JSON array or {gate_errors: [...]} of bounded observed gate errors",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--diagnostic-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": 67108864,
-                "dest": "max_evidence_bytes",
-                "help": "Selected checkpoint evidence byte limit, from 0 to 67108864",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--max-evidence-bytes"
-                ],
-                "required": false,
-                "type": "int"
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "close": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "cleanup_file",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [
-                  0
-                ],
-                "nargs": null,
-                "options": [
-                  "--cleanup-file"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": [
-                  "complete",
-                  "not_needed",
-                  "pending"
-                ],
-                "const": null,
-                "default": null,
-                "dest": "cleanup",
-                "help": "Observed state without creating a post-cleanup temporary file",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [
-                  0
-                ],
-                "nargs": null,
-                "options": [
-                  "--cleanup"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "residual",
-                "help": "Exact registered remaining path; repeat with --cleanup pending",
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--residual"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "released_claims_input",
-                "help": "Existing JSON list of exact durable cleanup receipts for inline close",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--released-claims-input"
-                ],
-                "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
+          "retain-compact": {
             "description": null,
-            "mutually_exclusive_groups": [
-              {
-                "actions": [
-                  "cleanup_file",
-                  "cleanup"
-                ],
-                "required": true
-              }
-            ]
-          },
-          "inspect": {
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--run-dir"
+                  "--prepared-input"
                 ],
+                "dest": "prepared_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": "Existing JSON {scope, sources} verified by the coordinator",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
                 "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--current-inputs"
                 ],
-                "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "lookup": {
-            "actions": [
-              {
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--sources-input"
+                ],
+                "dest": "sources_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "promote-compact": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "repo",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--repo"
                 ],
+                "dest": "repo",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "scope_file",
+                "metavar": null,
                 "help": null,
+                "mutex_groups": []
+              },
+              {
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
-                  "--scope-file"
+                  "--prepared-input"
                 ],
+                "dest": "prepared_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "archive_root",
-                "help": "Explicit archive root; defaults to ~/.comprehensive-code-review/reviews",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--archive-root"
-                ],
-                "required": false,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": "Existing JSON with scope, source hashes and optional input identities",
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--current-inputs"
                 ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": 20,
-                "dest": "limit",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
+                "dest": "current_inputs",
                 "nargs": null,
-                "options": [
-                  "--limit"
-                ],
-                "required": false,
-                "type": "int"
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "cursor",
-                "help": "Opaque continuation cursor returned by a previous lookup page",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--cursor"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "logical_scope_input",
-                "help": "Existing JSON selector required for module/feature or partial local lookup",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--logical-scope-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": true,
-                "default": false,
-                "dest": "include_history",
-                "help": "Include explicitly ported historical consultation packages",
-                "kind": "_StoreTrueAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "--include-history"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": [
-                  "latest"
-                ],
-                "const": null,
-                "default": null,
-                "dest": "select",
-                "help": "Explicitly select latest verified result; never shown automatically",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--select"
-                ],
-                "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "pause": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "authority_input",
-                "help": "JSON string or {\"authority\": text} with explicit user direction",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "reason",
                 "help": null,
+                "mutex_groups": []
+              },
+              {
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
+                "options": [
+                  "--operation-id"
+                ],
+                "dest": "operation_id",
                 "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--reason"
                 ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": [
-                  "cleanup",
-                  "close",
-                  "discovery",
-                  "prepare",
-                  "report",
-                  "retain",
-                  "verification"
-                ],
-                "const": null,
-                "default": null,
-                "dest": "phase",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
+                "dest": "reason",
                 "nargs": null,
-                "options": [
-                  "--phase"
-                ],
                 "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "preflight": {
-            "actions": [
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--profile-input"
+                ],
+                "dest": "profile_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--skill-version"
+                ],
+                "dest": "skill_version",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness"
+                ],
+                "dest": "harness",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "prepare": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--repo"
+                ],
+                "dest": "repo",
                 "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--scope-file"
+                ],
+                "dest": "scope_file",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--skill-version"
+                ],
+                "dest": "skill_version",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness"
+                ],
+                "dest": "harness",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--output-root"
+                ],
+                "dest": "output_root",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--previous-run"
+                ],
+                "dest": "previous_run",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--temporary-path"
+                ],
+                "dest": "temporary_path",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--logical-scope-input"
+                ],
+                "dest": "logical_scope_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON {mode, selector} for module/feature or partial local scopes",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--profile-input"
+                ],
+                "dest": "profile_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON selection captured before the new run is created",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--current-inputs"
+                ],
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON with scope, external source hashes and observed identities",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON {identity, source} for the coordinating context",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness-id"
+                ],
+                "dest": "harness_id",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Declared canonical catalog ID; overrides session CCR_HARNESS_ID",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness-source-file"
+                ],
+                "dest": "harness_source_file",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON {kind: user|platform, reference: text}; requires --harness-id",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "register": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
+                "dest": "run_dir",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "context_input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--temporary-path"
+                ],
+                "dest": "temporary_path",
                 "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--context-input"
                 ],
-                "required": true,
-                "type": null
+                "dest": "context_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing neutral context JSON with executor provenance",
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority"
+                ],
+                "dest": "authority",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Explicit user authority for adopting an existing legacy session",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "transfer-resources": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--source-run"
+                ],
+                "dest": "source_run",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--successor-run"
+                ],
+                "dest": "successor_run",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--resource-path"
+                ],
+                "dest": "resource_path",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority"
+                ],
+                "dest": "authority",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "inspect": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--current-inputs"
+                ],
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON {scope, sources} verified by the coordinator",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "preflight": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--context-input"
+                ],
+                "dest": "context_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--phase"
+                ],
+                "dest": "phase",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": [
                   "register",
                   "discovery",
                   "retain"
                 ],
                 "const": null,
-                "default": null,
-                "dest": "phase",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--phase"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "input",
-                "help": "Optional final review candidate for retain preflight",
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--input"
                 ],
+                "dest": "input",
+                "nargs": null,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "evidence_input",
-                "help": "Explicit selected evidence source; repeat for each file",
-                "kind": "_AppendAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "Optional final review candidate for retain preflight",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
                 "options": [
                   "--evidence-input"
                 ],
+                "dest": "evidence_input",
+                "nargs": null,
                 "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "prepare": {
-            "actions": [
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": "Explicit selected evidence source; repeat for each file",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "lookup": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "repo",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--repo"
                 ],
+                "dest": "repo",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "scope_file",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--scope-file"
                 ],
+                "dest": "scope_file",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "skill_version",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--skill-version"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "harness",
-                "help": null,
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
-                  "--harness"
+                  "--archive-root"
                 ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "output_root",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
+                "dest": "archive_root",
                 "nargs": null,
-                "options": [
-                  "--output-root"
-                ],
                 "required": false,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "previous_run",
-                "help": null,
+                "metavar": null,
+                "help": "Explicit archive root; defaults to ~/.comprehensive-code-review/reviews",
+                "mutex_groups": []
+              },
+              {
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--previous-run"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "temporary_path",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--temporary-path"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "logical_scope_input",
-                "help": "Existing JSON {mode, selector} for module/feature or partial local scopes",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--logical-scope-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "profile_input",
-                "help": "Existing JSON selection captured before the new run is created",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--profile-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": "Existing JSON with scope, external source hashes and observed identities",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--current-inputs"
                 ],
+                "dest": "current_inputs",
+                "nargs": null,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": "Existing JSON {identity, source} for the coordinating context",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--controller-input"
-                ],
-                "required": false,
-                "type": null
+                "help": "Existing JSON with scope, source hashes and optional input identities",
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--limit"
+                ],
+                "dest": "limit",
+                "nargs": null,
+                "required": false,
+                "default": 20,
+                "type": "int",
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "harness_id",
-                "help": "Declared canonical catalog ID; overrides session CCR_HARNESS_ID",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--harness-id"
-                ],
-                "required": false,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--cursor"
+                ],
+                "dest": "cursor",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "harness_source_file",
-                "help": "Existing JSON {kind: user|platform, reference: text}; requires --harness-id",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "Opaque continuation cursor returned by a previous lookup page",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--harness-source-file"
+                  "--logical-scope-input"
                 ],
+                "dest": "logical_scope_input",
+                "nargs": null,
                 "required": false,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON selector required for module/feature or partial local lookup",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
+                "options": [
+                  "--include-history"
+                ],
+                "dest": "include_history",
+                "nargs": 0,
+                "required": false,
+                "default": false,
+                "type": null,
+                "choices": null,
+                "const": true,
+                "metavar": null,
+                "help": "Include explicitly ported historical consultation packages",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--select"
+                ],
+                "dest": "select",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": [
+                  "latest"
+                ],
+                "const": null,
+                "metavar": null,
+                "help": "Explicitly select latest verified result; never shown automatically",
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "record-event": {
+          "assess-reuse": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--run-dir"
+                  "--repo"
                 ],
+                "dest": "repo",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "event_file",
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--event-file"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--scope-file"
+                ],
+                "dest": "scope_file",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "execution_metadata",
-                "help": "Optional existing review_runner run.json; no timing or identity inference",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
-                  "--execution-metadata"
+                  "--current-inputs"
                 ],
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--effective-changes"
+                ],
+                "dest": "effective_changes",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--current-materials"
+                ],
+                "dest": "current_materials",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--session"
+                ],
+                "dest": "session",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--archive-root"
+                ],
+                "dest": "archive_root",
+                "nargs": null,
                 "required": false,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--logical-scope-input"
+                ],
+                "dest": "logical_scope_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--max-scan"
+                ],
+                "dest": "max_scan",
+                "nargs": null,
+                "required": false,
+                "default": 10000,
+                "type": "int",
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
-          "record-restart-refusal": {
+          "pause": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
+                "dest": "run_dir",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "intent_input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--intent-input"
-                ],
-                "required": true,
-                "type": null
+                "help": null,
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": null,
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--controller-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "authority_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--authority-input"
                 ],
+                "dest": "authority_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "reason",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "JSON string or {\"authority\": text} with explicit user direction",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--reason"
                 ],
+                "dest": "reason",
+                "nargs": null,
                 "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "recover": {
-            "actions": [
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--phase"
+                ],
+                "dest": "phase",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": [
+                  "cleanup",
+                  "close",
+                  "discovery",
+                  "prepare",
+                  "report",
+                  "retain",
+                  "verification"
+                ],
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "block": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--controller-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "authority_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority-input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--current-inputs"
-                ],
-                "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "register": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
                 "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
                 "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
                 "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "temporary_path",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--temporary-path"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "context_input",
-                "help": "Existing neutral context JSON with executor provenance",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--context-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "authority",
-                "help": "Explicit user authority for adopting an existing legacy session",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority"
-                ],
-                "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "restart": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
                 "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": "Verified source review run",
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
+                "dest": "run_dir",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "profile_input",
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--profile-input"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--source"
+                ],
+                "dest": "source",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "controller_input",
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--controller-input"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--reason"
+                ],
+                "dest": "reason",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "authority_input",
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority-input"
-                ],
-                "required": true,
-                "type": null
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
+                "kind": "_StoreAction",
+                "options": [
+                  "--phase"
+                ],
+                "dest": "phase",
+                "nargs": null,
+                "required": true,
                 "default": null,
-                "dest": "current_inputs",
+                "type": null,
+                "choices": [
+                  "cleanup",
+                  "close",
+                  "discovery",
+                  "prepare",
+                  "report",
+                  "retain",
+                  "verification"
+                ],
+                "const": null,
+                "metavar": null,
                 "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--current-inputs"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "logical_scope_input",
-                "help": "Existing JSON {mode, selector} when logical boundaries change",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--logical-scope-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": "unknown",
-                "dest": "harness",
-                "help": "Harness observed for this restart invocation",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--harness"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "harness_id",
-                "help": "Canonical current harness ID from the CCR catalog",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--harness-id"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "harness_source_input",
-                "help": "JSON provenance for an explicit harness ID",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--harness-source-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "transfer_path",
-                "help": "Explicit owned session path to transfer; repeat for every active claim",
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--transfer-path"
-                ],
-                "required": false,
-                "type": null
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
           },
           "resume": {
+            "description": null,
+            "defaults": {},
             "actions": [
               {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
                 "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
+                "dest": "run_dir",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--controller-input"
                 ],
+                "dest": "controller_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "authority_input",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--authority-input"
                 ],
+                "dest": "authority_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              },
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "current_inputs",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--current-inputs"
                 ],
+                "dest": "current_inputs",
+                "nargs": null,
                 "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "retain": {
-            "actions": [
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "recover": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "input",
-                "help": "Final review JSON; omit only when promoting the archive-owned final checkpoint",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": "range(1, 13)",
-                "const": null,
-                "default": null,
-                "dest": "expected_schema",
-                "help": "Require the caller-selected final contract before retention",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--expected-schema"
-                ],
-                "required": false,
-                "type": "int"
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "measurement_input",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--measurement-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "unavailable_reason",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--unavailable-reason"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "temporary_path",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--temporary-path"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "evidence_input",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--evidence-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "context_input",
-                "help": "Existing neutral context JSON with executor provenance",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--context-input"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": true,
-                "default": false,
-                "dest": "handoff",
-                "help": "Retain a handoff generated from the canonical record",
-                "kind": "_StoreTrueAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "--handoff"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "handoff_context_input",
-                "help": "Explicit handoff spec/plan references and pending decisions; requires --handoff",
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--handoff-context-input"
-                ],
-                "required": false,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "select-profile": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
                 "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
                 "nargs": null,
-                "options": [
-                  "--run-dir"
-                ],
                 "required": true,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "selection_input",
-                "help": null,
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--selection-input"
-                ],
-                "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "transfer-resources": {
-            "actions": [
-              {
-                "choices": null,
-                "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
-                "options": [
-                  "-h",
-                  "--help"
-                ],
-                "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "source_run",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--source-run"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "successor_run",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--successor-run"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "resource_path",
-                "help": null,
-                "kind": "_AppendAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--resource-path"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "authority",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--authority"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "controller_input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--controller-input"
                 ],
+                "dest": "controller_input",
+                "nargs": null,
                 "required": true,
-                "type": null
-              }
-            ],
-            "defaults": {},
-            "description": null,
-            "mutually_exclusive_groups": []
-          },
-          "validate": {
-            "actions": [
-              {
+                "default": null,
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": "<argparse.SUPPRESS>",
-                "dest": "help",
-                "help": "show this help message and exit",
-                "kind": "_HelpAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority-input"
+                ],
+                "dest": "authority_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--current-inputs"
+                ],
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "restart": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
                 "options": [
                   "-h",
                   "--help"
                 ],
+                "dest": "help",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
                 "choices": null,
                 "const": null,
-                "default": null,
-                "dest": "run_dir",
-                "help": null,
-                "kind": "_StoreAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
                 "options": [
                   "--run-dir"
                 ],
+                "dest": "run_dir",
+                "nargs": null,
                 "required": true,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Verified source review run",
+                "mutex_groups": []
               },
               {
+                "kind": "_StoreAction",
+                "options": [
+                  "--profile-input"
+                ],
+                "dest": "profile_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
                 "choices": null,
-                "const": true,
-                "default": false,
-                "dest": "require_retained",
-                "help": "Require complete retained evidence before cleanup",
-                "kind": "_StoreTrueAction",
+                "const": null,
                 "metavar": null,
-                "mutex_groups": [],
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority-input"
+                ],
+                "dest": "authority_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--current-inputs"
+                ],
+                "dest": "current_inputs",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--logical-scope-input"
+                ],
+                "dest": "logical_scope_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON {mode, selector} when logical boundaries change",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness"
+                ],
+                "dest": "harness",
+                "nargs": null,
+                "required": false,
+                "default": "unknown",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Harness observed for this restart invocation",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness-id"
+                ],
+                "dest": "harness_id",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Canonical current harness ID from the CCR catalog",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--harness-source-input"
+                ],
+                "dest": "harness_source_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "JSON provenance for an explicit harness ID",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--transfer-path"
+                ],
+                "dest": "transfer_path",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Explicit owned session path to transfer; repeat for every active claim",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "abandon-restart": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
                 "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--intent-input"
+                ],
+                "dest": "intent_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Exact intent path returned by inspect; no archive scan",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority-input"
+                ],
+                "dest": "authority_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--reason"
+                ],
+                "dest": "reason",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "record-restart-refusal": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--intent-input"
+                ],
+                "dest": "intent_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--controller-input"
+                ],
+                "dest": "controller_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--authority-input"
+                ],
+                "dest": "authority_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--reason"
+                ],
+                "dest": "reason",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "select-profile": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--selection-input"
+                ],
+                "dest": "selection_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "validate": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
                 "options": [
                   "--require-retained"
                 ],
+                "dest": "require_retained",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": false,
+                "type": null,
                 "choices": null,
                 "const": true,
-                "default": false,
-                "dest": "require_complete",
-                "help": "Read-only gate for retained result and completed observed cleanup",
-                "kind": "_StoreTrueAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": "Require complete retained evidence before cleanup",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
                 "options": [
                   "--require-complete"
                 ],
+                "dest": "require_complete",
+                "nargs": 0,
                 "required": false,
-                "type": null
-              },
-              {
+                "default": false,
+                "type": null,
                 "choices": null,
                 "const": true,
-                "default": false,
-                "dest": "record_checkpoint",
-                "help": "Record a passed milestone in an open trace archive",
-                "kind": "_StoreTrueAction",
                 "metavar": null,
-                "mutex_groups": [],
-                "nargs": 0,
+                "help": "Read-only gate for retained result and completed observed cleanup",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
                 "options": [
                   "--record-checkpoint"
                 ],
+                "dest": "record_checkpoint",
+                "nargs": 0,
                 "required": false,
-                "type": null
+                "default": false,
+                "type": null,
+                "choices": null,
+                "const": true,
+                "metavar": null,
+                "help": "Record a passed milestone in an open trace archive",
+                "mutex_groups": []
               }
             ],
-            "defaults": {},
-            "description": null,
             "mutually_exclusive_groups": []
+          },
+          "record-event": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--event-file"
+                ],
+                "dest": "event_file",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--execution-metadata"
+                ],
+                "dest": "execution_metadata",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Optional existing review_runner run.json; no timing or identity inference",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "checkpoint": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--context-input"
+                ],
+                "dest": "context_input",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--evidence-input"
+                ],
+                "dest": "evidence_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Optional structurally final review JSON; source gates remain mandatory for promotion",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--phase"
+                ],
+                "dest": "phase",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": [
+                  "cleanup",
+                  "close",
+                  "discovery",
+                  "report",
+                  "retain",
+                  "verification"
+                ],
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--diagnostic-input"
+                ],
+                "dest": "diagnostic_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Optional JSON array or {gate_errors: [...]} of bounded observed gate errors",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--max-evidence-bytes"
+                ],
+                "dest": "max_evidence_bytes",
+                "nargs": null,
+                "required": false,
+                "default": 67108864,
+                "type": "int",
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Selected checkpoint evidence byte limit, from 0 to 67108864",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "retain": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Final review JSON; omit only when promoting the archive-owned final checkpoint",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--expected-schema"
+                ],
+                "dest": "expected_schema",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": "int",
+                "choices": "range(1, 14)",
+                "const": null,
+                "metavar": null,
+                "help": "Require the caller-selected final contract before retention",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--measurement-input"
+                ],
+                "dest": "measurement_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--unavailable-reason"
+                ],
+                "dest": "unavailable_reason",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--temporary-path"
+                ],
+                "dest": "temporary_path",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--evidence-input"
+                ],
+                "dest": "evidence_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--context-input"
+                ],
+                "dest": "context_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing neutral context JSON with executor provenance",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
+                "options": [
+                  "--handoff"
+                ],
+                "dest": "handoff",
+                "nargs": 0,
+                "required": false,
+                "default": false,
+                "type": null,
+                "choices": null,
+                "const": true,
+                "metavar": null,
+                "help": "Retain a handoff generated from the canonical record",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--handoff-context-input"
+                ],
+                "dest": "handoff_context_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Explicit handoff spec/plan references and pending decisions; requires --handoff",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "close": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--cleanup-file"
+                ],
+                "dest": "cleanup_file",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": [
+                  0
+                ]
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--cleanup"
+                ],
+                "dest": "cleanup",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": [
+                  "complete",
+                  "not_needed",
+                  "pending"
+                ],
+                "const": null,
+                "metavar": null,
+                "help": "Observed state without creating a post-cleanup temporary file",
+                "mutex_groups": [
+                  0
+                ]
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--residual"
+                ],
+                "dest": "residual",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Exact registered remaining path; repeat with --cleanup pending",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--released-claims-input"
+                ],
+                "dest": "released_claims_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON list of exact durable cleanup receipts for inline close",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": [
+              {
+                "required": true,
+                "actions": [
+                  "cleanup_file",
+                  "cleanup"
+                ]
+              }
+            ]
           }
-        },
-        "type": null
+        }
       }
     ],
-    "defaults": {},
-    "description": "Prepare, register, validate, retain and close durable review evidence (Python 3.10+).\n\nMeasurement inputs are an explicit caller assertion of disjoint executions. Duplicate\npaths and execution_id values are refused; semantic overlap is not detectable here.\nTemporary-path authority and ownership belong to the coordinator. This helper never\ndeletes registered resources and must not be used to infer disposal authority.\n",
     "mutually_exclusive_groups": []
   },
   "checks": {
