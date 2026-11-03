@@ -24,6 +24,7 @@ from ccr.shared.paths import contains, safe_path
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+_POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
 _COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
 
 
@@ -152,7 +153,49 @@ class _Projection:
             raise ValueError('private structural value cannot be delivered: ' + path)
         return value
 
-    def _redact_source_copies(self, value, omit_commands):
+    def _http_members(self, value):
+        """Classify HTTP-list members in original coordinates, before omission."""
+        last_http_end = None
+        context_start = 0
+        for match in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|' + _POSIX_PATH,
+                                 value, flags=re.IGNORECASE):
+            if match.group('url') is not None:
+                last_http_end = None
+                context_start = match.end()
+                continue
+            prefix = value[max(context_start, match.start() - 128):match.start()]
+            explicit = re.search(
+                r'''(?ix)(?<![\w-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
+                (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''',
+                prefix)
+            continuation = (last_http_end is not None and re.fullmatch(
+                r'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*)+''', value[last_http_end:match.start()]))
+            quoted = match.group('quoted_path')
+            if quoted is not None:
+                active = match.group('closing') and (explicit or continuation)
+                last_http_end = match.end() if active else None
+                candidates = [(match.start(), match.end(), quoted)] if active and not any(
+                    char.isspace() for char in quoted) else []
+            elif explicit or continuation:
+                candidates, offset = [], match.start()
+                for part in re.split(r'''(,)(?=[`'"]*/)''', match.group()):
+                    if part != ',':
+                        core = part.rstrip(",`'\"")
+                        candidates.append((offset, offset + len(core), core))
+                        last_http_end = offset + len(core)
+                    offset += len(part)
+            else:
+                last_http_end = None
+                context_start = match.end()
+                continue
+            context_start = match.end()
+            for first, last, path in candidates:
+                if (re.match(r'^/(?:api|v[0-9]+)(?:/|$)', path)
+                        and not any(_relative_to_root(path, root) is not None
+                                    for root in self.private_roots + self.repo_roots)):
+                    yield first, last
+
+    def _source_omissions(self, value, omit_commands):
         # Recognize copies globally in original coordinates. Expanding an
         # intersected quoted path protects its whole filename, even if a copy
         # consists only of a delimiter or extends across several members.
@@ -162,33 +205,53 @@ class _Projection:
         if omit_commands and self.commands:
             streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
         if not streams:
-            return value
-        members = iter(re.finditer(_QUOTED_PATH, value))
+            return
+        members = heapq.merge((match.span() for match in re.finditer(_QUOTED_PATH, value)),
+                              self._http_members(value))
         member = next(members, None)
-        chunks, cursor, pending = [], 0, None
-        def emit(first, last, command):
-            nonlocal cursor
-            chunks.extend((value[cursor:first], _COMMAND_OMISSION if command else OMITTED))
-            cursor = last
+        pending = None
         for first, last, command in heapq.merge(*streams):
-            while member is not None and member.end() <= first:
+            while member is not None and member[1] <= first:
                 member = next(members, None)
-            while member is not None and member.start() < last:
-                first, last = min(first, member.start()), max(last, member.end())
+            while member is not None and member[0] < last:
+                first, last = min(first, member[0]), max(last, member[1])
                 member = next(members, None)
             if pending is not None and first <= pending[1]:
                 pending = pending[0], max(last, pending[1]), command or pending[2]
             else:
                 if pending is not None:
-                    emit(*pending)
+                    yield pending
                 pending = first, last, command
         if pending is not None:
-            emit(*pending)
-        chunks.append(value[cursor:])
-        return ''.join(chunks)
+            yield pending
 
     def text(self, value, omit_commands=True):
-        value = self._redact_source_copies(value, omit_commands)
+        # Public HTTP members and omissions retain their original source spans.
+        # Omissions take precedence; public neighbors do not need an anchor to
+        # survive in the redacted spelling, nor can input markers create one.
+        events = heapq.merge(
+            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands)),
+            ((*span, 'http', False) for span in self._http_members(value)),
+            key=lambda event: (event[0], event[2] != 'omission'))
+        chunks, cursor = [], 0
+        for first, last, kind, command in events:
+            if first < cursor:
+                continue
+            chunks.append(self._text_fragment(value[cursor:first]))
+            if kind == 'omission':
+                chunks.append(_COMMAND_OMISSION if command else OMITTED)
+            else:
+                route = value[first:last]
+                chunks.append(safe_text(route, self.secrets, redact_paths=False) if self.new_policy else route)
+            cursor = last
+        chunks.append(self._text_fragment(value[cursor:]))
+        value = ''.join(chunks)
+        # Relative Markdown links cannot resolve from the delivery directory.
+        value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
+                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
+        return safe_text(value, self.secrets, redact_paths=False) if self.new_policy else value
+
+    def _text_fragment(self, value):
         def redact(text):
             # Apply only after original quotation boundaries have been read,
             # but before a root rewrite could erase part of a sensitive value.
@@ -218,27 +281,13 @@ class _Projection:
                 chunks.extend((normalize_roots(value[cursor:member.start()]), member.group()))
                 cursor = member.end()
             value = ''.join(chunks) + normalize_roots(value[cursor:])
-            # A prefix alone cannot distinguish a local file from an endpoint.
-            # Preserve explicit HTTP routes and adjacent lists of those routes.
-            last_http_end = None
+            # Public HTTP members were classified before segmentation. Every
+            # remaining absolute path needs the private/known-root policy.
             def posix_path(match):
-                nonlocal last_http_end
-                prefix = value[max(0, match.start() - 128):match.start()]
-                explicit = re.search(
-                    r'''(?ix)(?<![\w-])(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
-                    (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''', prefix)
-                continuation = (last_http_end is not None and re.fullmatch(
-                    rf'''(?ix)[ \t`'"]*(?:(?:,|y|and|o|or)[ \t`'"]*
-                    (?:(?:{re.escape(OMITTED)}|{re.escape(_COMMAND_OMISSION)})[ \t`'"]*)?)+''',
-                    value[last_http_end:match.start()]))
                 quoted = match.group('quoted_path')
                 if quoted is not None:
                     closing = match.group('closing') or ''
-                    route = (closing and (explicit or continuation)
-                             and not any(char.isspace() for char in quoted)
-                             and re.match(r'^/(?:api|v[0-9]+)(?:/|$)', quoted))
-                    last_http_end = match.end() if closing and (explicit or continuation) else None
-                    shown = quoted if route else '[ruta privada]'
+                    shown = '[ruta privada]'
                     if redact(match.group()) != match.group():
                         # A sensitive copy can include the quotes themselves.
                         # Keep the original member opaque; never reparse its
@@ -254,29 +303,10 @@ class _Projection:
                                     shown = relative or '[repositorio revisado]'
                                     break
                     return match.group('quote') + shown + closing
-                if explicit or continuation:
-                    # Keep editorial separators available to the next match;
-                    # private paths still get redacted as a whole, commas too.
-                    parts = re.split(r'''(,)(?=[`'"]*/)''', match.group())
-                    projected, offset = [], match.start()
-                    for part in parts:
-                        if part == ',':
-                            projected.append(part)
-                        elif re.match(r'^/(?:api|v[0-9]+)(?:/|$)', part.lstrip("`'\"")):
-                            projected.append(part)
-                            last_http_end = offset + len(part.rstrip(",`'\""))
-                        else:
-                            core = part.rstrip(",`'\"")
-                            projected.append('[ruta privada]' + part[len(core):])
-                            last_http_end = offset + len(core)
-                        offset += len(part)
-                    return ''.join(projected)
-                last_http_end = None
-                return '[ruta privada]'
+                return '[ruta privada]' + match.group()[len(match.group().rstrip(',')):]
             # Quoted paths are indivisible, even with spaces or internal commas.
             # Unterminated quoted paths fail closed through the end of the span.
-            value = re.sub(_QUOTED_PATH + r'''|(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+''',
-                           posix_path, value)
+            value = re.sub(_QUOTED_PATH + '|' + _POSIX_PATH, posix_path, value)
             value = re.sub(r'(?i)file://[^\s;|<>\)\]]+', '[referencia privada]', value)
             value = re.sub(r'(?<![\w:])//[^\s;|<>\)\]]+', '[ruta privada]', value)
             value = re.sub(r'(?i)(?<![a-z0-9])[a-z]:[\\/][^\s;|<>\)\]]+', '[ruta privada]', value)
@@ -305,11 +335,6 @@ class _Projection:
                            span.group() if self.public_url(span.group()) else '[referencia privada]'))
             cursor = span.end()
         value = ''.join(chunks) + segment(value[cursor:])
-        # Relative Markdown links cannot resolve from the delivery directory.
-        value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
-                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
-        # Cover copies crossing segment boundaries and original delimiters;
-        # private members and original root-bearing copies are already hidden.
         return redact(value)
 
     def value(self, value, path='record'):

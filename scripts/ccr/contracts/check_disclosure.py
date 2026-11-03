@@ -242,7 +242,7 @@ def private_values(record, view, sources):
     return values
 
 
-def _encoded_value_ranges(text, spellings):
+def _encoded_value_ranges(text, spellings, *, overlaps=False):
     """Locate encoded copies in original source coordinates."""
     if not spellings:
         return []
@@ -266,8 +266,9 @@ def _encoded_value_ranges(text, spellings):
                     # Literal-only matches are handled by replace below. Do not
                     # retain one range per plain-text occurrence or per view.
                     ranges.add((first, last))
-                    # Only withheld matches make their overlaps safe to skip.
-                    following = position + len(secret)
+                    # The original redactor may skip withheld overlaps. Source
+                    # classification must enumerate them before any rewriting.
+                    following = position + (1 if overlaps else len(secret))
                 elif encoded_index < len(encoded_starts):
                     # Skip literal-only windows, but retain overlaps that can
                     # reach the next source encoding marker after normalization.
@@ -361,7 +362,7 @@ def sensitive_text_ranges(text, secrets):
             yield position, position + len(secret)
             position = text.find(secret, position + 1)
     streams = [literal(secret) for secret in spellings]
-    streams.append(iter(_encoded_value_ranges(text, spellings)))
+    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True)))
     pending = None
     for first, last in heapq.merge(*streams):
         if pending is not None and first <= pending[1]:

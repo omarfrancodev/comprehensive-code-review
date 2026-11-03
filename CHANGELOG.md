@@ -33,6 +33,7 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 - Exigir contexto HTTP para conservar rutas con prefijos `/api` o `/vN` y clasificar las rutas citadas como unidades antes de preservar URLs, incluso con comas internas o barra terminal, evitando exponer archivos locales o sus fragmentos en prosa, contexto y JSON portable.
 - Reconocer las rutas citadas antes de omitir copias del comando y ocultar credenciales completas antes de dividir URLs o relativizar sus raíces, evitando divulgar sufijos sensibles en las entregas.
 - Conservar intervalos sensibles sobre el texto original completo, incluidas copias que cruzan miembros citados, y omitir comandos canónicos enteros antes de proyectar sus rutas; compartir los offsets del filtro codificado y unir solapamientos sin restaurar texto privado.
+- Enumerar todos los solapamientos codificados para las entregas y clasificar las listas HTTP originales antes de omitir miembros, conservando sus vecinos públicos aun cuando se oculta el primero.
 
 ## 3.5.0 — 2026-10-30
 

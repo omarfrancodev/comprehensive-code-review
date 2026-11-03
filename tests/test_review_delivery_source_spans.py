@@ -6,7 +6,7 @@ import unittest
 import test_review_delivery_privacy_regressions as privacy
 from test_review_coverage13 import record13
 from test_review_traceability_contract import record6, check
-from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, private_values, sensitive_text_ranges
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, private_values, safe_text, sensitive_text_ranges
 from ccr.reporting import delivery
 from ccr.workflow.builders import build_check_disclosure
 
@@ -118,3 +118,74 @@ class DeliverySourceSpanTests(unittest.TestCase):
         self.assertNotIn('private.txt', result)
         self.assertIn('/api/orders', result)
         self.assertIn('/v2/orders', result)
+
+    def assert_retained_observation(self, prose, secret, *, neighbor=None):
+        def update(record):
+            record['checks'][0]['command'] = shlex.join(['probe', '--token', secret])
+            record['checks'][0]['evidence'] = prose
+            record['verdict_reason'] = prose
+            record['coverage']['flows'] = [prose]
+            self.assertIn(secret, private_values(record, None, {}))
+        case, run = self.complete_archive(with_checks=True, record_update=update)
+        context = {'pending': [{'text': prose, 'references': ['C001'], 'version': 'retained-head'}]}
+        before = self.snapshot(run)
+        for mode in ('full', 'brief'):
+            target = delivery.deliver(run, mode, case.repo, case.root / mode, context=context)
+            for path in target.glob('*'):
+                if path.suffix not in ('.md', '.json'):
+                    continue
+                text = path.read_text(encoding='utf-8')
+                with self.subTest(mode=mode, output=path.name):
+                    self.assertNotIn('314159', text)
+                    self.assertNotIn('private.key', text)
+                    if path.name != '.ccr-delivery.json':
+                        self.assertIn('https://public.example.test/guide', text)
+                        if neighbor:
+                            self.assertIn(neighbor, text)
+            self.assertEqual(before, self.snapshot(run))
+
+    def test_encoded_overlapping_copies_are_fully_hidden_in_deliveries(self):
+        self.assert_retained_observation(
+            'Observed %6Bey314159%6Bey314159%6Bey; https://public.example.test/guide', 'key314159key')
+
+    def test_omitted_first_http_member_keeps_its_public_neighbor_in_deliveries(self):
+        self.assert_retained_observation(
+            'GET "/api/credential314159", /v2/orders, /srv/private.key; https://public.example.test/guide',
+            'credential314159', neighbor='/v2/orders')
+
+    def test_encoded_ranges_enumerate_all_overlaps_without_changing_legacy_redaction(self):
+        secret = 'key314159key'
+        encoded = '%6Bey314159%6Bey314159%6Bey'
+        self.assertEqual(safe_text(encoded, {secret}), '[omitido]314159%6Bey')
+        for copy in (encoded, '&#107;ey314159&#107;ey314159&#107;ey',
+                     '%6Bey314159&#107;ey314159%6Bey'):
+            with self.subTest(copy=copy):
+                self.assertEqual(list(sensitive_text_ranges('ñ ' + copy + ' tail', {secret})),
+                                 [(2, 2 + len(copy))])
+        copy = '%C3%B1314159%C3%B1314159%C3%B1'
+        self.assertEqual(list(sensitive_text_ranges(copy, {'ñ314159ñ'})), [(0, len(copy))])
+
+    def test_original_http_context_survives_first_omission_without_admitting_local_paths(self):
+        record = record13()
+        record['checks'][0]['command'] = 'probe --token credential314159'
+        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
+        disclosure = build_check_disclosure(record, identity, {}, {})
+        projection = delivery._Projection(record, {}, None, 'a' * 64, check_disclosure_context=disclosure)
+        for quote in ('"', "'", '`'):
+            for context in ('GET ', 'Endpoint ', 'Ruta HTTP '):
+                text = (context + quote + '/api/credential314159' + quote
+                        + ', /v2/orders, /srv/private.key; archivo local /api/local.key; '
+                        'https://public.example.test/guide')
+                with self.subTest(quote=quote, context=context):
+                    result = projection.text(text)
+                    self.assertNotIn('314159', result)
+                    self.assertNotIn('private.key', result)
+                    self.assertNotIn('local.key', result)
+                    self.assertIn('/v2/orders', result)
+                    self.assertIn('https://public.example.test/guide', result)
+        self.assertNotIn('/v2/', projection.text('Archivo "/api/credential314159", /v2/local.key'))
+        for text in ('GET [omitido], /v2/local.key',
+                     'https://public.example.test/GET /api/local.key',
+                     '"/private/GET " /v2/local.key'):
+            with self.subTest(ambiguous=text):
+                self.assertNotIn('local.key', projection.text(text))
