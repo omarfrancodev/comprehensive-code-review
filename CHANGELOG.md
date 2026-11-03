@@ -2,7 +2,7 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
-## unreleased
+## 3.6.0 — 2026-11-03
 
 ### Added
 
@@ -29,13 +29,9 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Reportes y entregas
 
-- Ocultar copias de credenciales explícitas del comando retenido, incluidos scripts shell citados y anidados con claves escapadas, aun sin prueba argv; no acreditar comandos ni modificar fuentes y rechazar identidades estructurales sensibles antes de exportar.
-- Exigir contexto HTTP para conservar rutas con prefijos `/api` o `/vN` y clasificar las rutas citadas como unidades antes de preservar URLs, incluso con comas internas o barra terminal, evitando exponer archivos locales o sus fragmentos en prosa, contexto y JSON portable.
-- Reconocer las rutas citadas antes de omitir copias del comando y ocultar credenciales completas antes de dividir URLs o relativizar sus raíces, evitando divulgar sufijos sensibles en las entregas.
-- Conservar intervalos sensibles sobre el texto original completo, incluidas copias que cruzan miembros citados, y omitir comandos canónicos enteros antes de proyectar sus rutas; compartir los offsets del filtro codificado y unir solapamientos sin restaurar texto privado.
-- Enumerar todos los solapamientos codificados para las entregas y clasificar las listas HTTP originales antes de omitir miembros, conservando sus vecinos públicos aun cuando se oculta el primero.
-- Reconocer portadores Windows, UNC y `file:` sin comillas como unidades locales, evitando que un método o URL dentro de su nombre conceda autoridad HTTP o aparezca como referencia independiente.
-- Exigir un método o contexto HTTP independiente al inicio del texto o después de espacio, evitando autoridad prestada por puntuación de nombres relativos o por el recorte de la ventana de búsqueda.
+- Ocultar copias de credenciales explícitas de comandos retenidos, incluidos scripts shell citados, anidados y con claves escapadas, aun sin prueba argv; no acreditar comandos ni modificar fuentes y rechazar identidades estructurales sensibles antes de exportar.
+- Clasificar secretos y comandos completos sobre intervalos del texto original, incluidas copias codificadas solapadas y valores que cruzan miembros citados; ocultarlos antes de relativizar raíces, dividir URLs o transformar delimitadores, sin restaurar texto privado ni cambiar el redactor histórico.
+- Conservar rutas HTTP y sus vecinos mediante contexto independiente en el texto original, incluso tras omitir el primer miembro. Mantener privados los nombres locales citados, Windows, UNC y `file:`, sus fragmentos URL y las rutas ambiguas, sin aceptar autoridad prestada por puntuación de filenames o por el recorte de la búsqueda.
 
 ## 3.5.0 — 2026-10-30
 
