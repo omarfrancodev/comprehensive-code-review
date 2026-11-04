@@ -9,6 +9,7 @@ from ccr.execution.candidates import write_new_json
 from ccr.reporting.comment import (_read_body, _read_json, prepare_public_comment,
                                    verify_public_comment)
 from ccr.execution.disclosure import read_selected_disclosure
+from ccr.reporting.finding_publication import read_finding_publication_context
 
 def main(argv=None, *, prog=None):
     parser = argparse.ArgumentParser(prog=prog, description=__doc__)
@@ -20,6 +21,7 @@ def main(argv=None, *, prog=None):
     prepare.add_argument('--publication-context')
     prepare.add_argument('--check-publication-context')
     prepare.add_argument('--coverage-publication-context')
+    prepare.add_argument('--finding-publication-context')
     verify = commands.add_parser('verify', help='Verify exact local or observed remote comment bytes')
     verify.add_argument('--input', required=True)
     verify.add_argument('--draft', required=True)
@@ -46,6 +48,8 @@ def main(argv=None, *, prog=None):
                              if args.check_publication_context else None)
             coverage_context = (_read_json(args.coverage_publication_context, 'coverage publication context')
                                 if args.coverage_publication_context else None)
+            finding_context = (read_finding_publication_context(args.finding_publication_context)
+                               if args.finding_publication_context else None)
             session_dir, _, workspace_manifest = owned_session(args.session)
         except (OSError, ValueError, TypeError, KeyError, workspace_ops.ReviewError) as exc:
             print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)
@@ -54,7 +58,7 @@ def main(argv=None, *, prog=None):
             draft = prepare_public_comment(
                 record, publication_context=publication_context,
                 check_publication_context=check_context,
-                coverage_publication_context=coverage_context,
+                coverage_publication_context=coverage_context, finding_publication_context=finding_context,
                 check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources)
         except (ValueError, TypeError) as exc:
             print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)

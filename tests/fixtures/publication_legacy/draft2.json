@@ -1,0 +1,98 @@
+{
+  "record": {
+    "schema_version": 1,
+    "stage": "final",
+    "scope": {
+      "repository": "example/service",
+      "mode": "pr",
+      "base": "base-123",
+      "head": "head-456",
+      "snapshot": null,
+      "target": "main",
+      "reference": "https://example.test/pr/12"
+    },
+    "profile": "balanced",
+    "profile_reason": "One isolated validation rule",
+    "responsible": {
+      "name": "Ana Perez",
+      "username": "ana",
+      "verified": true,
+      "source": "PR assignee metadata"
+    },
+    "findings": [
+      {
+        "id": "R001",
+        "type": "code",
+        "status": "confirmed",
+        "priority": "P2",
+        "blocking": false,
+        "blocking_reason": null,
+        "origin": "introduced",
+        "title": "Removed response field breaks consumer",
+        "location": {
+          "path": "src/api.py",
+          "line": 12,
+          "url": null,
+          "section": null
+        },
+        "scenario": "Existing consumer reads response id; field is absent",
+        "impact": "Consumer cannot navigate to the created object",
+        "evidence": [
+          {
+            "kind": "static",
+            "details": "jobs_service.py:_publish_pending_job; sin comprobar propiedad por token: puede borrar la reserva",
+            "check_id": null
+          }
+        ],
+        "correction": "Preserve id or migrate affected consumers"
+      }
+    ],
+    "checks": [],
+    "description": {
+      "status": "aligned",
+      "identity": "sha256:description-1",
+      "details": "Accurately summarizes the changed validation"
+    },
+    "coverage": {
+      "adequate": true,
+      "flows": [
+        "request validation"
+      ],
+      "limitations": [],
+      "verification": "independent",
+      "stale": false
+    },
+    "verdict": "approvable",
+    "verdict_reason": "No blocking defects confirmed",
+    "reservations": [],
+    "rereview": [],
+    "aliases": {},
+    "resources": {
+      "cleanup": "not_needed",
+      "residuals": [],
+      "publication": "draft"
+    }
+  },
+  "draft": {
+    "schema_version": 2,
+    "source_sha256": "da59e9676adfb879ee711652cc69f71aa8e9f352d86633cd19c4461e6695ec96",
+    "publication_context": null,
+    "check_publication_context": {
+      "source_sha256": "da59e9676adfb879ee711652cc69f71aa8e9f352d86633cd19c4461e6695ec96",
+      "checks": []
+    },
+    "coverage_publication_context": {
+      "source_sha256": "da59e9676adfb879ee711652cc69f71aa8e9f352d86633cd19c4461e6695ec96",
+      "flows": [
+        {
+          "index": 0,
+          "summary": "request validation"
+        }
+      ]
+    },
+    "body": "## Code Review\n\n### Veredicto: **APROBABLE**\n\nNo blocking defects confirmed\n\n- **Alcance:** example/service · PR\n- **Versión:** base-123 → head-456\n- **Destino:** main\n- **Responsable del MR/PR:** @ana\n- **MR/PR:** [Ver referencia](https://example.test/pr/12)\n- **Descripción:** coherente — Accurately summarizes the changed validation\n\n### Hallazgos\n\n**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 1 · 🔵 P3: 0\n\n<a id=\"R001\"></a>\n\n### 🟡 P2 — Importante — R001\n\n#### 1. Removed response field breaks consumer\n\n- **Ubicación:** src/api.py:12 · **Origen:** introducido\n- **Escenario:** Existing consumer reads response id; field is absent\n- **Impacto:** Consumer cannot navigate to the created object\n- **Evidencia:**\n  - **Inspección estática** — jobs\\_service.py:\\_publish\\_pending\\_job; sin comprobar propiedad por token: puede borrar la reserva\n- **Corrección requerida:** Preserve id or migrate affected consumers\n- **Bloqueante:** no\n\n### Validación\n\n- Inspección estática; no se ejecutaron comprobaciones.\n\n- **Cobertura:**\n  - request validation\n",
+    "body_sha256": "93b9fcfb018e7b63f0581fef4ff4e92057d24ee5abe46f19de4430a7a07df626"
+  },
+  "disclosure": null,
+  "sources": {}
+}

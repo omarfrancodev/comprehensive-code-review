@@ -146,3 +146,15 @@ La copia de la skill debe conservar completo `scripts/`, incluidos `scripts/__ma
 | `scripts/ccr/reporting/models.py` | Validar/resumir metadata suministrada o retenida y mostrar ausencias por participante conocido; sin consultas a proveedores. | `model_summary`, `model_usage_context`, `model_lines`. | `test_review_model_capture.py`, `test_review_model_usage.py` |
 
 Final 12 hereda la forma de 11 y cambia topología/agregado solo para 12. `contracts/execution.py` clasifica filas históricas/finales con fuentes y conserva el despacho original; 10/11 mantienen sus reglas. La captura de workspace fija el mapa inicial de recursos; checks conserva argv y prueba de bytes junto al recibo de comandos 2. Setup produce candidatos de disclosure y modelos; registro/retención contrastan fuentes e identidades. La proyección nueva usa draft 3 y delivery receipt 2; model ledger 1 sigue privado, sin medir costes ni seleccionar modelos. Los contratos históricos publicados y archive 8/layout 2 mantienen sus versiones.
+
+
+### Proyección editorial de publicación
+
+| Módulo | Responsabilidad | Interfaces | Pruebas |
+|---|---|---|---|
+| `scripts/ccr/contracts/disclosure_text.py` | Clasificar credenciales explícitas sobre la fuente original. | `sensitive_values_from_text`; prosa/structured. | `test_review_public_text.py` |
+| `scripts/ccr/reporting/finding_publication.py` | Validar contextos editoriales dispersos y producir copias de hallazgos. | `normalize_finding_publication_context`, `project_public_findings`; lector acotado. | `test_review_finding_publication.py` |
+| `scripts/ccr/reporting/public_text.py` | Sanear fuentes antes de introducir Markdown, conservando la política de spans original. | `PublicText`; fuentes originales y contextos seleccionados. | `test_review_public_text.py` |
+| `scripts/ccr/reporting/publication_legacy.py` | Rerender histórico de drafts 2/3 con su política original. | `legacy_public_projection`; no se usa para preparar nuevos drafts. | `test_review_publication_legacy.py` |
+
+| `scripts/ccr/reporting/text_projection.py` | Compartir la proyección pura de spans originales entre comentarios y entregas, sin IO de archivo. | `_Projection`; alias conservado en delivery. | `test_review_delivery_source_spans.py`, `test_review_public_text.py` |

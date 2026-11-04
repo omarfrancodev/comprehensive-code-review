@@ -19,20 +19,20 @@ from ccr.reporting.projections import (
 )
 
 
-def person_text(person):
+def person_text(person, *, format_text=markdown_text):
     if person['verified'] is not True:
         return 'No identificado'
     # Validated account characters are safe and must remain intact for mentions.
-    return '@' + person['username'] if person['username'] else markdown_text(person['name'])
+    return '@' + person['username'] if person['username'] else format_text(person['name'])
 
-def previous_reviews_text(record, audience):
+def previous_reviews_text(record, audience, *, format_reference=reference_text):
     """Preserve parent identity without publishing private archive references."""
     references = []
     for prior in record.get('previous_reviews', []):
         parts = [prior['review_id']] if prior.get('review_id') else []
         reference = prior.get('reference')
         if reference and (audience == 'user' or (prior.get('verified') is True and public_url(reference))):
-            parts.append(reference_text(reference))
+            parts.append(format_reference(reference))
         references.append(' · '.join(parts) or 'Fuente verificada conservada en el registro')
     return '; '.join(references)
 
@@ -45,12 +45,12 @@ def confirmed_counts_text(findings):
 
 def render(record, audience='user', publication_context=None, *, check_publication_context=None,
            coverage_publication_context=None, check_disclosure_context=None, check_disclosure_sources=None,
-           model_usage_context=None):
+           model_usage_context=None, finding_publication_context=None):
     return _render(record, audience, publication_context,
                    check_publication_context=check_publication_context,
                    coverage_publication_context=coverage_publication_context,
                    check_disclosure_context=check_disclosure_context, check_disclosure_sources=check_disclosure_sources,
-                   model_usage_context=model_usage_context)
+                   model_usage_context=model_usage_context, finding_publication_context=finding_publication_context)
 
 
 def render_portable(record, evidence_by_finding):
@@ -61,13 +61,13 @@ def render_portable(record, evidence_by_finding):
 def _render(record, audience='user', publication_context=None, *, check_publication_context=None,
             coverage_publication_context=None, evidence_by_finding=None,
             check_disclosure_context=None, check_disclosure_sources=None, model_usage_context=None,
-            include_models=True):
+            include_models=True, finding_publication_context=None, _legacy=False):
     errors = validate(record)
     if errors or record.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
-    disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources)
+    disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources, _legacy=_legacy)
                   if audience == 'comment' or check_disclosure_context is not None else None)
     disclosure_rows = {row['id']: row for row in disclosure['checks']} if disclosure else {}
     if publication_context is not None and audience != 'comment':
@@ -80,6 +80,18 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
              else record['coverage']['flows'])
     public_check_rows = (public_checks(record, check_publication_context)
                          if audience == 'comment' else None)
+    if finding_publication_context is not None and audience != 'comment':
+        raise ValueError('finding publication context is only applicable to public rendering')
+    from ccr.reporting.finding_publication import project_public_findings
+    findings = project_public_findings(record, finding_publication_context) if audience == 'comment' else record['findings']
+    formatter = None
+    if audience == 'comment' and not _legacy:
+        from ccr.reporting.public_text import PublicText
+        formatter = PublicText(record, check_disclosure_context, check_disclosure_sources,
+            (publication_context, check_publication_context, coverage_publication_context, finding_publication_context))
+    markdown_text = formatter.markdown if formatter else globals()['markdown_text']
+    one_line = formatter.markdown if formatter else globals()['one_line']
+    reference_text = formatter.reference if formatter else globals()['reference_text']
     scope = record['scope']
     responsible = record['responsible']
     version = scope['snapshot'] or scope['head']
@@ -95,12 +107,12 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
     if record.get('review_id'):
         lines.append('- **ID de revisión:** ' + record['review_id'])
     if record.get('previous_reviews'):
-        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience))
+        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience, format_reference=reference_text))
     if scope['target']:
         lines.append(f"- **Destino:** {markdown_text(scope['target'])}")
-    lines.append(f'- **{responsibility}:** {person_text(responsible)}')
+    lines.append(f'- **{responsibility}:** {person_text(responsible, format_text=markdown_text)}')
     if record['schema_version'] in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13):
-        authors = '; '.join(person_text(author) for author in record['change_authors']) or 'No identificados'
+        authors = '; '.join(person_text(author, format_text=markdown_text) for author in record['change_authors']) or 'No identificados'
         lines.append('- **Autores del cambio:** ' + authors)
     if scope['reference']:
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
@@ -128,7 +140,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         lines.append(f"- **Descripción:** {DESCRIPTION[description['status']]} — {markdown_text(description['details'])}")
     else:
         lines.append('- **Descripción:** No aplica; revisión local.')
-    confirmed = sorted((f for f in record['findings'] if f['status'] == 'confirmed'),
+    confirmed = sorted((f for f in findings if f['status'] == 'confirmed'),
                        key=lambda f: (f['priority'], f['id']))
     counts = confirmed_counts_text(record['findings'])
     lines.extend(['', '### Hallazgos', '', '**Confirmados:** ' + counts])
@@ -136,12 +148,14 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         for ordinal, item in enumerate(confirmed, 1):
             location = item['location']
             label = f"{location['path']}:{location['line']}" if item['type'] == 'code' else location['section']
+            if formatter:
+                label = formatter.text(label)
             if location['url']:
                 label = f"[{one_line(label)}]({location['url']})"
             ledger = {check['id']: check for check in record['checks']}
             groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None
                       else evidence_groups(item['evidence'], ledger))
-            evidence = evidence_lines(groups)
+            evidence = evidence_lines(groups, format_text=markdown_text)
             lines.extend(['', '<a id="' + html.escape(item['id'], quote=True) + '"></a>', '',
                           f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
                           f"#### {ordinal}. {one_line(item['title'])}", '',
@@ -152,7 +166,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
                           '- **Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no')])
     else:
         lines.extend(['', 'No se confirmaron defectos bloqueantes dentro del alcance revisado.'])
-    unresolved = [f for f in record['findings'] if f['status'] == 'unresolved']
+    unresolved = [f for f in findings if f['status'] == 'unresolved']
     limitations = (public_limitations(record, publication_context) if audience == 'comment' else
                    [dict(item) for item in record['coverage']['limitations']])
     lines.extend(['', '### Validación', ''])
@@ -169,14 +183,14 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
             lines.append(f"- **{check['id']}**:{command} {CHECK_STATUS[check['status']]} · versión {one_line(check['revision'])}{classification}{reuse}{repeat}")
             lines.append('  - **Propósito:** ' + markdown_text(display.get('purpose') or 'Propósito no registrado (resultado anterior)'))
             if check['id'] in disclosure_rows:
-                lines.extend(disclosure_lines(disclosure_rows[check['id']]))
+                lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_command=formatter.command if formatter else markdown_text))
             if display.get('evidence'):
                 lines.append('  - **Resultado:** ' + markdown_text(display['evidence']))
             if display.get('reference'):
                 lines.append('  - **Referencia de ejecución:** ' + reference_text(display['reference']))
     else:
         lines.append('- Inspección estática; no se ejecutaron comprobaciones.')
-    lines.extend(['', *coverage_lines(flows)])
+    lines.extend(['', *coverage_lines(flows, format_text=markdown_text)])
     areas = record['coverage'].get('areas', [])
     if record['schema_version'] == 13:
         areas = display_areas13(areas)
@@ -247,11 +261,16 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
                 raise ValueError('model usage evidence belongs to another review')
         lines.extend(model_lines(model_usage_context))
     output = '\n'.join(lines) + '\n'
-    return public_projection(output, record, disclosure, check_disclosure_sources) if audience == 'comment' else output
+    if formatter:
+        return formatter.final(output)
+    if audience == 'comment' and _legacy:
+        from ccr.reporting.publication_legacy import legacy_public_projection
+        return legacy_public_projection(output, record, disclosure, check_disclosure_sources)
+    return output
 
 def render_handoff(record, context=None, audience='user', publication_context=None, *,
                    check_publication_context=None, coverage_publication_context=None,
-                   check_disclosure_context=None, check_disclosure_sources=None):
+                   check_disclosure_context=None, check_disclosure_sources=None, finding_publication_context=None):
     """Render an explicitly requested contextual index, never an authorization."""
     errors = validate(record)
     if errors or record.get('stage') != 'final':
@@ -273,12 +292,27 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     allowed = {'source_record', 'source_report', 'requirements', 'plan', 'decisions_pending'}
     if not isinstance(context, dict) or set(context) - allowed:
         raise ValueError('unknown handoff context fields')
+    if finding_publication_context is not None and audience != 'comment':
+        raise ValueError('finding publication context is only applicable to public rendering')
+    from ccr.reporting.finding_publication import project_public_findings
+    findings = project_public_findings(record, finding_publication_context) if audience == 'comment' else record['findings']
+    formatter = None
+    if audience == 'comment' :
+        from ccr.reporting.public_text import PublicText
+        formatter = PublicText(record, check_disclosure_context, check_disclosure_sources,
+            (publication_context, check_publication_context, coverage_publication_context, finding_publication_context, context))
+    markdown_text = formatter.markdown if formatter else globals()['markdown_text']
+    one_line = formatter.markdown if formatter else globals()['one_line']
+    reference_text = formatter.reference if formatter else globals()['reference_text']
     scope = record['scope']
+    source_report = context.get('source_report')
+    if formatter and not (source_report and formatter.projection.public_url(source_report)):
+        source_report = None
     lines = ['## Transferencia contextual de revisión', '',
              '- **ID de revisión:** ' + record.get('review_id', 'ID histórico no disponible'),
              '- **Alcance:** ' + markdown_text(scope['repository']) + ' · ' + MODE_LABELS[scope['mode']]]
     if record.get('previous_reviews'):
-        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience))
+        lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, audience, format_reference=reference_text))
     for key, label in [('base', 'Base'), ('head', 'Head'), ('snapshot', 'Snapshot'), ('target', 'Destino')]:
         if scope.get(key):
             lines.append(f'- **{label}:** ' + markdown_text(scope[key]))
@@ -290,19 +324,19 @@ def render_handoff(record, context=None, audience='user', publication_context=No
                 raise ValueError(key + ' must be a reference string')
             lines.append(f'- **{label}:** ' + reference_text(context[key]))
     lines.extend(['', '### Índice de hallazgos confirmados', ''])
-    confirmed = [item for item in record['findings'] if item['status'] == 'confirmed']
+    confirmed = [item for item in findings if item['status'] == 'confirmed']
     for item in sorted(confirmed, key=lambda item: (item['priority'], item['id'])):
         correction_reference = ''
-        if context.get('source_report'):
-            target = context['source_report'].split('#')[0] + '#' + item['id']
+        if source_report:
+            target = source_report.split('#')[0] + '#' + item['id']
             correction_reference = ' · [Corrección ' + markdown_text(item['id']) + '](' + quote(target, safe='/:#?&=%-._~') + ')'
         lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · "
                      + markdown_text(item['title']) + ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference)
         lines.append('  - **Evidencia:**')
-        lines.extend('  ' + line for line in evidence_lines(evidence_groups(item['evidence'], {c['id']: c for c in record['checks']})))
+        lines.extend('  ' + line for line in evidence_lines(evidence_groups(item['evidence'], {c['id']: c for c in record['checks']}), format_text=markdown_text))
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
-    uncertainties = [item['id'] + ': ' + item['title'] for item in record['findings'] if item['status'] == 'unresolved']
+    uncertainties = [item['id'] + ': ' + item['title'] for item in findings if item['status'] == 'unresolved']
     uncertainties += [item['detail'] for item in limitations]
     if audience == 'user':
         areas = record['coverage'].get('areas', [])
@@ -322,17 +356,17 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     for check in checks:
         lines.extend(['', '<a id="' + html.escape(check['id'], quote=True) + '"></a>', ''])
         evidence_ref = (' · referencia: ' + reference_text(check['reference']) if check.get('reference') else
-                        ' · [Evidencia ' + check['id'] + '](' + quote(context['source_report'].split('#')[0] + '#' + check['id'], safe='/:#?&=%-._~') + ')' if context.get('source_report') else
+                        ' · [Evidencia ' + check['id'] + '](' + quote(source_report.split('#')[0] + '#' + check['id'], safe='/:#?&=%-._~') + ')' if source_report else
                         ' · evidencia: véase Validación del informe fuente')
         lines.append(f"- {check['id']} · {CHECK_STATUS[check['status']]} · versión {markdown_text(check['revision'])}" +
                      evidence_ref)
         lines.append('  - **Propósito:** ' + markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
         if check['id'] in disclosure_rows:
-            lines.extend(disclosure_lines(disclosure_rows[check['id']]))
+            lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_command=formatter.command if formatter else markdown_text))
         lines.append('  - **Resultado:** ' + markdown_text(check['evidence'] or 'Sin ejecución'))
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
-    lines.extend(['', *coverage_lines(flows)])
+    lines.extend(['', *coverage_lines(flows, format_text=markdown_text)])
     for key, label in [('requirements', 'Requisitos y especificaciones'), ('plan', 'Plan')]:
         entries = context.get(key, [])
         if not isinstance(entries, list):
@@ -349,4 +383,4 @@ def render_handoff(record, context=None, audience='user', publication_context=No
     lines.extend(['', 'Antes de continuar, comprobar que base, head y snapshot coincidan con la versión actual y repetir las comprobaciones afectadas o pendientes con un nuevo ID de ejecución.',
                   'La transferencia conserva el contexto; cualquier corrección, commit o publicación requiere la autorización correspondiente.'])
     output = '\n'.join(lines) + '\n'
-    return public_projection(output, record, disclosure, check_disclosure_sources) if audience == 'comment' else output
+    return formatter.final(output) if formatter else output

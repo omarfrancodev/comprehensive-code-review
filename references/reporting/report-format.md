@@ -4,6 +4,8 @@ Use one canonical final record from result-contract.md. Report in the user's lan
 
 ## Presentation rules
 
+Public finding wording may use the optional source-bound editorial context in [publication.md](publication.md). This view never changes the source record or its technical decisions; omitted edits inherit original text. Use the same edited correction in the finding and its acceptance condition. Complete the single editorial pass even when the helper verifies body integrity; private reports and portable full/brief exports retain original finding text.
+
 After the title, verdict first; one result per project/scope; one finding per cause. Use exact base/head/snapshot and verified links. Code needs a real version-specific file/line; description issues use the MR/PR section plus change evidence. Never link removed temporary workspaces.
 
 Use H2 for the review title, H3 for verdict, Hallazgos and each icon/priority-name/code/ID block, H4 for its finding title. Hallazgos always includes confirmed P0/P1/P2/P3 counts with their respective colored circle, including zero; use the same summary in user reports, public comments and brief deliveries. Separate verdict reason from heading and use one metadata field per Markdown list item. Finding fields are list items too; plain consecutive newlines are soft breaks. Separate headings, paragraphs and lists with blank lines. Escape literal untrusted text. Translate user-facing values; internal enums remain in records. Manual rendering follows this contract.

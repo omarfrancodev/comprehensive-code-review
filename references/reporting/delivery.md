@@ -6,6 +6,8 @@ The agent interprets `--delivery full|brief` and `--output <delivery-root>`. The
 
 ## Contents and location
 
+Finding editorial contexts apply to public comments/handoff, not full/brief exports. Exports preserve original finding text while applying privacy. Source-aware sanitization protects marked values learned before projection and does not reinterpret Markdown-created escapes or narrative colons as filesystem/credential authority.
+
 - Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties, applicable coverage, `previous_reviews` lineage and schema 10/11/12 profile/assignment history.
 - Brief: resumen.md with identity/version/scope, verdict and reason, confirmed counts, IDs/priorities/locations, concrete triggering scenarios/impacts and correction guidance, meaningful validation summaries and material pending matters. It shows the prior review ID/source link and keeps the result summary; it does not promise full profile/assignment history. It remains sufficient to understand the requested next work; unresolved claims stay separate from confirmed corrections.
 - Optional contexto.md: only additional collected context that changes the next agent's decisions and is absent from the report. Preserve sources and uncertainties; do not repeat findings or create a new plan.

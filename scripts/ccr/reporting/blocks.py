@@ -23,18 +23,18 @@ def evidence_groups(evidence: list[dict], checks: dict[str, dict]) -> list[dict]
     return groups
 
 
-def evidence_lines(groups: list[dict]) -> list[str]:
+def evidence_lines(groups: list[dict], *, format_text=markdown_text) -> list[str]:
     lines = []
     for group in groups:
         identifier = group['check_id']
         if identifier is None:
-            lines.extend('  - **Inspección estática** — ' + markdown_text(detail) for detail in group['details'])
+            lines.extend('  - **Inspección estática** — ' + format_text(detail) for detail in group['details'])
         else:
-            lines.append('  - **[' + markdown_text(identifier) + '](#' + quote(identifier, safe='') + ')** — Resultado en Validación.')
-            lines.extend('    - ' + markdown_text(detail) for detail in group['details'])
+            lines.append('  - **[' + format_text(identifier) + '](#' + quote(identifier, safe='') + ')** — Resultado en Validación.')
+            lines.extend('    - ' + format_text(detail) for detail in group['details'])
     return lines
 
 
-def coverage_lines(flows: list[str]) -> list[str]:
-    return ['- **Cobertura:**'] + ['  - ' + markdown_text(flow) for flow in
+def coverage_lines(flows: list[str], *, format_text=markdown_text) -> list[str]:
+    return ['- **Cobertura:**'] + ['  - ' + format_text(flow) for flow in
         (flows or ['Sin flujos de cobertura registrados.'])]

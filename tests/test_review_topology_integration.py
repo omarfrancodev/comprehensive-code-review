@@ -158,14 +158,14 @@ class TopologyIntegrationTests(unittest.TestCase):
                 self.assertEqual(fixture.read(target / 'review.json')['schema_version'], 12)
         self.assertEqual(fixture.snapshot(run), before)
 
-    def test_schema12_public_draft3(self):
+    def test_schema12_public_draft4(self):
         value = record12('focused', 'automatic', discovery=1)
         from ccr.workflow.builders import build_check_disclosure
         from ccr.contracts.check_disclosure import input_identity_for
         disclosure = build_check_disclosure(value, input_identity_for(value), {}, {})
         kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources={})
         draft = comment.prepare_public_comment(value, **contexts12(value), **kwargs)
-        self.assertEqual(draft['schema_version'], 3)
+        self.assertEqual(draft['schema_version'], 4)
         self.assertIn(value['checks'][0]['purpose'], draft['body'])
         self.assertTrue(comment.verify_public_comment(value, draft, draft['body'], **kwargs)['verified'])
         bad = contexts12(value)

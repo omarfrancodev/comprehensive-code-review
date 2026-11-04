@@ -3,8 +3,10 @@ from ccr.contracts.check_disclosure import (canonical, digest, safe_text, privat
                                            validate_check_disclosure)
 
 
-def project_check_disclosure(record, disclosure, sources, input_identity):
-    errors = validate_check_disclosure(record, disclosure, sources, input_identity)
+def project_check_disclosure(record, disclosure, sources, input_identity, *, _legacy=False):
+    from ccr.contracts.check_disclosure import _legacy_safe_text
+    sanitize = _legacy_safe_text if _legacy else safe_text
+    errors = validate_check_disclosure(record, disclosure, sources, input_identity, _legacy_only=_legacy)
     if errors:
         raise ValueError('; '.join(errors))
     raw = sources.get('evidence/check-disclosure.json')
@@ -14,12 +16,12 @@ def project_check_disclosure(record, disclosure, sources, input_identity):
             raise ValueError('selected check disclosure bytes differ from the supplied sidecar')
     secrets = private_values(record, None, sources)
     return dict(source_sha256=disclosure['source_sha256'], check_disclosure_sha256=digest(raw if raw is not None else canonical(disclosure)),
-        checks=[dict(id=row['id'], mode=row['mode'], command=safe_text(row['command'], secrets),
-                     resources=[safe_text(resource['path'], secrets) for resource in row['resources']],
-                     explanation=safe_text(row['explanation'], secrets)) for row in disclosure['checks']])
+        checks=[dict(id=row['id'], mode=row['mode'], command=sanitize(row['command'], secrets),
+                     resources=[sanitize(resource['path'], secrets) for resource in row['resources']],
+                     explanation=sanitize(row['explanation'], secrets)) for row in disclosure['checks']])
 
 
-def disclosure_view(record, context, sources):
+def disclosure_view(record, context, sources, *, _legacy=False):
     if context is None:
         if record.get('schema_version') in (12, 13) and record.get('checks'):
             raise ValueError('check disclosure context required for schema 12/13 checks')
@@ -49,15 +51,17 @@ def disclosure_view(record, context, sources):
                         proved.add((resource['path'], digest(content), resource['executed_sha256']))
                 if any((resource['path'], resource['project_sha256'], resource['executed_sha256']) not in proved for resource in row['resources']):
                     raise ValueError('snapshot disclosure requires an independently registered initial input anchor')
-    return project_check_disclosure(record, context, sources, expected or identity)
+    return project_check_disclosure(record, context, sources, expected or identity, _legacy=_legacy)
 
 
-def disclosure_lines(row):
+def disclosure_lines(row, *, format_text=None, format_command=None):
     from ccr.reporting.markdown import markdown_text
+    format_text = format_text or markdown_text
+    format_command = format_command or format_text
     lines = []
     if row['command']:
-        lines.append('  - **Comando saneado:** ' + markdown_text(row['command']))
+        lines.append('  - **Comando saneado:** ' + format_command(row['command']))
     if row['resources']:
-        lines.append('  - **Recursos del proyecto:** ' + '; '.join(markdown_text(path) for path in row['resources']))
-    lines.append('  - **Explicación del check:** ' + markdown_text(row['explanation']))
+        lines.append('  - **Recursos del proyecto:** ' + '; '.join(format_text(path) for path in row['resources']))
+    lines.append('  - **Explicación del check:** ' + format_text(row['explanation']))
     return lines

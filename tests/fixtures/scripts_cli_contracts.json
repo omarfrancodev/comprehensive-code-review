@@ -3250,6 +3250,22 @@
                 "choices": null,
                 "const": null,
                 "default": null,
+                "dest": "finding_publication_context",
+                "help": null,
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--finding-publication-context"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
                 "dest": "check_disclosure_context",
                 "help": null,
                 "kind": "_StoreAction",
@@ -3543,6 +3559,22 @@
         "nargs": null,
         "options": [
           "--coverage-publication-context"
+        ],
+        "required": false,
+        "type": null
+      },
+      {
+        "choices": null,
+        "const": null,
+        "default": null,
+        "dest": "finding_publication_context",
+        "help": "Source-bound editorial finding summaries for render-comment",
+        "kind": "_StoreAction",
+        "metavar": null,
+        "mutex_groups": [],
+        "nargs": null,
+        "options": [
+          "--finding-publication-context"
         ],
         "required": false,
         "type": null

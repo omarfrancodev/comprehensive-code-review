@@ -375,7 +375,7 @@ def sensitive_text_ranges(text, secrets):
         yield pending
 
 
-def safe_text(value, secrets=(), *, redact_paths=True):
+def _legacy_safe_text(value, secrets=(), *, redact_paths=True, _redact_assignments=True):
     """Filter private prose; typed projections may apply their own path policy."""
     if not isinstance(value, str):
         return value
@@ -423,9 +423,22 @@ def safe_text(value, secrets=(), *, redact_paths=True):
     # A literal credential can cross an original delimiter boundary. Redact it
     # after URL decisions; these markers can no longer affect URL recognition.
     value = redact(''.join(spans))
-    value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
+    if _redact_assignments:
+        value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
     value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', value)
     return value
+
+
+def safe_text(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    """Sanitize original source text; presentation escapes carry no authority."""
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    if not isinstance(value, str):
+        return value
+    learned = sensitive_values_from_text(value, syntax=syntax)
+    if syntax == 'structured':
+        learned.update(_command_sensitive_values(value))
+    return _legacy_safe_text(value, set(secrets) | learned, redact_paths=redact_paths,
+                             _redact_assignments=False)
 
 
 def _resource_proof(check, observation, sources, identity):
@@ -508,7 +521,8 @@ def _git_membership(head, path, content, objects):
         return False
 
 
-def _project_command(execution, resources, contents):
+def _project_command(execution, resources, contents, *, _legacy=False):
+    sanitize = _legacy_safe_text if _legacy else safe_text
     argv = execution['argv']; eligible = {row['path'] for row in resources}
     cwd = execution.get('cwd', '').replace('\\', '/').rstrip('/')
     tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
@@ -589,7 +603,7 @@ def _project_command(execution, resources, contents):
             projected.append(OMITTED); mixed = True; continue
         original = project_path(arg)
         if original:
-            projected.append(safe_text(original)); resource_next = False; continue
+            projected.append(sanitize(original)); resource_next = False; continue
         if resource_next:
             projected.append(OMITTED); mixed = True; resource_next = False; continue
         if arg in RESOURCE_FLAGS:
@@ -603,7 +617,8 @@ def _project_command(execution, resources, contents):
     return shlex.join(projected), 'mixed' if mixed else 'project_command'
 
 
-def build_disclosure_row(check, observation, sources, identity):
+def build_disclosure_row(check, observation, sources, identity, *, _legacy=False):
+    sanitize = _legacy_safe_text if _legacy else safe_text
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
                execution_reference=None, mode='explanation', command=None, resources=[],
                explanation='No se dispone de argv y procedencia verificables para este check; propósito y resultado se conservan.', evidence_reference=None)
@@ -612,15 +627,16 @@ def build_disclosure_row(check, observation, sources, identity):
     row.update(execution_reference=observation.get('execution_reference'), evidence_reference=observation.get('evidence_reference'))
     execution, resources, contents = _resource_proof(check, observation, sources, identity)
     row['resources'] = resources
-    row['command'], row['mode'] = _project_command(execution, resources, contents)
+    row['command'], row['mode'] = _project_command(execution, resources, contents, _legacy=_legacy)
     secrets = sensitive_values(sources)
     if row['command'] is not None:
-        row['command'] = safe_text(row['command'], secrets)
-    row['explanation'] = safe_text(observation.get('explanation') or row['explanation'], secrets)
+        row['command'] = (_legacy_safe_text(row['command'], secrets) if _legacy else
+                          safe_text(row['command'], secrets, syntax='structured'))
+    row['explanation'] = sanitize(observation.get('explanation') or row['explanation'], secrets)
     return row
 
 
-def validate_check_disclosure(record, disclosure, sources, input_identity):
+def validate_check_disclosure(record, disclosure, sources, input_identity, *, _legacy_only=False):
     try:
         if not isinstance(disclosure, dict) or set(disclosure) != FIELDS or type(disclosure.get('schema_version')) is not int or disclosure.get('schema_version') != 1:
             return ['check disclosure requires exact schema 1 fields']
@@ -643,7 +659,11 @@ def validate_check_disclosure(record, disclosure, sources, input_identity):
             if set(row) != ROW_FIELDS or not isinstance(row['explanation'], str) or not row['explanation'].strip():
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
-            expected = build_disclosure_row(check, observation, sources, input_identity)
+            expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                # Schema 1 predates editorial-v1. Its existing selected bytes
+                # remain valid under their original full resource-proof gate.
+                expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=True)
             if row != expected:
                 return ['check disclosure differs from selected execution/input proof']
         return []

@@ -95,7 +95,7 @@ class Coverage13RenderingTests(unittest.TestCase):
         record['coverage']['limitations'] = [{'kind': 'execution', 'detail': 'password=hunter2',
             'material': True, 'public_summary': 'Una ruta crítica permanece sin verificar'}]
         draft = comment.prepare_public_comment(record, **publication_contexts(record))
-        self.assertEqual(draft['schema_version'], 3)
+        self.assertEqual(draft['schema_version'], 4)
         self.assertNotIn('hunter2', draft['body'])
 
 
