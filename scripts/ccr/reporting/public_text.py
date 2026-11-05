@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from ccr.reporting import markdown
 from ccr.reporting.projections import publication_digest, public_sensitive_values
-from ccr.contracts.check_disclosure import _legacy_safe_text, safe_text
+from ccr.contracts.check_disclosure import _secret_spellings, redact_projected_text, safe_text
 
 
 class PublicText:
@@ -38,8 +38,10 @@ class PublicText:
     def markdown(self, value):
         return markdown.markdown_text(self.text(value))
 
-    def command(self, value):
-        return markdown.markdown_text(self.projection.text(value, omit_commands=False))
+    def proven(self, value):
+        # Only disclosure_view supplies these typed, proof-checked fields.
+        # Apply contextual privacy without treating their operands as prose.
+        return markdown.markdown_text(self._redact_known(value))
 
     def reference(self, value):
         return markdown.reference_text(self.text(value))
@@ -68,8 +70,9 @@ class PublicText:
             return label
         return f'[{label}]({destination})'
 
+    def _redact_known(self, value):
+        return redact_projected_text(value, _secret_spellings(self.projection.secrets))
+
     def final(self, body):
-        # Only known values and URL privacy remain: Markdown backslashes and
-        # its labels cannot create new filesystem/credential authority.
-        return _legacy_safe_text(body, self.projection.secrets, redact_paths=False,
-                                 _redact_assignments=False)
+        # Markdown escapes and labels cannot create assignment authority.
+        return self._redact_known(body)

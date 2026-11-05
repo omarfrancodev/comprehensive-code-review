@@ -26,7 +26,8 @@ class PublicProjectionReviewTests(unittest.TestCase):
             record, coverage_publication_context=coverage_classification(record), **kwargs)
         self.assertTrue(comment.verify_public_comment(
             record, draft, draft['body'],
-            check_disclosure_context=kwargs.get('check_disclosure_context'))['verified'])
+            check_disclosure_context=kwargs.get('check_disclosure_context'),
+            check_disclosure_sources=kwargs.get('check_disclosure_sources'))['verified'])
         return draft['body']
 
     def test_finding_location_checks_full_destination_and_keeps_relative_label(self):
@@ -212,6 +213,97 @@ class PublicProjectionReviewTests(unittest.TestCase):
         self.assertEqual(output.count('[omitido]'), count)
         self.assertIn('https://example.test/check/119', output)
         self.assertEqual(prepare.call_count, 1)
+
+    def test_all_markdown_line_endings_protect_marked_values_and_copies(self):
+        for ending in ('\r', '\r\n', '\n'):
+            with self.subTest(ending=ending):
+                record = record13()
+                record['checks'] = []
+                record['verdict_reason'] = ending.join(('~~~', 'inside token: CRSECRET', '~~~',
+                                                        'Una nota por token: puede borrar'))
+                record['description']['details'] = 'Copy CRSECRET, and puede belongs to prose'
+                body = self.draft(record)
+                self.assertNotIn('CRSECRET', body)
+                self.assertIn('por token: puede borrar', body)
+                self.assertNotIn('FIELDSECRET', safe_text('Un campo' + ending + '1. token: FIELDSECRET'))
+
+    def test_editing_either_duplicate_index_preserves_the_inherited_detail(self):
+        for index in (0, 1):
+            with self.subTest(index=index):
+                record, context = record_and_context()
+                rows = record['findings'][0]['evidence']
+                rows[1] = dict(rows[0])
+                context['source_sha256'] = publication_digest(record)
+                context['findings'][0]['evidence'][0]['index'] = index
+                kwargs = dict(finding_publication_context=context)
+                body = self.draft(record, **kwargs)
+                handoff = render.render_handoff(record, audience='comment',
+                    coverage_publication_context=coverage_classification(record), **kwargs)
+                for output in (body, handoff):
+                    self.assertIn('Public second detail', output)
+                    self.assertIn(rows[0]['details'], output)
+
+    def test_home_paths_are_private_in_prose_and_portable_locations(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for path in ('~user/private/LOCALFILE.py', r'~user\private\LOCALFILE.py',
+                     '~/private/LOCALFILE.py', '"~user/private folder/LOCALFILE.py"'):
+            with self.subTest(path=path):
+                record, _ = record_and_context()
+                finding = record['findings'][0]
+                finding['scenario'] = 'Archivo ' + path
+                finding['location']['path'] = path
+                self.assertNotIn('LOCALFILE', self.draft(record))
+                projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+                self.assertNotIn('LOCALFILE', projected['findings'][0]['location']['path'])
+                self.assertNotIn('LOCALFILE', projected['findings'][0]['scenario'])
+
+    def test_proven_resources_and_operands_are_rendered_as_typed_values(self):
+        from test_review_check_disclosure import fixture
+
+        for path in ('tests/probe.py', 'archive/probe.py', 'evidence/probe.py'):
+            with self.subTest(path=path):
+                record, identity, observations, sources = fixture(
+                    ['pytest', '/private/home/repo/' + path, '--token', 'PROOFSECRET'],
+                    {path: b'assert retry()\n'})
+                classification = check_classification(record)
+                classification['checks'][0]['purpose'] = record['checks'][0]['purpose']
+                kwargs = dict(check_publication_context=classification, check_disclosure_sources=sources,
+                              check_disclosure_context=build_check_disclosure(record, identity, observations, sources))
+                body = self.draft(record, **kwargs)
+                handoff = render.render_handoff(record, audience='comment',
+                    coverage_publication_context=coverage_classification(record), **kwargs)
+                for output in (body, handoff):
+                    self.assertIn('pytest ' + path, output)
+                    self.assertIn('**Recursos del proyecto:** ' + path, output)
+                    self.assertNotIn('PROOFSECRET', output)
+
+    def test_fragments_do_not_repeat_full_secret_matching(self):
+        from ccr.reporting.public_text import PublicText
+
+        count = 160
+        record = clean_record()
+        record['verdict_reason'] = '\n'.join(
+            f'token=MASK{i:04d} https://example.test/resource/{i}' for i in range(count))
+        formatter = PublicText(record, None, None)
+        sanitize = check_disclosure._sanitize_spellings
+        visited = 0
+
+        class CountedSpellings(tuple):
+            def __iter__(self):
+                nonlocal visited
+                for item in super().__iter__():
+                    visited += 1
+                    yield item
+
+        def tracked(value, spellings, **kwargs):
+            return sanitize(value, CountedSpellings(spellings), **kwargs)
+
+        with patch.object(check_disclosure, '_sanitize_spellings', side_effect=tracked):
+            result = formatter.text(record['verdict_reason'])
+        self.assertNotIn('MASK', result)
+        self.assertIn('https://example.test/resource/159', result)
+        self.assertLess(visited, 8 * count)
 
     def test_reused_revision_collision_is_rejected(self):
         record = record13()

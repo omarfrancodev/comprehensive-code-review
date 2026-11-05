@@ -7,15 +7,15 @@ from itertools import chain
 _KEY = r'(?:token|password|secret|api[-_]?key|authorization|credential)'
 _VALUE = re.compile(r'''(?:"(?P<double>(?:\\.|[^"\\])*)"|'(?P<single>(?:\\.|[^'\\])*)'|(?P<bare>[^\s,;}\]<>`]+))''')
 _KEY_START = re.compile(r'''(?ix)(?<![\w-])(?P<quote>["']?)(?P<key>''' + _KEY + r''')(?P=quote)\s*(?P<sep>[=:])\s*(?:(?:Bearer|Basic)\s+)?''')
-_FIELD_START = re.compile(r'(?m)^[ \t]*(?:(?:[-*+]|[0-9]{1,9}[.)])\s+)?$')
+_FIELD_START = re.compile(r'[ \t]*(?:(?:[-*+]|[0-9]{1,9}[.)])\s+)?')
 # Prefix atoms have disjoint leading characters, including nested lists.
 _PREFIX = re.compile(r'(?:[ \t>]|[-*+](?=[ \t])|[0-9]{1,9}[.)](?=[ \t]))*')
-_FENCE = re.compile(r'(?P<marker>`{3,}|~{3,})(?P<tail>[^\n]*)')
+_FENCE = re.compile(r'(?P<marker>`{3,}|~{3,})(?P<tail>[^\r\n]*)')
 _TICKS = re.compile(r'`+')
 _INDENT = re.compile(r' *')
-_LINE_END = re.compile(r'[\r\n]')
+_LINE_END = re.compile(r'\r\n|[\r\n]')
 _LIST_MARKERS = re.compile(r'(?:[-*+]|[0-9]{1,9}[.)]) +')
-_LINES = re.compile(r'[^\n]*(?:\n|\Z)')
+_LINES = re.compile(r'[^\r\n]*(?:\r\n|[\r\n]|\Z)')
 
 
 def _fence_layout(prefix):
@@ -136,7 +136,7 @@ def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
     if first_key is None:
         return values
     # Visit line/code boundaries once rather than repeatedly slicing prefixes.
-    newlines = iter(re.finditer('\n', value))
+    newlines = iter(_LINE_END.finditer(value))
     newline = next(newlines, None)
     code_ranges = iter(_code_ranges(value))
     code_range = next(code_ranges, None)

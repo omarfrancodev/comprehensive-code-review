@@ -54,14 +54,14 @@ def disclosure_view(record, context, sources, *, _legacy=False):
     return project_check_disclosure(record, context, sources, expected or identity, _legacy=_legacy)
 
 
-def disclosure_lines(row, *, format_text=None, format_command=None):
+def disclosure_lines(row, *, format_text=None, format_proven=None):
     from ccr.reporting.markdown import markdown_text
     format_text = format_text or markdown_text
-    format_command = format_command or format_text
+    format_proven = format_proven or format_text
     lines = []
     if row['command']:
-        lines.append('  - **Comando saneado:** ' + format_command(row['command']))
+        lines.append('  - **Comando saneado:** ' + format_proven(row['command']))
     if row['resources']:
-        lines.append('  - **Recursos del proyecto:** ' + '; '.join(format_text(path) for path in row['resources']))
+        lines.append('  - **Recursos del proyecto:** ' + '; '.join(format_proven(path) for path in row['resources']))
     lines.append('  - **Explicación del check:** ' + format_text(row['explanation']))
     return lines

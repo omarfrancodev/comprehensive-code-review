@@ -12,9 +12,10 @@ from ccr.contracts.disclosure_text import sensitive_values_from_text
 
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
-_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:))(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+_HOME_ROOT = r'''~[^\s/\\;|<>()\]`'"]*[\\/]'''
+_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
-_LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)[^\s;|<>\)\]`'"]*'''
+_LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:|''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
 _SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _HTTP_CONTEXT = re.compile(
@@ -274,40 +275,28 @@ class _Projection:
         for first, last, kind, command in events:
             if first < cursor:
                 continue
-            chunks.append(self._text_fragment(value[cursor:first], spellings))
+            chunks.append(self._text_fragment(value[cursor:first]))
             if kind == 'omission':
                 chunks.append(_COMMAND_OMISSION if command else OMITTED)
             elif kind == 'local':
                 chunks.append(self._local_text(value[first:last]))
             else:
-                route = value[first:last]
-                chunks.append(self._redact_known(route, spellings) if self.new_policy else route)
+                chunks.append(value[first:last])
             cursor = last
-        chunks.append(self._text_fragment(value[cursor:], spellings))
+        chunks.append(self._text_fragment(value[cursor:]))
         value = ''.join(chunks)
         # Relative Markdown links cannot resolve from the delivery directory.
-        url_spellings = spellings if self.new_policy else None
+        url_spellings = () if self.new_policy else None
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
                        lambda match: match.group() if self.public_url(match[2], spellings=url_spellings)
                        else match[1] + ' · ' + match[2], value)
-        return self._redact_known(value, spellings) if self.new_policy else value
+        # Source copies were omitted before fragmenting. Recheck the
+        # joined value once, including any text produced by the projection.
+        return check_disclosure.redact_projected_text(value, spellings) if self.new_policy else value
 
-    @staticmethod
-    def _redact_known(value, spellings):
-        # Only the full original source establishes assignment authority.
-        # A fragment starting at a closing fence can look like a new opener.
-        return check_disclosure._sanitize_spellings(
-            value, spellings, redact_paths=False, redact_assignments=False)
-
-    def _text_fragment(self, value, spellings):
+    def _text_fragment(self, value):
         if not value:
             return value
-        def redact(text):
-            # Apply only after original quotation boundaries have been read,
-            # but before a root rewrite could erase part of a sensitive value.
-            if self.new_policy:
-                text = self._redact_known(text, spellings)
-            return text
 
         def segment(value):
             def normalize_roots(text):
@@ -338,12 +327,7 @@ class _Projection:
                 if quoted is not None:
                     closing = match.group('closing') or ''
                     shown = '[ruta privada]'
-                    if redact(match.group()) != match.group():
-                        # A sensitive copy can include the quotes themselves.
-                        # Keep the original member opaque; never reparse its
-                        # redacted spelling or relativize its remaining suffix.
-                        shown = '[ruta privada]'
-                    elif closing:
+                    if closing:
                         if any(_relative_to_root(quoted, root) is not None for root in self.private_roots):
                             shown = self.retained(quoted)
                         else:
@@ -365,15 +349,6 @@ class _Projection:
                            lambda match: self.retained(match.group()), value)
             return value
 
-        # Read original quotation boundaries before redaction can change them.
-        # Redact ordinary text before URL splitting too: a single learned
-        # credential can span a repository root and a URL-shaped substring.
-        chunks, cursor = [], 0
-        for member in re.finditer(_QUOTED_PATH, value):
-            chunks.extend((redact(value[cursor:member.start()]), member.group()))
-            cursor = member.end()
-        value = ''.join(chunks) + redact(value[cursor:])
-
         # Recognize quoted members before URLs. Keep those members in their
         # surrounding ordinary text so HTTP-list context is not lost. No input
         # placeholders are restored into an already sanitized result.
@@ -381,11 +356,10 @@ class _Projection:
         for span in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE):
             if span.group('url') is None:
                 continue
-            url = self.public_url(span.group(), spellings=spellings if self.new_policy else None)
+            url = self.public_url(span.group(), spellings=() if self.new_policy else None)
             chunks.extend((segment(value[cursor:span.start()]), url or '[referencia privada]'))
             cursor = span.end()
-        value = ''.join(chunks) + segment(value[cursor:])
-        return redact(value)
+        return ''.join(chunks) + segment(value[cursor:])
 
     def value(self, value, path='record'):
         if isinstance(value, dict):

@@ -15,7 +15,8 @@ def evidence_groups(evidence: list[dict], checks: dict[str, dict], *,
         edited = index in edited_indices
         if identifier is None:
             if edited or detail not in original_details:
-                original_details.add(detail)
+                if displayed == detail:
+                    original_details.add(detail)
                 groups.append(dict(check_id=None, details=[displayed]))
             continue
         if identifier not in by_check:
@@ -23,7 +24,8 @@ def evidence_groups(evidence: list[dict], checks: dict[str, dict], *,
             groups.append(group)
             by_check[identifier] = group
         if edited or (detail != checks[identifier]['evidence'] and detail not in original_details):
-            original_details.add(detail)
+            if displayed == detail:
+                original_details.add(detail)
             by_check[identifier]['details'].append(displayed)
     return groups
 

@@ -387,6 +387,33 @@ def _sensitive_text_ranges(text, spellings):
         yield pending
 
 
+def redact_projected_text(value, spellings):
+    """Redact copies across the composed value, using original URL boundaries."""
+    urls = iter(re.finditer(r'https?://[^\s<>\]\)]+', value, flags=re.IGNORECASE))
+    url = next(urls, None)
+    chunks, cursor, pending = [], 0, None
+    for first, last in _sensitive_text_ranges(value, spellings):
+        while url is not None and url.end() <= first:
+            url = next(urls, None)
+        while url is not None and url.start() < last:
+            first, last = min(first, url.start()), max(last, url.end())
+            url = next(urls, None)
+        if pending is not None and first <= pending[1]:
+            pending = pending[0], max(last, pending[1])
+        else:
+            if pending is not None:
+                chunks.extend((value[cursor:pending[0]], OMITTED))
+                cursor = pending[1]
+            pending = first, last
+    if pending is not None:
+        chunks.extend((value[cursor:pending[0]], OMITTED))
+        cursor = pending[1]
+    chunks.append(value[cursor:])
+    # URL credentials and control characters still need the output filter,
+    # but every known-value match has already been processed together.
+    return _sanitize_spellings(''.join(chunks), (), redact_paths=False, redact_assignments=False)
+
+
 def _legacy_safe_text(value, secrets=(), *, redact_paths=True, _redact_assignments=True):
     """Filter private prose; typed projections may apply their own path policy."""
     if not isinstance(value, str):

@@ -195,7 +195,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
             lines.append(f"- **{check['id']}**:{command} {CHECK_STATUS[check['status']]} · versión {identity_line(check['revision'])}{classification}{reuse}{repeat}")
             lines.append('  - **Propósito:** ' + markdown_text(display.get('purpose') or 'Propósito no registrado (resultado anterior)'))
             if check['id'] in disclosure_rows:
-                lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_command=formatter.command if formatter else markdown_text))
+                lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_proven=formatter.proven if formatter else markdown_text))
             if display.get('evidence'):
                 lines.append('  - **Resultado:** ' + markdown_text(display['evidence']))
             if display.get('reference'):
@@ -384,7 +384,7 @@ def render_handoff(record, context=None, audience='user', publication_context=No
                      evidence_ref)
         lines.append('  - **Propósito:** ' + markdown_text(check.get('purpose') or 'Propósito no registrado (resultado anterior)'))
         if check['id'] in disclosure_rows:
-            lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_command=formatter.command if formatter else markdown_text))
+            lines.extend(disclosure_lines(disclosure_rows[check['id']], format_text=markdown_text, format_proven=formatter.proven if formatter else markdown_text))
         lines.append('  - **Resultado:** ' + markdown_text(check['evidence'] or 'Sin ejecución'))
     if not record['checks']:
         lines.append('- Inspección estática; sin comprobaciones ejecutadas.')
