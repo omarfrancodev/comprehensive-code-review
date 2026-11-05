@@ -6,9 +6,8 @@ import re
 from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view
-from ccr.contracts.check_disclosure import (
-    EXPLANATION_COMMAND, OMITTED, _legacy_safe_text, safe_text, sensitive_text_ranges,
-)
+from ccr.contracts import check_disclosure
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, sensitive_text_ranges
 from ccr.contracts.disclosure_text import sensitive_values_from_text
 
 # One shared boundary for classification and for excluding filename substrings
@@ -126,14 +125,23 @@ class _Projection:
         # A provenance label, not a path/URL or a new human review identity.
         return 'retained:' + self.source_hash + '#ref-' + _hash(value.encode('utf-8'))[:16]
 
-    def public_url(self, value):
+    def public_url(self, value, *, spellings=None):
         if not _public_url(value):
             return None
         # Syntax alone does not make a locator safe to share. Apply the same
         # secret policy as prose, including legacy deliveries without a sidecar.
         candidate = re.sub(r'^https?:', lambda match: match.group().lower(),
                            value, flags=re.IGNORECASE)
-        return value if safe_text(candidate, self.secrets) == candidate else None
+        if spellings is None:
+            sanitized = safe_text(candidate, self.secrets)
+        else:
+            # A transformed URL may itself supply an explicit assignment.
+            # Withhold it rather than rebuilding the projection's spellings.
+            if sensitive_values_from_text(candidate):
+                return None
+            sanitized = check_disclosure._sanitize_spellings(
+                candidate, spellings, redact_paths=True, redact_assignments=False)
+        return value if sanitized == candidate else None
 
     def reference(self, value):
         if self.public_url(value):
@@ -149,7 +157,7 @@ class _Projection:
         roots = self.repo_roots + self.private_roots
         spans = re.split(r'(https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE)
         private = any(not _public_url(span) and re.search(
-            r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\.\-])/(?!/)\S)', span)
+            r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\])~[^/\\\s]*[/\\]|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
                 or (self.secrets and safe_text(value, self.secrets, redact_paths=False) != value)
@@ -221,13 +229,13 @@ class _Projection:
                 return (relative or '[repositorio revisado]') + suffix
         return ('[referencia privada]' if core.lower().startswith('file:') else '[ruta privada]') + suffix
 
-    def _source_omissions(self, value, omit_commands, secrets):
+    def _source_omissions(self, value, omit_commands, spellings):
         # Recognize copies globally in original coordinates. Expanding an
         # intersected quoted path protects its whole filename, even if a copy
         # consists only of a delimiter or extends across several members.
         streams = []
-        if secrets:
-            streams.append(((*span, False) for span in sensitive_text_ranges(value, secrets)))
+        if spellings:
+            streams.append(((*span, False) for span in check_disclosure._sensitive_text_ranges(value, spellings)))
         if omit_commands and self.commands:
             streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
         if not streams:
@@ -255,9 +263,10 @@ class _Projection:
         # Public HTTP members and omissions retain their original source spans.
         # Omissions take precedence; public neighbors do not need an anchor to
         # survive in the redacted spelling, nor can input markers create one.
-        secrets = self.secrets | sensitive_values_from_text(value) if self.new_policy else set()
+        spellings = (check_disclosure._secret_spellings(self.secrets | sensitive_values_from_text(value))
+                     if self.new_policy else ())
         events = heapq.merge(
-            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands, secrets)),
+            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands, spellings)),
             ((*span, 'http', False) for span in self._http_members(value)),
             ((*span, 'local', False) for span in self._local_members(value)),
             key=lambda event: (event[0], event[2] != 'omission'))
@@ -265,34 +274,39 @@ class _Projection:
         for first, last, kind, command in events:
             if first < cursor:
                 continue
-            chunks.append(self._text_fragment(value[cursor:first], secrets))
+            chunks.append(self._text_fragment(value[cursor:first], spellings))
             if kind == 'omission':
                 chunks.append(_COMMAND_OMISSION if command else OMITTED)
             elif kind == 'local':
                 chunks.append(self._local_text(value[first:last]))
             else:
                 route = value[first:last]
-                chunks.append(self._redact_known(route, secrets) if self.new_policy else route)
+                chunks.append(self._redact_known(route, spellings) if self.new_policy else route)
             cursor = last
-        chunks.append(self._text_fragment(value[cursor:], secrets))
+        chunks.append(self._text_fragment(value[cursor:], spellings))
         value = ''.join(chunks)
         # Relative Markdown links cannot resolve from the delivery directory.
+        url_spellings = spellings if self.new_policy else None
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
-                       lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
-        return self._redact_known(value, secrets) if self.new_policy else value
+                       lambda match: match.group() if self.public_url(match[2], spellings=url_spellings)
+                       else match[1] + ' · ' + match[2], value)
+        return self._redact_known(value, spellings) if self.new_policy else value
 
     @staticmethod
-    def _redact_known(value, secrets):
+    def _redact_known(value, spellings):
         # Only the full original source establishes assignment authority.
         # A fragment starting at a closing fence can look like a new opener.
-        return _legacy_safe_text(value, secrets, redact_paths=False, _redact_assignments=False)
+        return check_disclosure._sanitize_spellings(
+            value, spellings, redact_paths=False, redact_assignments=False)
 
-    def _text_fragment(self, value, secrets):
+    def _text_fragment(self, value, spellings):
+        if not value:
+            return value
         def redact(text):
             # Apply only after original quotation boundaries have been read,
             # but before a root rewrite could erase part of a sensitive value.
             if self.new_policy:
-                text = self._redact_known(text, secrets)
+                text = self._redact_known(text, spellings)
             return text
 
         def segment(value):
@@ -367,8 +381,8 @@ class _Projection:
         for span in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE):
             if span.group('url') is None:
                 continue
-            chunks.extend((segment(value[cursor:span.start()]),
-                           span.group() if self.public_url(span.group()) else '[referencia privada]'))
+            url = self.public_url(span.group(), spellings=spellings if self.new_policy else None)
+            chunks.extend((segment(value[cursor:span.start()]), url or '[referencia privada]'))
             cursor = span.end()
         value = ''.join(chunks) + segment(value[cursor:])
         return redact(value)

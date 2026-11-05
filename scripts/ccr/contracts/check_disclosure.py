@@ -357,13 +357,17 @@ def _secret_spellings(secrets):
 
 
 def sensitive_text_ranges(text, secrets):
-    """Yield merged sensitive intervals before callers transform source text.
+    """Yield merged sensitive intervals before callers transform source text."""
+    return _sensitive_text_ranges(text, _secret_spellings(secrets))
+
+
+def _sensitive_text_ranges(text, spellings):
+    """Match with an already prepared set of spellings.
 
     Literal matches stream, including overlaps, rather than allocating one
     tuple for every character of a repetitive value. Encoded matches share the
     existing source-offset decoder; no decoded text is returned to a renderer.
     """
-    spellings = _secret_spellings(secrets)
     def literal(secret):
         position = text.find(secret)
         while position != -1:
@@ -387,8 +391,14 @@ def _legacy_safe_text(value, secrets=(), *, redact_paths=True, _redact_assignmen
     """Filter private prose; typed projections may apply their own path policy."""
     if not isinstance(value, str):
         return value
-    spellings = _secret_spellings(secrets)
+    return _sanitize_spellings(value, _secret_spellings(secrets), redact_paths=redact_paths,
+                               redact_assignments=_redact_assignments)
+
+
+def _sanitize_spellings(value, spellings, *, redact_paths, redact_assignments):
     def redact(text):
+        if not text:
+            return text
         # Copies may be outside a recognized URL, including after an original
         # delimiter. Match their source spelling and preserve everything else.
         text = _redact_encoded_values(text, spellings)
@@ -431,7 +441,7 @@ def _legacy_safe_text(value, secrets=(), *, redact_paths=True, _redact_assignmen
     # A literal credential can cross an original delimiter boundary. Redact it
     # after URL decisions; these markers can no longer affect URL recognition.
     value = redact(''.join(spans))
-    if _redact_assignments:
+    if redact_assignments:
         value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
     value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', value)
     return value

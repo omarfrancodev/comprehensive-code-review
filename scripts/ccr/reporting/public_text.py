@@ -46,10 +46,10 @@ class PublicText:
 
     def finding_location(self, kind, location):
         if kind == 'code':
-            path = location['path']
-            normalized = path.replace('\\', '/')
-            if (normalized.startswith('/') or '..' in normalized.split('/')
-                    or re.search(r'[:\x00-\x1f\x7f]', normalized)):
+            path = location['path'].strip()
+            normalized = path.strip("'\"`").strip().replace('\\', '/')
+            if (normalized.startswith('/') or normalized == '~' or re.match(r'^~[^/]*/', normalized)
+                    or '..' in normalized.split('/') or re.search(r'[:\x00-\x1f\x7f]', normalized)):
                 path = '[ruta privada]'
             else:
                 # A typed code location may have archive/ or evidence/ as

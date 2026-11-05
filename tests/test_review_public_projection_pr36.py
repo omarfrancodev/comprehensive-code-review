@@ -2,10 +2,12 @@
 import copy
 import tracemalloc
 import unittest
+from unittest.mock import patch
 
 from script_test_support import enable_package_imports
 
 enable_package_imports()
+from ccr.contracts import check_disclosure
 from ccr.contracts.check_disclosure import input_identity_for, safe_text, sensitive_text_ranges
 from ccr.contracts.review import validate
 from ccr.reporting import comment, render
@@ -106,6 +108,110 @@ class PublicProjectionReviewTests(unittest.TestCase):
         for output in (body, handoff):
             self.assertEqual(output.count('**Inspección estática**'), 2)
         self.assertEqual(record, original)
+
+    def test_private_location_labels_reject_padded_and_home_paths(self):
+        for path in ('  /private/LOCALFILE.py', r'   \private\LOCALFILE.py',
+                     '~/LOCALFILE.py', r'~user\LOCALFILE.py', " '/private/LOCALFILE.py' "):
+            with self.subTest(path=path):
+                record, _ = record_and_context()
+                record['findings'][0]['location']['path'] = path
+                body = self.draft(record)
+                self.assertNotIn('LOCALFILE', body)
+                self.assertIn(r'\[ruta privada\]:12', body)
+
+    def test_quoted_code_values_can_contain_shorter_backtick_runs(self):
+        record = clean_record()
+        secret = 'first`last'
+        record['verdict_reason'] = f'~~~text\ninside token=``{secret}``\n~~~'
+        record['description']['details'] = f'Copy of {secret} in the report'
+        self.assertNotIn(secret, safe_text(record['verdict_reason']))
+        self.assertNotIn(r'first\`last', self.draft(record))
+
+    def test_unclosed_backtick_value_does_not_consume_the_next_field(self):
+        record = clean_record()
+        record['verdict_reason'] = '~~~\ntoken=`unfinished\npassword=`SECONDSECRET`\n~~~'
+        record['description']['details'] = 'Copy SECONDSECRET elsewhere'
+        self.assertNotIn('SECONDSECRET', self.draft(record))
+
+    def test_tabs_in_quote_fences_follow_original_columns(self):
+        for prefix, closing in (('>\t', '> '), ('> >\t', '> > '), (' >\t', '> '),
+                                ('-\t>\t', '    > ')):
+            with self.subTest(prefix=prefix):
+                record = clean_record()
+                record['verdict_reason'] = (prefix + '~~~\n' + closing + 'inside token: TABSECRET\n'
+                                            + closing + '~~~\npor token: puede borrar')
+                record['description']['details'] = 'Copy TABSECRET and prose puede appear'
+                body = self.draft(record)
+                self.assertNotIn('TABSECRET', body)
+                self.assertIn('por token: puede borrar', body)
+                self.assertIn('puede appear', body)
+
+    def test_incomplete_credential_field_cannot_read_prose_outside_its_block(self):
+        for text in ('> ~~~\n> inside token:\npuede borrar la reserva',
+                     '- ~~~\n  inside token=\npuede borrar la reserva',
+                     '`inside token: "partial` puede borrar la reserva"'):
+            with self.subTest(text=text):
+                record = clean_record()
+                record['verdict_reason'] = text
+                record['description']['details'] = 'También puede borrar aquí'
+                self.assertEqual(safe_text(text), text)
+                body = self.draft(record)
+                self.assertIn('puede borrar la reserva', body)
+                self.assertIn('puede borrar aquí', body)
+
+    def test_explicit_evidence_edits_survive_original_deduplication(self):
+        for repeated_kind in ('static', 'executed'):
+            with self.subTest(repeated_kind=repeated_kind):
+                record, context = record_and_context()
+                evidence = record['findings'][0]['evidence']
+                if repeated_kind == 'static':
+                    evidence[1] = dict(evidence[0])
+                else:
+                    detail = 'Result from the verification'
+                    record['checks'] = [dict(id='C001', command='pytest', revision=record['scope']['head'],
+                        status='passed', failure_kind=None, evidence=detail, reused=False,
+                        reuse_reason=None, rerun_reason=None)]
+                    evidence[1] = dict(kind='executed', check_id='C001', details=detail)
+                context['source_sha256'] = publication_digest(record)
+                kwargs = dict(finding_publication_context=context)
+                outputs = (self.draft(record, **kwargs),
+                           render.render_handoff(record, audience='comment',
+                               coverage_publication_context=coverage_classification(record), **kwargs))
+                for output in outputs:
+                    self.assertIn('Public second detail', output)
+
+    def test_public_identity_does_not_use_prose_path_heuristics(self):
+        record = clean_record()
+        record['scope'].update(repository='archive/tool', target='evidence/integration')
+        body = self.draft(record)
+        handoff = render.render_handoff(record, audience='comment',
+            coverage_publication_context=coverage_classification(record))
+        for output in (body, handoff):
+            self.assertIn('archive/tool', output)
+            self.assertIn('evidence/integration', output)
+
+    def test_private_home_directory_is_rejected_as_a_public_identity(self):
+        record = clean_record()
+        for repository in ('~/local-repository', '~user/local-repository'):
+            with self.subTest(repository=repository):
+                record['scope']['repository'] = repository
+                with self.assertRaisesRegex(ValueError, 'private structural value'):
+                    self.draft(record)
+
+    def test_fragment_redaction_prepares_secret_spellings_once(self):
+        from ccr.reporting.public_text import PublicText
+
+        record = clean_record()
+        count = 120
+        record['verdict_reason'] = '\n'.join(
+            f'token=MASK{i:04d} https://example.test/check/{i}' for i in range(count))
+        formatter = PublicText(record, None, None)
+        with patch.object(check_disclosure, '_secret_spellings', wraps=check_disclosure._secret_spellings) as prepare:
+            output = formatter.text(record['verdict_reason'])
+        self.assertNotIn('MASK', output)
+        self.assertEqual(output.count('[omitido]'), count)
+        self.assertIn('https://example.test/check/119', output)
+        self.assertEqual(prepare.call_count, 1)
 
     def test_reused_revision_collision_is_rejected(self):
         record = record13()
