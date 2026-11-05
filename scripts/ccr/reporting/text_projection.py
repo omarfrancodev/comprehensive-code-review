@@ -12,10 +12,10 @@ from ccr.contracts.disclosure_text import sensitive_values_from_text
 
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
-_HOME_ROOT = r'''~[^\s/\\;|<>()\]`'"]*[\\/]'''
+_HOME_ROOT = r'''~[^~\s/\\;|<>()\]`'"]*[\\/]'''
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
-_LOCAL_PATH = r'''(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:|''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
+_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?<![\w/\\~])''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
 _SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _HTTP_CONTEXT = re.compile(
@@ -236,7 +236,8 @@ class _Projection:
         # consists only of a delimiter or extends across several members.
         streams = []
         if spellings:
-            streams.append(((*span, False) for span in check_disclosure._sensitive_text_ranges(value, spellings)))
+            matches = check_disclosure._sensitive_text_ranges(value, spellings, markdown_escapes=True)
+            streams.append(((*span, False) for span in matches))
         if omit_commands and self.commands:
             streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
         if not streams:

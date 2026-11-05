@@ -242,13 +242,17 @@ def private_values(record, view, sources):
     return values
 
 
-def _encoded_value_ranges(text, spellings, *, overlaps=False):
+def _encoded_value_ranges(text, spellings, *, overlaps=False, markdown_escapes=False):
     """Locate encoded copies in original source coordinates."""
     if not spellings:
         return []
     entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
-    encoded_starts = sorted({match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
-                           | {match.start() for match in re.finditer(entity, text)})
+    markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
+    markers = {match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
+    markers.update(match.start() for match in re.finditer(entity, text))
+    if markdown_escapes:
+        markers.update(match.start() for match in re.finditer(markdown_escape, text))
+    encoded_starts = sorted(markers)
     if not encoded_starts:
         return []
     shown = text
@@ -308,7 +312,6 @@ def _encoded_value_ranges(text, spellings, *, overlaps=False):
         shown, starts, ends = ''.join(parts), next_starts, next_ends
         collect()
 
-    markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
     # First preserve a credential's literal HTML/Markdown escape spelling.
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
     shown = text
@@ -361,7 +364,7 @@ def sensitive_text_ranges(text, secrets):
     return _sensitive_text_ranges(text, _secret_spellings(secrets))
 
 
-def _sensitive_text_ranges(text, spellings):
+def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False):
     """Match with an already prepared set of spellings.
 
     Literal matches stream, including overlaps, rather than allocating one
@@ -374,7 +377,7 @@ def _sensitive_text_ranges(text, spellings):
             yield position, position + len(secret)
             position = text.find(secret, position + 1)
     streams = [literal(secret) for secret in spellings]
-    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True)))
+    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True, markdown_escapes=markdown_escapes)))
     pending = None
     for first, last in heapq.merge(*streams):
         if pending is not None and first <= pending[1]:
@@ -392,7 +395,7 @@ def redact_projected_text(value, spellings):
     urls = iter(re.finditer(r'https?://[^\s<>\]\)]+', value, flags=re.IGNORECASE))
     url = next(urls, None)
     chunks, cursor, pending = [], 0, None
-    for first, last in _sensitive_text_ranges(value, spellings):
+    for first, last in _sensitive_text_ranges(value, spellings, markdown_escapes=True):
         while url is not None and url.end() <= first:
             url = next(urls, None)
         while url is not None and url.start() < last:
@@ -476,10 +479,19 @@ def _sanitize_spellings(value, spellings, *, redact_paths, redact_assignments):
 
 def safe_text(value, secrets=(), *, redact_paths=True, syntax='prose'):
     """Sanitize original source text; presentation escapes carry no authority."""
+    return _sanitize_source_text(value, secrets, redact_paths, syntax)
+
+
+def _safe_text_lf(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    """Reproduce the archived editorial-v1 row, never generate a new view."""
+    return _sanitize_source_text(value, secrets, redact_paths, syntax, lf_compat=True)
+
+
+def _sanitize_source_text(value, secrets, redact_paths, syntax, *, lf_compat=False):
     from ccr.contracts.disclosure_text import sensitive_values_from_text
     if not isinstance(value, str):
         return value
-    learned = sensitive_values_from_text(value, syntax=syntax)
+    learned = sensitive_values_from_text(value, syntax=syntax, _lf_compat=lf_compat)
     if syntax == 'structured':
         learned.update(_command_sensitive_values(value))
     return _legacy_safe_text(value, set(secrets) | learned, redact_paths=redact_paths,
@@ -566,8 +578,7 @@ def _git_membership(head, path, content, objects):
         return False
 
 
-def _project_command(execution, resources, contents, *, _legacy=False):
-    sanitize = _legacy_safe_text if _legacy else safe_text
+def _project_command(execution, resources, contents, *, sanitize=safe_text):
     argv = execution['argv']; eligible = {row['path'] for row in resources}
     cwd = execution.get('cwd', '').replace('\\', '/').rstrip('/')
     tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
@@ -662,8 +673,8 @@ def _project_command(execution, resources, contents, *, _legacy=False):
     return shlex.join(projected), 'mixed' if mixed else 'project_command'
 
 
-def build_disclosure_row(check, observation, sources, identity, *, _legacy=False):
-    sanitize = _legacy_safe_text if _legacy else safe_text
+def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False):
+    sanitize = _legacy_safe_text if _legacy else _safe_text_lf if _lf_compat else safe_text
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
                execution_reference=None, mode='explanation', command=None, resources=[],
                explanation='No se dispone de argv y procedencia verificables para este check; propósito y resultado se conservan.', evidence_reference=None)
@@ -672,11 +683,11 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
     row.update(execution_reference=observation.get('execution_reference'), evidence_reference=observation.get('evidence_reference'))
     execution, resources, contents = _resource_proof(check, observation, sources, identity)
     row['resources'] = resources
-    row['command'], row['mode'] = _project_command(execution, resources, contents, _legacy=_legacy)
+    row['command'], row['mode'] = _project_command(execution, resources, contents, sanitize=sanitize)
     secrets = sensitive_values(sources)
     if row['command'] is not None:
         row['command'] = (_legacy_safe_text(row['command'], secrets) if _legacy else
-                          safe_text(row['command'], secrets, syntax='structured'))
+                          sanitize(row['command'], secrets, syntax='structured'))
     row['explanation'] = sanitize(observation.get('explanation') or row['explanation'], secrets)
     return row
 
@@ -705,6 +716,9 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                # Reproduce the previous editorial row under the same proof.
+                expected = build_disclosure_row(check, observation, sources, input_identity, _lf_compat=True)
             if row != expected and not _legacy_only:
                 # Schema 1 predates editorial-v1. Its existing selected bytes
                 # remain valid under their original full resource-proof gate.

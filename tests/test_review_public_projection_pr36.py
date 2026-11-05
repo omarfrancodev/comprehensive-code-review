@@ -305,6 +305,63 @@ class PublicProjectionReviewTests(unittest.TestCase):
         self.assertIn('https://example.test/resource/159', result)
         self.assertLess(visited, 8 * count)
 
+    def test_known_value_in_partially_escaped_url_is_private(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for link in (r'https://example.test/path/ALPHA\*BETA_GAMMA',
+                     r'https://example.test/path/ALPHA%2ABETA\_GAMMA',
+                     r'https://example.test/path/ALPHA&#42;BETA\_GAMMA'):
+            with self.subTest(link=link):
+                record = record13()
+                record['checks'] = []
+                record['verdict_reason'] = 'token="ALPHA*BETA_GAMMA"'
+                record['description']['details'] = 'Refer to ' + link + ' and https://example.test/public'
+                self.assertNotIn('ALPHA', self.draft(record))
+                projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+                self.assertNotIn('ALPHA', projected['description']['details'])
+                self.assertIn('https://example.test/public', projected['description']['details'])
+
+    def test_tilde_component_in_relative_paths_is_not_a_home_directory(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for path in ('tests/~fixture/probe.py', r'tests\~fixture\probe.py'):
+            with self.subTest(path=path):
+                record, _ = record_and_context()
+                finding = record['findings'][0]
+                finding['scenario'] = 'Use ' + path + ' instead of ~user/private/LOCALFILE.py'
+                finding['location']['path'] = path
+                projection = _Projection(record, {}, '', publication_digest(record))
+                projected = projection.value(record)['findings'][0]
+                self.assertIn(path, projected['scenario'])
+                self.assertEqual(projected['location']['path'], 'tests/~fixture/probe.py')
+                self.assertNotIn('LOCALFILE', self.draft(record))
+
+    def test_runs_of_tildes_are_not_named_home_paths(self):
+        from ccr.reporting.text_projection import _SOURCE_TOKENS
+        for text in ('~' * 4096, '~' * 4096 + '/api/v1'):
+            with self.subTest(has_route=text.endswith('/api/v1')):
+                self.assertFalse(any(match['local'] for match in _SOURCE_TOKENS.finditer(text)))
+
+    def test_pre_cr_editorial_sidecar_is_accepted_but_projected_with_current_privacy(self):
+        from test_review_check_disclosure import fixture
+        from ccr.reporting.check_disclosure import project_check_disclosure
+
+        record, identity, observations, sources = fixture()
+        original = '~~~\rinside token: OLDROWSECRET\r~~~'
+        next(iter(observations.values()))['explanation'] = original
+        sidecar = build_check_disclosure(record, identity, observations, sources)
+        self.assertNotIn('OLDROWSECRET', sidecar['checks'][0]['explanation'])
+        # 8ddb505 retained this explanation verbatim with its LF-only lexer.
+        sidecar['checks'][0]['explanation'] = original
+        archived = copy.deepcopy(sidecar)
+        self.assertEqual(check_disclosure.validate_check_disclosure(record, sidecar, sources, identity), [])
+        view = project_check_disclosure(record, sidecar, sources, identity)
+        self.assertNotIn('OLDROWSECRET', view['checks'][0]['explanation'])
+        self.assertEqual(sidecar, archived)
+        tampered = copy.deepcopy(sidecar)
+        tampered['checks'][0]['command'] += ' --unproved'
+        self.assertTrue(check_disclosure.validate_check_disclosure(record, tampered, sources, identity))
+
     def test_reused_revision_collision_is_rejected(self):
         record = record13()
         revision = 'ab' * 20

@@ -16,6 +16,11 @@ _INDENT = re.compile(r' *')
 _LINE_END = re.compile(r'\r\n|[\r\n]')
 _LIST_MARKERS = re.compile(r'(?:[-*+]|[0-9]{1,9}[.)]) +')
 _LINES = re.compile(r'[^\r\n]*(?:\r\n|[\r\n]|\Z)')
+# Exact line patterns of the editorial-v1 writer before CR support.
+_LF_LINES = re.compile(r'[^\n]*(?:\n|\Z)')
+_LF_FENCE = re.compile(r'(?P<marker>`{3,}|~{3,})(?P<tail>[^\n]*)')
+_LF_FIELD_START = re.compile(r'(?m)^[ \t]*(?:(?:[-*+]|[0-9]{1,9}[.)])\s+)?$')
+_LF = re.compile(r'\n')
 
 
 def _fence_layout(prefix):
@@ -41,10 +46,10 @@ def _continues_fence(prefix, has_content, quote_indents, list_indent):
             or (content == len(prefix) and not has_content))
 
 
-def _fenced_code_ranges(value):
+def _fenced_code_ranges(value, lines, fence):
     opening = None
     active_lists = []
-    for line in _LINES.finditer(value):
+    for line in lines.finditer(value):
         first, end = line.span()
         prefix = _PREFIX.match(value, first, end)
         # Expand once from column zero. Removing quote markers first would
@@ -54,7 +59,7 @@ def _fenced_code_ranges(value):
         if opening is not None and not _continues_fence(expanded, has_content, opening[3], opening[4]):
             yield opening[0], opening[5], first, first
             opening = None
-        marker = _FENCE.match(value, prefix.end(), end)
+        marker = fence.match(value, prefix.end(), end)
         if opening is not None:
             if marker and not marker['tail'].strip():
                 layout = list(_fence_layout(expanded))
@@ -114,9 +119,9 @@ def _inline_code_ranges(value, start, end):
             opening = None  # Backslashes are literal inside code spans.
 
 
-def _code_ranges(value):
+def _code_ranges(value, lines, fence):
     cursor = 0
-    for first, content_start, content_end, last in _fenced_code_ranges(value):
+    for first, content_start, content_end, last in _fenced_code_ranges(value, lines, fence):
         yield from _inline_code_ranges(value, cursor, first)
         if content_start < content_end:
             yield content_start, content_end
@@ -124,7 +129,7 @@ def _code_ranges(value):
     yield from _inline_code_ranges(value, cursor, len(value))
 
 
-def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
+def sensitive_values_from_text(value: str, *, syntax='prose', _lf_compat=False) -> set[str]:
     """Only structured assignments teach values; narrative colons do not."""
     if syntax not in ('prose', 'structured'):
         raise ValueError('unknown privacy text syntax')
@@ -136,9 +141,11 @@ def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
     if first_key is None:
         return values
     # Visit line/code boundaries once rather than repeatedly slicing prefixes.
-    newlines = iter(_LINE_END.finditer(value))
+    line_break = _LF if _lf_compat else _LINE_END
+    field_prefix = _LF_FIELD_START if _lf_compat else _FIELD_START
+    newlines = iter(line_break.finditer(value))
     newline = next(newlines, None)
-    code_ranges = iter(_code_ranges(value))
+    code_ranges = _code_ranges(value, _LF_LINES, _LF_FENCE) if _lf_compat else _code_ranges(value, _LINES, _FENCE)
     code_range = next(code_ranges, None)
     ticks_by_length = None
     line_start, tested_line = 0, None
@@ -154,7 +161,7 @@ def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
             ticks_by_length = None
         in_code = code_range is not None and code_range[0] <= match.start()
         field_start = (line_start != tested_line and
-                       _FIELD_START.fullmatch(value, line_start, match.start()) is not None)
+                       field_prefix.fullmatch(value, line_start, match.start()) is not None)
         tested_line = line_start
 
         value_start = match.end()
