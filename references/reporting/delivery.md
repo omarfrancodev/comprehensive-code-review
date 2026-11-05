@@ -8,6 +8,10 @@ The agent interprets `--delivery full|brief` and `--output <delivery-root>`. The
 
 Finding editorial contexts apply to public comments/handoff, not full/brief exports. Exports preserve original finding text while applying privacy. Source-aware sanitization protects marked values learned before projection and does not reinterpret Markdown-created escapes or narrative colons as filesystem/credential authority.
 
+Validate the complete collected delivery context before projection. Its marked values join the source/disclosure privacy set before rendering any report, portable JSON or context file, regardless of field order. A sensitive value matching a structural source identity rejects the delivery before creating output; it never rewrites that identity or the retained archive.
+
+Apply that complete set to the fresh proof-validated check view too, before consuming commands, project-resource names or appended explanations. Keep the selected proof/sidecar bytes and their digest unchanged; additional privacy applies to the presentation, not to its provenance.
+
 - Full: informe.md and a portable review.json, derived from the same final result. Preserve findings, scenarios, impacts, corrections, exact scope/version, attribution, validation summaries, uncertainties, applicable coverage, `previous_reviews` lineage and schema 10/11/12 profile/assignment history.
 - Brief: resumen.md with identity/version/scope, verdict and reason, confirmed counts, IDs/priorities/locations, concrete triggering scenarios/impacts and correction guidance, meaningful validation summaries and material pending matters. It shows the prior review ID/source link and keeps the result summary; it does not promise full profile/assignment history. It remains sufficient to understand the requested next work; unresolved claims stay separate from confirmed corrections.
 - Optional contexto.md: only additional collected context that changes the next agent's decisions and is absent from the report. Preserve sources and uncertainties; do not repeat findings or create a new plan.

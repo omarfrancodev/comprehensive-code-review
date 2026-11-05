@@ -23,55 +23,76 @@ from ccr.shared.paths import contains, safe_path
 
 from ccr.reporting.text_projection import (_Projection, _hash, _json, _public_url, _relative_to_root)
 
+_CONTEXT_LABELS = {'assumptions': 'Supuestos', 'decisions': 'Decisiones registradas',
+                   'sources': 'Fuentes y secciones analizadas',
+                   'implementation_state': 'Estado observado de implementación',
+                   'pending': 'Pendientes registrados'}
 
-def _context_markdown(context, projection):
-    """Render only supplied observations, all bound to references and versions."""
-    if context is None or context == {}:
-        return None
-    labels = {'assumptions': 'Supuestos', 'decisions': 'Decisiones registradas',
-              'sources': 'Fuentes y secciones analizadas', 'implementation_state': 'Estado observado de implementación',
-              'pending': 'Pendientes registrados'}
-    if not isinstance(context, dict) or set(context) - set(labels):
+
+def _validated_context(context):
+    """Validate all selected text before it can teach delivery-wide privacy."""
+    if context is None:
+        return {}
+    if not isinstance(context, dict) or set(context) - set(_CONTEXT_LABELS):
         raise ValueError('unknown delivery context fields')
     if len(_json(context)) > 32768 or sum(len(entries) for entries in context.values() if isinstance(entries, list)) > 24:
         raise ValueError('delivery context is limited to 32 KiB and 24 collected entries')
-    lines = ['## Contexto recopilado', '',
-             'Datos previos suministrados para esta entrega. No constituyen una nueva revisión ni autorización para actuar.']
-    entries_present = False
+
     def text(value):
         if not isinstance(value, str) or not value.strip():
             raise ValueError('context entries require nonempty text, references and version')
-        return projection.text(value)
-    def reference(value):
-        text(value)  # Validate its type before treating it as a locator.
-        return markdown.reference_text(projection.reference(value))
-    for key, label in labels.items():
-        entries = context.get(key, [])
+
+    for key, entries in context.items():
         if not isinstance(entries, list):
             raise ValueError('context sections must be arrays')
-        if entries:
-            entries_present = True
-            lines.extend(['', '### ' + label, ''])
         for item in entries:
             fields = {'title', 'reference', 'identity', 'sections', 'version'} if key == 'sources' else {'text', 'references', 'version'}
             if not isinstance(item, dict) or set(item) != fields:
                 raise ValueError('context source/observation fields are incomplete or unknown')
-            version = text(item['version'])
+            text(item['version'])
             if key == 'sources':
+                for field in ('title', 'reference', 'identity'):
+                    text(item[field])
                 if not isinstance(item['sections'], list) or not item['sections']:
                     raise ValueError('sources require the sections actually analyzed')
+                for section in item['sections']:
+                    text(section)
+            else:
+                text(item['text'])
+                if not isinstance(item['references'], list) or not item['references']:
+                    raise ValueError('observations require collected evidence references')
+                for locator in item['references']:
+                    text(locator)
+    return context
+
+
+def _context_markdown(context, projection):
+    """Render only supplied observations, all bound to references and versions."""
+    context = _validated_context(context)
+    if not any(context.values()):
+        return None
+    lines = ['## Contexto recopilado', '',
+             'Datos previos suministrados para esta entrega. No constituyen una nueva revisión ni autorización para actuar.']
+    text = projection.text
+    def reference(value):
+        return markdown.reference_text(projection.reference(value))
+    for key, label in _CONTEXT_LABELS.items():
+        entries = context.get(key, [])
+        if entries:
+            lines.extend(['', '### ' + label, ''])
+        for item in entries:
+            version = text(item['version'])
+            if key == 'sources':
                 sections = [text(section) for section in item['sections']]
                 lines.append('- ' + markdown.markdown_text(text(item['title'])) + ' · ' + reference(item['reference'])
                              + ' · identidad: ' + markdown.markdown_text(text(item['identity']))
                              + ' · secciones: ' + '; '.join(markdown.markdown_text(section) for section in sections)
                              + ' · versión: ' + markdown.markdown_text(version))
             else:
-                if not isinstance(item['references'], list) or not item['references']:
-                    raise ValueError('observations require collected evidence references')
                 references = [reference(locator) for locator in item['references']]
                 lines.append('- ' + markdown.markdown_text(text(item['text'])) + ' · referencias: ' + '; '.join(references)
                              + ' · versión: ' + markdown.markdown_text(version))
-    return ('\n'.join(lines) + '\n').encode('utf-8') if entries_present else None
+    return ('\n'.join(lines) + '\n').encode('utf-8')
 
 def _human(text):
     return re.sub(r'retained:[0-9a-f]{64}(?:\\)?#ref-[0-9a-f]{16}', 'referencia interna no incluida', text)
@@ -170,6 +191,7 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
     """Return a new delivery directory, refusing every implicit or unsafe destination."""
     if delivery not in {'full', 'brief'}:
         raise ValueError('an explicit delivery full|brief is required')
+    context = _validated_context(context)
     validate_archive(run_dir, require_retained=True)
     run = safe_path(run_dir)
     compact_mode = (run / 'manifest.json').is_file()
@@ -263,7 +285,8 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
         raise ValueError('supplied model usage differs from retained selection')
     model_usage_context = retained_models
     projection = _Projection(record, manifest, project, source_hash,
-        check_disclosure_context=check_disclosure_context, check_disclosure_sources=selected)
+        check_disclosure_context=check_disclosure_context, check_disclosure_sources=selected,
+        editorial_texts=(context,) if any(context.values()) else ())
     # Exact-source equality and origin grouping must precede lossy prose
     # sanitization: distinct private paths can project to the same text.
     ledger = {check['id']: check for check in record['checks']}

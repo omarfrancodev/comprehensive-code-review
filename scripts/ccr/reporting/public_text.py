@@ -20,6 +20,7 @@ class PublicText:
             identities.extend((person.get('name'), person.get('username')))
         identities.extend(row['id'] for row in record['findings'])
         identities.extend(row['id'] for row in record['checks'])
+        identities.extend(row.get('review_id') for row in record.get('previous_reviews', []))
         for value in identities:
             if isinstance(value, str):
                 self.projection.structural(value, 'public identity')

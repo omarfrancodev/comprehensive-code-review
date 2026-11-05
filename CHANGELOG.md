@@ -20,7 +20,8 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 #### Reportes y entregas
 
-- Conservar la protección de credenciales marcadas en la evidencia original cuando una presentación editorial repite sus valores sin clave, y rechazar identidades estructurales sensibles.
+- Conservar la protección de credenciales marcadas en la evidencia original, listas numeradas y código Markdown cuando una presentación editorial repite sus valores sin clave; rechazar también identidades sensibles de revisiones previas.
+- Reunir los valores sensibles del contexto de una entrega antes de proyectar sus secciones, archivos y detalle acreditado de checks, evitando copias entre campos sin modificar el archivo original.
 
 ## 3.6.0 — 2026-11-03
 

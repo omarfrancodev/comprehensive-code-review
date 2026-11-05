@@ -95,15 +95,23 @@ class _Projection:
         responsible.source change_authors[].source description.details
         presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
 
-    def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None, check_disclosure_sources=None):
+    def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None,
+                 check_disclosure_sources=None, editorial_texts=()):
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
-        self.new_policy = record.get('schema_version') == 13 or self.disclosure is not None
+        editorial_texts = tuple(editorial_texts)
+        self.new_policy = record.get('schema_version') == 13 or self.disclosure is not None or any(editorial_texts)
         self.disclosure_rows = {row['id']: row for row in self.disclosure['checks']} if self.disclosure else {}
         self.check_ids = [check['id'] for check in record['checks']]
         from ccr.reporting.projections import public_sensitive_values
         self.secrets = public_sensitive_values(record, self.disclosure, check_disclosure_sources or {},
-                                               editorial_texts=(check_disclosure_context,))
+                                               editorial_texts=(check_disclosure_context, *editorial_texts))
+        # The proof view is a fresh projection. Apply the complete privacy set
+        # before either portable commands or appended check details consume it.
+        for row in (self.disclosure or {}).get('checks', []):
+            row['command'] = safe_text(row['command'], self.secrets, syntax='structured')
+            row['resources'] = [safe_text(path, self.secrets) for path in row['resources']]
+            row['explanation'] = safe_text(row['explanation'], self.secrets)
         commands = {check['command'] for check in record['checks']}
         commands.update(markdown.markdown_text(command) for command in tuple(commands))
         self.commands = sorted(commands, key=len, reverse=True)
