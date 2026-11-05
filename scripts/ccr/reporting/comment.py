@@ -10,7 +10,7 @@ from ccr.execution.candidates import write_new_json
 from ccr.execution import workspaces as workspace_ops
 from ccr.execution.workspace_manifest import owned_session
 from ccr.reporting.projections import publication_digest
-from ccr.reporting.render import render as render_record, _render as render_draft_record
+from ccr.reporting.render import _validate_final_record, render as render_record, _render as render_draft_record
 from ccr.reporting.finding_publication import normalize_finding_publication_context, finding_publication_digest
 from ccr.reporting.check_disclosure import disclosure_view
 
@@ -31,6 +31,7 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
                            check_disclosure_context=None, check_disclosure_sources=None,
                            finding_publication_context=None) -> dict:
     """Render one deterministic draft with source and body hashes."""
+    _validate_final_record(record)
     source_hash = publication_digest(record)
     finding_context = normalize_finding_publication_context(record, finding_publication_context)
     view = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
@@ -60,6 +61,7 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
 def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False,
                           check_disclosure_context=None, check_disclosure_sources=None) -> dict:
     """Verify an exact outbound body or an observed remote body against a fresh render."""
+    _validate_final_record(record)
     source_hash = publication_digest(record)
     if (isinstance(draft, dict) and type(draft.get('schema_version')) is int
             and draft['schema_version'] == 1 and set(draft) == DRAFT_FIELDS - {'coverage_publication_context'}):

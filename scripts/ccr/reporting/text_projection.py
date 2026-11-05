@@ -6,7 +6,10 @@ import re
 from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view
-from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, sensitive_text_ranges
+from ccr.contracts.check_disclosure import (
+    EXPLANATION_COMMAND, OMITTED, _legacy_safe_text, safe_text, sensitive_text_ranges,
+)
+from ccr.contracts.disclosure_text import sensitive_values_from_text
 
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
@@ -218,13 +221,13 @@ class _Projection:
                 return (relative or '[repositorio revisado]') + suffix
         return ('[referencia privada]' if core.lower().startswith('file:') else '[ruta privada]') + suffix
 
-    def _source_omissions(self, value, omit_commands):
+    def _source_omissions(self, value, omit_commands, secrets):
         # Recognize copies globally in original coordinates. Expanding an
         # intersected quoted path protects its whole filename, even if a copy
         # consists only of a delimiter or extends across several members.
         streams = []
-        if self.new_policy and self.secrets:
-            streams.append(((*span, False) for span in sensitive_text_ranges(value, self.secrets)))
+        if secrets:
+            streams.append(((*span, False) for span in sensitive_text_ranges(value, secrets)))
         if omit_commands and self.commands:
             streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
         if not streams:
@@ -252,8 +255,9 @@ class _Projection:
         # Public HTTP members and omissions retain their original source spans.
         # Omissions take precedence; public neighbors do not need an anchor to
         # survive in the redacted spelling, nor can input markers create one.
+        secrets = self.secrets | sensitive_values_from_text(value) if self.new_policy else set()
         events = heapq.merge(
-            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands)),
+            ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands, secrets)),
             ((*span, 'http', False) for span in self._http_members(value)),
             ((*span, 'local', False) for span in self._local_members(value)),
             key=lambda event: (event[0], event[2] != 'omission'))
@@ -261,28 +265,34 @@ class _Projection:
         for first, last, kind, command in events:
             if first < cursor:
                 continue
-            chunks.append(self._text_fragment(value[cursor:first]))
+            chunks.append(self._text_fragment(value[cursor:first], secrets))
             if kind == 'omission':
                 chunks.append(_COMMAND_OMISSION if command else OMITTED)
             elif kind == 'local':
                 chunks.append(self._local_text(value[first:last]))
             else:
                 route = value[first:last]
-                chunks.append(safe_text(route, self.secrets, redact_paths=False) if self.new_policy else route)
+                chunks.append(self._redact_known(route, secrets) if self.new_policy else route)
             cursor = last
-        chunks.append(self._text_fragment(value[cursor:]))
+        chunks.append(self._text_fragment(value[cursor:], secrets))
         value = ''.join(chunks)
         # Relative Markdown links cannot resolve from the delivery directory.
         value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
                        lambda match: match.group() if self.public_url(match[2]) else match[1] + ' · ' + match[2], value)
-        return safe_text(value, self.secrets, redact_paths=False) if self.new_policy else value
+        return self._redact_known(value, secrets) if self.new_policy else value
 
-    def _text_fragment(self, value):
+    @staticmethod
+    def _redact_known(value, secrets):
+        # Only the full original source establishes assignment authority.
+        # A fragment starting at a closing fence can look like a new opener.
+        return _legacy_safe_text(value, secrets, redact_paths=False, _redact_assignments=False)
+
+    def _text_fragment(self, value, secrets):
         def redact(text):
             # Apply only after original quotation boundaries have been read,
             # but before a root rewrite could erase part of a sensitive value.
             if self.new_policy:
-                text = safe_text(text, self.secrets, redact_paths=False)
+                text = self._redact_known(text, secrets)
             return text
 
         def segment(value):
@@ -399,4 +409,3 @@ class _Projection:
         if projected != value:
             self.changed.append(path)
         return projected
-

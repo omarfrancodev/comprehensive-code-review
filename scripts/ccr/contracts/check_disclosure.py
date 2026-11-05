@@ -254,7 +254,10 @@ def _encoded_value_ranges(text, spellings, *, overlaps=False):
     shown = text
     starts = array('I', range(len(text)))
     ends = array('I', range(1, len(text) + 1))
-    ranges = set()
+    # At a given source offset only the farthest end can affect the
+    # union. Store one endpoint per input character, regardless of the
+    # number of spellings, overlaps or decoding passes.
+    farthest = array('I', [0]) * len(text)
 
     def collect():
         for secret in spellings:
@@ -265,10 +268,15 @@ def _encoded_value_ranges(text, spellings, *, overlaps=False):
                 if encoded_index < len(encoded_starts) and encoded_starts[encoded_index] < last:
                     # Literal-only matches are handled by replace below. Do not
                     # retain one range per plain-text occurrence or per view.
-                    ranges.add((first, last))
-                    # The original redactor may skip withheld overlaps. Source
-                    # classification must enumerate them before any rewriting.
-                    following = position + (1 if overlaps else len(secret))
+                    covered_end = farthest[first]
+                    if overlaps and covered_end >= last:
+                        # All windows ending inside this known range are
+                        # already covered, even if they start on another entity.
+                        boundary = bisect_right(ends, covered_end)
+                        following = max(position + 1, boundary - len(secret) + 1)
+                    else:
+                        farthest[first] = max(covered_end, last)
+                        following = position + (1 if overlaps else len(secret))
                 elif encoded_index < len(encoded_starts):
                     # Skip literal-only windows, but retain overlaps that can
                     # reach the next source encoding marker after normalization.
@@ -316,10 +324,10 @@ def _encoded_value_ranges(text, spellings, *, overlaps=False):
     transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
     transform(entity, lambda match: _bounded_html_unescape(match.group()))
     transform(markdown_escape, lambda match: match.group(1))
-    if not ranges:
-        return []
     merged = []
-    for first, last in sorted(ranges):
+    for first, last in enumerate(farthest):
+        if not last:
+            continue
         if merged and first <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
         else:

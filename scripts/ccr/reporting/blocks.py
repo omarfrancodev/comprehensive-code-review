@@ -4,22 +4,26 @@ from urllib.parse import quote
 from ccr.reporting.markdown import markdown_text
 
 
-def evidence_groups(evidence: list[dict], checks: dict[str, dict]) -> list[dict]:
-    groups, by_check, static = [], {}, set()
-    for item in evidence:
+def evidence_groups(evidence: list[dict], checks: dict[str, dict], *,
+                    projected_evidence: list[dict] | None = None) -> list[dict]:
+    """Group original rows, then display the text of their selected indices."""
+    groups, by_check, seen = [], {}, {}
+    for index, item in enumerate(evidence):
         identifier, detail = item['check_id'], item['details']
+        displayed = detail if projected_evidence is None else projected_evidence[index]['details']
+        original_details = seen.setdefault(identifier, set())
         if identifier is None:
-            if detail not in static:
-                static.add(detail)
-                groups.append(dict(check_id=None, details=[detail]))
+            if detail not in original_details:
+                original_details.add(detail)
+                groups.append(dict(check_id=None, details=[displayed]))
             continue
         if identifier not in by_check:
             group = dict(check_id=identifier, details=[])
             groups.append(group)
             by_check[identifier] = group
-        details = by_check[identifier]['details']
-        if detail != checks[identifier]['evidence'] and detail not in details:
-            details.append(detail)
+        if detail != checks[identifier]['evidence'] and detail not in original_details:
+            original_details.add(detail)
+            by_check[identifier]['details'].append(displayed)
     return groups
 
 

@@ -1,7 +1,10 @@
 """Typed source formatting for new public projections, before Markdown escaping."""
+import re
+from urllib.parse import quote
+
 from ccr.reporting import markdown
 from ccr.reporting.projections import publication_digest, public_sensitive_values
-from ccr.contracts.check_disclosure import _legacy_safe_text
+from ccr.contracts.check_disclosure import _legacy_safe_text, safe_text
 
 
 class PublicText:
@@ -19,8 +22,12 @@ class PublicText:
         for person in [record['responsible'], *record.get('change_authors', [])]:
             identities.extend((person.get('name'), person.get('username')))
         identities.extend(row['id'] for row in record['findings'])
-        identities.extend(row['id'] for row in record['checks'])
+        for row in record['checks']:
+            identities.extend((row['id'], row['revision']))
         identities.extend(row.get('review_id') for row in record.get('previous_reviews', []))
+        for row in record['rereview']:
+            identities.extend(row.get(key) for key in ('id', 'previous_review_id', 'previous_finding_id'))
+            identities.extend(row.get('check_ids', []))
         for value in identities:
             if isinstance(value, str):
                 self.projection.structural(value, 'public identity')
@@ -36,6 +43,30 @@ class PublicText:
 
     def reference(self, value):
         return markdown.reference_text(self.text(value))
+
+    def finding_location(self, kind, location):
+        if kind == 'code':
+            path = location['path']
+            normalized = path.replace('\\', '/')
+            if (normalized.startswith('/') or '..' in normalized.split('/')
+                    or re.search(r'[:\x00-\x1f\x7f]', normalized)):
+                path = '[ruta privada]'
+            else:
+                # A typed code location may have archive/ or evidence/ as
+                # a repository folder rather than as a session resource.
+                path = safe_text(path, self.projection.secrets, redact_paths=False)
+            label = markdown.markdown_text(f"{path}:{location['line']}")
+        else:
+            label = self.markdown(location['section'])
+        url = location['url']
+        if not url or re.search(r'[\\\x00-\x20\x7f]', url) or not self.projection.public_url(url):
+            return label
+        destination = quote(url, safe='/:#?&=%-._~')
+        # Validate the escaped destination too: raw Markdown delimiters can
+        # truncate the URL inspected by the prose privacy policy.
+        if not self.projection.public_url(destination):
+            return label
+        return f'[{label}]({destination})'
 
     def final(self, body):
         # Only known values and URL privacy remain: Markdown backslashes and

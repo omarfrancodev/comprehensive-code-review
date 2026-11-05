@@ -43,6 +43,12 @@ def confirmed_counts_text(findings):
         f"{sum(item['status'] == 'confirmed' and item['priority'] == priority for item in findings)}"
         for priority, label in PRIORITIES.items())
 
+def _validate_final_record(record):
+    errors = validate(record)
+    if errors or record.get('stage') != 'final':
+        raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
+
+
 def render(record, audience='user', publication_context=None, *, check_publication_context=None,
            coverage_publication_context=None, check_disclosure_context=None, check_disclosure_sources=None,
            model_usage_context=None, finding_publication_context=None):
@@ -62,9 +68,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
             coverage_publication_context=None, evidence_by_finding=None,
             check_disclosure_context=None, check_disclosure_sources=None, model_usage_context=None,
             include_models=True, finding_publication_context=None, _legacy=False):
-    errors = validate(record)
-    if errors or record.get('stage') != 'final':
-        raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
+    _validate_final_record(record)
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
     disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources, _legacy=_legacy)
@@ -84,6 +88,8 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
         raise ValueError('finding publication context is only applicable to public rendering')
     from ccr.reporting.finding_publication import project_public_findings
     findings = project_public_findings(record, finding_publication_context) if audience == 'comment' else record['findings']
+    original_evidence = {item['id']: item['evidence'] for item in record['findings']}
+    ledger = {check['id']: check for check in record['checks']}
     formatter = None
     if audience == 'comment' and not _legacy:
         from ccr.reporting.public_text import PublicText
@@ -149,12 +155,12 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
             location = item['location']
             label = f"{location['path']}:{location['line']}" if item['type'] == 'code' else location['section']
             if formatter:
-                label = formatter.text(label)
-            if location['url']:
+                label = formatter.finding_location(item['type'], location)
+            elif location['url']:
                 label = f"[{one_line(label)}]({location['url']})"
-            ledger = {check['id']: check for check in record['checks']}
             groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None
-                      else evidence_groups(item['evidence'], ledger))
+                      else evidence_groups(original_evidence[item['id']], ledger,
+                                           projected_evidence=item['evidence']))
             evidence = evidence_lines(groups, format_text=markdown_text)
             lines.extend(['', '<a id="' + html.escape(item['id'], quote=True) + '"></a>', '',
                           f"### {PRIORITIES[item['priority']]} — {one_line(item['id'])}", '',
@@ -272,9 +278,7 @@ def render_handoff(record, context=None, audience='user', publication_context=No
                    check_publication_context=None, coverage_publication_context=None,
                    check_disclosure_context=None, check_disclosure_sources=None, finding_publication_context=None):
     """Render an explicitly requested contextual index, never an authorization."""
-    errors = validate(record)
-    if errors or record.get('stage') != 'final':
-        raise ValueError('; '.join(errors) if errors else 'only final records can be rendered')
+    _validate_final_record(record)
     if audience not in {'user', 'comment'}:
         raise ValueError('audience must be user or comment')
     disclosure = (disclosure_view(record, check_disclosure_context, check_disclosure_sources)
@@ -296,6 +300,8 @@ def render_handoff(record, context=None, audience='user', publication_context=No
         raise ValueError('finding publication context is only applicable to public rendering')
     from ccr.reporting.finding_publication import project_public_findings
     findings = project_public_findings(record, finding_publication_context) if audience == 'comment' else record['findings']
+    original_evidence = {item['id']: item['evidence'] for item in record['findings']}
+    ledger = {check['id']: check for check in record['checks']}
     formatter = None
     if audience == 'comment' :
         from ccr.reporting.public_text import PublicText
@@ -333,7 +339,8 @@ def render_handoff(record, context=None, audience='user', publication_context=No
         lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · "
                      + markdown_text(item['title']) + ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference)
         lines.append('  - **Evidencia:**')
-        lines.extend('  ' + line for line in evidence_lines(evidence_groups(item['evidence'], {c['id']: c for c in record['checks']}), format_text=markdown_text))
+        groups = evidence_groups(original_evidence[item['id']], ledger, projected_evidence=item['evidence'])
+        lines.extend('  ' + line for line in evidence_lines(groups, format_text=markdown_text))
     if not confirmed:
         lines.append('- Ningún hallazgo confirmado.')
     uncertainties = [item['id'] + ': ' + item['title'] for item in findings if item['status'] == 'unresolved']

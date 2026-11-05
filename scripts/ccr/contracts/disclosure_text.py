@@ -1,47 +1,96 @@
 """Bounded lexical credential classification over original source text."""
-import re
 import json
+import re
+from itertools import chain
 
 _KEY = r'(?:token|password|secret|api[-_]?key|authorization|credential)'
-_VALUE = r'''(?:"(?P<double>(?:\\.|[^"\\])*)"|'(?P<single>(?:\\.|[^'\\])*)'|(?P<bare>[^\s,;}\]<>`]+))'''
-_PAIR = re.compile(r'''(?ix)(?<![\w-])(?P<quote>["']?)(?P<key>''' + _KEY + r''')(?P=quote)\s*(?P<sep>[=:])\s*(?:(?:Bearer|Basic)\s+)?''' + _VALUE)
+_VALUE = re.compile(r'''(?:"(?P<double>(?:\\.|[^"\\])*)"|'(?P<single>(?:\\.|[^'\\])*)'|(?P<bare>[^\s,;}\]<>`]+))''')
+_KEY_START = re.compile(r'''(?ix)(?<![\w-])(?P<quote>["']?)(?P<key>''' + _KEY + r''')(?P=quote)\s*(?P<sep>[=:])\s*(?:(?:Bearer|Basic)\s+)?''')
 _FIELD_START = re.compile(r'(?m)^[ \t]*(?:(?:[-*+]|[0-9]{1,9}[.)])\s+)?$')
-# Container atoms have disjoint leading characters; prefix matching stays
-# linear for nested lists/quotes and for lines that contain no fence.
-_FENCE = re.compile(r'(?m)^(?P<prefix>(?:[ \t>]|[-*+](?=[ \t])|[0-9]{1,9}[.)](?=[ \t]))*)'
-                    r'(?P<marker>`{3,}|~{3,})(?P<tail>[^\n]*)')
+# Prefix atoms have disjoint leading characters, including nested lists.
+_PREFIX = re.compile(r'(?:[ \t>]|[-*+](?=[ \t])|[0-9]{1,9}[.)](?=[ \t]))*')
+_FENCE = re.compile(r'(?P<marker>`{3,}|~{3,})(?P<tail>[^\n]*)')
 _TICKS = re.compile(r'`+')
+_INLINE_VALUE_END = re.compile(r'`+|[\r\n]')
+_INDENT = re.compile(r' *')
+_LIST_MARKERS = re.compile(r'(?:[-*+]|[0-9]{1,9}[.)]) +')
+_SOURCE_INDENT = re.compile(r'[ \t]*')
+_LINES = re.compile(r'[^\n]*(?:\n|\Z)')
 
 
 def _fence_layout(prefix):
-    quotes = prefix.count('>')
-    tail = prefix.rsplit('>', 1)[-1]
-    if quotes and tail.startswith(' '):
-        tail = tail[1:]
-    indent = len(tail.expandtabs(4))
-    list_marker = any(char not in ' \t>' for char in prefix)
-    return quotes, indent, list_marker
+    parts = prefix.split('>')
+    for level, part in enumerate(parts):
+        if level and part.startswith(' '):
+            part = part[1:]
+        expanded = part.expandtabs(4)
+        yield (_INDENT.match(expanded).end(), len(expanded),
+               [marker.end() for marker in _LIST_MARKERS.finditer(expanded)])
+
+
+def _continues_fence(value, start, end, quote_indents, list_indent):
+    cursor = start
+    for required in quote_indents:
+        indent = _SOURCE_INDENT.match(value, cursor, end)
+        cursor = indent.end()
+        if (cursor == end or value[cursor] != '>'
+                or len(indent.group().expandtabs(4)) < required):
+            return False
+        cursor += 1
+        if cursor < end and value[cursor] == ' ':
+            cursor += 1
+    indent = _SOURCE_INDENT.match(value, cursor, end)
+    return (len(indent.group().expandtabs(4)) >= list_indent
+            or not value[indent.end():end].strip())
 
 
 def _fenced_code_ranges(value):
     opening = None
-    for match in _FENCE.finditer(value):
-        marker = match['marker']
-        if opening is None:
-            if marker[0] == '`' and '`' in match['tail']:
+    active_lists = []
+    for line in _LINES.finditer(value):
+        first, end = line.span()
+        if opening is not None and not _continues_fence(value, first, end, opening[3], opening[4]):
+            yield opening[0], first
+            opening = None
+        prefix = _PREFIX.match(value, first, end)
+        marker = _FENCE.match(value, prefix.end(), end)
+        if opening is not None:
+            if marker and not marker['tail'].strip():
+                layout = list(_fence_layout(prefix.group()))
+                _, indent, markers = layout[-1]
+                if (marker['marker'][0] == opening[1] and len(marker['marker']) >= opening[2]
+                        and not markers and len(layout) - 1 == len(opening[3])
+                        and opening[4] <= indent <= opening[4] + 3):
+                    yield opening[0], marker.end()
+                    opening = None
+            continue
+        layout = list(_fence_layout(prefix.group()))
+        del active_lists[len(layout):]
+        quote_indents = []
+        has_content = bool(value[prefix.end():end].strip())
+        # Each quote level has its own list indentation stack. A dedent can
+        # leave an inner item while the surrounding list still owns the fence.
+        for level, (leading, indent, markers) in enumerate(layout):
+            if level == len(active_lists):
+                active_lists.append([])
+            items = active_lists[level]
+            if has_content or markers or level < len(layout) - 1:
+                while items and items[-1] > leading:
+                    items.pop()
+                items.extend(markers)
+            container_indent = items[-1] if items else 0
+            if level < len(layout) - 1:
+                quote_indents.append(container_indent)
+        if marker:
+            delimiter = marker['marker']
+            if delimiter[0] == '`' and '`' in marker['tail']:
                 continue  # A backtick fence's info string cannot contain ticks.
-            quotes, indent, list_marker = _fence_layout(match['prefix'])
-            base_indent = indent if list_marker or indent > 3 else 0
-            opening = (match.start(), marker[0], len(marker), quotes, base_indent)
-        elif (marker[0] == opening[1] and len(marker) >= opening[2]
-              and not match['tail'].strip()):
-            quotes, indent, list_marker = _fence_layout(match['prefix'])
-            if (not list_marker and quotes == opening[3]
-                    and opening[4] <= indent <= opening[4] + 3):
-                yield opening[0], match.end()
-                opening = None
+            # Preserve the conservative treatment of indented code with
+            # fence markers, while still ending it at its indentation boundary.
+            base_indent = indent if indent > container_indent + 3 else container_indent
+            opening = first, delimiter[0], len(delimiter), quote_indents, base_indent
     if opening is not None:
-        yield opening[0], len(value)  # Fenced blocks may continue to EOF.
+        yield opening[0], len(value)
 
 
 def _inline_code_ranges(value, start, end):
@@ -81,14 +130,20 @@ def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
     if not isinstance(value, str):
         raise ValueError('privacy source must be text')
     values = set()
+    keys = _KEY_START.finditer(value)
+    first_key = next(keys, None)
+    if first_key is None:
+        return values
     # Visit line/code boundaries once rather than repeatedly slicing prefixes.
     newlines = iter(re.finditer('\n', value))
     newline = next(newlines, None)
     code_ranges = iter(_code_ranges(value))
     code_range = next(code_ranges, None)
     line_start, tested_line = 0, None
-    for match in _PAIR.finditer(value):
-        quoted_value = match['double'] is not None or match['single'] is not None
+    consumed_until = 0
+    for match in chain((first_key,), keys):
+        if match.start() < consumed_until:
+            continue
         while newline is not None and newline.start() < match.start():
             line_start = newline.end()
             newline = next(newlines, None)
@@ -98,25 +153,54 @@ def sensitive_values_from_text(value: str, *, syntax='prose') -> set[str]:
         field_start = (line_start != tested_line and
                        _FIELD_START.fullmatch(value, line_start, match.start()) is not None)
         tested_line = line_start
-        # JSON quoted keys, explicit values/assignments and auth headers have
-        # authority independently of sentence position. Other bare colon pairs
-        # need a field boundary or an explicitly selected structured source.
+
+        value_start = match.end()
+        ticks = _TICKS.match(value, value_start)
+        code_end = None
+        if ticks and code_range is not None:
+            if ticks.end() == code_range[0]:
+                code_end = code_range[1]
+            elif in_code:
+                # Backticks in a fence or larger span are literal delimiters
+                # here. Match the next run on the same line within that code.
+                closer = _INLINE_VALUE_END.search(value, ticks.end(), code_range[1])
+                if closer and closer.group() == ticks.group():
+                    code_end = closer.start()
+        literal = None if code_end is not None else _VALUE.match(value, value_start)
+        if code_end is None and literal is None:
+            continue
+        double = literal is not None and literal['double'] is not None
+        single = literal is not None and literal['single'] is not None
+        # A rejected prose colon never consumes its possible value. An
+        # explicit assignment starting at that position is still visited.
         structured = (syntax == 'structured' or match['sep'] == '=' or match['quote']
-                      or quoted_value or match['key'].lower() == 'authorization'
+                      or double or single or code_end is not None or match['key'].lower() == 'authorization'
                       or field_start or in_code)
-        if structured:
-            candidate = next((match[name] for name in ('double', 'single', 'bare')
-                              if match[name] is not None), '')
-            if candidate and candidate not in ('[omitido]', '[omitido'):
-                values.add(candidate)
-                if match['double'] is not None:
-                    # Preserve lexical and JSON spellings; no code evaluation.
-                    try:
-                        decoded = json.loads('"' + candidate + '"')
-                        decoded.encode('utf-8')
-                    except (ValueError, UnicodeError):
-                        pass
-                    else:
-                        if decoded:
-                            values.add(decoded)
+        if not structured:
+            continue
+        if code_end is not None:
+            candidate = value[ticks.end():code_end]
+            consumed_until = code_end
+            # Include the Markdown display spelling as well as source bytes.
+            displayed = re.sub(r'\r\n?|\n', ' ', candidate)
+            if displayed.startswith(' ') and displayed.endswith(' ') and displayed.strip(' '):
+                displayed = displayed[1:-1]
+            if displayed.strip() and displayed not in ('[omitido]', '[omitido'):
+                values.add(displayed)
+        else:
+            candidate = next(part for part in literal.groups() if part is not None)
+            if double or single:
+                consumed_until = literal.end()
+        if candidate and candidate not in ('[omitido]', '[omitido'):
+            values.add(candidate)
+            if double:
+                # Preserve lexical and JSON spellings; no code evaluation.
+                try:
+                    decoded = json.loads('"' + candidate + '"')
+                    decoded.encode('utf-8')
+                except (ValueError, UnicodeError):
+                    pass
+                else:
+                    if decoded:
+                        values.add(decoded)
     return values
