@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
-from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, sensitive_text_ranges
+from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, sensitive_text_ranges
 from ccr.contracts.disclosure_text import sensitive_values_from_text
 
 # One shared boundary for classification and for excluding filename substrings
@@ -15,13 +15,41 @@ from ccr.contracts.disclosure_text import sensitive_values_from_text
 _HOME_ROOT = r'''~[^~\s/\\;|<>()\]`'"]*[\\/]'''
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
-_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?:(?<!\S)|(?<=(?<!\S)[([{=,:;]))''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
+_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?<!\S)(?P<home_binding>[-\w]+[=:])''' + _HOME_ROOT + r'''|(?:(?<!\S)|(?<=(?<!\S)[([{=,:;]))''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
 _SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _HTTP_CONTEXT = re.compile(
     r'''(?ix)(?<!\S)(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
     (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''')
 _COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
+
+
+def _source_tokens(value):
+    urls = iter(check_disclosure.projected_url_spans(value))
+    url = next(urls, None)
+    for match in _SOURCE_TOKENS.finditer(value):
+        while url is not None and url[1] <= match.start():
+            url = next(urls, None)
+        if url is not None and url[0] <= match.start() < url[1]:
+            if match.start() == url[0] and match['url'] is not None:
+                yield match, url[1]
+        else:
+            yield match, match.end()
+
+
+def _local_start(match):
+    return match.end('home_binding') if match['home_binding'] else match.start()
+
+
+def omit_private_detail_paths(value):
+    # An explanation is prose, not an accredited resource path or argument.
+    chunks, cursor = [], 0
+    for match, last in _source_tokens(value):
+        if match['local'] is not None or match['quoted_path'] is not None:
+            chunks.extend((value[cursor:_local_start(match)], '[ruta privada]'))
+            cursor = last
+    chunks.append(value[cursor:])
+    return ''.join(chunks)
 
 
 def _relative_to_root(value, root):
@@ -114,7 +142,7 @@ class _Projection:
         for row in (self.disclosure or {}).get('checks', []):
             row['command'] = sanitize_public_detail(row['command'], self.secrets, syntax='structured')
             row['resources'] = [sanitize_public_detail(path, self.secrets) for path in row['resources']]
-            row['explanation'] = sanitize_public_detail(row['explanation'], self.secrets)
+            row['explanation'] = sanitize_public_detail(row['explanation'], self.secrets, explanation=True)
         commands = {check['command'] for check in record['checks']}
         commands.update(markdown.markdown_text(command) for command in tuple(commands))
         self.commands = sorted(commands, key=len, reverse=True)
@@ -156,7 +184,8 @@ class _Projection:
             r'(?i)(?:[a-z]:[\\/]|\\\\|//\S|file:|(?<![\w/\\])~[^/\\\s]*[/\\]|(?<![\w/\\.\-])/(?!/)\S)', span)
             for span in spans)
         if (private
-                or (self.secrets and safe_text(value, self.secrets, redact_paths=False) != value)
+                or (self.secrets and check_disclosure.redact_projected_text(
+                    value, check_disclosure._secret_spellings(self.secrets)) != value)
                 or any(_public_url(span) and self.public_url(span) is None for span in spans)
                 or any(root.replace('\\', '/').lower() in value.replace('\\', '/').lower()
                        for root in roots if root)):
@@ -167,10 +196,10 @@ class _Projection:
         """Classify HTTP-list members in original coordinates, before omission."""
         last_http_end = None
         context_start = 0
-        for match in _SOURCE_TOKENS.finditer(value):
+        for match, end in _source_tokens(value):
             if match.group('url') is not None:
                 last_http_end = None
-                context_start = match.end()
+                context_start = end
                 continue
             # Start/whitespace establishes an independent token; punctuation
             # inside a filename does not. Search the original string so the
@@ -210,9 +239,9 @@ class _Projection:
                     yield first, last
 
     def _local_members(self, value):
-        for match in _SOURCE_TOKENS.finditer(value):
+        for match, end in _source_tokens(value):
             if match.group('local') is not None:
-                yield match.span()
+                yield _local_start(match), end
 
     def _local_text(self, value):
         core = value.rstrip(',')
@@ -288,7 +317,11 @@ class _Projection:
         value = ''.join(chunks)
         # Relative Markdown links cannot resolve from the delivery directory.
         url_spellings = () if self.new_policy else None
-        value = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)',
+        # Source omissions may consume a delimiter that was also part of a
+        # known spelling. Stop at the omission, not at a later link's close.
+        value = re.sub(r'\[([^\]\r\n]+)\]\((\[(?:omitido|referencia privada)\])\)?',
+                       lambda match: match[1] + ' · ' + match[2], value)
+        value = re.sub(r'\[([^\]\r\n]+)\]\(([^\[)\r\n]+)\)',
                        lambda match: match.group() if self.public_url(match[2], spellings=url_spellings)
                        else match[1] + ' · ' + match[2], value)
         # Source copies were omitted before fragmenting. Recheck the
@@ -354,12 +387,12 @@ class _Projection:
         # surrounding ordinary text so HTTP-list context is not lost. No input
         # placeholders are restored into an already sanitized result.
         chunks, cursor = [], 0
-        for span in re.finditer(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)', value, flags=re.IGNORECASE):
-            if span.group('url') is None:
+        for match, end in _source_tokens(value):
+            if match['url'] is None:
                 continue
-            url = self.public_url(span.group(), spellings=() if self.new_policy else None)
-            chunks.extend((segment(value[cursor:span.start()]), url or '[referencia privada]'))
-            cursor = span.end()
+            url = self.public_url(value[match.start():end], spellings=() if self.new_policy else None)
+            chunks.extend((segment(value[cursor:match.start()]), url or '[referencia privada]'))
+            cursor = end
         return ''.join(chunks) + segment(value[cursor:])
 
     def value(self, value, path='record'):

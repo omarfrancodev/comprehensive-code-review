@@ -424,6 +424,87 @@ class PublicProjectionReviewTests(unittest.TestCase):
         self.assertNotIn('ALPHA', projected.disclosure_rows[record['checks'][0]['id']]['explanation'])
         self.assertEqual(sidecar['checks'][0]['explanation'], original)
 
+    def test_partially_escaped_known_secret_rejects_structural_identity(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record = clean_record()
+        record['verdict_reason'] = 'token="ALPHA*BETA_GAMMA"'
+        record['responsible'].update(name=r'ALPHA\*BETA_GAMMA', username=None)
+        with self.assertRaisesRegex(ValueError, 'private structural value'):
+            self.draft(record)
+        with self.assertRaisesRegex(ValueError, 'private structural value'):
+            _Projection(record, {}, '', publication_digest(record)).value(record)
+
+    def test_escaped_url_parameter_teaches_secret_to_all_fields(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record = record13()
+        record['checks'] = []
+        record['verdict_reason'] = r'https://example.test/(view)/page?api\_key=COPIEDSECRET'
+        record['description']['details'] = 'Independent copy COPIEDSECRET'
+        self.assertNotIn('COPIEDSECRET', self.draft(record))
+        projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+        self.assertNotIn('COPIEDSECRET', projected['description']['details'])
+
+    def test_home_assignments_hide_paths_without_truncating_relative_components(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record, _ = record_and_context()
+        record['findings'][0]['scenario'] = (
+            r'HOME=~dev/LOCAL1 --config=~dev\LOCAL2 carpeta:~dev/LOCAL3 '
+            r'tests/path=~fixture/probe.py tests/path:~fixture/probe.py')
+        projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+        for output in (self.draft(record), projected['findings'][0]['scenario']):
+            for private in ('LOCAL1', 'LOCAL2', 'LOCAL3'):
+                self.assertNotIn(private, output)
+            self.assertIn('fixture/probe.py', output)
+
+    def test_adjacent_links_and_balanced_url_are_preserved_independently(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record = record13()
+        record['checks'] = []
+        record['description']['details'] = (
+            '[private](https://example.test/private?api_key=LINKSECRET),'
+            '[public](https://example.test/(view)/next)')
+        projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+        self.assertNotIn('LINKSECRET', projected['description']['details'])
+        self.assertIn('https://example.test/(view)/next', projected['description']['details'])
+        self.assertIn(r'https://example.test/\(view\)/next', self.draft(record))
+
+    def test_sidecar_writer_and_current_detail_hide_full_urls_and_private_paths(self):
+        from test_review_check_disclosure import fixture
+        from ccr.reporting.check_disclosure import project_check_disclosure
+        from ccr.reporting.text_projection import _Projection
+
+        path = 'tests/probe.py'
+        record, identity, observations, sources = fixture(
+            ['pytest', '/private/home/repo/' + path, '--token', 'ARGSECRET'],
+            {path: b'assert retry()\n'})
+        observation = next(iter(observations.values()))
+        observation['explanation'] = (
+            r'https://example.test/(view)/ARGSECRET?api\_key=QUERYSECRET '
+            r'~dev/HOMEFILE //server/share/UNCFILE https://example.test/(view)/next')
+        sidecar = build_check_disclosure(record, identity, observations, sources)
+        self.assertNotIn('QUERYSECRET', sidecar['checks'][0]['explanation'])
+        self.assertIn('https://example.test/(view)/next', sidecar['checks'][0]['explanation'])
+        view = project_check_disclosure(record, sidecar, sources, identity)
+        projected = _Projection(record, {}, '', publication_digest(record),
+            check_disclosure_context=sidecar, check_disclosure_sources=sources)
+        for explanation in (view['checks'][0]['explanation'],
+                            projected.disclosure_rows[record['checks'][0]['id']]['explanation']):
+            for hidden in ('QUERYSECRET', 'HOMEFILE', 'UNCFILE'):
+                self.assertNotIn(hidden, explanation)
+        self.assertIn(path, view['checks'][0]['command'])
+
+        legacy_row = check_disclosure.build_disclosure_row(
+            record['checks'][0], observation, sources, identity, _pre_atomic=True)
+        self.assertIn('QUERYSECRET', legacy_row['explanation'])
+        archived = dict(sidecar, checks=[legacy_row])
+        view = project_check_disclosure(record, archived, sources, identity)
+        self.assertNotIn('QUERYSECRET', view['checks'][0]['explanation'])
+        self.assertIn('QUERYSECRET', archived['checks'][0]['explanation'])
+
     def test_reused_revision_collision_is_rejected(self):
         record = record13()
         revision = 'ab' * 20

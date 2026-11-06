@@ -5,6 +5,7 @@ The resource manifest is hashed at workspace preparation, never after a check.
 """
 import hashlib
 import heapq
+import itertools
 from array import array
 from bisect import bisect_left, bisect_right
 import html
@@ -394,7 +395,7 @@ def _private_http_url(text, spellings=()):
     try:
         # Inspect the displayed URL as well as raw prose; Markdown escapes
         # and HTML entities must not disguise a sensitive query key.
-        displayed = re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text))
+        displayed = _displayed_http_url(text)
         parsed = urlsplit(displayed)
         # Markdown reference encoding must not reintroduce a known secret.
         # Decode URL escapes for comparison only; '+' stays literal and
@@ -415,20 +416,23 @@ def _private_http_url(text, spellings=()):
         return True
 
 
-_URL_CANDIDATE = re.compile(r'https?://[^\s<>]+', re.IGNORECASE)
+_URL_SCHEME = re.compile(r'https?://', re.IGNORECASE)
+_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]*([?#][^\s<>]+)')
 
 
 def projected_url_spans(value):
-    """Recognize balanced delimiters inside a URL before any source edits."""
-    for candidate in _URL_CANDIDATE.finditer(value):
+    """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
+    position = 0
+    while (scheme := _URL_SCHEME.search(value, position)) is not None:
+        first = scheme.start()
+        markdown_link = value[max(0, first - 2):first] == ']('
         brackets = []
-        cursor, end = candidate.span()
-        suffix = end
-        while suffix > cursor and value[suffix - 1] in ')]}.,;!':
-            suffix -= 1
-        while cursor < end:
+        cursor = scheme.end()
+        trailing_close = None
+        while cursor < len(value) and not value[cursor].isspace() and value[cursor] not in '<>':
             char = value[cursor]
             if char == '\\' and value[cursor + 1:cursor + 2] in ('(', ')', '[', ']', '\\'):
+                trailing_close = None
                 cursor += 2
                 continue
             if char in '([':
@@ -436,10 +440,36 @@ def projected_url_spans(value):
             elif char in ')]':
                 if brackets and brackets[-1] == char:
                     brackets.pop()
-                elif cursor >= suffix:
+                elif markdown_link and char == ')':
                     break
+                elif trailing_close is None:
+                    trailing_close = cursor
+            if char not in ')]}.,;!':
+                trailing_close = None
             cursor += 1
-        yield candidate.start(), cursor
+        yield first, trailing_close if trailing_close is not None else cursor
+        position = cursor
+
+
+def _displayed_http_url(text, *, bounded=False):
+    displayed = _bounded_html_unescape(text) if bounded else html.unescape(text)
+    return re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', displayed)
+
+
+def projected_url_secrets(value):
+    """Learn URL values from both wire and displayed spellings."""
+    values = set()
+    urls = (value[first:last] for first, last in projected_url_spans(value))
+    # Old schema 1 writers could detach a query after an omission marker.
+    tails = ('https://redacted.invalid/' + match[1] for match in _OMITTED_URL_QUERY.finditer(value))
+    for url in itertools.chain(urls, tails):
+        values.update(_userinfo_spellings(url))
+        for spelling in (url, _bounded_html_unescape(url), _displayed_http_url(url, bounded=True)):
+            try:
+                values.update(_url_secrets(urlsplit(spelling)))
+            except ValueError:
+                continue
+    return {value for value in values if value}
 
 
 def private_projected_url(value, spellings=()):
@@ -521,6 +551,23 @@ def _sanitize_spellings(value, spellings, *, redact_paths, redact_assignments):
 def safe_text(value, secrets=(), *, redact_paths=True, syntax='prose'):
     """Sanitize original source text; presentation escapes carry no authority."""
     return _sanitize_source_text(value, secrets, redact_paths, syntax)
+
+
+def sanitize_projected_detail(value, secrets, *, syntax='prose'):
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    if not isinstance(value, str):
+        return value
+    known = set(secrets) | sensitive_values_from_text(value, syntax=syntax) | projected_url_secrets(value)
+    if syntax == 'structured':
+        known.update(_command_sensitive_values(value))
+    value = redact_projected_text(value, _secret_spellings(known))
+    # Keep the existing filesystem filter outside full URL spans.
+    chunks, cursor = [], 0
+    for first, last in projected_url_spans(value):
+        chunks.extend((_legacy_safe_text(value[cursor:first], _redact_assignments=False), value[first:last]))
+        cursor = last
+    chunks.append(_legacy_safe_text(value[cursor:], _redact_assignments=False))
+    return ''.join(chunks)
 
 
 def _safe_text_lf(value, secrets=(), *, redact_paths=True, syntax='prose'):
@@ -721,7 +768,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
-                         _f6b_compat=False):
+                         _f6b_compat=False, _pre_atomic=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -737,7 +784,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
     if row['command'] is not None:
         row['command'] = (_legacy_safe_text(row['command'], secrets) if _legacy else
                           sanitize(row['command'], secrets, syntax='structured'))
-    row['explanation'] = sanitize(observation.get('explanation') or row['explanation'], secrets)
+    explanation = observation.get('explanation') or row['explanation']
+    sanitize_explanation = sanitize if (_legacy or _lf_compat or _f6b_compat or _pre_atomic) else sanitize_projected_detail
+    row['explanation'] = sanitize_explanation(explanation, secrets)
     return row
 
 
@@ -765,6 +814,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _pre_atomic=True)
             if row != expected and not _legacy_only:
                 # Reproduce the previous editorial row under the same proof.
                 expected = build_disclosure_row(check, observation, sources, input_identity, _lf_compat=True)

@@ -29,14 +29,12 @@ def _text_values(value):
 
 def public_sensitive_values(record, view=None, sources=None, *, editorial_texts=()):
     """Learn from original selected inputs before any editorial replacement."""
-    from ccr.contracts.check_disclosure import private_values, _argument_secrets
+    from ccr.contracts.check_disclosure import private_values, projected_url_secrets
     from ccr.contracts.disclosure_text import sensitive_values_from_text
     values = private_values(record, view, sources or {})
     for text in set(_text_values(record)) | set(_text_values(editorial_texts)):
         values.update(sensitive_values_from_text(text))
-        # URI classification/encoded spellings share the existing bounded logic.
-        for url in re.findall(r'https?://[^\s<>]+', text, re.IGNORECASE):
-            values.update(_argument_secrets(url))
+        values.update(projected_url_secrets(text))
     return values
 
 def public_url(value):

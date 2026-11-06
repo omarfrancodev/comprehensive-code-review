@@ -3,13 +3,15 @@ from ccr.contracts.check_disclosure import (canonical, digest, safe_text, privat
                                            validate_check_disclosure)
 
 
-def sanitize_public_detail(value, secrets, *, syntax='prose'):
-    from ccr.contracts.check_disclosure import _secret_spellings, redact_projected_text
-    from ccr.contracts.disclosure_text import sensitive_values_from_text
+def sanitize_public_detail(value, secrets, *, syntax='prose', explanation=False):
+    from ccr.contracts.check_disclosure import sanitize_projected_detail
     if not isinstance(value, str):
         return value
-    spellings = _secret_spellings(set(secrets) | sensitive_values_from_text(value, syntax=syntax))
-    return safe_text(redact_projected_text(value, spellings), secrets, syntax=syntax)
+    value = sanitize_projected_detail(value, secrets, syntax=syntax)
+    if explanation:
+        from ccr.reporting.text_projection import omit_private_detail_paths
+        value = omit_private_detail_paths(value)
+    return value
 
 
 def project_check_disclosure(record, disclosure, sources, input_identity, *, _legacy=False):
@@ -28,10 +30,11 @@ def project_check_disclosure(record, disclosure, sources, input_identity, *, _le
     else:
         from ccr.reporting.projections import public_sensitive_values
         secrets = public_sensitive_values(record, sources=sources, editorial_texts=(disclosure,))
+    sanitize_explanation = sanitize if _legacy else lambda value, secrets: sanitize(value, secrets, explanation=True)
     return dict(source_sha256=disclosure['source_sha256'], check_disclosure_sha256=digest(raw if raw is not None else canonical(disclosure)),
         checks=[dict(id=row['id'], mode=row['mode'], command=sanitize(row['command'], secrets),
                      resources=[sanitize(resource['path'], secrets) for resource in row['resources']],
-                     explanation=sanitize(row['explanation'], secrets)) for row in disclosure['checks']])
+                     explanation=sanitize_explanation(row['explanation'], secrets)) for row in disclosure['checks']])
 
 
 def disclosure_view(record, context, sources, *, _legacy=False):
