@@ -362,6 +362,68 @@ class PublicProjectionReviewTests(unittest.TestCase):
         tampered['checks'][0]['command'] += ' --unproved'
         self.assertTrue(check_disclosure.validate_check_disclosure(record, tampered, sources, identity))
 
+    def test_typed_urls_and_prose_keep_sensitive_query_attached_to_full_url(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record, _ = record_and_context()
+        known = 'ALPHA*BETA_GAMMA'
+        locator = r'https://example.test/(view)/ALPHA\*BETA_GAMMA'
+        record['verdict_reason'] = 'token="' + known + '"'
+        record['scope']['reference'] = locator
+        record['findings'][0]['location']['url'] = locator
+        record['description']['details'] = (
+            locator + r'?api\_key=QUERYSECRET and https://example.test/public')
+        body = self.draft(record)
+        projected = _Projection(record, {}, '', publication_digest(record),
+                                editorial_texts=(record['description'],)).value(record)
+        self.assertNotIn('QUERYSECRET', body)
+        self.assertNotIn('QUERYSECRET', projected['description']['details'])
+        self.assertNotIn('ALPHA', projected['scope']['reference'])
+        self.assertIsNone(projected['findings'][0]['location']['url'])
+        self.assertIn('https://example.test/public', body)
+        record['description']['details'] = (
+            r'https://example.test/path)/ALPHA\*BETA_GAMMA?api\_key=QUERYSECRET')
+        self.assertNotIn('QUERYSECRET', self.draft(record))
+
+    def test_tilde_inside_punctuated_components_remains_relative(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for path in ('tests/generated-~fixture/probe.py', 'tests/gen.~fixture/probe.py',
+                     r'tests\gen-~fixture\probe.py', 'tests/gen:~fixture/probe.py'):
+            with self.subTest(path=path):
+                record, _ = record_and_context()
+                finding = record['findings'][0]
+                finding['location']['path'] = path
+                finding['scenario'] = 'Use ' + path + ' before (~user/LOCALFILE.py)'
+                projected = _Projection(record, {}, '', publication_digest(record)).value(record)['findings'][0]
+                self.assertEqual(path.replace('\\', '/'), projected['location']['path'])
+                self.assertIn(path, projected['scenario'])
+                self.assertNotIn('LOCALFILE', projected['scenario'])
+
+    def test_archived_f6b_explanation_is_valid_and_new_details_are_private(self):
+        from test_review_check_disclosure import fixture
+        from ccr.reporting.check_disclosure import project_check_disclosure
+        from ccr.reporting.text_projection import _Projection
+
+        record, identity, observations, sources = fixture()
+        explanation = '~~~\ninside token=``EARLY`SECRET``\n~~~'
+        next(iter(observations.values()))['explanation'] = explanation
+        sidecar = build_check_disclosure(record, identity, observations, sources)
+        sidecar['checks'][0]['explanation'] = explanation  # Exact f6b083e spelling.
+        self.assertEqual(check_disclosure.validate_check_disclosure(record, sidecar, sources, identity), [])
+        view = project_check_disclosure(record, sidecar, sources, identity)
+        self.assertNotIn('EARLY`SECRET', view['checks'][0]['explanation'])
+
+        record['verdict_reason'] = 'token="ALPHA*BETA_GAMMA"'
+        original = r'Observed https://example.test/view/ALPHA\*BETA_GAMMA'
+        next(iter(observations.values()))['explanation'] = original
+        sidecar = build_check_disclosure(record, identity, observations, sources)
+        self.assertEqual(sidecar['checks'][0]['explanation'], original)
+        projected = _Projection(record, {}, '', publication_digest(record),
+            check_disclosure_context=sidecar, check_disclosure_sources=sources)
+        self.assertNotIn('ALPHA', projected.disclosure_rows[record['checks'][0]['id']]['explanation'])
+        self.assertEqual(sidecar['checks'][0]['explanation'], original)
+
     def test_reused_revision_collision_is_rejected(self):
         record = record13()
         revision = 'ab' * 20

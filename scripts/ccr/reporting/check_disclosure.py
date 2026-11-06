@@ -3,9 +3,18 @@ from ccr.contracts.check_disclosure import (canonical, digest, safe_text, privat
                                            validate_check_disclosure)
 
 
+def sanitize_public_detail(value, secrets, *, syntax='prose'):
+    from ccr.contracts.check_disclosure import _secret_spellings, redact_projected_text
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    if not isinstance(value, str):
+        return value
+    spellings = _secret_spellings(set(secrets) | sensitive_values_from_text(value, syntax=syntax))
+    return safe_text(redact_projected_text(value, spellings), secrets, syntax=syntax)
+
+
 def project_check_disclosure(record, disclosure, sources, input_identity, *, _legacy=False):
     from ccr.contracts.check_disclosure import _legacy_safe_text
-    sanitize = _legacy_safe_text if _legacy else safe_text
+    sanitize = _legacy_safe_text if _legacy else sanitize_public_detail
     errors = validate_check_disclosure(record, disclosure, sources, input_identity, _legacy_only=_legacy)
     if errors:
         raise ValueError('; '.join(errors))
@@ -14,7 +23,11 @@ def project_check_disclosure(record, disclosure, sources, input_identity, *, _le
         import json
         if json.loads(raw) != disclosure:
             raise ValueError('selected check disclosure bytes differ from the supplied sidecar')
-    secrets = private_values(record, None, sources)
+    if _legacy:
+        secrets = private_values(record, None, sources)
+    else:
+        from ccr.reporting.projections import public_sensitive_values
+        secrets = public_sensitive_values(record, sources=sources, editorial_texts=(disclosure,))
     return dict(source_sha256=disclosure['source_sha256'], check_disclosure_sha256=digest(raw if raw is not None else canonical(disclosure)),
         checks=[dict(id=row['id'], mode=row['mode'], command=sanitize(row['command'], secrets),
                      resources=[sanitize(resource['path'], secrets) for resource in row['resources']],

@@ -390,16 +390,81 @@ def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False):
         yield pending
 
 
+def _private_http_url(text, spellings=()):
+    try:
+        # Inspect the displayed URL as well as raw prose; Markdown escapes
+        # and HTML entities must not disguise a sensitive query key.
+        displayed = re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text))
+        parsed = urlsplit(displayed)
+        # Markdown reference encoding must not reintroduce a known secret.
+        # Decode URL escapes for comparison only; '+' stays literal and
+        # benign references retain their original spelling.
+        decoded = unquote(displayed)
+        # Normalization can also change a literal credential containing
+        # escapes. Check original and displayed forms before discarding them.
+        if any(secret in candidate for candidate in (text, displayed, decoded)
+               for secret in spellings):
+            return True
+        if (parsed.username or parsed.password or not parsed.hostname
+                or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
+                or parsed.hostname.lower().endswith(('.local', '.internal'))
+                or _url_secrets(parsed)):
+            return True
+        return False
+    except ValueError:
+        return True
+
+
+_URL_CANDIDATE = re.compile(r'https?://[^\s<>]+', re.IGNORECASE)
+
+
+def projected_url_spans(value):
+    """Recognize balanced delimiters inside a URL before any source edits."""
+    for candidate in _URL_CANDIDATE.finditer(value):
+        brackets = []
+        cursor, end = candidate.span()
+        suffix = end
+        while suffix > cursor and value[suffix - 1] in ')]}.,;!':
+            suffix -= 1
+        while cursor < end:
+            char = value[cursor]
+            if char == '\\' and value[cursor + 1:cursor + 2] in ('(', ')', '[', ']', '\\'):
+                cursor += 2
+                continue
+            if char in '([':
+                brackets.append(')' if char == '(' else ']')
+            elif char in ')]':
+                if brackets and brackets[-1] == char:
+                    brackets.pop()
+                elif cursor >= suffix:
+                    break
+            cursor += 1
+        yield candidate.start(), cursor
+
+
+def private_projected_url(value, spellings=()):
+    """Apply URL policy to the entire typed locator and its visible spellings."""
+    return (_private_http_url(value) or
+            next(_sensitive_text_ranges(value, spellings, markdown_escapes=True), None) is not None)
+
+
+def private_url_spans(value):
+    for first, last in projected_url_spans(value):
+        if _private_http_url(value[first:last]):
+            yield first, last
+
+
 def redact_projected_text(value, spellings):
     """Redact copies across the composed value, using original URL boundaries."""
-    urls = iter(re.finditer(r'https?://[^\s<>\]\)]+', value, flags=re.IGNORECASE))
+    urls = iter(projected_url_spans(value))
     url = next(urls, None)
     chunks, cursor, pending = [], 0, None
-    for first, last in _sensitive_text_ranges(value, spellings, markdown_escapes=True):
-        while url is not None and url.end() <= first:
+    known = _sensitive_text_ranges(value, spellings, markdown_escapes=True)
+    for first, last in heapq.merge(known, private_url_spans(value)):
+        while url is not None and url[1] <= first:
             url = next(urls, None)
-        while url is not None and url.start() < last:
-            first, last = min(first, url.start()), max(last, url.end())
+        while url is not None and url[0] < last:
+            first, last = min(first, url[0]), max(last, url[1])
             url = next(urls, None)
         if pending is not None and first <= pending[1]:
             pending = pending[0], max(last, pending[1])
@@ -412,9 +477,7 @@ def redact_projected_text(value, spellings):
         chunks.extend((value[cursor:pending[0]], OMITTED))
         cursor = pending[1]
     chunks.append(value[cursor:])
-    # URL credentials and control characters still need the output filter,
-    # but every known-value match has already been processed together.
-    return _sanitize_spellings(''.join(chunks), (), redact_paths=False, redact_assignments=False)
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', ''.join(chunks))
 
 
 def _legacy_safe_text(value, secrets=(), *, redact_paths=True, _redact_assignments=True):
@@ -435,29 +498,6 @@ def _sanitize_spellings(value, spellings, *, redact_paths, redact_assignments):
         for secret in spellings:
             text = text.replace(secret, OMITTED)
         return text
-    def url(text):
-        try:
-            # Inspect the displayed URL as well as raw prose; Markdown escapes
-            # and HTML entities must not disguise a sensitive query key.
-            displayed = re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text))
-            parsed = urlsplit(displayed)
-            # Markdown reference encoding must not reintroduce a known secret.
-            # Decode URL escapes for comparison only; '+' stays literal and
-            # benign references retain their original spelling.
-            decoded = unquote(displayed)
-            # Normalization can also change a literal credential containing
-            # escapes. Check original and displayed forms before discarding them.
-            if any(secret in candidate for candidate in (text, displayed, decoded)
-                   for secret in spellings):
-                return '[URL omitida]'
-            if (parsed.username or parsed.password or not parsed.hostname
-                    or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
-                    or parsed.hostname.lower().endswith(('.local', '.internal'))
-                    or _url_secrets(parsed)):
-                return '[URL omitida]'
-            return text
-        except ValueError:
-            return '[URL omitida]'
     # Split original text before inserting any markers: their ']' must never
     # truncate a URL and hide a later encoded occurrence from its policy check.
     spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
@@ -467,7 +507,8 @@ def _sanitize_spellings(value, spellings, *, redact_paths, redact_assignments):
             spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
             spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
     for index in range(1, len(spans), 2):
-        spans[index] = url(spans[index])
+        if _private_http_url(spans[index], spellings):
+            spans[index] = '[URL omitida]'
     # A literal credential can cross an original delimiter boundary. Redact it
     # after URL decisions; these markers can no longer affect URL recognition.
     value = redact(''.join(spans))
@@ -487,11 +528,17 @@ def _safe_text_lf(value, secrets=(), *, redact_paths=True, syntax='prose'):
     return _sanitize_source_text(value, secrets, redact_paths, syntax, lf_compat=True)
 
 
-def _sanitize_source_text(value, secrets, redact_paths, syntax, *, lf_compat=False):
+def _safe_text_f6b(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    from ccr.contracts.disclosure_text_f6b083e import sensitive_values_from_text
+    return _sanitize_source_text(value, secrets, redact_paths, syntax, archived_lexer=sensitive_values_from_text)
+
+
+def _sanitize_source_text(value, secrets, redact_paths, syntax, *, lf_compat=False, archived_lexer=None):
     from ccr.contracts.disclosure_text import sensitive_values_from_text
     if not isinstance(value, str):
         return value
-    learned = sensitive_values_from_text(value, syntax=syntax, _lf_compat=lf_compat)
+    learned = (archived_lexer(value, syntax=syntax) if archived_lexer else
+               sensitive_values_from_text(value, syntax=syntax, _lf_compat=lf_compat))
     if syntax == 'structured':
         learned.update(_command_sensitive_values(value))
     return _legacy_safe_text(value, set(secrets) | learned, redact_paths=redact_paths,
@@ -673,8 +720,10 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
     return shlex.join(projected), 'mixed' if mixed else 'project_command'
 
 
-def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False):
-    sanitize = _legacy_safe_text if _legacy else _safe_text_lf if _lf_compat else safe_text
+def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
+                         _f6b_compat=False):
+    sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
+                _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
                execution_reference=None, mode='explanation', command=None, resources=[],
                explanation='No se dispone de argv y procedencia verificables para este check; propósito y resultado se conservan.', evidence_reference=None)
@@ -719,6 +768,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
             if row != expected and not _legacy_only:
                 # Reproduce the previous editorial row under the same proof.
                 expected = build_disclosure_row(check, observation, sources, input_identity, _lf_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _f6b_compat=True)
             if row != expected and not _legacy_only:
                 # Schema 1 predates editorial-v1. Its existing selected bytes
                 # remain valid under their original full resource-proof gate.

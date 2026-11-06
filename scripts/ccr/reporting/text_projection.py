@@ -5,7 +5,7 @@ import json
 import re
 from urllib.parse import urlsplit
 from ccr.reporting import markdown
-from ccr.reporting.check_disclosure import disclosure_view
+from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, sensitive_text_ranges
 from ccr.contracts.disclosure_text import sensitive_values_from_text
@@ -15,7 +15,7 @@ from ccr.contracts.disclosure_text import sensitive_values_from_text
 _HOME_ROOT = r'''~[^~\s/\\;|<>()\]`'"]*[\\/]'''
 _QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
-_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?<![\w/\\~])''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
+_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?:(?<!\S)|(?<=(?<!\S)[([{=,:;]))''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
 _SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _HTTP_CONTEXT = re.compile(
@@ -112,9 +112,9 @@ class _Projection:
         # The proof view is a fresh projection. Apply the complete privacy set
         # before either portable commands or appended check details consume it.
         for row in (self.disclosure or {}).get('checks', []):
-            row['command'] = safe_text(row['command'], self.secrets, syntax='structured')
-            row['resources'] = [safe_text(path, self.secrets) for path in row['resources']]
-            row['explanation'] = safe_text(row['explanation'], self.secrets)
+            row['command'] = sanitize_public_detail(row['command'], self.secrets, syntax='structured')
+            row['resources'] = [sanitize_public_detail(path, self.secrets) for path in row['resources']]
+            row['explanation'] = sanitize_public_detail(row['explanation'], self.secrets)
         commands = {check['command'] for check in record['checks']}
         commands.update(markdown.markdown_text(command) for command in tuple(commands))
         self.commands = sorted(commands, key=len, reverse=True)
@@ -133,16 +133,11 @@ class _Projection:
         # secret policy as prose, including legacy deliveries without a sidecar.
         candidate = re.sub(r'^https?:', lambda match: match.group().lower(),
                            value, flags=re.IGNORECASE)
+        if sensitive_values_from_text(candidate):
+            return None
         if spellings is None:
-            sanitized = safe_text(candidate, self.secrets)
-        else:
-            # A transformed URL may itself supply an explicit assignment.
-            # Withhold it rather than rebuilding the projection's spellings.
-            if sensitive_values_from_text(candidate):
-                return None
-            sanitized = check_disclosure._sanitize_spellings(
-                candidate, spellings, redact_paths=True, redact_assignments=False)
-        return value if sanitized == candidate else None
+            spellings = check_disclosure._secret_spellings(self.secrets)
+        return None if check_disclosure.private_projected_url(candidate, spellings) else value
 
     def reference(self, value):
         if self.public_url(value):
@@ -240,10 +235,15 @@ class _Projection:
             streams.append(((*span, False) for span in matches))
         if omit_commands and self.commands:
             streams.append(((*span, True) for span in sensitive_text_ranges(value, self.commands)))
+        urls = ()
+        if self.new_policy:
+            # An omission must never detach a URL's query from its authority.
+            streams.append(((*span, False) for span in check_disclosure.private_url_spans(value)))
+            urls = check_disclosure.projected_url_spans(value)
         if not streams:
             return
         members = heapq.merge((match.span() for match in re.finditer(_QUOTED_PATH, value)),
-                              self._http_members(value), self._local_members(value))
+                              self._http_members(value), self._local_members(value), urls)
         member = next(members, None)
         pending = None
         for first, last, command in heapq.merge(*streams):
