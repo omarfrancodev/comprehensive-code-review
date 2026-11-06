@@ -505,6 +505,76 @@ class PublicProjectionReviewTests(unittest.TestCase):
         self.assertNotIn('QUERYSECRET', view['checks'][0]['explanation'])
         self.assertIn('QUERYSECRET', archived['checks'][0]['explanation'])
 
+    def test_quoted_url_escapes_teach_unquoted_secret_copies(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for quote, key in (('"', r'api\_key'), ("'", r'api\_key'), ('"', r'api\-key')):
+            with self.subTest(quote=quote, key=key):
+                record = record13()
+                record['checks'] = []
+                record['verdict_reason'] = f'URL {quote}https://example.test/?{key}=COPIEDSECRET{quote}.'
+                record['description']['details'] = 'Unquoted copy COPIEDSECRET'
+                self.assertNotIn('COPIEDSECRET', self.draft(record))
+                projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+                self.assertNotIn('COPIEDSECRET', projected['description']['details'])
+
+    def test_parenthesized_prose_url_preserves_privacy_of_adjacent_destinations(self):
+        from ccr.reporting.text_projection import _Projection
+
+        for neighbor, private in (('https://alice:NEIGHBORSECRET@example.test/other','NEIGHBORSECRET'),
+                                  ('https://localhost/private','localhost'),
+                                  (r'C:\private\LOCALFILE.py','LOCALFILE')):
+            with self.subTest(neighbor=neighbor):
+                record = record13()
+                record['checks'] = []
+                record['description']['details'] = '(https://example.test/(view)/next),' + neighbor
+                projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+                self.assertNotIn(private, projected['description']['details'])
+                self.assertNotIn(private, self.draft(record))
+                self.assertIn('https://example.test/(view)/next', projected['description']['details'])
+
+    def test_home_assignment_inside_parentheses_is_private(self):
+        from ccr.reporting.text_projection import _Projection
+
+        record = record13()
+        record['checks'] = []
+        record['description']['details'] = 'Use (HOME=~dev/LOCALFILE) with tests/path=~fixture/probe.py'
+        body = self.draft(record)
+        projected = _Projection(record, {}, '', publication_digest(record)).value(record)
+        for output in (body, projected['description']['details']):
+            self.assertNotIn('LOCALFILE', output)
+            self.assertIn('fixture/probe.py', output)
+
+    def test_historical_query_after_closing_parenthesis_and_quoted_paths(self):
+        from test_review_check_disclosure import fixture
+        from ccr.reporting.check_disclosure import project_check_disclosure
+        from ccr.reporting.text_projection import _Projection
+
+        path = 'tests/probe.py'
+        record, identity, observations, sources = fixture(
+            ['pytest', '/private/home/repo/' + path, '--token', 'ARGSECRET'],
+            {path: b'assert True\n'})
+        observation = next(iter(observations.values()))
+        observation['explanation'] = (
+            r'https://example.test/ARGSECRET(view)?api\_key=QUERYSECRET '
+            r'"C:\private folder\WINFILE.py" "/private folder/POSIXFILE.py"')
+        sidecar = build_check_disclosure(record, identity, observations, sources)
+        row = check_disclosure.build_disclosure_row(
+            record['checks'][0], observation, sources, identity, _pre_atomic=True)
+        self.assertIn('QUERYSECRET', row['explanation'])
+        archived = dict(sidecar, checks=[row])
+        before = copy.deepcopy(archived)
+        for selected in (sidecar, archived):
+            view = project_check_disclosure(record, selected, sources, identity)
+            portable = _Projection(record, {}, '', publication_digest(record),
+                check_disclosure_context=selected, check_disclosure_sources=sources)
+            for explanation in (view['checks'][0]['explanation'],
+                                portable.disclosure_rows[record['checks'][0]['id']]['explanation']):
+                for hidden in ('QUERYSECRET', 'WINFILE', 'POSIXFILE'):
+                    self.assertNotIn(hidden, explanation)
+            self.assertIn(path, view['checks'][0]['command'])
+        self.assertEqual(archived, before)
+
     def test_reused_revision_collision_is_rejected(self):
         record = record13()
         revision = 'ab' * 20

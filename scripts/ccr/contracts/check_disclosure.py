@@ -6,6 +6,7 @@ The resource manifest is hashed at workspace preparation, never after a check.
 import hashlib
 import heapq
 import itertools
+import string
 from array import array
 from bisect import bisect_left, bisect_right
 import html
@@ -243,12 +244,16 @@ def private_values(record, view, sources):
     return values
 
 
-def _encoded_value_ranges(text, spellings, *, overlaps=False, markdown_escapes=False):
+_LEGACY_MARKDOWN_ESCAPE = re.compile(r'\\([\\`*{}\[\]()#+!_|>~])')
+_MARKDOWN_ESCAPE = re.compile(r'\\([' + re.escape(string.punctuation) + r'])')
+
+
+def _encoded_value_ranges(text, spellings, *, overlaps=False, markdown_escapes=False, _bff_compat=False):
     """Locate encoded copies in original source coordinates."""
     if not spellings:
         return []
     entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
-    markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
+    markdown_escape = _MARKDOWN_ESCAPE if markdown_escapes and not _bff_compat else _LEGACY_MARKDOWN_ESCAPE
     markers = {match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
     markers.update(match.start() for match in re.finditer(entity, text))
     if markdown_escapes:
@@ -365,7 +370,7 @@ def sensitive_text_ranges(text, secrets):
     return _sensitive_text_ranges(text, _secret_spellings(secrets))
 
 
-def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False):
+def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False, _bff_compat=False):
     """Match with an already prepared set of spellings.
 
     Literal matches stream, including overlaps, rather than allocating one
@@ -378,7 +383,8 @@ def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False):
             yield position, position + len(secret)
             position = text.find(secret, position + 1)
     streams = [literal(secret) for secret in spellings]
-    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True, markdown_escapes=markdown_escapes)))
+    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True,
+                                             markdown_escapes=markdown_escapes, _bff_compat=_bff_compat)))
     pending = None
     for first, last in heapq.merge(*streams):
         if pending is not None and first <= pending[1]:
@@ -391,11 +397,11 @@ def _sensitive_text_ranges(text, spellings, *, markdown_escapes=False):
         yield pending
 
 
-def _private_http_url(text, spellings=()):
+def _private_http_url(text, spellings=(), *, modern=False):
     try:
         # Inspect the displayed URL as well as raw prose; Markdown escapes
         # and HTML entities must not disguise a sensitive query key.
-        displayed = _displayed_http_url(text)
+        displayed = _displayed_http_url(text, bounded=modern, modern=modern)
         parsed = urlsplit(displayed)
         # Markdown reference encoding must not reintroduce a known secret.
         # Decode URL escapes for comparison only; '+' stays literal and
@@ -417,21 +423,28 @@ def _private_http_url(text, spellings=()):
 
 
 _URL_SCHEME = re.compile(r'https?://', re.IGNORECASE)
-_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]*([?#][^\s<>]+)')
+_BFF_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]*([?#][^\s<>]+)')
+_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\][\])]*([?#][^\s<>]+)')
 
 
-def projected_url_spans(value):
+def projected_url_spans(value, *, _bff_compat=False):
     """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
     position = 0
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
+        outer = value[first - 1] if first and not _bff_compat else ''
         brackets = []
         cursor = scheme.end()
         trailing_close = None
         while cursor < len(value) and not value[cursor].isspace() and value[cursor] not in '<>':
             char = value[cursor]
-            if char == '\\' and value[cursor + 1:cursor + 2] in ('(', ')', '[', ']', '\\'):
+            if outer in ('"', "'", '`') and char == outer:
+                break
+            if not _bff_compat and char == ',' and _URL_SCHEME.match(value, cursor + 1):
+                break
+            escaped = value[cursor + 1:cursor + 2]
+            if char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or (outer and escaped == outer)):
                 trailing_close = None
                 cursor += 2
                 continue
@@ -440,7 +453,7 @@ def projected_url_spans(value):
             elif char in ')]':
                 if brackets and brackets[-1] == char:
                     brackets.pop()
-                elif markdown_link and char == ')':
+                elif (markdown_link or outer == '(') and char == ')':
                     break
                 elif trailing_close is None:
                     trailing_close = cursor
@@ -451,20 +464,23 @@ def projected_url_spans(value):
         position = cursor
 
 
-def _displayed_http_url(text, *, bounded=False):
+def _displayed_http_url(text, *, bounded=False, modern=False):
     displayed = _bounded_html_unescape(text) if bounded else html.unescape(text)
-    return re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', displayed)
+    escapes = _MARKDOWN_ESCAPE if modern else _LEGACY_MARKDOWN_ESCAPE
+    return escapes.sub(r'\1', displayed)
 
 
-def projected_url_secrets(value):
+def projected_url_secrets(value, *, _bff_compat=False):
     """Learn URL values from both wire and displayed spellings."""
     values = set()
-    urls = (value[first:last] for first, last in projected_url_spans(value))
+    urls = (value[first:last] for first, last in projected_url_spans(value, _bff_compat=_bff_compat))
     # Old schema 1 writers could detach a query after an omission marker.
-    tails = ('https://redacted.invalid/' + match[1] for match in _OMITTED_URL_QUERY.finditer(value))
+    omitted_query = _BFF_OMITTED_URL_QUERY if _bff_compat else _OMITTED_URL_QUERY
+    tails = ('https://redacted.invalid/' + match[1] for match in omitted_query.finditer(value))
     for url in itertools.chain(urls, tails):
         values.update(_userinfo_spellings(url))
-        for spelling in (url, _bounded_html_unescape(url), _displayed_http_url(url, bounded=True)):
+        for spelling in (url, _bounded_html_unescape(url),
+                         _displayed_http_url(url, bounded=True, modern=not _bff_compat)):
             try:
                 values.update(_url_secrets(urlsplit(spelling)))
             except ValueError:
@@ -474,23 +490,24 @@ def projected_url_secrets(value):
 
 def private_projected_url(value, spellings=()):
     """Apply URL policy to the entire typed locator and its visible spellings."""
-    return (_private_http_url(value) or
+    return (_private_http_url(value, modern=True) or
             next(_sensitive_text_ranges(value, spellings, markdown_escapes=True), None) is not None)
 
 
-def private_url_spans(value):
-    for first, last in projected_url_spans(value):
-        if _private_http_url(value[first:last]):
+def private_url_spans(value, *, _bff_compat=False):
+    for first, last in projected_url_spans(value, _bff_compat=_bff_compat):
+        if _private_http_url(value[first:last], modern=not _bff_compat):
             yield first, last
 
 
-def redact_projected_text(value, spellings):
+def redact_projected_text(value, spellings, *, path_spans=(), _bff_compat=False):
     """Redact copies across the composed value, using original URL boundaries."""
-    urls = iter(projected_url_spans(value))
+    urls = iter(projected_url_spans(value, _bff_compat=_bff_compat))
     url = next(urls, None)
     chunks, cursor, pending = [], 0, None
-    known = _sensitive_text_ranges(value, spellings, markdown_escapes=True)
-    for first, last in heapq.merge(known, private_url_spans(value)):
+    known = _sensitive_text_ranges(value, spellings, markdown_escapes=True, _bff_compat=_bff_compat)
+    private_urls = private_url_spans(value, _bff_compat=_bff_compat)
+    for first, last in heapq.merge(known, private_urls, path_spans):
         while url is not None and url[1] <= first:
             url = next(urls, None)
         while url is not None and url[0] < last:
@@ -553,17 +570,22 @@ def safe_text(value, secrets=(), *, redact_paths=True, syntax='prose'):
     return _sanitize_source_text(value, secrets, redact_paths, syntax)
 
 
-def sanitize_projected_detail(value, secrets, *, syntax='prose'):
+def sanitize_projected_detail(value, secrets, *, syntax='prose', explanation=False, _bff_compat=False):
     from ccr.contracts.disclosure_text import sensitive_values_from_text
     if not isinstance(value, str):
         return value
-    known = set(secrets) | sensitive_values_from_text(value, syntax=syntax) | projected_url_secrets(value)
+    known = (set(secrets) | sensitive_values_from_text(value, syntax=syntax) |
+             projected_url_secrets(value, _bff_compat=_bff_compat))
     if syntax == 'structured':
         known.update(_command_sensitive_values(value))
-    value = redact_projected_text(value, _secret_spellings(known))
+    paths = ()
+    if explanation and not _bff_compat:
+        from ccr.contracts.disclosure_paths import private_detail_path_spans
+        paths = private_detail_path_spans(value, projected_url_spans(value))
+    value = redact_projected_text(value, _secret_spellings(known), path_spans=paths, _bff_compat=_bff_compat)
     # Keep the existing filesystem filter outside full URL spans.
     chunks, cursor = [], 0
-    for first, last in projected_url_spans(value):
+    for first, last in projected_url_spans(value, _bff_compat=_bff_compat):
         chunks.extend((_legacy_safe_text(value[cursor:first], _redact_assignments=False), value[first:last]))
         cursor = last
     chunks.append(_legacy_safe_text(value[cursor:], _redact_assignments=False))
@@ -768,7 +790,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
-                         _f6b_compat=False, _pre_atomic=False):
+                         _f6b_compat=False, _pre_atomic=False, _bff_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -785,8 +807,10 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
         row['command'] = (_legacy_safe_text(row['command'], secrets) if _legacy else
                           sanitize(row['command'], secrets, syntax='structured'))
     explanation = observation.get('explanation') or row['explanation']
-    sanitize_explanation = sanitize if (_legacy or _lf_compat or _f6b_compat or _pre_atomic) else sanitize_projected_detail
-    row['explanation'] = sanitize_explanation(explanation, secrets)
+    if _legacy or _lf_compat or _f6b_compat or _pre_atomic:
+        row['explanation'] = sanitize(explanation, secrets)
+    else:
+        row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
     return row
 
 
@@ -814,6 +838,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _bff_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _pre_atomic=True)
             if row != expected and not _legacy_only:

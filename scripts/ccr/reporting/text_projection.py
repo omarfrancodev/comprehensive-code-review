@@ -8,16 +8,9 @@ from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, sensitive_text_ranges
+from ccr.contracts.disclosure_paths import _POSIX_PATH, _QUOTED_PATH, _SOURCE_TOKENS, _local_start, source_tokens
 from ccr.contracts.disclosure_text import sensitive_values_from_text
 
-# One shared boundary for classification and for excluding filename substrings
-# from URL recognition. A lone terminal backslash still belongs to the member.
-_HOME_ROOT = r'''~[^~\s/\\;|<>()\]`'"]*[\\/]'''
-_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
-_POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
-_LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?<!\S)(?P<home_binding>[-\w]+[=:])''' + _HOME_ROOT + r'''|(?:(?<!\S)|(?<=(?<!\S)[([{=,:;]))''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
-_SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
-                            + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 _HTTP_CONTEXT = re.compile(
     r'''(?ix)(?<!\S)(?:GET|HEAD|POST|PUT|PATCH|DELETE|CONNECT|OPTIONS|TRACE|
     (?:endpoint|ruta|route|path)[ \t]+HTTP|HTTP[ \t]+(?:endpoint|route|path)|endpoint)[ \t]*:?[ \t]+[`'"]?$''')
@@ -25,31 +18,7 @@ _COMMAND_OMISSION = '[comprobación registrada; comando omitido]'
 
 
 def _source_tokens(value):
-    urls = iter(check_disclosure.projected_url_spans(value))
-    url = next(urls, None)
-    for match in _SOURCE_TOKENS.finditer(value):
-        while url is not None and url[1] <= match.start():
-            url = next(urls, None)
-        if url is not None and url[0] <= match.start() < url[1]:
-            if match.start() == url[0] and match['url'] is not None:
-                yield match, url[1]
-        else:
-            yield match, match.end()
-
-
-def _local_start(match):
-    return match.end('home_binding') if match['home_binding'] else match.start()
-
-
-def omit_private_detail_paths(value):
-    # An explanation is prose, not an accredited resource path or argument.
-    chunks, cursor = [], 0
-    for match, last in _source_tokens(value):
-        if match['local'] is not None or match['quoted_path'] is not None:
-            chunks.extend((value[cursor:_local_start(match)], '[ruta privada]'))
-            cursor = last
-    chunks.append(value[cursor:])
-    return ''.join(chunks)
+    return source_tokens(value, check_disclosure.projected_url_spans(value))
 
 
 def _relative_to_root(value, root):

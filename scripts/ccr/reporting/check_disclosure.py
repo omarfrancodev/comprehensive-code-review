@@ -7,11 +7,7 @@ def sanitize_public_detail(value, secrets, *, syntax='prose', explanation=False)
     from ccr.contracts.check_disclosure import sanitize_projected_detail
     if not isinstance(value, str):
         return value
-    value = sanitize_projected_detail(value, secrets, syntax=syntax)
-    if explanation:
-        from ccr.reporting.text_projection import omit_private_detail_paths
-        value = omit_private_detail_paths(value)
-    return value
+    return sanitize_projected_detail(value, secrets, syntax=syntax, explanation=explanation)
 
 
 def project_check_disclosure(record, disclosure, sources, input_identity, *, _legacy=False):
