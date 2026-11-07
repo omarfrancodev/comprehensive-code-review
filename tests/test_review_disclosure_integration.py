@@ -117,11 +117,11 @@ class DisclosureIntegrationTests(unittest.TestCase):
         for text in (render.render_portable(portable, {}), delivery._brief(portable)):
             self.assertIn('pytest tests/test_queue.py -k retry', text.replace('\\_', '_'))
 
-    def test_draft3_is_bound_to_disclosure_and_selected_sources(self):
+    def test_draft4_is_bound_to_disclosure_and_selected_sources(self):
         record, disclosure, sources = bundle()
         kwargs = dict(check_disclosure_context=disclosure, check_disclosure_sources=sources)
         draft = comment.prepare_public_comment(record, **contexts12(record), **kwargs)
-        self.assertEqual(draft['schema_version'], 3)
+        self.assertEqual(draft['schema_version'], 4)
         self.assertTrue(comment.verify_public_comment(record, draft, draft['body'], **kwargs)['verified'])
         with self.assertRaises(ValueError):
             comment.verify_public_comment(record, draft, draft['body'])
@@ -175,7 +175,7 @@ class DisclosureIntegrationTests(unittest.TestCase):
                 for text in (comment_text, handoff):
                     self.assertNotIn(secret, text)
                     self.assertNotIn(markdown_text(secret), text)
-                    self.assertIn('[omitido]', text)
+                    self.assertIn(markdown_text('[omitido]'), text)
 
     def test_selected_source_catalog_reads_only_explicit_hashed_files(self):
         import pathlib

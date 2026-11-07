@@ -9,12 +9,12 @@ from traceability_fixtures import record11, publication_contexts
 
 
 class CommentTraceTests(unittest.TestCase):
-    def test_draft2_contains_public_goal_and_each_flow(self):
+    def test_draft4_contains_public_goal_and_each_flow(self):
         value = record11()
         value['coverage']['flows'] = ['Creación de jobs', 'Reintento de jobs']
         before = copy.deepcopy(value)
         draft = comments.prepare_public_comment(value, **publication_contexts(value))
-        self.assertEqual(draft['schema_version'], 2)
+        self.assertEqual(draft['schema_version'], 4)
         self.assertIn(value['checks'][0]['purpose'], draft['body'])
         self.assertIn('  - Creación de jobs\n', draft['body'])
         self.assertIn('  - Reintento de jobs\n', draft['body'])
@@ -50,7 +50,7 @@ class CommentTraceTests(unittest.TestCase):
     def test_old_draft_is_stale_and_changed_goal_invalidates_source(self):
         value = record11()
         draft = comments.prepare_public_comment(value, **publication_contexts(value))
-        legacy = {k: v for k, v in draft.items() if k != 'coverage_publication_context'}
+        legacy = {k: v for k, v in draft.items() if k in comments.DRAFT_FIELDS - {'coverage_publication_context'}}
         legacy['schema_version'] = 1
         with self.assertRaisesRegex(ValueError, 'stale_draft'):
             comments.verify_public_comment(value, legacy, legacy['body'])

@@ -15,6 +15,28 @@ def publication_digest(record):
     return hashlib.sha256(json.dumps(record, ensure_ascii=False, sort_keys=True,
         separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
 
+
+def _text_values(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _text_values(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _text_values(item)
+
+
+def public_sensitive_values(record, view=None, sources=None, *, editorial_texts=()):
+    """Learn from original selected inputs before any editorial replacement."""
+    from ccr.contracts.check_disclosure import private_values, projected_url_secrets
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    values = private_values(record, view, sources or {})
+    for text in set(_text_values(record)) | set(_text_values(editorial_texts)):
+        values.update(sensitive_values_from_text(text))
+        values.update(projected_url_secrets(text))
+    return values
+
 def public_url(value):
     if not isinstance(value, str):
         return False

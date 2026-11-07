@@ -105,7 +105,7 @@ class PriorityRoundtripTests(unittest.TestCase):
         value = current_record()
         original = copy.deepcopy(value)
         draft = comment.prepare_public_comment(value, **publication_contexts(value))
-        self.assertEqual(draft['schema_version'], 2)
+        self.assertEqual(draft['schema_version'], 4)
         self.assertTrue(comment.verify_public_comment(value, draft, draft['body'])['verified'])
         self.assertIn(IMPACT, draft['body'])
         self.assertNotIn('### Matriz ABCDE', draft['body'])

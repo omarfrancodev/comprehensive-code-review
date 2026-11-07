@@ -1,0 +1,450 @@
+{
+  "record": {
+    "schema_version": 12,
+    "stage": "final",
+    "scope": {
+      "repository": "example/service",
+      "mode": "pr",
+      "base": "base-123",
+      "head": "82cdde7227645209e19311675fe8793f15a9d332",
+      "snapshot": null,
+      "target": "main",
+      "reference": "https://example.test/pr/12"
+    },
+    "profile": "focused",
+    "profile_reason": "One isolated validation rule",
+    "responsible": {
+      "name": "Ana Perez",
+      "username": "ana",
+      "verified": true,
+      "source": "PR assignee metadata"
+    },
+    "findings": [],
+    "checks": [
+      {
+        "id": "C001",
+        "command": "pytest /private/home/repo/tests/test_queue.py -k retry",
+        "revision": "82cdde7227645209e19311675fe8793f15a9d332",
+        "status": "passed",
+        "failure_kind": null,
+        "evidence": "Resultado observado",
+        "reused": false,
+        "reuse_reason": null,
+        "rerun_reason": null,
+        "reference": null,
+        "execution": {
+          "kind": "static",
+          "executor": null
+        },
+        "purpose": "Verificar que una reclamación conserve una sola ejecución."
+      }
+    ],
+    "description": {
+      "status": "aligned",
+      "identity": "sha256:description-1",
+      "details": "Accurately summarizes the changed validation"
+    },
+    "coverage": {
+      "adequate": true,
+      "flows": [
+        "request validation"
+      ],
+      "limitations": [],
+      "verification": "same_session",
+      "stale": false,
+      "areas": [
+        {
+          "area": "A",
+          "status": "covered",
+          "details": "Inspected synthetic flow",
+          "material": false,
+          "finding_ids": [],
+          "dimensions": [
+            {
+              "id": "A01",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "A02",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "A03",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "A04",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "A05",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            }
+          ]
+        },
+        {
+          "area": "B",
+          "status": "covered",
+          "details": "Inspected synthetic flow",
+          "material": false,
+          "finding_ids": [],
+          "dimensions": [
+            {
+              "id": "B01",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "B02",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "B03",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "B04",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "B05",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            }
+          ]
+        },
+        {
+          "area": "C",
+          "status": "covered",
+          "details": "Inspected synthetic flow",
+          "material": false,
+          "finding_ids": [],
+          "dimensions": [
+            {
+              "id": "C01",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "C02",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "C03",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "C04",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "C05",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            }
+          ]
+        },
+        {
+          "area": "D",
+          "status": "covered",
+          "details": "Inspected synthetic flow",
+          "material": false,
+          "finding_ids": [],
+          "dimensions": [
+            {
+              "id": "D01",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "D02",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "D03",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "D04",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "D05",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            }
+          ]
+        },
+        {
+          "area": "E",
+          "status": "covered",
+          "details": "Inspected synthetic flow",
+          "material": false,
+          "finding_ids": [],
+          "dimensions": [
+            {
+              "id": "E01",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E02",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E03",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E04",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E05",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E06",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            },
+            {
+              "id": "E07",
+              "status": "covered",
+              "details": "Inspected synthetic boundary",
+              "material": false,
+              "finding_ids": []
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "selection_source": "automatic",
+        "status": "fulfilled",
+        "plan": [
+          {
+            "id": "D1",
+            "role": "discovery",
+            "independent": false,
+            "required": true,
+            "reference": "evidence/briefs.json#D1",
+            "selection_id": "S001",
+            "superseded_by": null
+          },
+          {
+            "id": "V1",
+            "role": "verification",
+            "independent": false,
+            "required": true,
+            "reference": "evidence/briefs.json#V1",
+            "selection_id": "S001",
+            "superseded_by": null
+          }
+        ],
+        "results": [
+          {
+            "assignment_id": "D1",
+            "reviewer_context": "coordinator",
+            "provider_id": null,
+            "reference": "evidence/results.json#D1"
+          },
+          {
+            "assignment_id": "V1",
+            "reviewer_context": "coordinator",
+            "provider_id": null,
+            "reference": "evidence/results.json#V1"
+          }
+        ],
+        "fallbacks": [],
+        "profile_history": [
+          {
+            "id": "S001",
+            "profile": "focused",
+            "selection_source": "automatic",
+            "reason": "Bounded synthetic review selection",
+            "reference": "evidence/context.json#profile",
+            "phase": "prepare",
+            "actor": {
+              "kind": "coordinator",
+              "name": "coordinator",
+              "provider_id": null
+            },
+            "authority": null,
+            "affected_assignments": [],
+            "changed_from": null,
+            "event_id": "E000001"
+          }
+        ]
+      }
+    },
+    "verdict": "approvable",
+    "verdict_reason": "No blocking defects confirmed",
+    "reservations": [],
+    "rereview": [],
+    "aliases": {},
+    "resources": {
+      "cleanup": "not_needed",
+      "residuals": [],
+      "publication": "draft"
+    },
+    "review_id": "CR-aaaaaaaaaaaaaaaaaaaa",
+    "previous_reviews": [],
+    "grandfathered_ids": {
+      "findings": [],
+      "checks": []
+    },
+    "change_authors": [],
+    "presentation": {
+      "kind": "review",
+      "subject": "Validación de respuestas"
+    }
+  },
+  "draft": {
+    "schema_version": 3,
+    "source_sha256": "807c43dca55553eee4a9d4a3f0b58f2df290afca79351117332f7771f0a27133",
+    "publication_context": null,
+    "check_publication_context": {
+      "source_sha256": "807c43dca55553eee4a9d4a3f0b58f2df290afca79351117332f7771f0a27133",
+      "checks": [
+        {
+          "id": "C001",
+          "evidence": "Resultado observado",
+          "reuse_reason": null,
+          "rerun_reason": null,
+          "reference": null,
+          "purpose": "Verificar que una reclamación conserve una sola ejecución."
+        }
+      ]
+    },
+    "coverage_publication_context": {
+      "source_sha256": "807c43dca55553eee4a9d4a3f0b58f2df290afca79351117332f7771f0a27133",
+      "flows": [
+        {
+          "index": 0,
+          "summary": "request validation"
+        }
+      ]
+    },
+    "body": "## Code Review — Validación de respuestas\n\n### Veredicto: **APROBABLE**\n\nNo blocking defects confirmed\n\n- **Alcance:** example/service · PR\n- **Versión:** base-123 → 82cdde7227645209e19311675fe8793f15a9d332\n- **ID de revisión:** CR-aaaaaaaaaaaaaaaaaaaa\n- **Destino:** main\n- **Responsable del MR/PR:** @ana\n- **Autores del cambio:** No identificados\n- **MR/PR:** [Ver referencia](https://example.test/pr/12)\n- **Descripción:** coherente — Accurately summarizes the changed validation\n\n### Hallazgos\n\n**Confirmados:** 🔴 P0: 0 · 🟠 P1: 0 · 🟡 P2: 0 · 🔵 P3: 0\n\nNo se confirmaron defectos bloqueantes dentro del alcance revisado.\n\n### Validación\n\n\n<a id=\"C001\"></a>\n\n- **C001**: aprobada · versión 82cdde7227645209e19311675fe8793f15a9d332\n  - **Propósito:** Verificar que una reclamación conserve una sola ejecución.\n  - **Comando saneado:** pytest tests/test\\_queue.py -k retry\n  - **Recursos del proyecto:** tests/test\\_queue.py\n  - **Explicación del check:** jobs\\_service.p[ruta privada] propiedad por token=[omitido] borrar\n  - **Resultado:** Resultado observado\n\n- **Cobertura:**\n  - request validation\n",
+    "body_sha256": "ecceb4afeda1b7bf68af445ca3f7b76156f4ca6399f008a30d8fa1c4432b2965",
+    "check_disclosure_context": {
+      "source_sha256": "807c43dca55553eee4a9d4a3f0b58f2df290afca79351117332f7771f0a27133",
+      "check_disclosure_sha256": "93101063a61aeee61ec7083c304d5a63759be9e98b1bd42de904dc1ea4659c3e",
+      "checks": [
+        {
+          "id": "C001",
+          "mode": "project_command",
+          "command": "pytest tests/test_queue.py -k retry",
+          "resources": [
+            "tests/test_queue.py"
+          ],
+          "explanation": "jobs_service.py:_publish_pending_job; propiedad por token=[omitido] borrar"
+        }
+      ]
+    }
+  },
+  "disclosure": {
+    "schema_version": 1,
+    "review_id": "CR-aaaaaaaaaaaaaaaaaaaa",
+    "source_sha256": "807c43dca55553eee4a9d4a3f0b58f2df290afca79351117332f7771f0a27133",
+    "input_identity": {
+      "head": "82cdde7227645209e19311675fe8793f15a9d332",
+      "snapshot": null,
+      "resource_manifest_sha256": "e409f68a74bd75fe9de484c111b4fde354b6dfe499ecadf896c0c51cead7f604"
+    },
+    "checks": [
+      {
+        "id": "C001",
+        "command_sha256": "462eec656dc71609e129d80f9be3184000aa8c7c80c9af2e123b57241ea2e854",
+        "execution_reference": "evidence/execution.json",
+        "mode": "project_command",
+        "command": "pytest tests/test_queue.py -k retry",
+        "resources": [
+          {
+            "path": "tests/test_queue.py",
+            "revision": "82cdde7227645209e19311675fe8793f15a9d332",
+            "project_sha256": "c87d4f03da4c23a53c274f54a0f0333a0d05719d7ee0cf70a6827467066d98d2",
+            "executed_sha256": "c87d4f03da4c23a53c274f54a0f0333a0d05719d7ee0cf70a6827467066d98d2"
+          }
+        ],
+        "explanation": "jobs_service.py:_publish_pending_job; propiedad por token=[omitido] borrar",
+        "evidence_reference": "evidence/pinned-resources.json"
+      }
+    ]
+  },
+  "sources": {
+    "evidence/pinned-resources.json": "7b2266696c6573223a7b2274657374732f746573745f71756575652e7079223a2263383764346630336461346332336135336332373466353461306630333333613064303537313964376565306366373061363832373436373036366439386432227d2c2268656164223a2238326364646537323237363435323039653139333131363735666538373933663135613964333332222c22736e617073686f74223a6e756c6c7d",
+    "evidence/execution.json": "7b2261726776223a5b22707974657374222c222f707269766174652f686f6d652f7265706f2f74657374732f746573745f71756575652e7079222c222d6b222c227265747279225d2c22636865636b5f6964223a2243303031222c22637764223a222f707269766174652f686f6d652f7265706f222c227265736f7572636573223a5b7b22636f6e74656e74223a22363137333733363537323734323037323635373437323739323832393061222c2265786563757465645f736861323536223a2263383764346630336461346332336135336332373466353461306630333333613064303537313964376565306366373061363832373436373036366439386432222c226769745f6f626a65637473223a7b2235623933396161626461666665383364366236643365663230393033616664303361346232653965223a7b2264617461223a2233343330333033303330323037343635373337343733303037626233373233366337643734303631373130353666363434656638613362623830613039636536222c226b696e64223a2274726565227d2c2237626233373233366337643734303631373130353666363434656638613362623830613039636536223a7b2264617461223a2233313330333033363334333432303734363537333734356637313735363537353635326537303739303065313962626438616434376230656335363839326264306263393063306265316436373732643765222c226b696e64223a2274726565227d2c2238326364646537323237363435323039653139333131363735666538373933663135613964333332223a7b2264617461223a223734373236353635323033353632333933333339363136313632363436313636363636353338333336343336363233363634333336353636333233303339333033333631363636343330333336313334363233323635333936353061306137333739366537343638363537343639363332303730363936653665363536343230363936653730373537343061222c226b696e64223a22636f6d6d6974227d2c2265313962626438616434376230656335363839326264306263393063306265316436373732643765223a7b2264617461223a22363137333733363537323734323037323635373437323739323832393061222c226b696e64223a22626c6f62227d7d2c2270617468223a2274657374732f746573745f71756575652e7079227d5d2c227265766973696f6e223a2238326364646537323237363435323039653139333131363735666538373933663135613964333332227d",
+    "evidence/check-disclosure.json": "7b22636865636b73223a5b7b22636f6d6d616e64223a227079746573742074657374732f746573745f71756575652e7079202d6b207265747279222c22636f6d6d616e645f736861323536223a2234363265656336353664633731363039653132396438306639626533313834303030616138633763383063396166326531323362353732343165613265383534222c2265766964656e63655f7265666572656e6365223a2265766964656e63652f70696e6e65642d7265736f75726365732e6a736f6e222c22657865637574696f6e5f7265666572656e6365223a2265766964656e63652f657865637574696f6e2e6a736f6e222c226578706c616e6174696f6e223a226a6f62735f736572766963652e70793a5f7075626c6973685f70656e64696e675f6a6f623b2070726f70696564616420706f7220746f6b656e3d5b6f6d697469646f5d20626f72726172222c226964223a2243303031222c226d6f6465223a2270726f6a6563745f636f6d6d616e64222c227265736f7572636573223a5b7b2265786563757465645f736861323536223a2263383764346630336461346332336135336332373466353461306630333333613064303537313964376565306366373061363832373436373036366439386432222c2270617468223a2274657374732f746573745f71756575652e7079222c2270726f6a6563745f736861323536223a2263383764346630336461346332336135336332373466353461306630333333613064303537313964376565306366373061363832373436373036366439386432222c227265766973696f6e223a2238326364646537323237363435323039653139333131363735666538373933663135613964333332227d5d7d5d2c22696e7075745f6964656e74697479223a7b2268656164223a2238326364646537323237363435323039653139333131363735666538373933663135613964333332222c227265736f757263655f6d616e69666573745f736861323536223a2265343039663638613734626437356665396465343834633131316234666465333534623664666534393965636164663839366330633531636561643766363034222c22736e617073686f74223a6e756c6c7d2c227265766965775f6964223a2243522d6161616161616161616161616161616161616161222c22736368656d615f76657273696f6e223a312c22736f757263655f736861323536223a2238303763343364636135353535336565653461396434613366306235386632646632393061666361373933353131313733333266373737316630613237313333227d"
+  }
+}
