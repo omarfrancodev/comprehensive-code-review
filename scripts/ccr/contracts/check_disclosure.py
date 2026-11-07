@@ -430,8 +430,24 @@ _BFF_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]
 _OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\][\])]*([?#][^\s<>]+)')
 
 
+def _quoted_url_destination(value, first, last):
+    while first < last and value[first] in '([{ \t\r\n':
+        first += 1
+    if _URL_SCHEME.match(value, first, last) is None:
+        return False
+    for gap in re.compile(r'\s+').finditer(value, first, last):
+        if gap.end() < last and _URL_SCHEME.match(value, gap.end(), last) is None:
+            return False
+    return True
+
+
 def _url_quote_ranges(value, opener):
     """Pair one quote family without letting another family suppress it."""
+    if opener == '`':
+        from ccr.contracts.disclosure_text import _code_ranges, _LINES, _FENCE
+        for first, last in _code_ranges(value, _LINES, _FENCE):
+            yield first - 1, last, '`', _quoted_url_destination(value, first, last)
+        return
     closing = _URL_QUOTES[opener]
     tokens = re.compile(r'\\[\s\S]|[' + re.escape(opener + closing) + ']')
     first = None
@@ -464,10 +480,7 @@ def _url_quote_ranges(value, opener):
             if destination:
                 # A quote beginning with a URL can continue with ordinary
                 # prose. Its sentence punctuation does not belong to the URL.
-                for gap in re.compile(r'\s+').finditer(value, content, match.start()):
-                    if gap.end() < match.start() and _URL_SCHEME.match(value, gap.end()) is None:
-                        destination = False
-                        break
+                destination = _quoted_url_destination(value, content, match.start())
             yield first, match.start(), closing, destination
             first = None
 
@@ -481,7 +494,7 @@ def projected_url_spans(value, *, _bff_compat=False):
     position = 0
     quotes = []
     for opener in _URL_QUOTES:
-        if opener in value:
+        if opener in value or (opener == '`' and '~~~' in value):
             ranges = iter(_url_quote_ranges(value, opener))
             quotes.append({'ranges': ranges, 'current': next(ranges, None)})
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
@@ -553,8 +566,9 @@ def projected_url_spans(value, *, _bff_compat=False):
                 sensitive_value = bool(SENSITIVE_URL_KEY.search(unquote_plus(key)))
                 in_value = True
             escaped = value[cursor + 1:cursor + 2]
-            if char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
-                                  (closing_quote is not None and escaped == closing_quote)):
+            if (char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
+                                   (closing_quote is not None and escaped == closing_quote))
+                    and (quote_end is None or cursor + 1 < quote_end)):
                 trailing_close = None
                 cursor += 2
                 continue
@@ -915,7 +929,8 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
                          _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False,
-                         _75f_compat=False, _780_compat=False, _4ed_compat=False, _251_compat=False):
+                         _75f_compat=False, _780_compat=False, _4ed_compat=False, _251_compat=False,
+                         _a6e_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -949,6 +964,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
     elif _251_compat:
         from ccr.contracts.disclosure_urls_25108bc import sanitize_projected_detail as archived_detail
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _a6e_compat:
+        from ccr.contracts.disclosure_urls_a6eeb21 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     else:
         row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
     return row
@@ -978,6 +996,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _a6e_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _251_compat=True)
             if row != expected and not _legacy_only:

@@ -266,6 +266,58 @@ class URLBoundaryReviewTests(unittest.TestCase):
                 for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
                     self.assertNotIn('ADJACENTSECRET', output)
 
+    def test_markdown_tick_runs_bound_encoded_query_values_and_selected_copies(self):
+        for length in (1, 2, 3, 4, 8):
+            for key in ('api_key', '%61pi%5Fkey', r'api\_key'):
+                ticks = '`' * length
+                source = 'Observed ' + ticks + 'https://example.test/?' + key + '=MULTITICKSECRET' + ticks + '.'
+                with self.subTest(length=length, key=key):
+                    self.assertIn('MULTITICKSECRET', contract.projected_url_secrets(source))
+                    selected = source + '\nIndependent copy MULTITICKSECRET'
+                    for output in (*self.public_outputs(source, selected),
+                                   *self.disclosure_outputs(source, copy_text=selected)):
+                        self.assertNotIn('MULTITICKSECRET', output)
+
+    def test_markdown_tick_runs_end_before_an_adjacent_private_authority(self):
+        for length in (1, 2, 3, 4, 8):
+            ticks = '`' * length
+            for tail in ('/', '/\\'):
+                source = ('Observed ' + ticks + 'https://example.test/public' + tail + ticks +
+                          'https://dev:TICKNEIGHBORSECRET@example.test/private')
+                with self.subTest(length=length, tail=tail):
+                    self.assertIn('TICKNEIGHBORSECRET', contract.projected_url_secrets(source))
+                    selected = source + '\nIndependent copy TICKNEIGHBORSECRET'
+                    for output in (*self.public_outputs(source, selected),
+                                   *self.disclosure_outputs(source, copy_text=selected)):
+                        self.assertNotIn('TICKNEIGHBORSECRET', output)
+
+    def test_markdown_code_uses_matching_run_lengths_and_keeps_literal_inner_ticks(self):
+        for value in ('LEFT`MIDDLE`RIGHT', 'LEFT```MIDDLE`RIGHT'):
+            source = 'Observed ``https://example.test/?%61pi%5Fkey=' + value + '``.'
+            with self.subTest(value=value):
+                self.assertIn(value, contract.projected_url_secrets(source))
+                selected = source + '\nIndependent copy ' + value
+                for output in (*self.public_outputs(source, selected),
+                               *self.disclosure_outputs(source, copy_text=selected)):
+                    self.assertNotIn('MIDDLE', output)
+        unmatched = 'Observed ``https://example.test/?%61pi%5Fkey=MISMATCHSECRET`'
+        self.assertIn('MISMATCHSECRET`', contract.projected_url_secrets(unmatched))
+
+    def test_markdown_fences_and_escaped_openers_share_existing_code_boundaries(self):
+        sources = (
+            '```text\nhttps://example.test/?%61pi%5Fkey=BLOCKSECRET.\n```',
+            '```text\nhttps://example.test/?%61pi%5Fkey=BLOCKSECRET.\n````',
+            '~~~text\nhttps://example.test/?%61pi%5Fkey=BLOCKSECRET.\n~~~',
+            'Observed \\``https://example.test/?%61pi%5Fkey=BLOCKSECRET.`',
+        )
+        for source in sources:
+            with self.subTest(source=source):
+                self.assertIn('BLOCKSECRET.', contract.projected_url_secrets(source))
+                selected = source + '\nIndependent copy BLOCKSECRET.'
+                for output in (*self.public_outputs(source, selected),
+                               *self.disclosure_outputs(source, copy_text=selected)):
+                    self.assertNotIn('BLOCKSECRET', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -360,4 +412,12 @@ class URLBoundaryReviewTests(unittest.TestCase):
         source = 'The result is "go to ‘https://example.test/public’/private/LOCALFILE.py now"'
         for output in self.disclosure_outputs(source, historical=source, copy_text=source):
             self.assertNotIn('LOCALFILE', output)
+            self.assertIn('https://example.test/public', output)
+
+    def test_exact_a6eeb21_code_row_keeps_proof_and_hides_its_neighbor(self):
+        source = ('Observed ``https://example.test/public/``'
+                  'https://dev:TICKNEIGHBORSECRET@example.test/private')
+        selected = source + '\nIndependent copy TICKNEIGHBORSECRET'
+        for output in self.disclosure_outputs(source, historical=source, copy_text=selected):
+            self.assertNotIn('TICKNEIGHBORSECRET', output)
             self.assertIn('https://example.test/public', output)
