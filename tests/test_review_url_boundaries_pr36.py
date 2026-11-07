@@ -91,6 +91,60 @@ class URLBoundaryReviewTests(unittest.TestCase):
         value = 'FIRSTPART,https://example.test/SECRETTAIL'
         self.assertIn(value, contract.projected_url_secrets(source))
 
+    def test_prose_url_lists_inside_quotes_or_parentheses_check_every_authority(self):
+        public = 'https://example.test/public?redirect=/public/target'
+        for opening, closing in (('', ''), ('(', ')'), ('"', '"'), ("'", "'"), ('“', '”'), ('`', '`')):
+            for separator in (',', ';'):
+                source = (opening + public + separator +
+                          'https://dev:GROUPPASSWORD@example.test/private' + closing)
+                with self.subTest(opening=opening, separator=separator):
+                    for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
+                        self.assertNotIn('GROUPPASSWORD', output)
+                        self.assertIn(public, output)
+
+    def test_sensitive_query_value_owns_embedded_scheme_before_prose_list_splitting(self):
+        for key in ('api_key', r'api\_key', '%61pi%5Fkey', 'api&#95;key', 'api&lowbar;key'):
+            for separator in (',', ';', '('):
+                source = 'https://example.test/?' + key + '=FIRSTPART' + separator + 'https://example.test/SECRETTAIL'
+                with self.subTest(key=key, separator=separator):
+                    self.assertIn('FIRSTPART' + separator + 'https://example.test/SECRETTAIL',
+                                  contract.projected_url_secrets(source))
+                    for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
+                        self.assertNotIn('FIRSTPART', output)
+                        self.assertNotIn('SECRETTAIL', output)
+
+    def test_sensitive_fragment_values_keep_nested_scheme_and_query_as_one_value(self):
+        for prefix in ('#token=', '#/route?password=', '?authorization='):
+            for separator in (',', ';', '('):
+                source = ('https://example.test/' + prefix + 'FIRSTPART' + separator +
+                          'https://example.test/SECRETTAIL?next=public')
+                with self.subTest(prefix=prefix, separator=separator):
+                    for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
+                        self.assertNotIn('FIRSTPART', output)
+                        self.assertNotIn('SECRETTAIL', output)
+
+    def test_quoted_url_list_teaches_query_values_without_group_closing_quote(self):
+        for opening, closing in (('"', '"'), ('“', '”'), ('"(', ')"'), ('(“', '”)')):
+            source = (opening + 'https://example.test/public,' +
+                      r'https://example.test/private?api\_key=GROUPSECRET' + closing)
+            with self.subTest(opening=opening):
+                self.assertIn('GROUPSECRET', contract.projected_url_secrets(source))
+                for output in self.public_outputs(source, 'Independent copy GROUPSECRET'):
+                    self.assertNotIn('GROUPSECRET', output)
+        source = '"https://example.test/public" https://example.test/?api\\_key=GROUPSECRET.'
+        self.assertIn('GROUPSECRET', contract.projected_url_secrets(source))
+        for output in self.public_outputs(source, 'Independent copy GROUPSECRET'):
+            self.assertNotIn('GROUPSECRET', output)
+
+    def test_completed_sensitive_parameter_preserves_independent_public_neighbor(self):
+        for ending in ('&next=public', '&amp;next=public', '#next=public'):
+            source = ('https://example.test/?api_key=FIRSTPART' + ending +
+                      ',https://example.test/public?redirect=/public/target')
+            with self.subTest(ending=ending):
+                for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
+                    self.assertNotIn('FIRSTPART', output)
+                    self.assertIn('https://example.test/public?redirect=/public/target', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -140,3 +194,13 @@ class URLBoundaryReviewTests(unittest.TestCase):
                 if private is not None:
                     for output in outputs:
                         self.assertNotIn(private, output)
+
+    def test_exact_75f50e0_list_rows_keep_proof_and_protect_copies(self):
+        for opening, closing in (('(', ')'), ('"', '"'), ('“', '”')):
+            source = (opening + 'https://example.test/public,' +
+                      'https://dev:GROUPPASSWORD@example.test/private' + closing)
+            with self.subTest(opening=opening):
+                for output in self.disclosure_outputs(source, historical=source,
+                                                      copy_text='Independent copy GROUPPASSWORD'):
+                    self.assertNotIn('GROUPPASSWORD', output)
+                    self.assertIn('https://example.test/public', output)
