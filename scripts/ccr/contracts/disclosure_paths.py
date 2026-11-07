@@ -4,22 +4,36 @@ import re
 # One shared boundary for classification and for excluding filename substrings
 # from URL recognition. A lone terminal backslash still belongs to the member.
 _HOME_ROOT = r'''~[^~\s/\\;|<>()\]`'"]*[\\/]'''
-_QUOTED_PATH = r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|\[(?:ruta privada|referencia privada)\]|''' + _HOME_ROOT + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)(?:(?P<closing>(?P=quote))|$)'''
+_PATH_MARKER = r'\[(?:ruta privada|referencia privada)\]'
+# A historical writer may have removed a closing quote. The quote before
+# another omission marker starts the next member and must remain available.
+_QUOTED_PATH = (
+    r'''(?P<quote>[`'"])(?P<quoted_path>(?:/|[A-Za-z]:[\\/]|\\\\|(?i:file:)|'''
+    + _PATH_MARKER + '|' + _HOME_ROOT
+    + r''')(?:\\(?:[\s\S]|$)|(?!(?P=quote))[^\\])*)'''
+    + r'(?:(?P<closing>(?P=quote))(?!' + _PATH_MARKER + ')'
+    + r'|(?=(?P=quote)' + _PATH_MARKER + ')|$)')
 _POSIX_PATH = r'''(?<![\w:#/<])/(?!/)[^\s;|<>\)\]`'"]+'''
 _LOCAL_PATH = r'''(?:(?<!\w)(?:[A-Za-z]:[\\/]|\\\\|//|file:)|(?:(?<!\S)|(?<=(?<!\S)[([{]))(?P<home_binding>[-\w]+[=:])''' + _HOME_ROOT + r'''|(?:(?<!\S)|(?<=(?<!\S)[([{=,:;]))''' + _HOME_ROOT + r''')[^\s;|<>\)\]`'"]*'''
-_SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://[^\s<>\)\]]+)|(?P<local>'
+# URL ends come from the scanner. Matching only the scheme avoids repeatedly
+# consuming the remaining list when several destinations share one prose token.
+_SOURCE_TOKENS = re.compile(_QUOTED_PATH + r'|(?P<url>https?://)|(?P<local>'
                             + _LOCAL_PATH + ')|' + _POSIX_PATH, re.IGNORECASE)
 
 
 def source_tokens(value, url_spans):
     urls = iter(url_spans)
     url = next(urls, None)
-    for match in _SOURCE_TOKENS.finditer(value):
+    position = 0
+    while (match := _SOURCE_TOKENS.search(value, position)) is not None:
+        position = match.end()
         while url is not None and url[1] <= match.start():
             url = next(urls, None)
         if url is not None and url[0] <= match.start() < url[1]:
             if match.start() == url[0] and match['url'] is not None:
                 yield match, url[1]
+                # Resume at the scanner's boundary for the next destination.
+                position = url[1]
         else:
             yield match, match.end()
 

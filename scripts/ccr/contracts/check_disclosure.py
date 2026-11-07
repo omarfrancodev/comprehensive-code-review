@@ -429,22 +429,30 @@ _OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\][\])]*
 
 def projected_url_spans(value, *, _bff_compat=False):
     """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
+    if _bff_compat:
+        from ccr.contracts.disclosure_urls_139a175 import projected_url_spans as archived_spans
+        yield from archived_spans(value, _bff_compat=True)
+        return
     position = 0
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
-        outer = value[first - 1] if first and not _bff_compat else ''
+        outer = value[first - 1] if first else ''
+        closing_quote = {'"': '"', "'": "'", '`': '`', '“': '”', '‘': '’',
+                         '«': '»', '‹': '›'}.get(outer)
+        bounded = markdown_link or closing_quote is not None or outer in ('(', '<')
         brackets = []
         cursor = scheme.end()
         trailing_close = None
         while cursor < len(value) and not value[cursor].isspace() and value[cursor] not in '<>':
             char = value[cursor]
-            if outer in ('"', "'", '`') and char == outer:
+            if closing_quote is not None and char == closing_quote:
                 break
-            if not _bff_compat and char == ',' and _URL_SCHEME.match(value, cursor + 1):
+            if not bounded and char in ',;(' and _URL_SCHEME.match(value, cursor + 1):
                 break
             escaped = value[cursor + 1:cursor + 2]
-            if char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or (outer and escaped == outer)):
+            if char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
+                                  (closing_quote is not None and escaped == closing_quote)):
                 trailing_close = None
                 cursor += 2
                 continue
@@ -457,6 +465,8 @@ def projected_url_spans(value, *, _bff_compat=False):
                     break
                 elif trailing_close is None:
                     trailing_close = cursor
+            if not bounded and char in '.,;!' and trailing_close is None:
+                trailing_close = cursor
             if char not in ')]}.,;!':
                 trailing_close = None
             cursor += 1
@@ -472,11 +482,21 @@ def _displayed_http_url(text, *, bounded=False, modern=False):
 
 def projected_url_secrets(value, *, _bff_compat=False):
     """Learn URL values from both wire and displayed spellings."""
+    if _bff_compat:
+        from ccr.contracts.disclosure_urls_139a175 import projected_url_secrets as archived_secrets
+        return archived_secrets(value, _bff_compat=True)
     values = set()
-    urls = (value[first:last] for first, last in projected_url_spans(value, _bff_compat=_bff_compat))
+    urls = (value[first:last] for first, last in projected_url_spans(value))
     # Old schema 1 writers could detach a query after an omission marker.
-    omitted_query = _BFF_OMITTED_URL_QUERY if _bff_compat else _OMITTED_URL_QUERY
-    tails = ('https://redacted.invalid/' + match[1] for match in omitted_query.finditer(value))
+    def detached_queries():
+        for match in _OMITTED_URL_QUERY.finditer(value):
+            # A historical omission can leave the original opening quote.
+            # Apply the same URL boundaries to its query and to complete URLs.
+            outer = value[match.start() - 1:match.start()] if match.start() else ''
+            candidate = outer + 'https://redacted.invalid/' + match[1]
+            for first, last in projected_url_spans(candidate):
+                yield candidate[first:last]
+    tails = detached_queries()
     for url in itertools.chain(urls, tails):
         values.update(_userinfo_spellings(url))
         for spelling in (url, _bounded_html_unescape(url),
@@ -790,7 +810,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
-                         _f6b_compat=False, _pre_atomic=False, _bff_compat=False):
+                         _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -809,6 +829,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
     explanation = observation.get('explanation') or row['explanation']
     if _legacy or _lf_compat or _f6b_compat or _pre_atomic:
         row['explanation'] = sanitize(explanation, secrets)
+    elif _139a_compat:
+        from ccr.contracts.disclosure_urls_139a175 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     else:
         row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
     return row
@@ -838,6 +861,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _139a_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _bff_compat=True)
             if row != expected and not _legacy_only:
