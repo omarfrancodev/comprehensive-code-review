@@ -425,8 +425,30 @@ def _private_http_url(text, spellings=(), *, modern=False):
 _URL_SCHEME = re.compile(r'https?://', re.IGNORECASE)
 _URL_ENTITY = re.compile(r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?')
 _URL_QUOTES = {'"': '"', "'": "'", '`': '`', '“': '”', '‘': '’', '«': '»', '‹': '›'}
+_URL_QUOTE_TOKENS = re.compile(r'''\\[\s\S]|["'`“”‘’«»‹›]''')
 _BFF_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]*([?#][^\s<>]+)')
 _OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\][\])]*([?#][^\s<>]+)')
+
+
+def _url_quote_ranges(value):
+    """Pair prose quotes once, including text that contains no URL."""
+    closing = None
+    first = 0
+    for match in _URL_QUOTE_TOKENS.finditer(value):
+        char = match.group()
+        if len(char) != 1:
+            continue
+        if char == "'":
+            before = match.start() > 0 and value[match.start() - 1].isalnum()
+            after = match.end() < len(value) and value[match.end()].isalnum()
+            if before and (closing is None or after):
+                continue  # Apostrophes in words and possessives do not open quotes.
+        if closing is None:
+            closing = _URL_QUOTES.get(char)
+            first = match.start()
+        elif char == closing:
+            yield first, match.start(), closing
+            closing = None
 
 
 def projected_url_spans(value, *, _bff_compat=False):
@@ -436,29 +458,17 @@ def projected_url_spans(value, *, _bff_compat=False):
         yield from archived_spans(value, _bff_compat=True)
         return
     position = 0
-    quote_end = None
-    closing_quote = None
+    quotes = iter(_url_quote_ranges(value))
+    quote = next(quotes, None)
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
         outer = value[first - 1] if first else ''
-        if quote_end is not None and first >= quote_end:
-            # A URL can end at whitespace before its surrounding quote. That
-            # quote is still a closing delimiter when the next URL is found.
-            position = max(position, quote_end + 1)
-            quote_end = None
-            closing_quote = None
-        quote_start = first - 1
-        while quote_start >= position and value[quote_start] in '([{ \t':
-            quote_start -= 1
-        quote_open = value[quote_start] if quote_start >= position else ''
-        if quote_end is None and quote_open in _URL_QUOTES:
-            closing_quote = _URL_QUOTES[quote_open]
-            # A quote bounds the whole prose list, including its later URLs.
-            # Find its end once so each member keeps the same closing boundary.
-            quotes = re.compile(r'\\[\s\S]|' + re.escape(closing_quote))
-            quote_end = next((match.start() for match in quotes.finditer(value, scheme.end())
-                              if match.group() == closing_quote), len(value))
+        while quote is not None and quote[1] <= first:
+            quote = next(quotes, None)
+        in_quote = quote is not None and quote[0] < first
+        quote_end = quote[1] if in_quote else None
+        closing_quote = quote[2] if in_quote else None
         single_destination = markdown_link or outer == '<'
         bounded = single_destination or quote_end is not None or outer == '('
         brackets = []
@@ -482,7 +492,7 @@ def projected_url_spans(value, *, _bff_compat=False):
                     # source characters can group or close a Markdown target.
                     parameter_char = displayed if len(displayed) == 1 else ''
                     next_cursor = entity.end()
-            if (not single_destination and not sensitive_value and char in (',', ';', '(')
+            if (not single_destination and not sensitive_value and parameter_char in (',', ';', '(')
                     and _URL_SCHEME.match(value, next_cursor)):
                 break
             # Only the first '=' binds a parameter. An embedded scheme and its
@@ -864,7 +874,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
                          _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False,
-                         _75f_compat=False, _780_compat=False):
+                         _75f_compat=False, _780_compat=False, _4ed_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -891,6 +901,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     elif _780_compat:
         from ccr.contracts.disclosure_urls_7806fd9 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _4ed_compat:
+        from ccr.contracts.disclosure_urls_4ed296c import sanitize_projected_detail as archived_detail
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     else:
         row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
@@ -921,6 +934,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _4ed_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _780_compat=True)
             if row != expected and not _legacy_only:

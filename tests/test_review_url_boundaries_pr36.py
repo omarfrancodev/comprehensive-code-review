@@ -171,6 +171,52 @@ class URLBoundaryReviewTests(unittest.TestCase):
                     for output in self.public_outputs(source, 'Independent copy OUTSIDESECRET'):
                         self.assertNotIn('OUTSIDESECRET', output)
 
+    def test_quotes_in_prose_before_first_url_cannot_bound_an_outside_url(self):
+        for prefix in ('The literal "public" ', "The literal 'public' ", 'The literal “public” ',
+                       'The literal `public` ', 'The literal "public" (', "Users' literal 'public' "):
+            for key in ('api_key', r'api\_key'):
+                ending = ').' if prefix.endswith('(') else '.'
+                source = prefix + 'https://example.test/?' + key + '=OUTSIDESECRET' + ending
+                with self.subTest(prefix=prefix, key=key):
+                    self.assertIn('OUTSIDESECRET', contract.projected_url_secrets(source))
+                    for output in self.public_outputs(source, 'Independent copy OUTSIDESECRET'):
+                        self.assertNotIn('OUTSIDESECRET', output)
+
+    def test_html_prose_separators_classify_every_authority_and_its_copies(self):
+        for separator in ('&comma;', '&#44;', '&#x2c;', '&semi;', '&#59;', '&lpar;', '&#40;'):
+            source = ('https://example.test/public' + separator +
+                      'https://dev:ENTITYLISTSECRET@example.test/private')
+            with self.subTest(separator=separator):
+                self.assertIn('ENTITYLISTSECRET', contract.projected_url_secrets(source))
+                selected = source + '\nIndependent copy ENTITYLISTSECRET'
+                for output in (*self.public_outputs(source, selected),
+                               *self.disclosure_outputs(source, copy_text=selected)):
+                    self.assertNotIn('ENTITYLISTSECRET', output)
+                    self.assertIn('https://example.test/public', output)
+
+    def test_html_separators_preserve_complete_sensitive_values_and_markdown_targets(self):
+        from html import unescape
+
+        for separator in ('&comma;', '&#44;', '&#x2c;', '&semi;', '&#59;', '&lpar;', '&#40;'):
+            source = 'https://example.test/?api_key=FIRST' + separator + 'https://example.test/SECRETTAIL'
+            complete = 'FIRST' + unescape(separator) + 'https://example.test/SECRETTAIL'
+            with self.subTest(separator=separator):
+                self.assertIn(complete, contract.projected_url_secrets(source))
+                selected = source + '\nIndependent copy ' + complete
+                for variant in (source, '[source](' + source + ')'):
+                    for output in (*self.public_outputs(variant, selected),
+                                   *self.disclosure_outputs(variant, copy_text=selected)):
+                        self.assertNotIn('SECRETTAIL', output)
+
+    def test_actual_quoted_url_keeps_punctuation_owned_by_its_sensitive_value(self):
+        for opening, closing in (('"', '"'), ("'", "'"), ('“', '”'), ('`', '`')):
+            source = ('The literal "public" precedes ' + opening +
+                      'https://example.test/?api_key=FULLSECRET.' + closing + '.')
+            with self.subTest(opening=opening):
+                self.assertIn('FULLSECRET.', contract.projected_url_secrets(source))
+                for output in self.public_outputs(source, 'Independent copy FULLSECRET.'):
+                    self.assertNotIn('FULLSECRET', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -245,4 +291,18 @@ class URLBoundaryReviewTests(unittest.TestCase):
             with self.subTest(source=source):
                 copy_text = source + '\nIndependent copy ENTITYSECRET) OUTSIDESECRET'
                 for output in self.disclosure_outputs(source, historical=historical, copy_text=copy_text):
+                    self.assertNotIn(private, output)
+
+    def test_exact_4ed296c_rows_keep_proof_and_project_selected_sources_safely(self):
+        cases = (
+            ('https://example.test/public&comma;https://dev:ENTITYLISTSECRET@example.test/private',
+             'https://example.test/public&comma;https://dev:ENTITYLISTSECRET@example.test/private',
+             'ENTITYLISTSECRET'),
+            ('The literal "public" https://example.test/?api\\_key=OUTSIDESECRET.',
+             'The literal "public" [omitido]', 'OUTSIDESECRET'),
+        )
+        for source, historical, private in cases:
+            with self.subTest(source=source):
+                selected = source + '\nIndependent copy ' + private
+                for output in self.disclosure_outputs(source, historical=historical, copy_text=selected):
                     self.assertNotIn(private, output)
