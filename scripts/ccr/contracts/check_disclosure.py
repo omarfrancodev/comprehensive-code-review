@@ -442,13 +442,16 @@ def projected_url_spans(value, *, _bff_compat=False):
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
         outer = value[first - 1] if first else ''
+        if quote_end is not None and first >= quote_end:
+            # A URL can end at whitespace before its surrounding quote. That
+            # quote is still a closing delimiter when the next URL is found.
+            position = max(position, quote_end + 1)
+            quote_end = None
+            closing_quote = None
         quote_start = first - 1
         while quote_start >= position and value[quote_start] in '([{ \t':
             quote_start -= 1
         quote_open = value[quote_start] if quote_start >= position else ''
-        if quote_end is not None and first >= quote_end:
-            quote_end = None
-            closing_quote = None
         if quote_end is None and quote_open in _URL_QUOTES:
             closing_quote = _URL_QUOTES[quote_open]
             # A quote bounds the whole prose list, including its later URLs.
@@ -470,27 +473,31 @@ def projected_url_spans(value, *, _bff_compat=False):
             if cursor == quote_end:
                 break
             next_cursor = cursor + 1
+            parameter_char = char
             entity = _URL_ENTITY.match(value, cursor) if char == '&' else None
             if entity is not None:
                 displayed = _bounded_html_unescape(entity.group())
                 if displayed != entity.group():
-                    char = displayed if len(displayed) == 1 else ''
+                    # Entities affect parameter interpretation. Only literal
+                    # source characters can group or close a Markdown target.
+                    parameter_char = displayed if len(displayed) == 1 else ''
                     next_cursor = entity.end()
             if (not single_destination and not sensitive_value and char in (',', ';', '(')
                     and _URL_SCHEME.match(value, next_cursor)):
                 break
             # Only the first '=' binds a parameter. An embedded scheme and its
             # punctuation belong to that value until a real '&' or '#' ends it.
-            if ((char == '?' and parameter_start is None) or (char == '#' and not in_fragment)):
+            if ((parameter_char == '?' and parameter_start is None)
+                    or (parameter_char == '#' and not in_fragment)):
                 parameter_start = next_cursor
-                in_fragment = char == '#'
+                in_fragment = parameter_char == '#'
                 in_value = False
                 sensitive_value = False
-            elif char == '&' and parameter_start is not None:
+            elif parameter_char == '&' and parameter_start is not None:
                 parameter_start = next_cursor
                 in_value = False
                 sensitive_value = False
-            elif char == '=' and parameter_start is not None and not in_value:
+            elif parameter_char == '=' and parameter_start is not None and not in_value:
                 key = _displayed_http_url(value[parameter_start:cursor], bounded=True, modern=True)
                 sensitive_value = bool(SENSITIVE_URL_KEY.search(unquote_plus(key)))
                 in_value = True
@@ -511,7 +518,7 @@ def projected_url_spans(value, *, _bff_compat=False):
                     trailing_close = cursor
             if not bounded and char in '.,;!' and trailing_close is None:
                 trailing_close = cursor
-            if not char or char not in ')]}.,;!':
+            if char not in ')]}.,;!':
                 trailing_close = None
             cursor = next_cursor
         yield first, trailing_close if trailing_close is not None else cursor
@@ -857,7 +864,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
                          _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False,
-                         _75f_compat=False):
+                         _75f_compat=False, _780_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -881,6 +888,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     elif _75f_compat:
         from ccr.contracts.disclosure_urls_75f50e0 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _780_compat:
+        from ccr.contracts.disclosure_urls_7806fd9 import sanitize_projected_detail as archived_detail
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     else:
         row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
@@ -911,6 +921,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _780_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _75f_compat=True)
             if row != expected and not _legacy_only:

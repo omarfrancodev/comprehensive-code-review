@@ -145,6 +145,32 @@ class URLBoundaryReviewTests(unittest.TestCase):
                     self.assertNotIn('FIRSTPART', output)
                     self.assertIn('https://example.test/public?redirect=/public/target', output)
 
+    def test_html_entities_do_not_change_original_markdown_destination_delimiters(self):
+        for opening, closing in (('&#40;', '&#41;'), ('&#x28;', '&#x29;'), ('&lpar;', '&rpar;')):
+            sources = (
+                '[source](https://dev:ENTITYSECRET' + closing + '@example.test/private)',
+                '[source](https://example.test/a' + opening + 'b),'
+                'https://dev:ENTITYSECRET@example.test/private',
+                '[source](https://example.test/?api_key=FIRST' + closing + 'SECRETTAIL)',
+            )
+            for source in sources:
+                private = 'ENTITYSECRET' if 'ENTITYSECRET' in source else 'SECRETTAIL'
+                copy_text = source + '\nIndependent copy ENTITYSECRET) FIRST)SECRETTAIL'
+                with self.subTest(source=source):
+                    for output in (*self.public_outputs(source, copy_text),
+                                   *self.disclosure_outputs(source, copy_text=copy_text)):
+                        self.assertNotIn(private, output)
+
+    def test_expired_quote_after_interior_space_cannot_open_next_url(self):
+        for opening, closing in (('"', '"'), ("'", "'"), ('“', '”'), ('`', '`')):
+            for interior in (' text', ''):
+                source = (opening + 'https://example.test/public' + interior + closing +
+                          r' https://example.test/private?api\_key=OUTSIDESECRET.')
+                with self.subTest(opening=opening, interior=interior):
+                    self.assertIn('OUTSIDESECRET', contract.projected_url_secrets(source))
+                    for output in self.public_outputs(source, 'Independent copy OUTSIDESECRET'):
+                        self.assertNotIn('OUTSIDESECRET', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -204,3 +230,19 @@ class URLBoundaryReviewTests(unittest.TestCase):
                                                       copy_text='Independent copy GROUPPASSWORD'):
                     self.assertNotIn('GROUPPASSWORD', output)
                     self.assertIn('https://example.test/public', output)
+
+    def test_exact_7806fd9_rows_keep_proof_and_current_selected_copy_protection(self):
+        cases = (
+            ('[source](https://dev:ENTITYSECRET&#41;@example.test/private)',
+             '[source](https://dev:ENTITYSECRET&#41;@example.test/private)', 'ENTITYSECRET'),
+            ('[source](https://example.test/a&#40;b),https://dev:ENTITYSECRET@example.test/private',
+             '[source](https://example.test/a&#40;b),https://dev:ENTITYSECRET@example.test/private',
+             'ENTITYSECRET'),
+            ('"https://example.test/public text" https://example.test/?api\\_key=OUTSIDESECRET.',
+             '"https://example.test/public text" [omitido]', 'OUTSIDESECRET'),
+        )
+        for source, historical, private in cases:
+            with self.subTest(source=source):
+                copy_text = source + '\nIndependent copy ENTITYSECRET) OUTSIDESECRET'
+                for output in self.disclosure_outputs(source, historical=historical, copy_text=copy_text):
+                    self.assertNotIn(private, output)
