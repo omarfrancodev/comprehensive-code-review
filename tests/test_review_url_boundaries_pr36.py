@@ -217,6 +217,55 @@ class URLBoundaryReviewTests(unittest.TestCase):
                 for output in self.public_outputs(source, 'Independent copy FULLSECRET.'):
                     self.assertNotIn('FULLSECRET', output)
 
+    def test_nested_destination_quotes_exclude_the_inner_closing_delimiter(self):
+        for key in ('api_key', r'api\_key'):
+            url = 'https://example.test/?' + key + '=NESTEDSECRET'
+            sources = (
+                'The result is "go to ‘' + url + '’. now"',
+                'The result is "go to \'' + url + '\'. now"',
+                'The result is ‘go to "' + url + '". now’',
+                'Unclosed " prefix ‘' + url + '’.',
+                'Unclosed \' prefix "' + url + '".',
+                'Unclosed " prefix "' + url + '".',
+                'The result is "go to ' + url + '. now"',
+                'The result is "' + url + '. now"',
+                'The result is "' + url + '. now ‘https://example.test/next’"',
+                'The result is "go to ‘visit ' + url + '’. now"',
+            )
+            for source in sources:
+                with self.subTest(source=source):
+                    self.assertIn('NESTEDSECRET', contract.projected_url_secrets(source))
+                    selected = source + '\nIndependent copy NESTEDSECRET'
+                    for output in (*self.public_outputs(source, selected),
+                                   *self.disclosure_outputs(source, copy_text=selected)):
+                        self.assertNotIn('NESTEDSECRET', output)
+
+    def test_nested_immediate_url_quotes_keep_the_punctuation_in_the_value(self):
+        source = 'The result is "go to ‘https://example.test/?api_key=FULLSECRET.’. now"'
+        self.assertIn('FULLSECRET.', contract.projected_url_secrets(source))
+        for output in self.public_outputs(source, 'Independent copy FULLSECRET.'):
+            self.assertNotIn('FULLSECRET', output)
+
+    def test_quoted_url_list_whitespace_separates_complete_sensitive_values(self):
+        for separator in (', ', '; ', '&comma; ', '&#44; '):
+            source = ('"https://example.test/?api\\_key=FULLSECRET.' + separator +
+                      'https://example.test/public"')
+            with self.subTest(separator=separator):
+                self.assertIn('FULLSECRET.', contract.projected_url_secrets(source))
+                selected = source + '\nIndependent copy FULLSECRET.'
+                for output in (*self.public_outputs(source, selected),
+                               *self.disclosure_outputs(source, copy_text=selected)):
+                    self.assertNotIn('FULLSECRET', output)
+                    self.assertIn('https://example.test/public', output)
+
+    def test_completed_quoted_destination_does_not_borrow_the_next_authority(self):
+        for quote in ('"', "'"):
+            source = (quote + 'https://example.test/public/' + quote +
+                      'https://dev:ADJACENTSECRET@example.test/private')
+            with self.subTest(quote=quote):
+                for output in (*self.public_outputs(source), *self.disclosure_outputs(source)):
+                    self.assertNotIn('ADJACENTSECRET', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -306,3 +355,9 @@ class URLBoundaryReviewTests(unittest.TestCase):
                 selected = source + '\nIndependent copy ' + private
                 for output in self.disclosure_outputs(source, historical=historical, copy_text=selected):
                     self.assertNotIn(private, output)
+
+    def test_exact_25108bc_nested_quote_row_keeps_proof_and_hides_the_outside_path(self):
+        source = 'The result is "go to ‘https://example.test/public’/private/LOCALFILE.py now"'
+        for output in self.disclosure_outputs(source, historical=source, copy_text=source):
+            self.assertNotIn('LOCALFILE', output)
+            self.assertIn('https://example.test/public', output)

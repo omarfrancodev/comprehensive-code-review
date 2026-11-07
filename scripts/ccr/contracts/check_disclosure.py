@@ -430,25 +430,46 @@ _BFF_OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\]\]
 _OMITTED_URL_QUERY = re.compile(r'\[(?:omitido|ruta privada|URL omitida)\][\])]*([?#][^\s<>]+)')
 
 
-def _url_quote_ranges(value):
-    """Pair prose quotes once, including text that contains no URL."""
-    closing = None
-    first = 0
-    for match in _URL_QUOTE_TOKENS.finditer(value):
+def _url_quote_ranges(value, opener):
+    """Pair one quote family without letting another family suppress it."""
+    closing = _URL_QUOTES[opener]
+    tokens = re.compile(r'\\[\s\S]|[' + re.escape(opener + closing) + ']')
+    first = None
+    destination = False
+    for match in tokens.finditer(value):
         char = match.group()
         if len(char) != 1:
             continue
         if char == "'":
             before = match.start() > 0 and value[match.start() - 1].isalnum()
             after = match.end() < len(value) and value[match.end()].isalnum()
-            if before and (closing is None or after):
+            if before and (first is None or after):
                 continue  # Apostrophes in words and possessives do not open quotes.
-        if closing is None:
-            closing = _URL_QUOTES.get(char)
+        if first is None and char == opener:
             first = match.start()
-        elif char == closing:
-            yield first, match.start(), closing
-            closing = None
+            content = match.end()
+            while content < len(value) and value[content] in '([{ \t':
+                content += 1
+            destination = _URL_SCHEME.match(value, content) is not None
+        elif first is not None and char == closing:
+            # A stranded prose opener must not consume a later immediate URL
+            # opener of the same kind. A word-adjacent closing quote stays closed.
+            if (opener == closing and not destination
+                    and _URL_SCHEME.match(value, match.end()) is not None
+                    and match.start() > 0 and value[match.start() - 1].isspace()):
+                first = match.start()
+                content = match.end()
+                destination = True
+                continue
+            if destination:
+                # A quote beginning with a URL can continue with ordinary
+                # prose. Its sentence punctuation does not belong to the URL.
+                for gap in re.compile(r'\s+').finditer(value, content, match.start()):
+                    if gap.end() < match.start() and _URL_SCHEME.match(value, gap.end()) is None:
+                        destination = False
+                        break
+            yield first, match.start(), closing, destination
+            first = None
 
 
 def projected_url_spans(value, *, _bff_compat=False):
@@ -458,19 +479,35 @@ def projected_url_spans(value, *, _bff_compat=False):
         yield from archived_spans(value, _bff_compat=True)
         return
     position = 0
-    quotes = iter(_url_quote_ranges(value))
-    quote = next(quotes, None)
+    quotes = []
+    for opener in _URL_QUOTES:
+        if opener in value:
+            ranges = iter(_url_quote_ranges(value, opener))
+            quotes.append({'ranges': ranges, 'current': next(ranges, None)})
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
         outer = value[first - 1] if first else ''
-        while quote is not None and quote[1] <= first:
-            quote = next(quotes, None)
-        in_quote = quote is not None and quote[0] < first
-        quote_end = quote[1] if in_quote else None
-        closing_quote = quote[2] if in_quote else None
+        nearest_quote_start = -1
+        quoted_destination = False
+        quote_end = None
+        closing_quote = None
+        for state in quotes:
+            quote = state['current']
+            while quote is not None and quote[1] <= first:
+                quote = next(state['ranges'], None)
+            state['current'] = quote
+            if quote is not None and quote[0] < first:
+                opening, end, closing, destination = quote
+                # The nearest quote owns punctuation. Any enclosing quote can
+                # still end the token, even when an outer prefix is malformed.
+                if opening > nearest_quote_start:
+                    nearest_quote_start = opening
+                    quoted_destination = destination
+                if quote_end is None or end < quote_end:
+                    quote_end, closing_quote = end, closing
         single_destination = markdown_link or outer == '<'
-        bounded = single_destination or quote_end is not None or outer == '('
+        bounded = single_destination or quoted_destination or outer == '('
         brackets = []
         cursor = scheme.end()
         trailing_close = None
@@ -492,9 +529,13 @@ def projected_url_spans(value, *, _bff_compat=False):
                     # source characters can group or close a Markdown target.
                     parameter_char = displayed if len(displayed) == 1 else ''
                     next_cursor = entity.end()
-            if (not single_destination and not sensitive_value and parameter_char in (',', ';', '(')
-                    and _URL_SCHEME.match(value, next_cursor)):
-                break
+            if not single_destination and parameter_char in (',', ';', '('):
+                neighbor = next_cursor
+                while neighbor < len(value) and value[neighbor].isspace():
+                    neighbor += 1
+                if (_URL_SCHEME.match(value, neighbor) is not None
+                        and (not sensitive_value or neighbor > next_cursor)):
+                    break
             # Only the first '=' binds a parameter. An embedded scheme and its
             # punctuation belong to that value until a real '&' or '#' ends it.
             if ((parameter_char == '?' and parameter_start is None)
@@ -874,7 +915,7 @@ def _project_command(execution, resources, contents, *, sanitize=safe_text):
 
 def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
                          _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False,
-                         _75f_compat=False, _780_compat=False, _4ed_compat=False):
+                         _75f_compat=False, _780_compat=False, _4ed_compat=False, _251_compat=False):
     sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
                 _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
@@ -905,6 +946,9 @@ def build_disclosure_row(check, observation, sources, identity, *, _legacy=False
     elif _4ed_compat:
         from ccr.contracts.disclosure_urls_4ed296c import sanitize_projected_detail as archived_detail
         row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _251_compat:
+        from ccr.contracts.disclosure_urls_25108bc import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
     else:
         row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
     return row
@@ -934,6 +978,8 @@ def validate_check_disclosure(record, disclosure, sources, input_identity, *, _l
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
             expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _251_compat=True)
             if row != expected and not _legacy_only:
                 expected = build_disclosure_row(check, observation, sources, input_identity, _4ed_compat=True)
             if row != expected and not _legacy_only:
