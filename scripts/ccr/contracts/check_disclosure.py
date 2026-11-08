@@ -67,16 +67,21 @@ def _secret_argument(argument):
         r'(?i)(?:token|password|secret|api[-_]?key|authorization|credential)', key))
 
 
-def _url_secrets(parsed):
-    """Share URL classification and wire/decoded credential learning."""
-    values = set()
-    for component in (parsed.query, parsed.fragment):
+def _sensitive_url_parameters(parsed):
+    for name, component in (('query', parsed.query), ('fragment', parsed.fragment)):
         for pair in component.split('&'):
             key, separator, value = pair.partition('=')
             # A fragment can carry OAuth parameters directly or an SPA route
             # followed by '?'. Matching the decoded key also covers that prefix.
             if separator and SENSITIVE_URL_KEY.search(unquote_plus(key)):
-                values.update((value, unquote_plus(value)))
+                yield name, key, value
+
+
+def _url_secrets(parsed):
+    """Share URL classification and wire/decoded credential learning."""
+    values = set()
+    for _, _, value in _sensitive_url_parameters(parsed):
+        values.update((value, unquote_plus(value)))
     if parsed.password:
         # Userinfo preserves literal '+', unlike form query/fragment values.
         values.update((parsed.password, unquote(parsed.password)))
@@ -487,7 +492,7 @@ def _url_quote_ranges(value, opener):
             first = None
 
 
-def projected_url_spans(value, *, _bff_compat=False, _literal_keys=None):
+def projected_url_spans(value, *, _bff_compat=False, _literal_parameters=None):
     """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
     if _bff_compat:
         from ccr.contracts.disclosure_urls_139a175 import projected_url_spans as archived_spans
@@ -533,6 +538,7 @@ def projected_url_spans(value, *, _bff_compat=False, _literal_keys=None):
         in_value = False
         sensitive_value = False
         in_fragment = False
+        literal_parameter = None
         while cursor < len(value) and not value[cursor].isspace() and value[cursor] not in '<>':
             char = value[cursor]
             if cursor == quote_end:
@@ -558,19 +564,26 @@ def projected_url_spans(value, *, _bff_compat=False, _literal_keys=None):
             # punctuation belong to that value until a real '&' or '#' ends it.
             if ((parameter_char == '?' and parameter_start is None)
                     or (parameter_char == '#' and not in_fragment)):
+                if literal_parameter is not None:
+                    _literal_parameters.append((*literal_parameter, cursor))
+                    literal_parameter = None
                 parameter_start = next_cursor
                 in_fragment = parameter_char == '#'
                 in_value = False
                 sensitive_value = False
             elif parameter_char == '&' and parameter_start is not None:
+                if literal_parameter is not None:
+                    _literal_parameters.append((*literal_parameter, cursor))
+                    literal_parameter = None
                 parameter_start = next_cursor
                 in_value = False
                 sensitive_value = False
             elif parameter_char == '=' and parameter_start is not None and not in_value:
                 key = _displayed_http_url(value[parameter_start:cursor], bounded=True, modern=True)
                 sensitive_value = bool(SENSITIVE_URL_KEY.search(unquote_plus(key)))
-                if literal_code and sensitive_value and _literal_keys is not None:
-                    _literal_keys.append((parameter_start, cursor))
+                if literal_code and sensitive_value and _literal_parameters is not None:
+                    literal_parameter = ('fragment' if in_fragment else 'query',
+                                         parameter_start, cursor, next_cursor)
                 in_value = True
             escaped = value[cursor + 1:cursor + 2]
             if (char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
@@ -593,7 +606,10 @@ def projected_url_spans(value, *, _bff_compat=False, _literal_keys=None):
             if char not in ')]}.,;!':
                 trailing_close = None
             cursor = next_cursor
-        yield first, trailing_close if trailing_close is not None else cursor
+        last = trailing_close if trailing_close is not None else cursor
+        if literal_parameter is not None:
+            _literal_parameters.append((*literal_parameter, last))
+        yield first, last
         position = cursor
         if cursor == quote_end:
             position += 1
@@ -612,11 +628,11 @@ def projected_url_secrets(value, *, _bff_compat=False, _literal_keys=None):
         return archived_secrets(value, _bff_compat=True)
     values = set()
     def urls():
-        literal_keys = [] if _literal_keys is not None else None
-        for first, last in projected_url_spans(value, _literal_keys=literal_keys):
-            yield value[first:last], literal_keys
-            if literal_keys is not None:
-                literal_keys.clear()
+        parameters = [] if _literal_keys is not None else None
+        for first, last in projected_url_spans(value, _literal_parameters=parameters):
+            yield value[first:last], parameters
+            if parameters is not None:
+                parameters.clear()
     # Old schema 1 writers could detach a query after an omission marker.
     def detached_queries():
         for match in _OMITTED_URL_QUERY.finditer(value):
@@ -627,20 +643,29 @@ def projected_url_secrets(value, *, _bff_compat=False, _literal_keys=None):
             for first, last in projected_url_spans(candidate):
                 yield candidate[first:last]
     tails = detached_queries()
-    for url, literal_keys in itertools.chain(urls(), ((tail, None) for tail in tails)):
+    transforms = (lambda text: text, _bounded_html_unescape,
+                  lambda text: _displayed_http_url(text, bounded=True, modern=True))
+    for url, literal_parameters in itertools.chain(urls(), ((tail, None) for tail in tails)):
         values.update(_userinfo_spellings(url))
-        parsed = False
-        for spelling in (url, _bounded_html_unescape(url),
-                         _displayed_http_url(url, bounded=True, modern=not _bff_compat)):
+        confirmed = set()
+        for transform in transforms:
             try:
-                values.update(_url_secrets(urlsplit(spelling)))
-                parsed = True
+                parsed = urlsplit(transform(url))
+                values.update(_url_secrets(parsed))
             except ValueError:
                 continue
-        # A malformed authority must retain the generic assignment fallback.
-        # Only a successfully parsed URL can own its literal parameter keys.
-        if parsed and literal_keys:
-            _literal_keys.extend(literal_keys)
+            if literal_parameters:
+                parameters = set(_sensitive_url_parameters(parsed))
+                for component, key_first, key_last, value_first, value_last in literal_parameters:
+                    assignment = (component, transform(value[key_first:key_last]),
+                                  transform(value[value_first:value_last]))
+                    if assignment in parameters:
+                        confirmed.add((key_first, key_last))
+        # A successful spelling owns only assignments whose component, key
+        # and complete value it actually learned. Otherwise keep the fallback.
+        if literal_parameters:
+            _literal_keys.extend((first, last) for _, first, last, _, _ in literal_parameters
+                                 if (first, last) in confirmed)
     return {value for value in values if value}
 
 

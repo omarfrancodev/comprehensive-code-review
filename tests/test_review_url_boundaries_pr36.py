@@ -408,6 +408,55 @@ class URLBoundaryReviewTests(unittest.TestCase):
         for output in self.public_outputs(source, 'Independent copy INVALIDSECRET'):
             self.assertNotIn('INVALIDSECRET', output)
 
+    def test_url_key_ownership_requires_its_complete_interpreted_assignment(self):
+        urls = (
+            'https://example.test&lbrack;/&quest;api_key=ENTITYSECRET',
+            'https://example.test&#91;=OTHER/?api_key=ENTITYSECRET',
+            'https://example.test&#91;token=OTHER/?api_key=ENTITYSECRET',
+        )
+        for url in urls:
+            for source in ('Observed ``' + url + '``', '> ~~~text\n> ' + url + '\n> ~~~'):
+                with self.subTest(source=source):
+                    self.assertIn('ENTITYSECRET', contract.projected_sensitive_values(source))
+                    context = 'Independent copy ENTITYSECRET'
+                    for output in (*self.public_outputs(source, context),
+                                   *self.disclosure_outputs(source + '\n' + context,
+                                                            copy_text=source + '\n' + context)):
+                        self.assertNotIn('ENTITYSECRET', output)
+
+    def test_coherent_entity_parameters_keep_complete_values_without_short_prefixes(self):
+        urls = (
+            'https://example.test/&quest;api_key=FULLSECRET]',
+            'https://example.test/?public=ok&amp;api_key=FULLSECRET]',
+            'https://example.test/?token=OTHER&amp;api_key=FULLSECRET]',
+            'https://example.test/&num;api_key=FULLSECRET]',
+        )
+        context = 'Business identifier FULLSECRET; complete private copy FULLSECRET]'
+        for url in urls:
+            source = 'Observed ``' + url + '``'
+            with self.subTest(source=source):
+                learned = contract.projected_sensitive_values(source)
+                self.assertIn('FULLSECRET]', learned)
+                self.assertNotIn('FULLSECRET', learned)
+                for output in (*self.public_outputs(source, context),
+                               *self.disclosure_outputs(source, copy_text=source + '\n' + context)[2:]):
+                    self.assertIn('Business identifier FULLSECRET', output)
+                    self.assertNotIn('complete private copy FULLSECRET', output)
+
+    def test_exact_91fddf9_rows_keep_proof_and_redact_unlearned_credential_copies(self):
+        # These exact retained rows were generated with the previous writer.
+        historical = 'Observed ``[omitido]``\nIndependent copy ENTITYSECRET'
+        for url in (
+            'https://example.test&lbrack;/&quest;api_key=ENTITYSECRET',
+            'https://example.test&#91;=OTHER/?api_key=ENTITYSECRET',
+            'https://example.test&#91;token=OTHER/?api_key=ENTITYSECRET',
+        ):
+            source = 'Observed ``' + url + '``\nIndependent copy ENTITYSECRET'
+            with self.subTest(source=source):
+                for output in self.disclosure_outputs(source, historical=historical,
+                                                      copy_text=source):
+                    self.assertNotIn('ENTITYSECRET', output)
+
     def test_exact_4070520_rows_keep_proof_with_literal_url_projection(self):
         cases = (
             ('Observed ``x · [label](https://example.test/?api_key=FULLSECRET)TAIL)``',
