@@ -2,6 +2,32 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## 3.7.0 — 2026-11-08
+
+### Added
+
+#### Reportes y entregas
+
+- Permitir contextos editoriales dispersos de hallazgos ligados al registro original y draft 4 con verificación de política, contexto y cuerpo, sin modificar artifacts cerrados completos o compactos.
+
+### Fixed
+
+#### Reportes y entregas
+
+- Sanear las fuentes antes de escapar Markdown para conservar identificadores legítimos y frases narrativas con dos puntos; mantener la puntuación literal de las URLs en código sin aplicarles cierres de enlaces ni reglas de prosa.
+
+#### Distribución y documentación
+
+- Mantener acíclicas las dependencias entre disclosure y sus lectores históricos mediante primitivas compartidas, y completar su registro en el índice de módulos.
+
+### Security
+
+#### Reportes y entregas
+
+- Ocultar copias de credenciales marcadas en la evidencia original, listas numeradas y código Markdown, incluidas claves codificadas y entidades HTML; excluir una clave del detector genérico sólo cuando la misma interpretación acredita su componente y valor completo.
+- Reunir los valores sensibles del contexto de una entrega antes de proyectar sus secciones, archivos y detalle acreditado de checks, evitando copias entre campos sin modificar el archivo original.
+- Rechazar identidades estructurales sensibles actuales o de revisiones previas antes de preparar una vista pública.
+
 ## 3.6.0 — 2026-11-03
 
 ### Added

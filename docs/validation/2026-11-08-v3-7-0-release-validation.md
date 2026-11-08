@@ -1,0 +1,19 @@
+# Preparación de publicación de 3.7.0
+
+La preparación de versión, changelog, enlaces, [notas de release](../releases/3.7.0.md) y evidencia se integra en el PR #36 antes del merge. El comentario [CR-b3749b4a4f18469f89fd](https://github.com/omarfrancodev/comprehensive-code-review/pull/36#issuecomment-6727001501) aprueba `f286bf64d023b7880c9ecad147f79fe96dc6ca8e`; no constituye una revisión de los cambios posteriores de preparación.
+
+La validación de distribución detectó un ciclo de imports entre el contrato y seis lectores históricos, y ocho módulos ausentes del índice. Se extraen 26 declaraciones compartidas a `disclosure_primitives.py`, sin modificar los cuerpos AST de sus 16 funciones ni los de las funciones que permanecen en el contrato; los lectores sólo cambian el origen de su import. Se conservan los nombres reexportados y se añaden las nueve entradas del índice, incluida la nueva primitiva. La preparación también actualiza metadatos, documentación y la aserción de versión de la copia instalada.
+
+## Selección y alcance
+
+Se reutiliza la selección reproducible de distribución de 3.6.0 y se amplía con los módulos de redacción pública, proyección editorial, publicación histórica, límites URL y regresiones del PR #36. Las ejecuciones usan Python de biblioteca estándar, temporales propios cortos y cwd del código para los fixtures que lo requieren. Se comprueban las doce áreas CLI y la ayuda raíz desde cwd ajeno sin PYTHONPATH, se compilan los módulos en memoria y se verifica que las pruebas no modifiquen las fuentes.
+
+La selección no equivale a toda la suite general. El primer intento ejecutó 588 pruebas: nueve fallos de aserción (ciclo e índice) y un error en preparación concurrente de compactos en Windows. Se conserva íntegro ese resultado. El módulo compacto completo pasó en una única repetición de 25 pruebas, sin cambios en su código; la causa del error inicial no quedó establecida y no se presenta como corregida. Tras la extracción pasaron **362 pruebas en 271,703 s**, sin fallos, errores ni omisiones, además de 13 ayudas CLI y 112 compilaciones Python en memoria. Incluyen estructura, CLI, recuperación de cierre y todos los consumidores de privacidad afectados. El [candidato de release](2026-11-08-v3-7-0-release-candidate.json) distingue los intentos, sus versiones y la comparación AST; no se presenta como una única ejecución limpia de 588 pruebas. Las comprobaciones de CI y viewer externo quedan fuera del alcance acreditado.
+
+## Empaquetado y publicación
+
+Se genera el ZIP mediante `git archive`, prefijo `comprehensive-code-review/`, usando `core.autocrlf=false` sólo en esa invocación. Se verifican inventario y contenido de todos los archivos contra los blobs del commit seleccionado. El paquete candidato y el definitivo sólo podrán diferir en evidencia documental y metadatos del merge, manteniendo idénticos scripts, tests, contratos y fixtures.
+
+La extracción sin `.git` ejecuta los controles seleccionados de distribución, CLI, privacidad, proyecciones, contratos 13 y compactos. Las comprobaciones exclusivas del índice/filtros Git y la cobertura adicional de reutilización corresponden al checkout; el resultado externo enumera la selección real del ZIP. El paquete definitivo se construye desde el merge del PR, se verifica otra vez contra sus blobs y se exige igualdad de inventario y bytes con el paquete candidato validado antes de reutilizar esa evidencia. La etiqueta `v3.7.0` y la release se ligan a ese SHA integrado; el resultado de validación y sus hashes se publican como assets, sin otro commit en main.
+
+La fecha preparada es 2026-11-08, pendiente de contrastar con `published_at` de GitHub en America/Mexico_City. Este documento no afirma que el merge, la etiqueta o la publicación ya hayan ocurrido. Se conserva la rama fuente durante la promoción; no se actualizan instalaciones locales.

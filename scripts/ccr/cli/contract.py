@@ -8,6 +8,7 @@ from ccr.contracts.identifiers import canonicalize_ids, deduplicate
 from ccr.contracts.review import validate
 from ccr.reporting.render import render, render_handoff
 from ccr.execution.disclosure import read_selected_disclosure
+from ccr.reporting.finding_publication import read_finding_publication_context
 
 def main(argv=None, *, prog=None):
     for stream in (sys.stdout, sys.stderr):
@@ -21,6 +22,7 @@ def main(argv=None, *, prog=None):
     parser.add_argument('--publication-context', help='Ephemeral source-bound historical limitation classification for render-comment')
     parser.add_argument('--check-publication-context', help='Ephemeral source-bound public check summaries for render-comment')
     parser.add_argument('--coverage-publication-context', help='Ephemeral source-bound public coverage summaries for render-comment')
+    parser.add_argument('--finding-publication-context', help='Source-bound editorial finding summaries for render-comment')
     parser.add_argument('--reserved-ids', help='Known review-chain finding/check ID arrays for monotonic allocation')
     parser.add_argument('--check-disclosure-context')
     parser.add_argument('--check-disclosure-sources')
@@ -36,6 +38,10 @@ def main(argv=None, *, prog=None):
             raise ValueError('--check-publication-context is only applicable to render-comment')
         if args.coverage_publication_context and args.command != 'render-comment':
             raise ValueError('--coverage-publication-context is only applicable to render-comment')
+        if args.finding_publication_context and args.command != 'render-comment':
+            raise ValueError('--finding-publication-context is only applicable to render-comment')
+        finding_context = (read_finding_publication_context(args.finding_publication_context)
+                           if args.finding_publication_context else None)
         publication_context = json.loads(Path(args.publication_context).read_text(encoding='utf-8')) if args.publication_context else None
         check_publication_context = (json.loads(Path(args.check_publication_context).read_text(encoding='utf-8'))
                                      if args.check_publication_context else None)
@@ -62,6 +68,7 @@ def main(argv=None, *, prog=None):
             print(render(value, 'comment', publication_context,
                          check_publication_context=check_publication_context,
                          coverage_publication_context=coverage_publication_context,
+                         finding_publication_context=finding_context,
                          check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources), end='')
         else:
             print(render(value, 'user', publication_context, check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources), end='')

@@ -5,24 +5,48 @@ The resource manifest is hashed at workspace preparation, never after a check.
 """
 import hashlib
 import heapq
-from array import array
-from bisect import bisect_left, bisect_right
-import html
+import itertools
 import json
 import ntpath
 import re
 import shlex
-from urllib.parse import urlsplit, unquote, unquote_plus
+from urllib.parse import urlsplit, unquote_plus
+from ccr.contracts.disclosure_primitives import (
+    OMITTED,
+    SENSITIVE_URL_KEY,
+    _BFF_OMITTED_URL_QUERY,
+    _LEGACY_MARKDOWN_ESCAPE,
+    _MARKDOWN_ESCAPE,
+    _OMITTED_URL_QUERY,
+    _URL_ENTITY,
+    _URL_QUOTES,
+    _URL_QUOTE_TOKENS,
+    _URL_SCHEME,
+    _argument_secrets,
+    _argv_sensitive_values,
+    _bounded_html_unescape,
+    _command_sensitive_values,
+    _displayed_http_url,
+    _encoded_value_ranges,
+    _legacy_safe_text,
+    _private_http_url,
+    _redact_encoded_values,
+    _sanitize_spellings,
+    _secret_argument,
+    _secret_spellings,
+    _sensitive_text_ranges,
+    _sensitive_url_parameters,
+    _url_secrets,
+    _userinfo_spellings,
+)
 
 FIELDS = {'schema_version', 'review_id', 'source_sha256', 'input_identity', 'checks'}
 ROW_FIELDS = {'id', 'command_sha256', 'execution_reference', 'mode', 'command', 'resources', 'explanation', 'evidence_reference'}
 RESOURCE_FIELDS = {'path', 'revision', 'project_sha256', 'executed_sha256'}
-OMITTED = '[omitido]'
 EXPLANATION_COMMAND = '[comprobación explicada; comando no acreditado]'
 MAX_BYTES = 1024 * 1024
 RESOURCE_OPERAND = re.compile(r'(?i)\.(?:json|ya?ml|toml|ini|cfg|conf|config|xml|csv|tsv|txt|dat|bin|py|js|mjs|cjs|sh|ps1|dll|exe|csproj|sln|mk)$')
 RESOURCE_FLAGS = {'--fixture', '--input', '--data', '--config', '--settings', '--file', '--output', '-o'}
-SENSITIVE_URL_KEY = re.compile(r'(?i)(?:token|password|secret|api.?key|auth|credential)')
 
 
 def digest(raw):
@@ -59,116 +83,6 @@ def _read(sources, reference):
     return raw, json.loads(raw.decode('utf-8'))
 
 
-def _secret_argument(argument):
-    key = argument.split('=', 1)[0]
-    return (key.startswith('-') or '=' in argument) and bool(re.search(
-        r'(?i)(?:token|password|secret|api[-_]?key|authorization|credential)', key))
-
-
-def _url_secrets(parsed):
-    """Share URL classification and wire/decoded credential learning."""
-    values = set()
-    for component in (parsed.query, parsed.fragment):
-        for pair in component.split('&'):
-            key, separator, value = pair.partition('=')
-            # A fragment can carry OAuth parameters directly or an SPA route
-            # followed by '?'. Matching the decoded key also covers that prefix.
-            if separator and SENSITIVE_URL_KEY.search(unquote_plus(key)):
-                values.update((value, unquote_plus(value)))
-    if parsed.password:
-        # Userinfo preserves literal '+', unlike form query/fragment values.
-        values.update((parsed.password, unquote(parsed.password)))
-    return values
-
-
-def _bounded_html_unescape(text):
-    """Apply HTML semantics without arbitrary-sized numeric conversions."""
-    def bounded_number(match):
-        number = match.group()[2:].rstrip(';')
-        prefix = number[0] if number[0] in 'xX' else ''
-        digits = number[len(prefix):].lstrip('0') or '0'
-        # Canonicalize the comparison input, never the selected source bytes.
-        # Every larger significant value lies outside Unicode. Let HTML handle
-        # the bounded replacement and all named/control-character semantics.
-        if len(digits) > (6 if prefix else 7):
-            return '&#1114112;'
-        return '&#' + prefix + digits + ';'
-    return html.unescape(re.sub(r'&#(?:[xX][0-9a-fA-F]+|[0-9]+);?', bounded_number, text))
-
-
-def _userinfo_spellings(text):
-    # Read the original authority before HTML decoding can introduce URI
-    # delimiters, or urlsplit can discard tabs/newlines in a password.
-    # Numeric references are indivisible here: their '#' is part of the
-    # original spelling, not an authority/fragment boundary for learning.
-    authority = re.match(r'(?:&#(?:[xX][0-9a-fA-F]+|[0-9]+);?|[^/?#])*',
-                         text.partition('://')[2]).group()
-    userinfo, at, _ = authority.rpartition('@')
-    _, colon, password = userinfo.partition(':')
-    passwords = {password} if at and colon and password else set()
-    # Delimiters can themselves be HTML references. Locate their interpreted
-    # positions without discarding the source spelling between them. Keep the
-    # literal delimiter frame too: decoding a username can move the first ':'.
-    first_colon_end = last_at_start = None
-    reference = r'&(?:#[xX][0-9a-fA-F]+|#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
-    for match in re.finditer(reference + r'|[:@]', authority):
-        separator = _bounded_html_unescape(match.group())
-        if separator == ':' and first_colon_end is None:
-            first_colon_end = match.end()
-        elif separator == '@':
-            last_at_start = match.start()
-    if first_colon_end is not None and last_at_start is not None and first_colon_end < last_at_start:
-        passwords.add(authority[first_colon_end:last_at_start])
-    values = set()
-    for password in passwords:
-        decoded = unquote(password)  # Userinfo '+' is always literal.
-        displayed = _bounded_html_unescape(password)
-        values.update((password, decoded, displayed, unquote(displayed),
-                       _bounded_html_unescape(decoded)))
-    # urlsplit strips these controls. Retain that presentation independently
-    # of any component changes introduced elsewhere in the interpreted URI.
-    return (values | {re.sub(r'[\r\n\t]', '', value) for value in values}) - {''}
-
-
-def _argument_secrets(argument):
-    """Extract credential values, including encoded URL queries/fragments."""
-    values = set()
-    header = re.fullmatch(r'(?:--header=|-H)?([\w-]+)\s*:\s*(.+)', argument)
-    if header and SENSITIVE_URL_KEY.search(header.group(1)):
-        credential = header.group(2).strip()
-        values.add(credential)
-        # Authentication schemes are public; the credential can be repeated on
-        # its own in results, paths, or prose and must be redacted there too.
-        values.add(re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', credential))
-    # argv is exact input, not Markdown prose: ')' is legal in URI components
-    # and ']' closes an IPv6 authority. Editorial delimiters must not cut it.
-    for text in re.findall(r'https?://[^\s<>]+', argument, re.IGNORECASE):
-        values.update(_userinfo_spellings(text))
-        # Retain source and interpreted forms independently. A failure to parse
-        # either representation must not discard values learned from the other.
-        for candidate in (text, _bounded_html_unescape(text)):
-            try:
-                values.update(_url_secrets(urlsplit(candidate)))
-            except ValueError:
-                continue
-    return values
-
-
-def _argv_sensitive_values(argv):
-    values = set()
-    secret_next = False
-    for argument in argv if isinstance(argv, list) else []:
-        if not isinstance(argument, str):
-            continue
-        values.update(_argument_secrets(argument))
-        if secret_next:
-            values.add(argument); secret_next = False
-        if _secret_argument(argument):
-            if '=' in argument: values.add(argument.split('=', 1)[1])
-            else: secret_next = True
-    return {value for value in values if value}
-
-
 def sensitive_values(sources):
     values = set()
     for raw in sources.values():
@@ -180,40 +94,6 @@ def sensitive_values(sources):
             continue
         values.update(_argv_sensitive_values(item.get('argv', [])))
     return values
-
-
-def _command_sensitive_values(command):
-    """Learn redactions from retained text, never execution or resource proof."""
-    values, seen, pending = set(), set(), [command]
-    # Nested quoted scripts are text, not argv proof. Bound total lexical work
-    # by input size and fail closed rather than silently skipping inner secrets.
-    remaining = 16 * max(1, len(command))
-    while pending:
-        text = pending.pop()
-        if text in seen:
-            continue
-        if len(text) > remaining:
-            raise ValueError('retained command privacy analysis exceeds its work bound')
-        remaining -= len(text)
-        seen.add(text)
-        values.update(_argument_secrets(text))
-        for posix in (True, False):
-            lexer = shlex.shlex(text, posix=posix, punctuation_chars=True)
-            lexer.whitespace_split = True
-            lexer.commenters = ''
-            arguments = []
-            try:
-                arguments.extend(lexer)
-            except ValueError:
-                # Preserve both prior arguments and an unterminated quoted body.
-                if lexer.token:
-                    arguments.append(lexer.token)
-            values.update(_argv_sensitive_values(arguments))
-            # Outer spellings can hide sensitive keys through escapes/quoting.
-            # Inspect candidate text before classifying its normalized tokens.
-            pending.extend(argument for argument in arguments
-                           if argument != text and any(char in argument for char in ' \t\r\n\\\'"'))
-    return values | {re.sub(r'(?i)^(?:Bearer|Basic)\s+', '', value) for value in values}
 
 
 def private_values(record, view, sources):
@@ -242,190 +122,338 @@ def private_values(record, view, sources):
     return values
 
 
-def _encoded_value_ranges(text, spellings, *, overlaps=False):
-    """Locate encoded copies in original source coordinates."""
-    if not spellings:
-        return []
-    entity = r'&(?:\#[xX][0-9a-fA-F]+|\#[0-9]+|[a-zA-Z][a-zA-Z0-9]+);?'
-    encoded_starts = sorted({match.start() for match in re.finditer(r'(?:%[0-9a-fA-F]{2})+', text)}
-                           | {match.start() for match in re.finditer(entity, text)})
-    if not encoded_starts:
-        return []
-    shown = text
-    starts = array('I', range(len(text)))
-    ends = array('I', range(1, len(text) + 1))
-    ranges = set()
-
-    def collect():
-        for secret in spellings:
-            position = shown.find(secret)
-            while position != -1:
-                first, last = starts[position], ends[position + len(secret) - 1]
-                encoded_index = bisect_left(encoded_starts, first)
-                if encoded_index < len(encoded_starts) and encoded_starts[encoded_index] < last:
-                    # Literal-only matches are handled by replace below. Do not
-                    # retain one range per plain-text occurrence or per view.
-                    ranges.add((first, last))
-                    # The original redactor may skip withheld overlaps. Source
-                    # classification must enumerate them before any rewriting.
-                    following = position + (1 if overlaps else len(secret))
-                elif encoded_index < len(encoded_starts):
-                    # Skip literal-only windows, but retain overlaps that can
-                    # reach the next source encoding marker after normalization.
-                    boundary = bisect_right(ends, encoded_starts[encoded_index])
-                    following = max(position + 1, boundary - len(secret) + 1)
-                else:
-                    break
-                position = shown.find(secret, following)
-
-    def transform(pattern, convert):
-        nonlocal shown, starts, ends
-        parts, next_starts, next_ends = [], array('I'), array('I')
-        cursor = 0
-        for match in re.finditer(pattern, shown):
-            first, last = match.span()
-            parts.append(shown[cursor:first])
-            next_starts.extend(starts[cursor:first])
-            next_ends.extend(ends[cursor:first])
-            replacement = convert(match)
-            parts.append(replacement)
-            # A UTF-8 escape run or displayed entity can produce several
-            # characters. If it contains a secret, withhold that source run.
-            next_starts.extend([starts[first]] * len(replacement))
-            next_ends.extend([ends[last - 1]] * len(replacement))
-            cursor = last
-        parts.append(shown[cursor:])
-        next_starts.extend(starts[cursor:])
-        next_ends.extend(ends[cursor:])
-        shown, starts, ends = ''.join(parts), next_starts, next_ends
-        collect()
-
-    markdown_escape = r'\\([\\`*{}\[\]()#+!_|>~])'
-    # First preserve a credential's literal HTML/Markdown escape spelling.
-    transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
-    shown = text
-    starts = array('I', range(len(text)))
-    ends = array('I', range(1, len(text) + 1))
-    # Display escapes can surround URL escapes, or be URL-escaped themselves.
-    # This independent view also decodes percent escapes only once.
-    transform(entity, lambda match: _bounded_html_unescape(match.group()))
-    transform(markdown_escape, lambda match: match.group(1))
-    # A renderer can escape the entity spelling already present in source prose.
-    transform(entity, lambda match: _bounded_html_unescape(match.group()))
-    transform(markdown_escape, lambda match: match.group(1))
-    transform(r'(?:%[0-9a-fA-F]{2})+', lambda match: unquote(match.group()))
-    transform(entity, lambda match: _bounded_html_unescape(match.group()))
-    transform(markdown_escape, lambda match: match.group(1))
-    if not ranges:
-        return []
-    merged = []
-    for first, last in sorted(ranges):
-        if merged and first <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(last, merged[-1][1]))
-        else:
-            merged.append((first, last))
-    return merged
-
-
-def _redact_encoded_values(text, spellings):
-    """Redact known encoded copies using source offsets, never decoded output."""
-    result, cursor = [], 0
-    for first, last in _encoded_value_ranges(text, spellings):
-        result.extend((text[cursor:first], OMITTED))
-        cursor = last
-    result.append(text[cursor:])
-    return ''.join(result)
-
-
-def _secret_spellings(secrets):
-    secrets = tuple(secret for secret in secrets if secret)
-    spellings = set()
-    for secret in secrets:
-        plain = ' '.join(secret.splitlines()).strip()
-        escaped = html.escape(plain, quote=False)
-        spellings.update((secret, plain, escaped,
-            re.sub(r'([\\`*{}\[\]()#+!_|>~])', r'\\\1', escaped)))
-    return tuple(sorted((text for text in spellings if text), key=len, reverse=True))
-
-
 def sensitive_text_ranges(text, secrets):
-    """Yield merged sensitive intervals before callers transform source text.
+    """Yield merged sensitive intervals before callers transform source text."""
+    return _sensitive_text_ranges(text, _secret_spellings(secrets))
 
-    Literal matches stream, including overlaps, rather than allocating one
-    tuple for every character of a repetitive value. Encoded matches share the
-    existing source-offset decoder; no decoded text is returned to a renderer.
-    """
-    spellings = _secret_spellings(secrets)
-    def literal(secret):
-        position = text.find(secret)
-        while position != -1:
-            yield position, position + len(secret)
-            position = text.find(secret, position + 1)
-    streams = [literal(secret) for secret in spellings]
-    streams.append(iter(_encoded_value_ranges(text, spellings, overlaps=True)))
-    pending = None
-    for first, last in heapq.merge(*streams):
+
+def _quoted_url_destination(value, first, last):
+    while first < last and value[first] in '([{ \t\r\n':
+        first += 1
+    if _URL_SCHEME.match(value, first, last) is None:
+        return False
+    for gap in re.compile(r'\s+').finditer(value, first, last):
+        if gap.end() < last and _URL_SCHEME.match(value, gap.end(), last) is None:
+            return False
+    return True
+
+
+def _url_quote_ranges(value, opener):
+    """Pair one quote family without letting another family suppress it."""
+    if opener == '`':
+        from ccr.contracts.disclosure_text import _code_ranges, _LINES, _FENCE
+        for first, last in _code_ranges(value, _LINES, _FENCE):
+            # Code remains literal when its original offsets include quote or
+            # list prefixes. Those prefixes do not turn a URL into prose.
+            yield first - 1, last, '`', True
+        return
+    closing = _URL_QUOTES[opener]
+    tokens = re.compile(r'\\[\s\S]|[' + re.escape(opener + closing) + ']')
+    first = None
+    destination = False
+    for match in tokens.finditer(value):
+        char = match.group()
+        if len(char) != 1:
+            continue
+        if char == "'":
+            before = match.start() > 0 and value[match.start() - 1].isalnum()
+            after = match.end() < len(value) and value[match.end()].isalnum()
+            if before and (first is None or after):
+                continue  # Apostrophes in words and possessives do not open quotes.
+        if first is None and char == opener:
+            first = match.start()
+            content = match.end()
+            while content < len(value) and value[content] in '([{ \t':
+                content += 1
+            destination = _URL_SCHEME.match(value, content) is not None
+        elif first is not None and char == closing:
+            # A stranded prose opener must not consume a later immediate URL
+            # opener of the same kind. A word-adjacent closing quote stays closed.
+            if (opener == closing and not destination
+                    and _URL_SCHEME.match(value, match.end()) is not None
+                    and match.start() > 0 and value[match.start() - 1].isspace()):
+                first = match.start()
+                content = match.end()
+                destination = True
+                continue
+            if destination:
+                # A quote beginning with a URL can continue with ordinary
+                # prose. Its sentence punctuation does not belong to the URL.
+                destination = _quoted_url_destination(value, content, match.start())
+            yield first, match.start(), closing, destination
+            first = None
+
+
+def projected_url_spans(value, *, _bff_compat=False, _literal_parameters=None):
+    """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
+    if _bff_compat:
+        from ccr.contracts.disclosure_urls_139a175 import projected_url_spans as archived_spans
+        yield from archived_spans(value, _bff_compat=True)
+        return
+    position = 0
+    quotes = []
+    for opener in _URL_QUOTES:
+        if opener in value or (opener == '`' and '~~~' in value):
+            ranges = iter(_url_quote_ranges(value, opener))
+            quotes.append({'ranges': ranges, 'current': next(ranges, None), 'code': opener == '`'})
+    while (scheme := _URL_SCHEME.search(value, position)) is not None:
+        first = scheme.start()
+        markdown_link = value[max(0, first - 2):first] == ']('
+        outer = value[first - 1] if first else ''
+        nearest_quote_start = -1
+        literal_code = False
+        quoted_destination = False
+        quote_end = None
+        closing_quote = None
+        for state in quotes:
+            quote = state['current']
+            while quote is not None and quote[1] <= first:
+                quote = next(state['ranges'], None)
+            state['current'] = quote
+            if quote is not None and quote[0] < first:
+                literal_code = literal_code or state['code']
+                opening, end, closing, destination = quote
+                # Outside code, the nearest quote owns punctuation. Enclosing
+                # quotes can still end the token, including literal strings.
+                if opening > nearest_quote_start:
+                    nearest_quote_start = opening
+                    quoted_destination = destination
+                if quote_end is None or end < quote_end:
+                    quote_end, closing_quote = end, closing
+        markdown_link = markdown_link and not literal_code
+        single_destination = not literal_code and (markdown_link or outer == '<')
+        bounded = literal_code or single_destination or quoted_destination or outer == '('
+        brackets = []
+        cursor = scheme.end()
+        trailing_close = None
+        parameter_start = None
+        in_value = False
+        sensitive_value = False
+        in_fragment = False
+        literal_parameter = None
+        while cursor < len(value) and not value[cursor].isspace() and value[cursor] not in '<>':
+            char = value[cursor]
+            if cursor == quote_end:
+                break
+            next_cursor = cursor + 1
+            parameter_char = char
+            entity = _URL_ENTITY.match(value, cursor) if char == '&' else None
+            if entity is not None:
+                displayed = _bounded_html_unescape(entity.group())
+                if displayed != entity.group():
+                    # Entities affect parameter interpretation. Only literal
+                    # source characters can group or close a Markdown target.
+                    parameter_char = displayed if len(displayed) == 1 else ''
+                    next_cursor = entity.end()
+            if not single_destination and parameter_char in (',', ';', '('):
+                neighbor = next_cursor
+                while neighbor < len(value) and value[neighbor].isspace():
+                    neighbor += 1
+                if (_URL_SCHEME.match(value, neighbor) is not None
+                        and (not sensitive_value or neighbor > next_cursor)):
+                    break
+            # Only the first '=' binds a parameter. An embedded scheme and its
+            # punctuation belong to that value until a real '&' or '#' ends it.
+            if ((parameter_char == '?' and parameter_start is None)
+                    or (parameter_char == '#' and not in_fragment)):
+                if literal_parameter is not None:
+                    _literal_parameters.append((*literal_parameter, cursor))
+                    literal_parameter = None
+                parameter_start = next_cursor
+                in_fragment = parameter_char == '#'
+                in_value = False
+                sensitive_value = False
+            elif parameter_char == '&' and parameter_start is not None:
+                if literal_parameter is not None:
+                    _literal_parameters.append((*literal_parameter, cursor))
+                    literal_parameter = None
+                parameter_start = next_cursor
+                in_value = False
+                sensitive_value = False
+            elif parameter_char == '=' and parameter_start is not None and not in_value:
+                key = _displayed_http_url(value[parameter_start:cursor], bounded=True, modern=True)
+                sensitive_value = bool(SENSITIVE_URL_KEY.search(unquote_plus(key)))
+                if literal_code and sensitive_value and _literal_parameters is not None:
+                    literal_parameter = ('fragment' if in_fragment else 'query',
+                                         parameter_start, cursor, next_cursor)
+                in_value = True
+            escaped = value[cursor + 1:cursor + 2]
+            if (char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
+                                   (closing_quote is not None and escaped == closing_quote))
+                    and (quote_end is None or cursor + 1 < quote_end)):
+                trailing_close = None
+                cursor += 2
+                continue
+            if char in '([':
+                brackets.append(')' if char == '(' else ']')
+            elif char in ')]':
+                if brackets and brackets[-1] == char:
+                    brackets.pop()
+                elif not literal_code and (markdown_link or outer == '(') and char == ')':
+                    break
+                elif not literal_code and trailing_close is None:
+                    trailing_close = cursor
+            if not bounded and char in '.,;!' and trailing_close is None:
+                trailing_close = cursor
+            if char not in ')]}.,;!':
+                trailing_close = None
+            cursor = next_cursor
+        last = trailing_close if trailing_close is not None else cursor
+        if literal_parameter is not None:
+            _literal_parameters.append((*literal_parameter, last))
+        yield first, last
+        position = cursor
+        if cursor == quote_end:
+            position += 1
+
+
+def projected_url_secrets(value, *, _bff_compat=False, _literal_keys=None):
+    """Learn URL values from both wire and displayed spellings."""
+    if _bff_compat:
+        from ccr.contracts.disclosure_urls_139a175 import projected_url_secrets as archived_secrets
+        return archived_secrets(value, _bff_compat=True)
+    values = set()
+    def urls():
+        parameters = [] if _literal_keys is not None else None
+        for first, last in projected_url_spans(value, _literal_parameters=parameters):
+            yield value[first:last], parameters
+            if parameters is not None:
+                parameters.clear()
+    # Old schema 1 writers could detach a query after an omission marker.
+    def detached_queries():
+        for match in _OMITTED_URL_QUERY.finditer(value):
+            # A historical omission can leave the original opening quote.
+            # Apply the same URL boundaries to its query and to complete URLs.
+            outer = value[match.start() - 1:match.start()] if match.start() else ''
+            candidate = outer + 'https://redacted.invalid/' + match[1]
+            for first, last in projected_url_spans(candidate):
+                yield candidate[first:last]
+    tails = detached_queries()
+    transforms = (lambda text: text, _bounded_html_unescape,
+                  lambda text: _displayed_http_url(text, bounded=True, modern=True))
+    for url, literal_parameters in itertools.chain(urls(), ((tail, None) for tail in tails)):
+        values.update(_userinfo_spellings(url))
+        confirmed = set()
+        for transform in transforms:
+            try:
+                parsed = urlsplit(transform(url))
+                values.update(_url_secrets(parsed))
+            except ValueError:
+                continue
+            if literal_parameters:
+                parameters = set(_sensitive_url_parameters(parsed))
+                for component, key_first, key_last, value_first, value_last in literal_parameters:
+                    assignment = (component, transform(value[key_first:key_last]),
+                                  transform(value[value_first:value_last]))
+                    if assignment in parameters:
+                        confirmed.add((key_first, key_last))
+        # A successful spelling owns only assignments whose component, key
+        # and complete value it actually learned. Otherwise keep the fallback.
+        if literal_parameters:
+            _literal_keys.extend((first, last) for _, first, last, _, _ in literal_parameters
+                                 if (first, last) in confirmed)
+    return {value for value in values if value}
+
+
+def projected_sensitive_values(value, *, syntax='prose'):
+    """Let literal URL keys own their values before parsing other assignments."""
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    literal_keys = []
+    values = projected_url_secrets(value, _literal_keys=literal_keys)
+    values.update(sensitive_values_from_text(value, syntax=syntax, _excluded_key_ranges=literal_keys))
+    return values
+
+
+def private_projected_url(value, spellings=()):
+    """Apply URL policy to the entire typed locator and its visible spellings."""
+    return (_private_http_url(value, modern=True) or
+            next(_sensitive_text_ranges(value, spellings, markdown_escapes=True), None) is not None)
+
+
+def private_url_spans(value, *, _bff_compat=False):
+    for first, last in projected_url_spans(value, _bff_compat=_bff_compat):
+        if _private_http_url(value[first:last], modern=not _bff_compat):
+            yield first, last
+
+
+def redact_projected_text(value, spellings, *, path_spans=(), _bff_compat=False):
+    """Redact copies across the composed value, using original URL boundaries."""
+    urls = iter(projected_url_spans(value, _bff_compat=_bff_compat))
+    url = next(urls, None)
+    chunks, cursor, pending = [], 0, None
+    known = _sensitive_text_ranges(value, spellings, markdown_escapes=True, _bff_compat=_bff_compat)
+    private_urls = private_url_spans(value, _bff_compat=_bff_compat)
+    for first, last in heapq.merge(known, private_urls, path_spans):
+        while url is not None and url[1] <= first:
+            url = next(urls, None)
+        while url is not None and url[0] < last:
+            first, last = min(first, url[0]), max(last, url[1])
+            url = next(urls, None)
         if pending is not None and first <= pending[1]:
             pending = pending[0], max(last, pending[1])
         else:
             if pending is not None:
-                yield pending
+                chunks.extend((value[cursor:pending[0]], OMITTED))
+                cursor = pending[1]
             pending = first, last
     if pending is not None:
-        yield pending
+        chunks.extend((value[cursor:pending[0]], OMITTED))
+        cursor = pending[1]
+    chunks.append(value[cursor:])
+    return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', ''.join(chunks))
 
 
-def safe_text(value, secrets=(), *, redact_paths=True):
-    """Filter private prose; typed projections may apply their own path policy."""
+def safe_text(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    """Sanitize original source text; presentation escapes carry no authority."""
+    return _sanitize_source_text(value, secrets, redact_paths, syntax)
+
+
+def sanitize_projected_detail(value, secrets, *, syntax='prose', explanation=False, _bff_compat=False):
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
     if not isinstance(value, str):
         return value
-    spellings = _secret_spellings(secrets)
-    def redact(text):
-        # Copies may be outside a recognized URL, including after an original
-        # delimiter. Match their source spelling and preserve everything else.
-        text = _redact_encoded_values(text, spellings)
-        for secret in spellings:
-            text = text.replace(secret, OMITTED)
-        return text
-    def url(text):
-        try:
-            # Inspect the displayed URL as well as raw prose; Markdown escapes
-            # and HTML entities must not disguise a sensitive query key.
-            displayed = re.sub(r'\\([\\`*{}\[\]()#+!_|>~])', r'\1', html.unescape(text))
-            parsed = urlsplit(displayed)
-            # Markdown reference encoding must not reintroduce a known secret.
-            # Decode URL escapes for comparison only; '+' stays literal and
-            # benign references retain their original spelling.
-            decoded = unquote(displayed)
-            # Normalization can also change a literal credential containing
-            # escapes. Check original and displayed forms before discarding them.
-            if any(secret in candidate for candidate in (text, displayed, decoded)
-                   for secret in spellings):
-                return '[URL omitida]'
-            if (parsed.username or parsed.password or not parsed.hostname
-                    or parsed.hostname.lower() in {'localhost', '127.0.0.1', '::1'}
-                    or parsed.hostname.lower().endswith(('.local', '.internal'))
-                    or _url_secrets(parsed)):
-                return '[URL omitida]'
-            return text
-        except ValueError:
-            return '[URL omitida]'
-    # Split original text before inserting any markers: their ']' must never
-    # truncate a URL and hide a later encoded occurrence from its policy check.
-    spans = re.split(r'(https?://[^\s<>\]\)]+)', value, flags=re.IGNORECASE)
-    for index in range(0, len(spans), 2):
-        spans[index] = redact(spans[index])
-        if redact_paths:
-            spans[index] = re.sub(r'(?i)(?:[a-z]:[\\/]|\\\\)[^\s<>\]\)]+', '[ruta privada]', spans[index])
-            spans[index] = re.sub(r'(?<![\w:/<])/(?!/)[^\s<>\]\)]+', '[ruta privada]', spans[index])
-    for index in range(1, len(spans), 2):
-        spans[index] = url(spans[index])
-    # A literal credential can cross an original delimiter boundary. Redact it
-    # after URL decisions; these markers can no longer affect URL recognition.
-    value = redact(''.join(spans))
-    value = re.sub(r'(?i)\b(token|password|secret|api[-_]?key|authorization)\s*[=:]\s*(?:(?:Bearer|Basic)\s+)?[^\s,;]+', r'\1=[omitido]', value)
-    value = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', ' ', value)
-    return value
+    if _bff_compat:
+        learned = (sensitive_values_from_text(value, syntax=syntax) |
+                   projected_url_secrets(value, _bff_compat=True))
+    else:
+        learned = projected_sensitive_values(value, syntax=syntax)
+    known = set(secrets) | learned
+    if syntax == 'structured':
+        known.update(_command_sensitive_values(value))
+    paths = ()
+    if explanation and not _bff_compat:
+        from ccr.contracts.disclosure_paths import private_detail_path_spans
+        paths = private_detail_path_spans(value, projected_url_spans(value))
+    value = redact_projected_text(value, _secret_spellings(known), path_spans=paths, _bff_compat=_bff_compat)
+    # Keep the existing filesystem filter outside full URL spans.
+    chunks, cursor = [], 0
+    for first, last in projected_url_spans(value, _bff_compat=_bff_compat):
+        chunks.extend((_legacy_safe_text(value[cursor:first], _redact_assignments=False), value[first:last]))
+        cursor = last
+    chunks.append(_legacy_safe_text(value[cursor:], _redact_assignments=False))
+    return ''.join(chunks)
+
+
+def _safe_text_lf(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    """Reproduce the archived editorial-v1 row, never generate a new view."""
+    return _sanitize_source_text(value, secrets, redact_paths, syntax, lf_compat=True)
+
+
+def _safe_text_f6b(value, secrets=(), *, redact_paths=True, syntax='prose'):
+    from ccr.contracts.disclosure_text_f6b083e import sensitive_values_from_text
+    return _sanitize_source_text(value, secrets, redact_paths, syntax, archived_lexer=sensitive_values_from_text)
+
+
+def _sanitize_source_text(value, secrets, redact_paths, syntax, *, lf_compat=False, archived_lexer=None):
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    if not isinstance(value, str):
+        return value
+    learned = (archived_lexer(value, syntax=syntax) if archived_lexer else
+               sensitive_values_from_text(value, syntax=syntax, _lf_compat=lf_compat))
+    if syntax == 'structured':
+        learned.update(_command_sensitive_values(value))
+    return _legacy_safe_text(value, set(secrets) | learned, redact_paths=redact_paths,
+                             _redact_assignments=False)
 
 
 def _resource_proof(check, observation, sources, identity):
@@ -508,7 +536,7 @@ def _git_membership(head, path, content, objects):
         return False
 
 
-def _project_command(execution, resources, contents):
+def _project_command(execution, resources, contents, *, sanitize=safe_text):
     argv = execution['argv']; eligible = {row['path'] for row in resources}
     cwd = execution.get('cwd', '').replace('\\', '/').rstrip('/')
     tool = ntpath.basename(argv[0]).lower().removesuffix('.exe')
@@ -589,7 +617,7 @@ def _project_command(execution, resources, contents):
             projected.append(OMITTED); mixed = True; continue
         original = project_path(arg)
         if original:
-            projected.append(safe_text(original)); resource_next = False; continue
+            projected.append(sanitize(original)); resource_next = False; continue
         if resource_next:
             projected.append(OMITTED); mixed = True; resource_next = False; continue
         if arg in RESOURCE_FLAGS:
@@ -603,7 +631,12 @@ def _project_command(execution, resources, contents):
     return shlex.join(projected), 'mixed' if mixed else 'project_command'
 
 
-def build_disclosure_row(check, observation, sources, identity):
+def build_disclosure_row(check, observation, sources, identity, *, _legacy=False, _lf_compat=False,
+                         _f6b_compat=False, _pre_atomic=False, _bff_compat=False, _139a_compat=False,
+                         _75f_compat=False, _780_compat=False, _4ed_compat=False, _251_compat=False,
+                         _a6e_compat=False):
+    sanitize = (_legacy_safe_text if _legacy else _safe_text_f6b if _f6b_compat else
+                _safe_text_lf if _lf_compat else safe_text)
     row = dict(id=check['id'], command_sha256=digest(check['command'].encode('utf-8')),
                execution_reference=None, mode='explanation', command=None, resources=[],
                explanation='No se dispone de argv y procedencia verificables para este check; propósito y resultado se conservan.', evidence_reference=None)
@@ -612,15 +645,38 @@ def build_disclosure_row(check, observation, sources, identity):
     row.update(execution_reference=observation.get('execution_reference'), evidence_reference=observation.get('evidence_reference'))
     execution, resources, contents = _resource_proof(check, observation, sources, identity)
     row['resources'] = resources
-    row['command'], row['mode'] = _project_command(execution, resources, contents)
+    row['command'], row['mode'] = _project_command(execution, resources, contents, sanitize=sanitize)
     secrets = sensitive_values(sources)
     if row['command'] is not None:
-        row['command'] = safe_text(row['command'], secrets)
-    row['explanation'] = safe_text(observation.get('explanation') or row['explanation'], secrets)
+        row['command'] = (_legacy_safe_text(row['command'], secrets) if _legacy else
+                          sanitize(row['command'], secrets, syntax='structured'))
+    explanation = observation.get('explanation') or row['explanation']
+    if _legacy or _lf_compat or _f6b_compat or _pre_atomic:
+        row['explanation'] = sanitize(explanation, secrets)
+    elif _139a_compat:
+        from ccr.contracts.disclosure_urls_139a175 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _75f_compat:
+        from ccr.contracts.disclosure_urls_75f50e0 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _780_compat:
+        from ccr.contracts.disclosure_urls_7806fd9 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _4ed_compat:
+        from ccr.contracts.disclosure_urls_4ed296c import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _251_compat:
+        from ccr.contracts.disclosure_urls_25108bc import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    elif _a6e_compat:
+        from ccr.contracts.disclosure_urls_a6eeb21 import sanitize_projected_detail as archived_detail
+        row['explanation'] = archived_detail(explanation, secrets, explanation=True)
+    else:
+        row['explanation'] = sanitize_projected_detail(explanation, secrets, explanation=True, _bff_compat=_bff_compat)
     return row
 
 
-def validate_check_disclosure(record, disclosure, sources, input_identity):
+def validate_check_disclosure(record, disclosure, sources, input_identity, *, _legacy_only=False):
     try:
         if not isinstance(disclosure, dict) or set(disclosure) != FIELDS or type(disclosure.get('schema_version')) is not int or disclosure.get('schema_version') != 1:
             return ['check disclosure requires exact schema 1 fields']
@@ -643,7 +699,32 @@ def validate_check_disclosure(record, disclosure, sources, input_identity):
             if set(row) != ROW_FIELDS or not isinstance(row['explanation'], str) or not row['explanation'].strip():
                 return ['check disclosure requires exact row fields and concrete explanation']
             observation = row if row['execution_reference'] or row['evidence_reference'] else None
-            expected = build_disclosure_row(check, observation, sources, input_identity)
+            expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=_legacy_only)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _a6e_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _251_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _4ed_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _780_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _75f_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _139a_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _bff_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _pre_atomic=True)
+            if row != expected and not _legacy_only:
+                # Reproduce the previous editorial row under the same proof.
+                expected = build_disclosure_row(check, observation, sources, input_identity, _lf_compat=True)
+            if row != expected and not _legacy_only:
+                expected = build_disclosure_row(check, observation, sources, input_identity, _f6b_compat=True)
+            if row != expected and not _legacy_only:
+                # Schema 1 predates editorial-v1. Its existing selected bytes
+                # remain valid under their original full resource-proof gate.
+                expected = build_disclosure_row(check, observation, sources, input_identity, _legacy=True)
             if row != expected:
                 return ['check disclosure differs from selected execution/input proof']
         return []
