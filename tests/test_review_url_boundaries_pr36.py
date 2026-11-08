@@ -318,6 +318,32 @@ class URLBoundaryReviewTests(unittest.TestCase):
                                *self.disclosure_outputs(source, copy_text=selected)):
                     self.assertNotIn('BLOCKSECRET', output)
 
+    def test_code_literals_keep_the_full_value_inside_quote_and_list_containers(self):
+        url = 'https://example.test/?%61pi%5Fkey=FULLSECRET.'
+        sources = (
+            '~~~text\n' + url + '\n~~~',
+            '> ~~~text\n> ' + url + '\n> ~~~',
+            '> > ~~~text\n> > ' + url + '\n> > ~~~',
+            '- ~~~text\n  ' + url + '\n  ~~~',
+            '- > ~~~text\n  > ' + url + '\n  > ~~~',
+            '> - ~~~text\n>   ' + url + '\n>   ~~~',
+            '- item\n  > ~~~text\n  > ' + url + '\n  > ~~~',
+            '\t> ~~~text\n\t> ' + url + '\n\t> ~~~',
+            'Observed ``literal ' + url + '``',
+        )
+        context = 'Business identifier FULLSECRET; complete private copy FULLSECRET.'
+        for source in sources:
+            with self.subTest(source=source):
+                secrets = contract.projected_url_secrets(source)
+                self.assertIn('FULLSECRET.', secrets)
+                self.assertNotIn('FULLSECRET', secrets)
+                selected = source + '\n' + context
+                disclosure_outputs = self.disclosure_outputs(source, copy_text=selected)
+                for output in (*self.public_outputs(source, context), *disclosure_outputs[2:]):
+                    self.assertIn('Business identifier FULLSECRET', output)
+                    self.assertNotIn('complete private copy FULLSECRET', output)
+                    self.assertNotIn('FULLSECRET.', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
@@ -421,3 +447,13 @@ class URLBoundaryReviewTests(unittest.TestCase):
         for output in self.disclosure_outputs(source, historical=source, copy_text=selected):
             self.assertNotIn('TICKNEIGHBORSECRET', output)
             self.assertIn('https://example.test/public', output)
+
+    def test_existing_1c57bb5_quoted_code_sidecar_keeps_its_bytes_and_current_precision(self):
+        source = '> ~~~text\n> https://example.test/?%61pi%5Fkey=FULLSECRET.\n> ~~~'
+        historical = '> ~~~text\n> [omitido].\n> ~~~'
+        selected = source + '\nBusiness identifier FULLSECRET; complete private copy FULLSECRET.'
+        outputs = self.disclosure_outputs(source, historical=historical, copy_text=selected)
+        for output in outputs[1:]:
+            self.assertIn('Business identifier FULLSECRET', output)
+            self.assertNotIn('complete private copy FULLSECRET', output)
+            self.assertNotIn('FULLSECRET.', output)

@@ -446,7 +446,9 @@ def _url_quote_ranges(value, opener):
     if opener == '`':
         from ccr.contracts.disclosure_text import _code_ranges, _LINES, _FENCE
         for first, last in _code_ranges(value, _LINES, _FENCE):
-            yield first - 1, last, '`', _quoted_url_destination(value, first, last)
+            # Code remains literal when its original offsets include quote or
+            # list prefixes. Those prefixes do not turn a URL into prose.
+            yield first - 1, last, '`', True
         return
     closing = _URL_QUOTES[opener]
     tokens = re.compile(r'\\[\s\S]|[' + re.escape(opener + closing) + ']')
