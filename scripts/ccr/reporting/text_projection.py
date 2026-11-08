@@ -263,7 +263,7 @@ class _Projection:
         # Public HTTP members and omissions retain their original source spans.
         # Omissions take precedence; public neighbors do not need an anchor to
         # survive in the redacted spelling, nor can input markers create one.
-        spellings = (check_disclosure._secret_spellings(self.secrets | sensitive_values_from_text(value))
+        spellings = (check_disclosure._secret_spellings(self.secrets | check_disclosure.projected_sensitive_values(value))
                      if self.new_policy else ())
         events = heapq.merge(
             ((*span[:2], 'omission', span[2]) for span in self._source_omissions(value, omit_commands, spellings)),

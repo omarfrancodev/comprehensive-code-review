@@ -29,12 +29,10 @@ def _text_values(value):
 
 def public_sensitive_values(record, view=None, sources=None, *, editorial_texts=()):
     """Learn from original selected inputs before any editorial replacement."""
-    from ccr.contracts.check_disclosure import private_values, projected_url_secrets
-    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    from ccr.contracts.check_disclosure import private_values, projected_sensitive_values
     values = private_values(record, view, sources or {})
     for text in set(_text_values(record)) | set(_text_values(editorial_texts)):
-        values.update(sensitive_values_from_text(text))
-        values.update(projected_url_secrets(text))
+        values.update(projected_sensitive_values(text))
     return values
 
 def public_url(value):

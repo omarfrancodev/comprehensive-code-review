@@ -129,7 +129,8 @@ def _code_ranges(value, lines, fence):
     yield from _inline_code_ranges(value, cursor, len(value))
 
 
-def sensitive_values_from_text(value: str, *, syntax='prose', _lf_compat=False) -> set[str]:
+def sensitive_values_from_text(value: str, *, syntax='prose', _lf_compat=False,
+                               _excluded_key_ranges=()) -> set[str]:
     """Only structured assignments teach values; narrative colons do not."""
     if syntax not in ('prose', 'structured'):
         raise ValueError('unknown privacy text syntax')
@@ -150,8 +151,17 @@ def sensitive_values_from_text(value: str, *, syntax='prose', _lf_compat=False) 
     ticks_by_length = None
     line_start, tested_line = 0, None
     consumed_until = 0
+    # Typed URL keys arrive in source order. Keep the full original text so
+    # independent assignments retain their line and code context.
+    excluded = iter(_excluded_key_ranges)
+    excluded_key = next(excluded, None)
     for match in chain((first_key,), keys):
         if match.start() < consumed_until:
+            continue
+        key_start = match.start('key')
+        while excluded_key is not None and excluded_key[1] <= key_start:
+            excluded_key = next(excluded, None)
+        if excluded_key is not None and excluded_key[0] <= key_start < excluded_key[1]:
             continue
         while newline is not None and newline.start() < match.start():
             line_start = newline.end()

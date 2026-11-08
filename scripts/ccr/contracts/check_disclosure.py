@@ -487,7 +487,7 @@ def _url_quote_ranges(value, opener):
             first = None
 
 
-def projected_url_spans(value, *, _bff_compat=False):
+def projected_url_spans(value, *, _bff_compat=False, _literal_keys=None):
     """Walk URL tokens once, distinguishing Markdown's closing delimiter."""
     if _bff_compat:
         from ccr.contracts.disclosure_urls_139a175 import projected_url_spans as archived_spans
@@ -498,12 +498,13 @@ def projected_url_spans(value, *, _bff_compat=False):
     for opener in _URL_QUOTES:
         if opener in value or (opener == '`' and '~~~' in value):
             ranges = iter(_url_quote_ranges(value, opener))
-            quotes.append({'ranges': ranges, 'current': next(ranges, None)})
+            quotes.append({'ranges': ranges, 'current': next(ranges, None), 'code': opener == '`'})
     while (scheme := _URL_SCHEME.search(value, position)) is not None:
         first = scheme.start()
         markdown_link = value[max(0, first - 2):first] == ']('
         outer = value[first - 1] if first else ''
         nearest_quote_start = -1
+        literal_code = False
         quoted_destination = False
         quote_end = None
         closing_quote = None
@@ -513,16 +514,18 @@ def projected_url_spans(value, *, _bff_compat=False):
                 quote = next(state['ranges'], None)
             state['current'] = quote
             if quote is not None and quote[0] < first:
+                literal_code = literal_code or state['code']
                 opening, end, closing, destination = quote
-                # The nearest quote owns punctuation. Any enclosing quote can
-                # still end the token, even when an outer prefix is malformed.
+                # Outside code, the nearest quote owns punctuation. Enclosing
+                # quotes can still end the token, including literal strings.
                 if opening > nearest_quote_start:
                     nearest_quote_start = opening
                     quoted_destination = destination
                 if quote_end is None or end < quote_end:
                     quote_end, closing_quote = end, closing
-        single_destination = markdown_link or outer == '<'
-        bounded = single_destination or quoted_destination or outer == '('
+        markdown_link = markdown_link and not literal_code
+        single_destination = not literal_code and (markdown_link or outer == '<')
+        bounded = literal_code or single_destination or quoted_destination or outer == '('
         brackets = []
         cursor = scheme.end()
         trailing_close = None
@@ -566,6 +569,8 @@ def projected_url_spans(value, *, _bff_compat=False):
             elif parameter_char == '=' and parameter_start is not None and not in_value:
                 key = _displayed_http_url(value[parameter_start:cursor], bounded=True, modern=True)
                 sensitive_value = bool(SENSITIVE_URL_KEY.search(unquote_plus(key)))
+                if literal_code and sensitive_value and _literal_keys is not None:
+                    _literal_keys.append((parameter_start, cursor))
                 in_value = True
             escaped = value[cursor + 1:cursor + 2]
             if (char == '\\' and (escaped in ('(', ')', '[', ']', '\\') or
@@ -579,9 +584,9 @@ def projected_url_spans(value, *, _bff_compat=False):
             elif char in ')]':
                 if brackets and brackets[-1] == char:
                     brackets.pop()
-                elif (markdown_link or outer == '(') and char == ')':
+                elif not literal_code and (markdown_link or outer == '(') and char == ')':
                     break
-                elif trailing_close is None:
+                elif not literal_code and trailing_close is None:
                     trailing_close = cursor
             if not bounded and char in '.,;!' and trailing_close is None:
                 trailing_close = cursor
@@ -600,13 +605,18 @@ def _displayed_http_url(text, *, bounded=False, modern=False):
     return escapes.sub(r'\1', displayed)
 
 
-def projected_url_secrets(value, *, _bff_compat=False):
+def projected_url_secrets(value, *, _bff_compat=False, _literal_keys=None):
     """Learn URL values from both wire and displayed spellings."""
     if _bff_compat:
         from ccr.contracts.disclosure_urls_139a175 import projected_url_secrets as archived_secrets
         return archived_secrets(value, _bff_compat=True)
     values = set()
-    urls = (value[first:last] for first, last in projected_url_spans(value))
+    def urls():
+        literal_keys = [] if _literal_keys is not None else None
+        for first, last in projected_url_spans(value, _literal_keys=literal_keys):
+            yield value[first:last], literal_keys
+            if literal_keys is not None:
+                literal_keys.clear()
     # Old schema 1 writers could detach a query after an omission marker.
     def detached_queries():
         for match in _OMITTED_URL_QUERY.finditer(value):
@@ -617,15 +627,30 @@ def projected_url_secrets(value, *, _bff_compat=False):
             for first, last in projected_url_spans(candidate):
                 yield candidate[first:last]
     tails = detached_queries()
-    for url in itertools.chain(urls, tails):
+    for url, literal_keys in itertools.chain(urls(), ((tail, None) for tail in tails)):
         values.update(_userinfo_spellings(url))
+        parsed = False
         for spelling in (url, _bounded_html_unescape(url),
                          _displayed_http_url(url, bounded=True, modern=not _bff_compat)):
             try:
                 values.update(_url_secrets(urlsplit(spelling)))
+                parsed = True
             except ValueError:
                 continue
+        # A malformed authority must retain the generic assignment fallback.
+        # Only a successfully parsed URL can own its literal parameter keys.
+        if parsed and literal_keys:
+            _literal_keys.extend(literal_keys)
     return {value for value in values if value}
+
+
+def projected_sensitive_values(value, *, syntax='prose'):
+    """Let literal URL keys own their values before parsing other assignments."""
+    from ccr.contracts.disclosure_text import sensitive_values_from_text
+    literal_keys = []
+    values = projected_url_secrets(value, _literal_keys=literal_keys)
+    values.update(sensitive_values_from_text(value, syntax=syntax, _excluded_key_ranges=literal_keys))
+    return values
 
 
 def private_projected_url(value, spellings=()):
@@ -714,8 +739,12 @@ def sanitize_projected_detail(value, secrets, *, syntax='prose', explanation=Fal
     from ccr.contracts.disclosure_text import sensitive_values_from_text
     if not isinstance(value, str):
         return value
-    known = (set(secrets) | sensitive_values_from_text(value, syntax=syntax) |
-             projected_url_secrets(value, _bff_compat=_bff_compat))
+    if _bff_compat:
+        learned = (sensitive_values_from_text(value, syntax=syntax) |
+                   projected_url_secrets(value, _bff_compat=True))
+    else:
+        learned = projected_sensitive_values(value, syntax=syntax)
+    known = set(secrets) | learned
     if syntax == 'structured':
         known.update(_command_sensitive_values(value))
     paths = ()

@@ -344,6 +344,88 @@ class URLBoundaryReviewTests(unittest.TestCase):
                     self.assertNotIn('complete private copy FULLSECRET', output)
                     self.assertNotIn('FULLSECRET.', output)
 
+    def test_code_url_value_closers_are_literal_and_do_not_erase_public_identifiers(self):
+        cases = (
+            ('Observed ``https://example.test/?{key}=FULLSECRET)``', 'FULLSECRET)'),
+            ('Observed ``https://example.test/?{key}=FULLSECRET]``', 'FULLSECRET]'),
+            ('> ~~~text\n> https://example.test/?{key}=FULLSECRET)\n> ~~~', 'FULLSECRET)'),
+            ('Observed ``x · [label](https://example.test/?{key}=FULLSECRET)TAIL)``', 'FULLSECRET)TAIL)'),
+            ('Observed ``https://example.test/?{key}=FULLSECRET%29``', 'FULLSECRET)'),
+        )
+        for key in ('%61pi%5Fkey', 'api_key'):
+            for template, complete in cases:
+                source = template.format(key=key)
+                context = 'Business identifier FULLSECRET; complete private copy ' + complete
+                with self.subTest(source=source):
+                    self.assertIn(complete, contract.projected_url_secrets(source))
+                    selected = source + '\n' + context
+                    views = self.disclosure_outputs(source, copy_text=selected)
+                    for output in (*self.public_outputs(source, context), *views[2:]):
+                        self.assertIn('Business identifier FULLSECRET', output)
+                        self.assertNotIn('complete private copy FULLSECRET', output)
+
+    def test_code_semantics_take_priority_over_an_interior_prose_quote(self):
+        for key in ('%61pi%5Fkey', 'api_key'):
+            url = 'https://example.test/?' + key + '=FULLSECRET.'
+            sources = ('Observed ``"observed ' + url + '"``',
+                       'Observed ``observed ' + url + '``',
+                       'Observed ``"' + url + '"``')
+            context = 'Business identifier FULLSECRET; complete private copy FULLSECRET.'
+            for source in sources:
+                with self.subTest(source=source):
+                    self.assertIn('FULLSECRET.', contract.projected_url_secrets(source))
+                    selected = source + '\n' + context
+                    views = self.disclosure_outputs(source, copy_text=selected)
+                    for output in (*self.public_outputs(source, context), *views[2:]):
+                        self.assertIn('Business identifier FULLSECRET', output)
+                        self.assertNotIn('complete private copy FULLSECRET', output)
+
+    def test_literal_url_key_ownership_preserves_independent_and_nested_assignments(self):
+        sources = (
+            '``https://example.test/?api_key=FULLSECRET]`` token=EXPLICITSECRET',
+            '``https://example.test/?api_key=FULLSECRET]&search=token=EXPLICITSECRET``',
+            '~~~text\nhttps://example.test/?api_key=FULLSECRET]\ninside token: EXPLICITSECRET\n~~~',
+        )
+        context = 'Business identifier FULLSECRET; independent copy EXPLICITSECRET'
+        for source in sources:
+            with self.subTest(source=source):
+                learned = contract.projected_sensitive_values(source)
+                self.assertIn('FULLSECRET]', learned)
+                self.assertNotIn('FULLSECRET', learned)
+                self.assertIn('EXPLICITSECRET', learned)
+                for output in (*self.public_outputs(source, context),
+                               *self.disclosure_outputs(source, copy_text=source + '\n' + context)[2:]):
+                    self.assertIn('Business identifier FULLSECRET', output)
+                    self.assertNotIn('EXPLICITSECRET', output)
+        source = '``https://example.test/?api_key=FULLSECRET]`` token=FULLSECRET'
+        self.assertIn('FULLSECRET', contract.projected_sensitive_values(source))
+        for output in self.public_outputs(source, 'Independent copy FULLSECRET'):
+            self.assertNotIn('FULLSECRET', output)
+
+    def test_unparseable_code_url_does_not_disable_assignment_learning(self):
+        source = '``https://[broken/?api_key=INVALIDSECRET]``'
+        self.assertIn('INVALIDSECRET', contract.projected_sensitive_values(source))
+        for output in self.public_outputs(source, 'Independent copy INVALIDSECRET'):
+            self.assertNotIn('INVALIDSECRET', output)
+
+    def test_exact_4070520_rows_keep_proof_with_literal_url_projection(self):
+        cases = (
+            ('Observed ``x · [label](https://example.test/?api_key=FULLSECRET)TAIL)``',
+             'Observed ``x · [label]([omitido]``', 'FULLSECRET)TAIL)'),
+            ('Observed ``"observed https://example.test/?api_key=FULLSECRET."``',
+             'Observed ``"observed [omitido]``', 'FULLSECRET.'),
+            ('Observed ``https://example.test/?api_key=FULLSECRET]``',
+             'Observed ``[omitido]]``', 'FULLSECRET]'),
+        )
+        for source, historical, complete in cases:
+            with self.subTest(source=source):
+                context = ('Business identifier FULLSECRET; complete private copy ' + complete)
+                outputs = self.disclosure_outputs(source, historical=historical,
+                                                  copy_text=source + '\n' + context)
+                for output in outputs[1:]:
+                    self.assertIn('Business identifier FULLSECRET', output)
+                    self.assertNotIn('complete private copy FULLSECRET', output)
+
     def test_backslash_before_space_does_not_join_private_destination(self):
         for neighbor, private in (
             ('https://alice:NEIGHBORSECRET@example.test/private', 'NEIGHBORSECRET'),
