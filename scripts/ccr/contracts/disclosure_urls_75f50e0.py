@@ -7,7 +7,7 @@ import heapq
 import itertools
 import re
 from urllib.parse import urlsplit
-from ccr.contracts.check_disclosure import (
+from ccr.contracts.disclosure_primitives import (
     OMITTED, _URL_SCHEME, _OMITTED_URL_QUERY, _private_http_url,
     _userinfo_spellings, _bounded_html_unescape, _displayed_http_url,
     _url_secrets, _sensitive_text_ranges, _secret_spellings,
