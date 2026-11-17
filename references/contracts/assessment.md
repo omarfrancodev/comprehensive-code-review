@@ -10,6 +10,8 @@ Guided reviews attach `assessment` to final 13. Its own `schema_version` is 1. C
 
 A `source` is `{reference, sha256}`. Use an explicitly selected flat evidence file and the digest of its original bytes. A fragment may identify a decision in the file. Hashes bind the selected bytes. The reviewer establishes authority and material relevance. Keep raw source references out of the public comment.
 
+When current evidence consolidates published findings into one cause, keep a published survivor and map every duplicate and inherited alias directly to it. Verify the survivor in the current delta. Its disposition must preserve the accepted decisions and conditions of every consolidated member; changing any applicable decision requires its material reopening evidence. An unchanged inherited decision keeps its original source without requiring initial recapture. A `this_review` exclusion still expires.
+
 ## Confirming a code finding
 
 In the assigned verification pass, cite the evidence for the obligation, the supported input or reachable caller that triggers it, and the concrete consequence. A requirement, published contract, applicable test, or traced caller can establish the obligation and trigger. A difference from the baseline shows what changed. Establish separately that the reviewed contract covers the scenario before confirming it, including for a nonblocking finding. Reject a candidate when its trigger is outside the supported scope. If a material in-scope question remains open, keep it unresolved and record the evidence gap. A decisive static trace is sufficient. Preserve accredited dispositions and their conditions when the confirmed behavior is accepted debt.

@@ -61,6 +61,30 @@ def followup(previous=None):
     return record, {'evidence/prior.json': raw, 'evidence/note.txt': NOTE, 'evidence/proof.txt': PROOF}
 
 
+
+def two_published_findings(record=None):
+    record = assessed(record)
+    record['findings'].append(dict(record['findings'][0], id='F002',
+                                    title='Second report of duplicate delivery'))
+    decision = copy.deepcopy(record['assessment']['findings'][0])
+    decision.update(id='F002', cause='second-report-of-duplicate-delivery')
+    record['assessment']['findings'].append(decision)
+    return record
+
+
+def consolidated_followup(previous):
+    current, sources = followup(previous)
+    current['findings'] = [row for row in current['findings'] if row['id'] == 'F001']
+    current['assessment']['findings'] = [
+        row for row in current['assessment']['findings'] if row['id'] == 'F001']
+    current['aliases'] = {alias: 'F001' if target == 'F002' else target
+                          for alias, target in current['aliases'].items()}
+    current['aliases']['F002'] = 'F001'
+    current['rereview'][0]['details'] = (
+        'Both published reports were inspected and establish the same delivery cause.')
+    return current, sources
+
+
 def rendered(record, audience):
     disclosure = build_check_disclosure(record, input_identity_for(record), {}, {})
     contexts = contexts12(record) if audience == 'comment' else {}
@@ -129,6 +153,111 @@ class AssessmentTests(unittest.TestCase):
         current['assessment']['findings'].append(dict(current['assessment']['findings'][0], id='F002'))
         with self.assertRaisesRegex(ValueError, 'published ID'):
             verify_sources(current, sources.__getitem__)
+
+    def test_consolidation_preserves_published_aliases_and_shared_accepted_debt(self):
+        from ccr.contracts.assessment import verify_sources
+        previous = two_published_findings()
+        previous['aliases'] = {'F003': 'F002'}
+        current, sources = consolidated_followup(previous)
+        self.assertEqual(review.validate(previous), [])
+        self.assertEqual(review.validate(current), [])
+        verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
+        self.assertEqual(current['aliases'], {'F002': 'F001', 'F003': 'F001'})
+        for audience in ('user', 'comment'):
+            output = rendered(current, audience)
+            self.assertIn('Deuda aceptada', output)
+            self.assertIn('Writes stay disabled', output)
+            self.assertNotIn('Corrección requerida', output)
+        for removed in ('F002', 'F003'):
+            missing = copy.deepcopy(current)
+            missing['aliases'].pop(removed)
+            with self.subTest(removed=removed), self.assertRaises(ValueError):
+                verify_sources(missing, sources.__getitem__)
+
+    def test_consolidation_inherits_debt_from_the_aliased_member_without_recapture(self):
+        from ccr.contracts.assessment import verify_sources
+        previous = two_published_findings()
+        previous['assessment']['findings'][0]['resolution'] = None
+        current, sources = consolidated_followup(previous)
+        current['assessment']['findings'][0]['resolution'] = copy.deepcopy(
+            previous['assessment']['findings'][1]['resolution'])
+        self.assertEqual(review.validate(current), [])
+        verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
+        decision = current['assessment']['findings'][0]
+        for field, changed in (('resolution', None),
+                               ('resolution', dict(decision['resolution'], conditions=[]))):
+            altered = copy.deepcopy(current)
+            altered['assessment']['findings'][0][field] = changed
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'reopening'):
+                verify_sources(altered, sources.__getitem__, captured_inputs={'sources': {}})
+
+    def test_consolidation_cannot_discard_a_different_accepted_condition(self):
+        from ccr.contracts.assessment import verify_sources
+        previous = two_published_findings()
+        previous['assessment']['findings'][1]['resolution']['conditions'] = [
+            'Consumer remains read-only']
+        current, sources = consolidated_followup(previous)
+        self.assertEqual(review.validate(current), [])
+        with self.assertRaisesRegex(ValueError, 'reopening'):
+            verify_sources(current, sources.__getitem__)
+
+    def test_consolidation_can_reopen_aliased_debt_with_new_condition_evidence(self):
+        from ccr.contracts.assessment import verify_sources
+        previous = two_published_findings()
+        previous['assessment']['findings'][0]['resolution'] = None
+        current, sources = consolidated_followup(previous)
+        row = current['assessment']['findings'][0]
+        row['reopening'] = dict(reason='condition_changed', detail='Writes were enabled',
+            condition='Writes stay disabled', evidence_id='EV001', source=source('new.txt', NEW))
+        current['coverage']['evidence'][0]['reference'] = 'evidence/new.txt'
+        current['assessment']['scope']['delta'][0]['sources'] = [source('new.txt', NEW)]
+        sources['evidence/new.txt'] = NEW
+        self.assertEqual(review.validate(current), [])
+        verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
+        row['reopening']['condition'] = 'An unrelated condition'
+        with self.assertRaisesRegex(ValueError, 'original accepted condition'):
+            verify_sources(current, sources.__getitem__)
+
+    def test_consolidation_needs_current_verification_of_the_survivor(self):
+        from ccr.contracts.assessment import verify_sources
+        current, sources = consolidated_followup(two_published_findings())
+        current['findings'] = []
+        current['rereview'][0]['status'] = 'not_reevaluated'
+        current['assessment']['findings'][0].update(relation='outside_scope', verification=None)
+        self.assertEqual(review.validate(current), [])
+        with self.assertRaisesRegex(ValueError, 'consolidation'):
+            verify_sources(current, sources.__getitem__)
+
+    def test_consolidation_cannot_reassign_a_published_member_to_a_new_id(self):
+        from ccr.contracts.assessment import verify_sources
+        current, sources = consolidated_followup(two_published_findings())
+        current['findings'].append(dict(current['findings'][0], id='F004'))
+        decision = copy.deepcopy(current['assessment']['findings'][0])
+        decision.update(id='F004', cause='new-cause')
+        current['assessment']['findings'].append(decision)
+        current['rereview'].append(dict(
+            id='F004', status='new', details='New independent cause',
+            previous_review_id=None, previous_reference=None, previous_finding_id=None,
+            previous_title=None, previous_url=None, check_ids=[]))
+        current['aliases']['F002'] = 'F004'
+        self.assertEqual(review.validate(current), [])
+        with self.assertRaisesRegex(ValueError, 'published survivor'):
+            verify_sources(current, sources.__getitem__)
+
+    def test_consolidation_keeps_one_review_exclusions_expired(self):
+        from ccr.contracts.assessment import verify_sources
+        previous = two_published_findings()
+        previous['assessment']['findings'][0]['resolution'] = None
+        previous['assessment']['findings'][1]['resolution'].update(
+            status='out_of_scope', scope='this_review')
+        current, sources = consolidated_followup(previous)
+        current['assessment']['findings'][0]['resolution'] = copy.deepcopy(
+            previous['assessment']['findings'][1]['resolution'])
+        self.assertEqual(review.validate(current), [])
+        with self.assertRaisesRegex(ValueError, 'this_review'):
+            verify_sources(current, sources.__getitem__)
+        current['assessment']['findings'][0]['resolution'] = None
+        verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
 
     def test_group_chooses_the_previously_published_id(self):
         from ccr.contracts.identifiers import deduplicate
@@ -227,6 +356,50 @@ class AssessmentCompactTests(unittest.TestCase):
     setUp = compact_fixtures.CompactPrepareTests.setUp
     prepare = compact_fixtures.CompactPrepareTests.prepare
     record_and_sources = compact_fixtures.CompactPrepareTests.record_and_sources
+
+    def test_compact_consolidation_preserves_ids_debt_and_previous_bytes(self):
+        from ccr.archive import compact
+        for legacy in (True, False):
+            with self.subTest(legacy=legacy):
+                inputs = dict(self.inputs, sources={
+                    'evidence/note.txt': source('note.txt', NOTE)['sha256']})
+                prepared = self.prepare(inputs=inputs, operation_id='prior-' + str(legacy))
+                record, selected = self.record_and_sources(prepared)
+                two_published_findings(record)
+                assessment = copy.deepcopy(record['assessment'])
+                if legacy:
+                    record.pop('assessment')
+                saved = compact.create_compact(
+                    prepared, record, render(record), current_inputs=inputs,
+                    sources={**selected, 'evidence/note.txt': NOTE, 'evidence/proof.txt': PROOF})
+                old_file = Path(saved['run_dir']) / 'review.json'
+                old_bytes = old_file.read_bytes()
+                previous = compact.read_compact(saved['run_dir'])['record']
+                previous['assessment'] = assessment
+                next_inputs = inputs if legacy else self.inputs
+                prepared = self.prepare(inputs=next_inputs, operation_id='merged-' + str(legacy))
+                fresh, selected = self.record_and_sources(prepared)
+                current, sources = consolidated_followup(previous)
+                current.pop('compact_identity')
+                current['review_id'] = fresh['review_id']
+                current['coverage']['execution'] = fresh['coverage']['execution']
+                current['previous_reviews'][0]['reference'] = str(old_file)
+                current['rereview'][0]['previous_reference'] = str(old_file)
+                current['assessment']['previous']['source'] = source('prior.json', old_bytes)
+                sources['evidence/prior.json'] = old_bytes
+                self.assertEqual(review.validate(current), [])
+                kept = compact.create_compact(
+                    prepared, current, current_inputs=next_inputs, sources={**selected, **sources})
+                retained = compact.read_compact(kept['run_dir'])['record']
+                self.assertEqual(retained['aliases'], {'F002': 'F001'})
+                self.assertEqual([row['id'] for row in retained['findings']], ['F001'])
+                self.assertEqual(retained['assessment']['findings'][0]['resolution'],
+                                 assessment['findings'][0]['resolution'])
+                output = (Path(kept['run_dir']) / 'informe.md').read_text(encoding='utf-8')
+                self.assertIn('Deuda aceptada', output)
+                self.assertIn('Writes stay disabled', output)
+                self.assertNotIn('Corrección requerida', output)
+                self.assertEqual(old_file.read_bytes(), old_bytes)
 
     def test_followup_baseline_checks_selected_archive_before_prepare(self):
         import subprocess

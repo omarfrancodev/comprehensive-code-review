@@ -4,6 +4,12 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ## unreleased
 
+### Fixed
+
+#### Artefactos y contratos
+
+- Permitir la consolidación acreditada de hallazgos publicados mediante aliases directos al ID superviviente. Conservar los aliases heredados y las decisiones de deuda de cada miembro, con sus condiciones, evidencia y límites de reapertura.
+
 ### Changed
 
 #### Artefactos y contratos

@@ -232,7 +232,10 @@ def verify_sources(record, read_source, *, captured_inputs=None):
         old = _by_id(_rows(previous.get('assessment') or {}, 'findings'))
         for row in assessment['findings']:
             decision = row['resolution']
-            if decision is not None and decision != old.get(row['id'], {}).get('resolution'):
+            inherited = any(decision == prior_row['resolution']
+                            for identifier, prior_row in old.items()
+                            if record['aliases'].get(identifier, identifier) == row['id'])
+            if decision is not None and not inherited:
                 descriptor = decision['source']
                 if initial.get(descriptor['reference'].split('#', 1)[0]) != descriptor['sha256']:
                     raise ValueError('new resolution decision must be bound to an initially captured source')
@@ -254,12 +257,25 @@ def _verify_continuity(record, assessment, previous):
               and old_tracking.get(key, {}).get('status') not in ('resolved', 'withdrawn')}
     protected = {key for key, row in old_decisions.items() if (row['resolution'] or {}).get('scope') == 'logical_scope'}
     required = protected | (active if record['presentation']['kind'] in ('rereview', 'complement') else set())
-    if not required <= tracking.keys() or not required <= new_decisions.keys():
+    published = old_findings.keys() | old_tracking.keys() | old_decisions.keys()
+    survivors = {key: record['aliases'].get(key, key) for key in published}
+    if any(survivors[key] not in tracking or survivors[key] not in new_decisions for key in required):
         raise ValueError('assessment must preserve each applicable published ID, including accepted debt')
+    for identifier, survivor in survivors.items():
+        if identifier == survivor:
+            continue
+        if survivor not in published:
+            raise ValueError('consolidation requires a published survivor')
+        row, tracked = new_decisions.get(survivor), tracking.get(survivor)
+        if (not row or not tracked or tracked['status'] in ('new', 'not_reevaluated')
+                or row['relation'] == 'outside_scope' or not row['verification']
+                or not row['verification']['evidence_ids']):
+            raise ValueError('consolidation requires current verification of the published survivor')
     aliases = previous.get('aliases', {})
     if not isinstance(aliases, dict):
         raise ValueError('previous assessment requires the published alias map')
-    if any(record['aliases'].get(alias) != target for alias, target in aliases.items() if target in tracking):
+    if any(record['aliases'].get(alias) != survivors.get(target, target)
+           for alias, target in aliases.items() if survivors.get(target, target) in tracking):
         raise ValueError('assessment must preserve published aliases for tracked findings')
     for identifier, row in new_decisions.items():
         old = old_decisions.get(identifier)
@@ -277,6 +293,19 @@ def _verify_continuity(record, assessment, previous):
             raise ValueError('follow-up ID is absent from the selected previous review')
         if identifier in aliases:
             raise ValueError('a published alias cannot be reused as a finding ID')
+        reopening = row['reopening']
+        if (reopening is not None and reopening['reason'] == 'condition_changed'
+                and not any(reopening['condition'] in (old_row['resolution'] or {}).get('conditions', [])
+                            for key, old_row in old_decisions.items() if survivors[key] == identifier)):
+            raise ValueError('reopening must identify the original accepted condition')
+    # A consolidated decision must satisfy the policy of every published member.
+    # Checking only the survivor could silently discard the aliased member's debt.
+    for identifier, survivor in survivors.items():
+        row = new_decisions.get(survivor)
+        if row is None:
+            continue
+        old = old_decisions.get(identifier)
+        tracked = tracking.get(survivor)
         old_resolution = old['resolution'] if old else None
         decision = row['resolution']
         if old_resolution is not None and old_resolution['scope'] == 'this_review' and decision is not None:
@@ -294,6 +323,6 @@ def _verify_continuity(record, assessment, previous):
         if reopening is not None:
             if reopening['source']['sha256'] in old_hashes:
                 raise ValueError('reopening source was already used by the previous assessment')
-            if (reopening['reason'] == 'condition_changed'
+            if (changed_debt and reopening['reason'] == 'condition_changed'
                     and (old_resolution is None or reopening['condition'] not in old_resolution['conditions'])):
                 raise ValueError('reopening must identify the original accepted condition')
