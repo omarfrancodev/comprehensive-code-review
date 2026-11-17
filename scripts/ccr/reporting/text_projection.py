@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
+from ccr.contracts.assessment import source_references
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, sensitive_text_ranges
 from ccr.contracts.disclosure_paths import _POSIX_PATH, _QUOTED_PATH, _SOURCE_TOKENS, _local_start, source_tokens
 from ccr.contracts.disclosure_text import sensitive_values_from_text
@@ -81,6 +82,15 @@ class _Projection:
         change_authors[].name change_authors[].username change_authors[].commits[]
         presentation.kind description.identity previous_reviews[].review_id
         compact_identity.inputs_sha256 compact_identity.logical_scope_identity compact_identity.created_at
+        assessment.scope.base assessment.scope.head assessment.scope.snapshot
+        assessment.scope.delta[].evidence_ids[] assessment.scope.delta[].sources[].sha256
+        assessment.previous.review_id assessment.previous.source.sha256
+        assessment.findings[].id assessment.findings[].cause assessment.findings[].relation
+        assessment.findings[].verification.evidence_ids[] assessment.findings[].resolution.status
+        assessment.findings[].resolution.scope assessment.findings[].resolution.authority
+        assessment.findings[].resolution.channel assessment.findings[].resolution.source.sha256
+        assessment.findings[].reopening.reason assessment.findings[].reopening.evidence_id
+        assessment.findings[].reopening.source.sha256
         grandfathered_ids.findings[] grandfathered_ids.checks[]
         rereview[].id rereview[].status rereview[].previous_review_id
         rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
@@ -93,10 +103,16 @@ class _Projection:
         coverage.areas[].applicability_reason coverage.areas[].groups[].reason coverage.evidence[].detail
         coverage.execution.profile_history[].reason coverage.execution.profile_history[].authority
         responsible.source change_authors[].source description.details
-        presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
+        presentation.subject rereview[].details rereview[].previous_title resources.residuals[]
+        assessment.scope.delta[].detail assessment.findings[].verification.obligation
+        assessment.findings[].verification.trigger assessment.findings[].verification.consequence
+        assessment.findings[].verification.consumer assessment.findings[].verification.question
+        assessment.findings[].resolution.conditions[] assessment.findings[].reopening.detail
+        assessment.findings[].reopening.condition'''.split())
 
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None,
                  check_disclosure_sources=None, editorial_texts=()):
+        self.assessment_references = source_references(record)
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
         editorial_texts = tuple(editorial_texts)
@@ -375,7 +391,10 @@ class _Projection:
         if not isinstance(value, str):
             return value
         field = re.sub(r'\[\d+\]', '[]', path.removeprefix('record.'))
-        if field in self.STRUCTURAL:
+        if (value in self.assessment_references and field.endswith('.reference')
+                and (field.startswith('assessment.') or field == 'coverage.evidence[].reference')):
+            projected = 'evidence/retained-' + _hash(value.encode('utf-8'))[:32] + '.json'
+        elif field in self.STRUCTURAL:
             projected = self.structural(value, path)
         elif field == 'description.status':
             projected = self.structural(value, path)

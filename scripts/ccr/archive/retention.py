@@ -9,6 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from ccr.archive.coordination import _locked_run
+from ccr.archive.assessment import require_followup_assessment, verify_prior_archive
+from ccr.contracts.assessment import source_references, verify_sources as verify_assessment_sources
 from ccr.contracts.dispatch import is_identity_annotation
 from ccr.archive.evidence import (
     _capture_review_inputs, _check_evidence_target, _evidence_contents, _input_object,
@@ -187,6 +189,7 @@ def retained_model_context(run, manifest, contents=None, record=None):
         return selected_source_bytes(run, manifest, contents, name)
     if 'evidence/context.json' not in contents and 'evidence/context.json' not in manifest.get('hashes', {}):
         return None
+    verify_assessment_sources(value, source, captured_inputs=manifest.get('review_inputs') or {})
     context = json.loads(source('evidence/context.json'))
     events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
     return load_model_usage_context(context, source, manifest, record=record, events=events)
@@ -234,6 +237,7 @@ def _execution_gate(run, manifest, value, contents):
     execution = value['coverage']['execution']
     requested = {row['reference'] for key in ('plan', 'results') for row in execution[key]}
     requested.update(row['source'] for row in execution['fallbacks'])
+    requested.update(source_references(value))
     for event in events:
         if is_identity_annotation(event):
             provenance = event.get('provenance')
@@ -589,6 +593,8 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     errors = validate_review(value)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
+    if expected_schema == 13:
+        require_followup_assessment(value)
     if value['scope'] != manifest['scope']:
         raise ValueError('final review scope differs from the pinned scope')
     if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
@@ -655,4 +661,8 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     manifest['temporary_manifests'] = _temporary_manifests(temporary, manifest)
     manifest['residuals'] = present
     manifest['executors'] = executors
+    if 'assessment' in value and manifest.get('state') != 'retaining':
+        from ccr.archive.compact import read_compact
+        verify_prior_archive(value, manifest.get('logical_scope'), manifest['repository_key'],
+                             previous_run=manifest.get('previous_run'), compact_reader=read_compact)
     return _retain_data(run, manifest, marker, contents)

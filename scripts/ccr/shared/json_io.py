@@ -1,10 +1,10 @@
 """Bounded JSON reads and atomic writes for trusted archive paths."""
-import json
 import os
 import stat
 import uuid
 
 from ccr.shared.paths import safe_path
+from ccr.shared.encoding import decode_json
 
 
 def read_bounded(path, limit):
@@ -28,21 +28,8 @@ def read_bounded(path, limit):
 
 
 def read_json(path, *, max_bytes=None):
-    def unique(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError('duplicate JSON key: ' + key)
-            result[key] = value
-        return result
-    def invalid_constant(value):
-        raise ValueError('nonfinite JSON number: ' + value)
-    if max_bytes is None:
-        data = safe_path(path).read_bytes()
-    else:
-        data = read_bounded(path, max_bytes)
-    return json.loads(data.decode('utf-8'), object_pairs_hook=unique,
-                      parse_constant=invalid_constant)
+    data = safe_path(path).read_bytes() if max_bytes is None else read_bounded(path, max_bytes)
+    return decode_json(data)
 
 
 def atomic_write(path, data, *, staging_path=None):

@@ -10,8 +10,10 @@ import secrets
 import sys
 
 from ccr.archive import layout
+from ccr.archive.assessment import require_followup_assessment, verify_prior_archive
 from ccr.archive.reader import _repository_group
 from ccr.contracts.scope import require_scope
+from ccr.contracts.assessment import verify_sources as verify_assessment_sources
 from ccr.contracts.references import parse_reference, resolve_reference
 from ccr.contracts.reference_index import canonical_reference
 from ccr.contracts.execution import validate_execution_sources
@@ -423,6 +425,7 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
     if current != request['review_inputs']:
         raise ValueError('compact current inputs differ from the pinned inputs')
     selected = _source_bytes(sources)
+    verify_assessment_sources(record, selected.__getitem__, captured_inputs=request['review_inputs'])
     index = _validate_compact_sources(record, request, selected)
     for reference, expected in request['review_inputs']['sources'].items():
         path, _ = parse_reference(canonical_reference(reference, index.get('aliases', {}) if index else {}), field='pinned source')
@@ -464,6 +467,8 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
     else:
         if payload.exists():
             raise ValueError('preexisting compact payload has no durable ownership intent')
+        repository_key = hashlib.sha256(request['repository_identity'].encode('utf-8')).hexdigest()[:20]
+        verify_prior_archive(record, prepared['logical_scope'], repository_key, compact_reader=read_compact)
         atomic_write(intent_path, archive_bytes(intent))
     payload.mkdir(exist_ok=True)
     for name, data in files.items():
@@ -542,6 +547,7 @@ def read_compact(run_dir):
     if normalized.get('scope') != request['scope'] or normalized.get('logical_scope_identity') != logical['identity']:
         raise ValueError('compact initial input identity differs from the pinned scope')
     selected = {name: data for name, data in content.items() if name.startswith('evidence/')}
+    verify_assessment_sources(record, selected.__getitem__, captured_inputs=request['review_inputs'])
     index = _validate_compact_sources(record, request, selected)
     if content['informe.md'] != _render_compact(record, request, selected).encode('utf-8'):
         raise ValueError('compact report does not match the canonical record')

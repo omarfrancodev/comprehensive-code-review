@@ -6,10 +6,13 @@ from ccr.contracts.identifier_types import canonical_id
 from ccr.contracts.review import validate
 
 
-def deduplicate(findings, groups):
+def deduplicate(findings, groups, *, prior_ids=()):
     """Group only coordinator-supplied same-cause IDs; preserve every original candidate."""
     if not isinstance(findings, list) or not isinstance(groups, list):
         raise ValueError('findings and groups must be arrays')
+    if not isinstance(prior_ids, (tuple, list)) or any(not isinstance(item, str) for item in prior_ids):
+        raise ValueError('prior finding IDs must be an array of published ID strings')
+    published = set(prior_ids)
     by_id = {}
     for item in findings:
         if not isinstance(item, dict) or not isinstance(item.get('id'), str) or item['id'] in by_id:
@@ -23,7 +26,11 @@ def deduplicate(findings, groups):
         if any(not isinstance(identifier, str) or identifier not in by_id or identifier in used for identifier in group) or len(set(group)) != len(group):
             raise ValueError('unknown or overlapping group ID')
         used.update(group)
-        output.append({'id': group[0], 'member_ids': list(group), 'candidates': [by_id[i] for i in group]})
+        survivors = published.intersection(group)
+        if len(survivors) > 1 and group[0] not in survivors:
+            raise ValueError('select a published survivor explicitly when grouping prior findings')
+        survivor = group[0] if len(survivors) != 1 else next(iter(survivors))
+        output.append({'id': survivor, 'member_ids': list(group), 'candidates': [by_id[i] for i in group]})
     output.extend({'id': identifier, 'member_ids': [identifier], 'candidates': [item]}
                   for identifier, item in by_id.items() if identifier not in used)
     return output
@@ -105,6 +112,8 @@ def canonicalize_ids(record, reserved_ids=None):
     for row in result.get('rereview', []):
         row['id'] = mapped(finding_map, row['id'])
         row['check_ids'] = [mapped(check_map, identifier) for identifier in row.get('check_ids', [])]
+    for row in result.get('assessment', {}).get('findings', []):
+        row['id'] = mapped(finding_map, row['id'])
     result['aliases'] = {mapped(finding_map, source): mapped(finding_map, survivor)
                          for source, survivor in result.get('aliases', {}).items()}
     errors = validate(result)

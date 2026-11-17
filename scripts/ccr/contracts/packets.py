@@ -1,8 +1,9 @@
 """Pure compact-packet validation and decision-delta merging."""
 import copy
 
+from ccr.contracts.assessment import validate_verification
 from ccr.contracts.review import validate as validate_review
-from ccr.contracts.validation import PRIORITIES
+from ccr.contracts.validation import PRIORITIES, ValidationState
 from ccr.contracts.provenance import validate_check_execution
 
 
@@ -92,7 +93,7 @@ def validate(packet, *, reference_index=None, reference_sources=None,
     for i, entry in enumerate(array(packet.get(key), key)):
         path = f'{key}[{i}]'
         required = {'id', 'type', 'location', 'scenario', 'impact', 'evidence'} if stage == 'discovery' else {'id', 'status', 'evidence'}
-        entry = obj(entry, required, set() if stage == 'discovery' else {'updates'}, path)
+        entry = obj(entry, required, set() if stage == 'discovery' else {'updates', 'assessment'}, path)
         identifier = entry.get('id')
         text(identifier, path + '.id')
         if isinstance(identifier, str):
@@ -107,6 +108,18 @@ def validate(packet, *, reference_index=None, reference_sources=None,
                 text(entry.get(field), path + '.' + field)
         else:
             choice(entry.get('status'), {'confirmed', 'rejected', 'unresolved'}, path + '.status')
+            if 'assessment' in entry:
+                assessed = obj(entry['assessment'], {'cause', 'relation', 'verification'}, set(), path + '.assessment')
+                text(assessed.get('cause'), path + '.assessment.cause')
+                relation = assessed.get('relation')
+                choice(relation, {'in_scope', 'affected_consumer', 'outside_scope'}, path + '.assessment.relation')
+                confirmed = entry.get('status') == 'confirmed'
+                if confirmed and relation == 'outside_scope':
+                    fail(path + '.assessment.relation', 'outside scope cannot be confirmed')
+                state = ValidationState()
+                validate_verification(assessed.get('verification'), relation, confirmed, state,
+                                      path + '.assessment.verification')
+                errors.extend(state.errors)
             allowed = {'location', 'scenario', 'impact', 'priority', 'origin', 'title', 'correction', 'blocking', 'blocking_reason'}
             updates = obj(entry.get('updates', {}), set(), allowed, path + '.updates')
             for field in ('scenario', 'impact', 'title', 'correction'):
@@ -221,7 +234,12 @@ def merge(context, discoveries, verification=None, *, reference_index=None,
                 limitations.append(copy.deepcopy(raw))
             else:
                 item['material'] = item['material'] or raw['material']
-    return {'context_id': context['context_id'], 'scope': copy.deepcopy(context['scope']),
+    result = {'context_id': context['context_id'], 'scope': copy.deepcopy(context['scope']),
             'findings': findings, 'amendments': amendments,
             'checks': [copy.deepcopy(item) for item in neutral['checks'] if item['id'] in referenced],
             'coverage': {'flows': flows, 'limitations': limitations}}
+    assessments = [{'id': identifier, **copy.deepcopy(decision['assessment'])}
+                   for identifier, decision in decisions.items() if 'assessment' in decision]
+    if assessments:
+        result['assessments'] = assessments
+    return result

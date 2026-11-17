@@ -1,6 +1,8 @@
 'Prepare, register, validate, retain and close durable review evidence (Python 3.10+).\n\nMeasurement inputs are an explicit caller assertion of disjoint executions. Duplicate\npaths and execution_id values are refused; semantic overlap is not detectable here.\nTemporary-path authority and ownership belong to the coordinator. This helper never\ndeletes registered resources and must not be used to infer disposal authority.\n'
 
 import argparse
+import hashlib
+from pathlib import Path
 import json
 import stat
 import sys
@@ -111,6 +113,10 @@ def main(argv=None, *, prog=None):
     preflight_command.add_argument('--input', help='Optional final review candidate for retain preflight')
     preflight_command.add_argument('--evidence-input', action='append',
                                    help='Explicit selected evidence source; repeat for each file')
+    baseline = commands.add_parser('followup-baseline', help='Verify a selected prior final before preparing a follow-up')
+    for name in ('repo', 'scope-file', 'run-dir'):
+        baseline.add_argument('--' + name, required=True)
+    baseline.add_argument('--logical-scope-input')
     lookup = commands.add_parser('lookup', help='Find bounded prior-run candidates for one repository and scope')
     lookup.add_argument('--repo', required=True)
     lookup.add_argument('--scope-file', required=True)
@@ -321,6 +327,16 @@ def main(argv=None, *, prog=None):
                 current_materials=read_json(args.current_materials,max_bytes=LIMIT),
                 current_sources=sources,archive_root=args.archive_root,max_scan=args.max_scan,
                 logical_scope_input=read_json(args.logical_scope_input,max_bytes=65536) if args.logical_scope_input else None)
+        elif args.command == 'followup-baseline':
+            from ccr.archive.assessment import read_followup_baseline
+            from ccr.archive.compact import read_compact
+            from ccr.archive.layout import logical_scope
+            from ccr.shared.git import git, repository_identity
+            repo = safe_path(git(args.repo, 'rev-parse', '--show-toplevel'))
+            scope = read_json(args.scope_file)
+            logical = logical_scope(scope, read_json(args.logical_scope_input) if args.logical_scope_input else None)
+            repository_key = hashlib.sha256(repository_identity(repo).encode('utf-8')).hexdigest()[:20]
+            result = read_followup_baseline(args.run_dir, logical, repository_key, compact_reader=read_compact)
         elif args.command == 'lookup':
             current = read_json(args.current_inputs) if args.current_inputs else None
             requested_scope = read_json(args.scope_file)

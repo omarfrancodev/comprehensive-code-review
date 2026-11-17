@@ -2,6 +2,7 @@
 import json
 import re
 
+from ccr.contracts.assessment import validate_shape as validate_assessment
 from ccr.contracts.execution import validate_execution, validate_profile_execution
 from ccr.contracts.findings import validate_checks, validate_findings
 from ccr.contracts.identifier_types import canonical_id, review_id
@@ -51,6 +52,9 @@ def validate(record, *, reference_index=None, reference_sources=None,
             if not isinstance(identity.get(name), str) or not re.fullmatch(r'[0-9a-f]{64}', identity[name]):
                 error('compact_identity.' + name, 'expected lowercase SHA-256 identity')
         text(identity.get('created_at'), 'compact_identity.created_at')
+    if schema_version == 13 and stage == 'final' and 'assessment' in record:
+        final_fields.add('assessment')
+        validate_assessment(record, state)
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
     if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}:
         error('schema_version', 'unsupported version')
