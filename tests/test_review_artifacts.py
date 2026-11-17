@@ -851,6 +851,48 @@ class Archive7Tests(unittest.TestCase):
         self.assertEqual(len(replay['profile_history']), 2)
         self.assertEqual(self.snapshot(run), snapshot)
 
+    def test_observed_dispatch_constraint_cannot_lower_profile(self):
+        run = self.prepare7('deep')
+        blocked = 'evidence/harness-limit.json#profile'
+        artifacts.record_event(run, self.write('harness-limit-event.json', {
+            'kind': 'interruption', 'status': 'blocked', 'summary': 'Independent dispatch unavailable',
+            'evidence': [blocked],
+        }))
+        selection = self.profile_input('standard', 'automatic', phase='discovery',
+                                       reference=blocked, reason='Use the available review path')
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'technical facts'):
+            artifacts.select_profile(run, selection)
+        with self.assertRaisesRegex(ValueError, 'execution impediment'):
+            artifacts.select_profile(run, {'selection': selection, 'technical_facts': {'deep_trigger': False}})
+        self.assertEqual(self.snapshot(run), before)
+        selection.update(reference='evidence/current-scope.json#profile',
+                         reason='Verified affected consumers no longer cross the deployment boundary')
+        selected = artifacts.select_profile(run, {
+            'selection': selection, 'technical_facts': {'deep_trigger': False},
+        })
+        self.assertEqual([row['profile'] for row in selected['profile_history']], ['deep', 'standard'])
+
+    def test_guided_retention_refuses_unreported_independence_gap(self):
+        from test_review_coverage13 import record13
+        run = self.prepare7('deep')
+        manifest = self.read(run / 'cierre.json')
+        record = record13('deep')
+        record.update(scope=manifest['scope'], review_id='CR-' + manifest['run_id'])
+        coverage = record['coverage']
+        coverage['verification'] = 'unavailable'
+        execution = coverage['execution']
+        execution.update(status='degraded', results=[], selection_source='automatic',
+                         profile_history=manifest['profile_history'], fallbacks=[dict(
+                             assignments=['D1', 'D2', 'V1'], reason='tool_unavailable',
+                             detail='No independent worker could be dispatched',
+                             source='evidence/observed-dispatch.json')])
+        candidate = self.write('final13-without-limit.json', record)
+        before = self.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'material execution limitation'):
+            artifacts.retain(run, candidate, expected_schema=13)
+        self.assertEqual(self.snapshot(run), before)
+
     def test_work_start_without_profile_is_refused_without_changes(self):
         run = self.prepare7()
         manifest = self.read(run / 'cierre.json')

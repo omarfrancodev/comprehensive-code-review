@@ -2,8 +2,8 @@
 
 import argparse
 import hashlib
-from pathlib import Path
 import json
+from pathlib import Path
 import stat
 import sys
 from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
@@ -18,8 +18,8 @@ from ccr.archive.resources import transfer_resources
 from ccr.archive.retention import retain
 from ccr.archive.restart import (_RestartCancellationUnavailable, abandon_restart,
                                   record_restart_refusal, recover, restart)
-from ccr.shared.encoding import archive_bytes as _json_bytes
-from ccr.shared.json_io import read_json
+from ccr.shared.encoding import archive_bytes as _json_bytes, receipt_bytes
+from ccr.shared.json_io import read_bounded, read_json
 from ccr.shared.paths import safe_path
 from ccr.execution.workspace_manifest import ReviewError as WorkspaceError
 from ccr.contracts import preflight as review_preflight
@@ -50,6 +50,119 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
         selection=None, context=context, record=record, sources=sources)
     return result, 0 if result['ready'] else 1
 
+
+_GATE_ERRORS = (OSError, ValueError, TypeError, KeyError, WorkspaceError)
+
+
+def _finish_status(run_dir, *, current=None, candidate=None):
+    """Project inspection and existing gates into one next action."""
+    inspected = inspect_run(run_dir, current_inputs=current, finalization_details=True)
+    status = {key: inspected[key] for key in ('run_dir', 'review_id', 'phase')}
+    integrity = inspected['integrity']
+    action = inspected['actions'][0]
+
+    def pending(gate, next_action, reason, *, resource=None, **detail):
+        return dict(status, status='pending', gate=gate, next_action=next_action,
+                    resource=resource, reason=reason[:1000], **detail)
+
+    if integrity['status'] not in {'verified', 'recoverable'}:
+        return pending('integrity', action['action'], (integrity['errors'] or [action['reason']])[0])
+    if inspected['operation']['disposition'] == 'complete':
+        try:
+            return _complete_status(validate(run_dir, require_complete=True), status['review_id'])
+        except _GATE_ERRORS as exc:
+            return pending('complete_validation', 'preserve', str(exc))
+    transactions = {row['kind']: row for row in inspected['pending_transaction'] if row['status'] == 'pending'}
+    if action['action'] not in {'continue', 'recover', 'restart'}:
+        return pending('lifecycle', action['action'], action['reason'])
+    recovery = transactions.keys() - {'retention', 'closure', 'resource_cleanup'}
+    if recovery:
+        return pending('transaction', action['action'], action['reason'])
+    if 'retention' in transactions:
+        if transactions['retention'].get('operation') == 'close':
+            return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
+        return pending('retention', 'retry_retain', 'Resume retention using the exact selected inputs.')
+    if 'closure' in transactions:
+        try:
+            validate(run_dir, require_retained=True)
+        except _GATE_ERRORS as exc:
+            return pending('retained_validation', 'preserve', str(exc))
+        if 'resource_cleanup' in transactions:
+            intent = transactions['resource_cleanup']
+            return pending('cleanup', 'recover_cleanup', 'An exact cleanup intent is pending.',
+                           resource=intent['resource'], operation_id=intent['operation_id'])
+        for row in inspected['resources']:
+            if row['availability'] in {'missing_unknown', 'unexpected_present'}:
+                return pending('cleanup', 'preserve', row['availability'], resource=row['path'])
+        for row in inspected['resources']:
+            if row['availability'] == 'available':
+                next_action = 'workspace_cleanup' if row['claim_status'] == 'owned' else 'inspect_registered_resource'
+                return pending('cleanup', next_action, 'The registered resource is still present.', resource=row['path'])
+        return pending('close', 'supply_cleanup_observation', 'Supply the observed cleanup state for this run.')
+    if action['action'] != 'continue':
+        return pending('lifecycle', action['action'], action['reason'])
+    freshness = inspected['freshness']['status']
+    if freshness == 'changed':
+        reason = next(iter(inspected['freshness']['reasons']), 'Captured inputs changed.')
+        return pending('current_inputs', 'restart', reason)
+    if candidate is not None:
+        diagnostic, code = preflight_run(run_dir, candidate['context_input'], phase='retain',
+                                       input_file=candidate['input_file'], evidence_inputs=candidate['evidence_inputs'])
+        if code:
+            issues = diagnostic.get('issues') or []
+            first = issues[0] if issues else {}
+            repair = (freshness == 'verified' and issues
+                      and all(row['field'].startswith('candidate.') for row in issues))
+            next_action = 'rebuild_candidate' if repair else 'inspect_preflight'
+            return pending('retain_preflight', next_action,
+                           first.get('message', diagnostic.get('error', 'Retain preflight failed.')),
+                           field=first.get('field'))
+    return pending('retention', 'retain', 'Retain the final candidate and its verified selected evidence.')
+
+
+def _complete_status(checked, review_id):
+    return {'status': 'complete', 'run_dir': checked['run_dir'], 'review_id': review_id,
+            'phase': 'complete', 'gate': 'complete_validation', 'next_action': 'show',
+            'cleanup': checked['cleanup']}
+
+
+def finish_run(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
+    """Replay or close a retained run, then verify it through the independent reader."""
+    if cleanup_file is None and cleanup is None:
+        if residuals is not None or released_claims is not None:
+            raise ValueError('supply an inline cleanup state with residuals or release receipts')
+        if (Path(run_dir) / 'manifest.json').is_file():
+            result = _finish_status(run_dir)
+            return result, 0 if result['status'] == 'complete' else 1
+        try:
+            _, manifest, _ = _load_run(run_dir)
+        except _GATE_ERRORS:
+            return _finish_status(run_dir), 1
+        observation = manifest.get('close_observation')
+        if (manifest['state'] not in {'retaining', 'closing'} or not isinstance(observation, dict)
+                or manifest['state'] == 'closing' and observation['cleanup'] == 'pending'):
+            result = _finish_status(run_dir)
+            return result, 0 if result['status'] == 'complete' else 1
+        cleanup, residuals, released_claims = (observation[key] for key in ('cleanup', 'residuals', 'released_claims'))
+    try:
+        closed = close(run_dir, cleanup_file, cleanup=cleanup, residuals=residuals, released_claims=released_claims)
+    except _GATE_ERRORS as exc:
+        result = _finish_status(run_dir)
+        if result['status'] == 'complete':
+            result.update(status='pending', gate='close', next_action='inspect_observation', resource=None)
+        result['reason'] = str(exc)[:1000]
+        return result, 1
+    if closed['state'] != 'complete':
+        return _finish_status(run_dir), 1
+    review_id = 'CR-' + closed['run_id'] if closed.get('run_id') else None
+    try:
+        return _complete_status(validate(run_dir, require_complete=True), review_id), 0
+    except _GATE_ERRORS as exc:
+        return {'status': 'pending', 'run_dir': str(Path(run_dir).absolute()), 'review_id': review_id,
+                'phase': 'close', 'gate': 'complete_validation', 'next_action': 'preserve',
+                'resource': None, 'reason': str(exc)[:1000]}, 1
+
+
 def main(argv=None, *, prog=None):
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
@@ -67,10 +180,13 @@ def main(argv=None, *, prog=None):
     compact_prepare.add_argument('--logical-scope-input')
     compact_prepare.add_argument('--harness-id')
     compact_prepare.add_argument('--harness-source-file')
-    compact_bind = commands.add_parser('bind-compact', help='Bind a compact final before building dependent sidecars; emit JSON')
+    compact_bind = commands.add_parser('bind-compact', help='Bind a compact final before building dependent sidecars')
     for name in ('prepared-input', 'input'):
         compact_bind.add_argument('--' + name, required=True)
+    compact_bind.add_argument('--session', help='Existing owned evidence session or manifest')
+    compact_bind.add_argument('--output', help='New JSON file in the owned session evidence directory')
     compact_retain = commands.add_parser('retain-compact', help='Publish a prepared compact review')
+    compact_retain.add_argument('--summary', action='store_true', help='Omit the hash inventory from stdout')
     for name in ('prepared-input', 'input', 'current-inputs', 'sources-input'):
         compact_retain.add_argument('--' + name, required=True)
     compact_promote = commands.add_parser('promote-compact', help='Reserve and prepare a linked full run')
@@ -106,6 +222,10 @@ def main(argv=None, *, prog=None):
     inspect = commands.add_parser('inspect', help='Read-only status/integrity inspection of one explicit review run')
     inspect.add_argument('--run-dir', required=True)
     inspect.add_argument('--current-inputs', help='Existing JSON {scope, sources} verified by the coordinator')
+    inspect.add_argument('--summary', action='store_true', help='Show the next finalization gate and action')
+    inspect.add_argument('--context-input', help='Existing context for retain preflight with --summary')
+    inspect.add_argument('--input', help='Final candidate for retain preflight with --summary and --context-input')
+    inspect.add_argument('--evidence-input', action='append', help='Selected source for retain preflight with --summary')
     preflight_command = commands.add_parser('preflight', help='Read-only phase-specific contract check before work or retention')
     preflight_command.add_argument('--run-dir', required=True)
     preflight_command.add_argument('--context-input', required=True)
@@ -210,15 +330,16 @@ def main(argv=None, *, prog=None):
     keep.add_argument('--context-input', help='Existing neutral context JSON with executor provenance')
     keep.add_argument('--handoff', action='store_true', help='Retain a handoff generated from the canonical record')
     keep.add_argument('--handoff-context-input', help='Explicit handoff spec/plan references and pending decisions; requires --handoff')
-    finish = commands.add_parser('close')
-    finish.add_argument('--run-dir', required=True)
-    observed = finish.add_mutually_exclusive_group(required=True)
-    observed.add_argument('--cleanup-file')
-    observed.add_argument('--cleanup', choices=('complete', 'not_needed', 'pending'),
-                          help='Observed state without creating a post-cleanup temporary file')
-    finish.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
-    finish.add_argument('--released-claims-input',
-                        help='Existing JSON list of exact durable cleanup receipts for inline close')
+    for command, closure in (('close', commands.add_parser('close')), ('finish', commands.add_parser(
+            'finish', help='Close or replay a retained run and verify the complete archive'))):
+        closure.add_argument('--run-dir', required=True)
+        observed = closure.add_mutually_exclusive_group(required=command == 'close')
+        observed.add_argument('--cleanup-file')
+        observed.add_argument('--cleanup', choices=('complete', 'not_needed', 'pending'),
+                              help='Observed state without creating a post-cleanup temporary file')
+        closure.add_argument('--residual', action='append', help='Exact registered remaining path; repeat with --cleanup pending')
+        closure.add_argument('--released-claims-input',
+                             help='Existing JSON list of exact durable cleanup receipts for inline close')
     args = parser.parse_args(argv)
     try:
         authority_input = None
@@ -253,11 +374,19 @@ def main(argv=None, *, prog=None):
                 harness_source=read_json(args.harness_source_file) if args.harness_source_file else None)
         elif args.command == 'bind-compact':
             from ccr.archive.compact import bind_compact_record
+            if bool(args.session) != bool(args.output):
+                raise ValueError('bind-compact requires --session and --output together')
             result = bind_compact_record(read_json(args.prepared_input),
                 read_json(args.input, max_bytes=CHECKPOINT_METADATA_LIMIT))
+            if args.output:
+                from ccr.execution.candidates import write_new_json
+                from ccr.execution.workspace_manifest import owned_session
+                session_dir, _, _ = owned_session(args.session)
+                output = write_new_json(session_dir, args.output, result)
+                result = {'status': 'bound', 'review_id': result['review_id'], 'output': str(output),
+                          'sha256': hashlib.sha256(receipt_bytes(result)).hexdigest()}
         elif args.command == 'retain-compact':
             from ccr.archive.compact import create_compact
-            from ccr.reporting.render import render
             catalog = read_json(args.sources_input, max_bytes=PENDING_CONTEXT_LIMIT)
             if not isinstance(catalog, dict) or len(catalog) > 64:
                 raise ValueError('compact sources catalog must be a bounded path map')
@@ -269,10 +398,13 @@ def main(argv=None, *, prog=None):
                 total += info.st_size
                 if not stat.S_ISREG(info.st_mode) or total > CHECKPOINT_EVIDENCE_LIMIT:
                     raise ValueError('compact selected sources must be bounded regular files')
-                selected[reference] = path.read_bytes()
+                selected[reference] = read_bounded(path, CHECKPOINT_EVIDENCE_LIMIT - total + info.st_size)
+                total += len(selected[reference]) - info.st_size
             record = read_json(args.input, max_bytes=CHECKPOINT_METADATA_LIMIT)
-            result = create_compact(read_json(args.prepared_input), record, render(record),
-                                    read_json(args.current_inputs), selected)
+            result = create_compact(read_json(args.prepared_input), record,
+                                    current_inputs=read_json(args.current_inputs), sources=selected)
+            if args.summary:
+                result = {key: result[key] for key in ('review_id', 'run_dir', 'mode')}
         elif args.command == 'prepare':
             source = read_json(args.harness_source_file) if args.harness_source_file else None
             if args.harness_source_file and (not isinstance(source, dict) or args.harness_id is None):
@@ -304,7 +436,15 @@ def main(argv=None, *, prog=None):
                                         authority=args.authority, controller=read_json(args.controller_input))
         elif args.command == 'inspect':
             current = read_json(args.current_inputs) if args.current_inputs else None
-            result = inspect_run(args.run_dir, current_inputs=current)
+            if ((args.context_input or args.input or args.evidence_input) and not args.summary
+                    or (args.input or args.evidence_input) and not args.context_input):
+                raise ValueError('inspect candidate preflight requires --summary and --context-input')
+            if args.summary:
+                candidate = (dict(context_input=args.context_input, input_file=args.input,
+                                  evidence_inputs=args.evidence_input) if args.context_input else None)
+                result = _finish_status(args.run_dir, current=current, candidate=candidate)
+            else:
+                result = inspect_run(args.run_dir, current_inputs=current)
         elif args.command == 'preflight':
             result, exit_code = preflight_run(
                 args.run_dir, args.context_input, phase=args.phase,
@@ -381,12 +521,16 @@ def main(argv=None, *, prog=None):
             result = validate(args.run_dir, args.require_retained, args.record_checkpoint, require_complete=args.require_complete)
         elif args.command == 'record-event':
             result = record_event(args.run_dir, args.event_file, args.execution_metadata)
-        else:
+        elif args.command in {'close', 'finish'}:
             receipts = read_json(args.released_claims_input) if args.released_claims_input else None
             if receipts is not None and not isinstance(receipts, list):
                 raise ValueError('released claims input must be a JSON list')
-            result = close(args.run_dir, args.cleanup_file, cleanup=args.cleanup,
-                           residuals=args.residual, released_claims=receipts)
+            kwargs = dict(cleanup=args.cleanup, residuals=args.residual, released_claims=receipts)
+            if args.command == 'finish':
+                result, code = finish_run(args.run_dir, args.cleanup_file, **kwargs)
+                print(json.dumps(result, ensure_ascii=False, allow_nan=False))
+                return code
+            result = close(args.run_dir, args.cleanup_file, **kwargs)
         print(json.dumps(result, ensure_ascii=False, allow_nan=False))
         return 0
     except (OSError, ValueError, TypeError, KeyError, WorkspaceError) as exc:

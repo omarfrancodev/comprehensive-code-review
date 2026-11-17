@@ -17,7 +17,7 @@ from ccr.archive.evidence import (
     selected_source_bytes, select_preflight_sources,
 )
 from ccr.archive.integrity import (
-    CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT, _evidence_name, _retained_name,
+    CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT, _retained_name,
     verify_files as _verify_files,
 )
 from ccr.archive.reader import load_run as _load_run
@@ -189,7 +189,6 @@ def retained_model_context(run, manifest, contents=None, record=None):
         return selected_source_bytes(run, manifest, contents, name)
     if 'evidence/context.json' not in contents and 'evidence/context.json' not in manifest.get('hashes', {}):
         return None
-    verify_assessment_sources(value, source, captured_inputs=manifest.get('review_inputs') or {})
     context = json.loads(source('evidence/context.json'))
     events = [json.loads(line) for line in source(review_trace.NAME).splitlines()]
     return load_model_usage_context(context, source, manifest, record=record, events=events)
@@ -207,9 +206,14 @@ def _present_resources(registered):
 
 def _execution_gate(run, manifest, value, contents):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
-    def source(name):
-        return selected_source_bytes(run, manifest, contents, name)
+    selected = dict(contents)
 
+    def source(name):
+        raw = selected_source_bytes(run, manifest, selected, name)
+        selected[name] = raw
+        return raw
+
+    verify_assessment_sources(value, source, captured_inputs=manifest.get('review_inputs') or {})
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')
@@ -599,18 +603,20 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         raise ValueError('final review scope differs from the pinned scope')
     if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
         raise ValueError('final review_id must bind to archive run identity: CR-' + manifest.get('run_id', ''))
+    keeps_context = value.get('schema_version') in (8, 9, 10, 11, 12, 13)
+    context = (_input_object(context_input, 'execution context',
+                             max_bytes=PENDING_CONTEXT_LIMIT if keeps_context else None)
+               if context_input is not None else None)
+    context_bytes = _json_bytes(context) if keeps_context and context is not None else None
+    if context_bytes is not None and len(context_bytes) > PENDING_CONTEXT_LIMIT:
+        raise ValueError('execution context exceeds bounded retained context size')
+    evidence = _evidence_contents(run, manifest, evidence_inputs,
+        reserve_context=context is not None, context_bytes=context_bytes)
+    if context_bytes is not None:
+        _check_evidence_target(run, manifest, 'evidence/context.json')
+        evidence['evidence/context.json'] = context_bytes
     if manifest['schema_version'] == 8:
-        context = _input_object(context_input, 'execution context') if context_input is not None else None
-        preflight_sources = ({'evidence/context.json': _json_bytes(context)} if context is not None else {})
-        for raw in evidence_inputs or []:
-            path = safe_path(raw)
-            if not stat.S_ISREG(path.stat().st_mode):
-                raise ValueError('selected preflight evidence must be a regular file')
-            name = 'evidence/' + _evidence_name(path.name)
-            if name in preflight_sources:
-                raise ValueError('duplicate selected preflight evidence name: ' + name)
-            preflight_sources[name] = path.read_bytes()
-        preflight_sources = select_preflight_sources(run, manifest, preflight_sources, context, value)
+        preflight_sources = select_preflight_sources(run, manifest, evidence, context, value)
         phase_preflight = review_preflight.validate_preflight(
             phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=value,
@@ -625,33 +631,27 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     if temporary:
         value = copy.deepcopy(value)
         value['resources'].update(cleanup='pending', residuals=present)
-    executors = _executors(context_input, manifest, temporary)
-    contents = {'review.json': _json_bytes(value), 'informe.md': render_review(value).encode('utf-8')}
+    executors = _executors(context, manifest, temporary)
+    contents = {'review.json': _json_bytes(value)}
     if measurement_inputs or unavailable_reason is not None:
         measurements = _measurements(measurement_inputs, unavailable_reason)
         contents['measurements.json'] = _json_bytes(measurements)
     elif manifest['schema_version'] == 1:
         contents['measurements.json'] = safe_path(run / 'measurements.json').read_bytes()
-    contents.update(_evidence_contents(run, manifest, evidence_inputs,
-        create_directory=value.get('schema_version') not in (8, 9, 10, 11, 12, 13), reserve_context=context_input is not None,
-        context_input=context_input))
-    if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
-        if context_input is not None:
-            _check_evidence_target(run, manifest, 'evidence/context.json')
-            context_bytes = _json_bytes(read_json(context_input, max_bytes=PENDING_CONTEXT_LIMIT))
-            if len(context_bytes) > 131072:
-                raise ValueError('execution context exceeds bounded retained context size')
-            if ('evidence/context.json' in contents
-                    and read_json(context_input) != json.loads(contents['evidence/context.json'])):
-                raise ValueError('selected execution context conflicts with context_input')
-            contents['evidence/context.json'] = context_bytes
+    contents.update(evidence)
+    if keeps_context:
+        sources = dict(contents)
         if before_cleanup != value:
-            disclosure_context = json.loads(selected_source_bytes(run, manifest, contents, 'evidence/context.json'))
-            contents.update(rebind_disclosure_for_cleanup(before_cleanup, value, disclosure_context,
-                lambda name: selected_source_bytes(run, manifest, contents, name)))
-        _execution_gate(run, dict(manifest, executors=executors), value, contents)
-        model_context = retained_model_context(run, manifest, contents, value)
+            disclosure_context = json.loads(selected_source_bytes(run, manifest, sources, 'evidence/context.json'))
+            rebound = rebind_disclosure_for_cleanup(before_cleanup, value, disclosure_context,
+                lambda name: selected_source_bytes(run, manifest, sources, name))
+            contents.update(rebound)
+            sources.update(rebound)
+        _execution_gate(run, dict(manifest, executors=executors), value, sources)
+        model_context = retained_model_context(run, manifest, sources, value)
         contents['informe.md'] = render_review(value, model_usage_context=model_context).encode('utf-8')
+    else:
+        contents['informe.md'] = render_review(value).encode('utf-8')
     if handoff_context_input is not None:
         manifest['handoff_context'] = _handoff_context(handoff_context_input, value, contents, manifest)
     if handoff or 'handoff.md' in manifest['hashes'] or 'handoff.md' in manifest.get('planned_hashes', {}):
@@ -661,6 +661,9 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
     manifest['temporary_manifests'] = _temporary_manifests(temporary, manifest)
     manifest['residuals'] = present
     manifest['executors'] = executors
+    if (manifest['schema_version'] == 8 and manifest.get('state') == 'retaining'
+            and {name: _digest(data) for name, data in contents.items()} != manifest.get('planned_hashes')):
+        raise ValueError('interrupted retention differs from the exact planned inventory')
     if 'assessment' in value and manifest.get('state') != 'retaining':
         from ccr.archive.compact import read_compact
         verify_prior_archive(value, manifest.get('logical_scope'), manifest['repository_key'],

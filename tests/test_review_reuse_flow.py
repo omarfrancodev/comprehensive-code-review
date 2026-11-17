@@ -48,7 +48,8 @@ class ReuseFlowTests(unittest.TestCase):
         return dict(current_inputs=inputs,effective_changes=descriptor,current_materials=material_map,current_sources=sources)
 
     def archive(self,guided=True,complete=True,kind='review',identities=None,
-                capture=None,final_update=None,previous_run=None,context_files=None,schema13=False):
+                capture=None,final_update=None,previous_run=None,context_files=None,schema13=False,
+                assessment_update=None,derived_sources=None):
         capture=capture or self.capture()
         sources=copy.deepcopy(capture['current_sources'])
         inputs=copy.deepcopy(capture['current_inputs'])
@@ -62,6 +63,7 @@ class ReuseFlowTests(unittest.TestCase):
         else:
             sources={'evidence/reference-index.json':json.dumps(dict(schema_version=1,aliases={},inputs=[])).encode()}
             inputs['sources']={k:hashlib.sha256(v).hexdigest() for k,v in sources.items()}
+        sources.update(derived_sources or {})
         run=Path(archive_tests.artifacts.prepare(self.repo,self.scope,'3.1.0','codex',
             output_root=self.output,profile_input=selection_input(),current_inputs=inputs,previous_run=previous_run))
         if complete:
@@ -83,6 +85,9 @@ class ReuseFlowTests(unittest.TestCase):
                             finding_ids=row['finding_ids'],material=row['material'])]) for row in final['coverage']['areas']]
                     for check in final['checks']:
                         check['purpose']='Verify the reviewed flow'
+                if assessment_update is not None:
+                    final['scope'] = self.actual_scope
+                    assessment_update(final)
                 self.final=self.write('partial-final.json',final)
             paths=[]
             for ref,raw in sources.items():
@@ -93,6 +98,40 @@ class ReuseFlowTests(unittest.TestCase):
             self.retain(run,context_input=extra_context,evidence_inputs=paths)
             self.close(run)
         return run
+
+    def test_assessed_same_head_followup_discloses_ordinary_coverage_ancestry(self):
+        from test_review_assessment import NOTE, PROOF, assessed, followup
+        note = dict(key='note:23244', purpose='notes', reference='evidence/note.txt',
+                    sha256=hashlib.sha256(NOTE).hexdigest())
+        capture = self.capture(materials=[note], extra={'evidence/note.txt': NOTE})
+        proof = {'evidence/proof.txt': PROOF}
+        template = self.final
+        parent = self.archive(schema13=True, capture=capture, assessment_update=assessed, derived_sources=proof)
+        prior_path = parent / 'review.json'
+        original = self.read(prior_path)
+        current, sources = followup(original)
+        current['previous_reviews'][0]['reference'] = str(prior_path)
+        current['rereview'][0]['previous_reference'] = str(prior_path)
+
+        def update(record):
+            for key in ('assessment', 'rereview', 'previous_reviews', 'findings'):
+                record[key] = current[key]
+            record['coverage']['evidence'][0]['reference'] = 'evidence/proof.txt'
+
+        self.final = template
+        child = self.archive(kind='rereview', schema13=True, capture=capture, previous_run=parent,
+                             assessment_update=update, derived_sources={'evidence/prior.json': sources['evidence/prior.json'], **proof},
+                             context_files=[dict(side='head', path_b64='Y29kZS50eHQ=')])
+        archive_tests.artifacts.validate(child, require_complete=True)
+        saved = self.read(child / 'review.json')
+        self.assertEqual(saved['findings'][0]['id'], 'F001')
+        report = (child / 'informe.md').read_text(encoding='utf-8')
+        self.assertIn('Seguimiento acotado', report)
+        self.assertIn('Deuda aceptada', report)
+        self.assertNotIn('Corrección requerida', report)
+        result = self.assess(capture)
+        self.assertEqual(result['action'], 'offer_choice', result)
+        self.assertEqual(result['prior_run']['ordinary_coverage']['run_dir'], str(parent))
 
     def assess(self,capture=None):
         capture=capture or self.capture()

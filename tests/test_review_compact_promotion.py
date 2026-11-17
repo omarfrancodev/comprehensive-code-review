@@ -68,6 +68,36 @@ class CompactPromotionTests(unittest.TestCase):
         result = self.promote(prepared=prepared, current_inputs=inputs)
         self.assertTrue(Path(result['run_dir']).is_dir())
 
+    def test_compact_preparation_refuses_independent_discovery_profile_before_reserving(self):
+        root = self.root / 'wrong-mode'
+        with self.assertRaisesRegex(ValueError, 'requires full'):
+            compact.prepare_compact(root, repository_identity(self.repo), self.inputs['scope'], None,
+                self.inputs, {'mode': 'compact', 'reason': 'No dispatch capacity'}, 'wrong-mode',
+                profile_input=selection_input('deep', 'automatic'), skill_version='3.5.0', harness='codex')
+        self.assertFalse(root.exists())
+
+    def test_new_independence_obligation_promotes_before_registering_dependent_work(self):
+        from ccr.workflow.persistence import promotion_decision
+        profile = selection_input('focused', 'automatic')
+        prepared = compact.prepare_compact(self.root / 'automatic-archive', repository_identity(self.repo),
+            self.inputs['scope'], None, self.inputs, {'mode': 'compact', 'reason': 'Initially bounded'}, 'automatic',
+            profile_input=profile, skill_version='3.5.0', harness='codex')
+        decision = promotion_decision(prepared['request']['selection'], {
+            'profile': 'deep', 'independent_verification_required': True, 'available_slots': 0,
+        })
+        self.assertEqual(decision['mode'], 'full')
+        result = self.promote(prepared=prepared, profile_input=profile, reason=decision['reason'])
+        run = Path(result['run_dir'])
+        selected = lifecycle.select_profile(run, {
+            'selection': selection_input('deep', 'automatic', phase='discovery',
+                reason='An existing consumer crosses an independently deployed boundary',
+                reference='evidence/current-scope.json#profile'),
+            'technical_facts': {'deep_trigger': True, 'discovery_assignments': 2},
+        })
+        self.assertEqual([row['profile'] for row in selected['profile_history']], ['focused', 'deep'])
+        self.assertEqual(selected['assignment_registry'], [])
+        self.assertEqual(selected['state'], 'prepared')
+
     def test_interruption_after_intent_reuses_exact_reserved_destination(self):
         with patch('ccr.archive.lifecycle.prepare', side_effect=OSError('interrupted')):
             with self.assertRaises(OSError):

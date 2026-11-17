@@ -400,7 +400,10 @@ def _validate_payload_inventory(payload, names):
                     raise ValueError('compact payload contains unselected or unowned data')
 
 
-def create_compact(prepared, record, report, current_inputs, sources):
+_RENDER_REPORT = object()
+
+
+def create_compact(prepared, record, report=_RENDER_REPORT, current_inputs=None, sources=None):
     """Publish only an unchanged pinned result and explicitly selected evidence."""
     from ccr.execution.locks import run_locks
     stage, target = _validate_prepared(prepared)
@@ -421,6 +424,8 @@ def create_compact(prepared, record, report, current_inputs, sources):
 def _create_compact_locked(prepared, record, report, current_inputs, sources):
     stage, target = _validate_prepared(prepared)
     record = bind_compact_record(prepared, record)
+    if report is _RENDER_REPORT:
+        require_followup_assessment(record)
     request = prepared['request']
     current = normalize_inputs(current_inputs)
     current.setdefault('logical_scope_identity', prepared['logical_scope']['identity'])
@@ -436,10 +441,14 @@ def _create_compact_locked(prepared, record, report, current_inputs, sources):
     issues = validate_semantic_references(record, [], index, selected)
     if issues:
         raise ValueError('compact selected evidence is incomplete: ' + str(issues[0]))
-    from ccr.reporting.render import render
     canonical_report = _render_compact(record, request, selected)
-    if not isinstance(report, str) or report not in (render(record), canonical_report):
-        raise ValueError('compact report does not match the canonical result')
+    if report is not _RENDER_REPORT:
+        if not isinstance(report, str):
+            raise ValueError('compact report does not match the canonical result')
+        if report != canonical_report:
+            from ccr.reporting.render import render
+            if report != render(record):
+                raise ValueError('compact report does not match the canonical result')
     files = {'review.json': archive_bytes(record), 'informe.md': canonical_report.encode('utf-8'), **selected}
     _validate_content_sizes({name: len(data) for name, data in files.items()})
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}
