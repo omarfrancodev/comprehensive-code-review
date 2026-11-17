@@ -473,7 +473,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
 @_locked_run
 def select_profile(run_dir, selection_input):
     """Capture a profile transition and its trace event as one idempotent mutation."""
-    raw = _input_object(selection_input, 'profile selection')
+    raw, technical_facts = review_profiles.profile_input_parts(_input_object(selection_input, 'profile selection'))
     run, manifest, marker = _load_run(run_dir)
     if manifest['schema_version'] != 8:
         raise ValueError('profile transitions require an archive 8 run')
@@ -487,11 +487,10 @@ def select_profile(run_dir, selection_input):
         raise ValueError('profile transition input cannot supply archive-assigned identity fields')
     history = manifest['profile_history']
     previous = history[-1]
-    try:
-        candidate = review_profiles.validate_selection(raw, previous=previous)
-    except ValueError:
-        raise
+    candidate = review_profiles.validate_selection(raw, previous=previous)
     if candidate == previous:
+        if technical_facts is not None:
+            review_profiles.verify_technical_selection(candidate, technical_facts)
         return manifest
     if candidate['phase'] == 'prepare':
         raise ValueError('profile transitions cannot use prepare phase')
@@ -502,6 +501,7 @@ def select_profile(run_dir, selection_input):
     for row in manifest.get('assignment_registry', []):
         if row['id'] in affected and review_profiles._assignment_started(row, events):
             raise ValueError('started assignment cannot be affected by a profile transition: ' + row['id'])
+    review_profiles.verify_transition_basis(candidate, previous, technical_facts, events)
     candidate.update(id='S' + str(len(history) + 1).zfill(3),
                      changed_from=previous['profile'],
                      event_id='E' + str(manifest['trace']['events'] + 1).zfill(6))

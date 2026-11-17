@@ -138,6 +138,8 @@ def prepare_compact(root, repository_identity, scope, logical_scope_input, revie
     if not isinstance(profile_input, dict):
         raise ValueError('compact initial profile must be a captured JSON object')
     profile = initial_selection(profile_input)
+    if profile['profile'] in ('deep', 'extended'):
+        raise ValueError('independent discovery profile requires full persistence')
     if inputs.get('profile') is not None and inputs['profile'] != profile['profile']:
         raise ValueError('compact inputs differ from the initial profile')
     if not isinstance(skill_version, str) or not skill_version.strip():

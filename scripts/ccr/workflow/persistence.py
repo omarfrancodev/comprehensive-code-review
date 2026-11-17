@@ -1,5 +1,7 @@
 """Proportional persistence selection from explicitly observed review facts."""
 
+from ccr.workflow.profiles import normalize_profile
+
 _REQUIRED_TRUE = (
     ('inputs_pinned', 'identidad de entradas sin fijar'),
     ('scope_identified', 'alcance no identificado'),
@@ -20,6 +22,13 @@ def select_persistence(facts: dict) -> dict:
     """Select compact only when every required fact is explicitly observed."""
     if not isinstance(facts, dict):
         return {'mode': 'full', 'reason': 'hechos de selección no disponibles'}
+    if 'profile' in facts:
+        try:
+            profile = normalize_profile(facts['profile'])
+        except ValueError:
+            return {'mode': 'full', 'reason': 'perfil técnico no acreditado'}
+        if profile in ('deep', 'extended'):
+            return {'mode': 'full', 'reason': 'el perfil técnico exige descubrimiento independiente'}
     for key, reason in _REQUIRED_TRUE:
         if facts.get(key) is not True:
             return {'mode': 'full', 'reason': reason}

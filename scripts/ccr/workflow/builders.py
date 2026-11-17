@@ -102,7 +102,10 @@ def build_review_inputs(scope: dict, index_bytes: bytes, sources: dict[str, byte
 
 def build_profile_selection(raw: dict) -> dict:
     """Return a canonical selection only when its source and authority are valid."""
+    raw, facts = review_profiles.profile_input_parts(raw)
     value = review_profiles.validate_selection(raw)
+    if facts is not None:
+        review_profiles.verify_technical_selection(value, facts)
     issues = validate_selection_reference(value, None)
     if issues:
         raise ValueError('; '.join(issue['message'] for issue in issues))

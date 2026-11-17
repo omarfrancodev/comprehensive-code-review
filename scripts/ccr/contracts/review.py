@@ -26,7 +26,7 @@ def validate_reference_semantics(record, context, reference_index, sources, pack
     return list(dict.fromkeys(messages))
 
 def validate(record, *, reference_index=None, reference_sources=None,
-             reference_context=None, packets=None):
+             reference_context=None, packets=None, require_material_fallbacks=False):
     """Return all observable contract errors; never modify the supplied record."""
     state = ValidationState()
     errors = state.errors
@@ -128,7 +128,7 @@ def validate(record, *, reference_index=None, reference_sources=None,
         return errors
 
     if schema_version in (8, 9, 10, 11, 12, 13):
-        errors.extend(validate_execution(record))
+        errors.extend(validate_execution(record, require_material_fallbacks=require_material_fallbacks))
     if schema_version in (9, 10, 11, 12, 13):
         errors.extend(validate_check_execution(record))
     if schema_version in (10, 11, 12, 13):

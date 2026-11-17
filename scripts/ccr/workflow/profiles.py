@@ -29,6 +29,60 @@ UNJUSTIFIED_DOWNGRADE = re.compile(
     r'presupuesto|cuota|cupo|sin hallazgos|sin defectos|sin incidencias|revision limpia|revisión limpia)\b',
     re.IGNORECASE)
 
+TECHNICAL_FLAGS = {'deep_trigger', 'bounded_scope', 'requirements_known', 'consumers_known',
+                   'independent_gate_required'}
+
+
+def select_technical_profile(facts):
+    """Choose depth from scope obligations before considering available executors."""
+    if not isinstance(facts, dict) or set(facts) - TECHNICAL_FLAGS - {'discovery_assignments'}:
+        raise ValueError('technical facts accept only scope and required discovery observations')
+    if any(facts.get(key) is not None and type(facts[key]) is not bool for key in TECHNICAL_FLAGS):
+        raise ValueError('technical facts require observed booleans or null')
+    count = facts.get('discovery_assignments')
+    if count is not None and (type(count) is not int or not 1 <= count <= 5):
+        raise ValueError('technical facts require 1–5 necessary discovery assignments or null')
+    if facts.get('deep_trigger') is True:
+        return 'extended' if count in (3, 4, 5) else 'deep'
+    if (facts.get('deep_trigger') is False and facts.get('independent_gate_required') is False
+            and all(facts.get(key) is True for key in ('bounded_scope', 'requirements_known', 'consumers_known'))
+            and count in (None, 1)):
+        return 'focused'
+    return 'standard'
+
+
+def profile_input_parts(raw):
+    if isinstance(raw, dict) and set(raw) == {'selection', 'technical_facts'}:
+        facts = raw['technical_facts']
+        if not isinstance(raw['selection'], dict) or not isinstance(facts, dict):
+            raise ValueError('profile input requires selection and technical facts objects')
+        return raw['selection'], facts
+    return raw, None
+
+
+def verify_technical_selection(selection, facts):
+    technical = select_technical_profile(facts)
+    if selection['selection_source'] == 'automatic' and selection['profile'] != technical:
+        raise ValueError('automatic selection differs from the technical profile: ' + technical)
+
+
+def verify_transition_basis(candidate, previous, facts, events):
+    if facts is not None:
+        verify_technical_selection(candidate, facts)
+    if (candidate['selection_source'] != 'automatic'
+            or PROFILE_RANK[candidate['profile']] >= PROFILE_RANK[previous['profile']]):
+        return
+    if (facts is None or facts.get('deep_trigger') is None
+            or (candidate['profile'] == 'deep' and facts.get('discovery_assignments') != 2)):
+        raise ValueError('automatic downgrade requires new technical facts excluding the earlier trigger')
+    for event in events:
+        if (event.get('kind') in ('agent', 'interruption')
+                and event.get('status') in ('failed', 'blocked', 'skipped')
+                and (candidate['reference'] in event.get('evidence', [])
+                     or candidate['reference'] == (event.get('provenance') or {}).get('source'))):
+            raise ValueError('an observed execution impediment cannot justify a profile downgrade')
+
+
 def _text(value, limit=4000):
     return isinstance(value, str) and bool(value.strip()) and len(value) <= limit and not any(ord(char) < 32 for char in value)
 

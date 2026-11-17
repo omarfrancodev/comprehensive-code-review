@@ -590,7 +590,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
             raise ValueError('review operation is not open; recover or restart before retaining')
     if handoff_context_input is not None and not handoff:
         raise ValueError('--handoff-context-input requires an explicit --handoff request')
-    errors = validate_review(value)
+    errors = validate_review(value, require_material_fallbacks=expected_schema == 13)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'only final review records can be retained')
     if expected_schema == 13:
