@@ -52,6 +52,41 @@ class PublicCommentTests(unittest.TestCase):
         self.assertTrue(comments.verify_public_comment(
             record, draft, remote_body, remote=True)['verified'])
 
+    def test_remote_without_terminal_lf_reports_content_mismatch(self):
+        record = publication_record()
+        draft = comments.prepare_public_comment(
+            record, check_publication_context=check_classification(record),
+            coverage_publication_context=coverage_classification(record))
+        self.assertTrue(draft['body'].endswith('\n'))
+        with self.assertRaisesRegex(ValueError, 'body_mismatch'):
+            comments.verify_public_comment(record, draft, draft['body'][:-1], remote=True)
+
+    def test_gitlab_accepts_only_one_missing_terminal_lf_and_records_observed_bytes(self):
+        record = publication_record()
+        draft = comments.prepare_public_comment(
+            record, check_publication_context=check_classification(record),
+            coverage_publication_context=coverage_classification(record))
+        body = draft['body']
+        for observed, normalizations in (
+                (body, []),
+                (body.replace('\n', '\r\n'), ['crlf_to_lf']),
+                (body[:-1], ['gitlab_missing_terminal_lf']),
+                (body[:-1].replace('\n', '\r\n'), ['crlf_to_lf', 'gitlab_missing_terminal_lf'])):
+            with self.subTest(normalizations=normalizations):
+                receipt = comments.verify_public_comment(record, draft, observed,
+                                                        remote=True, remote_transport='gitlab')
+                self.assertTrue(receipt['verified'])
+                self.assertEqual(receipt['body_sha256'], draft['body_sha256'])
+                self.assertEqual(receipt['observed_body_sha256'], hashlib.sha256(observed.encode('utf-8')).hexdigest())
+                self.assertEqual(receipt['normalizations'], normalizations)
+                self.assertEqual(receipt['transport'], 'gitlab')
+        for altered in (body[:-2], body[:-1] + ' ', body[:-1] + '\r', body + '\n',
+                        body.replace('\n', '\n ', 1)[:-1], '\ufeff' + body[:-1], body[:-1] + '\ud800'):
+            with self.subTest(altered=repr(altered[-20:])), self.assertRaisesRegex(ValueError, 'body_mismatch'):
+                comments.verify_public_comment(record, draft, altered, remote=True, remote_transport='gitlab')
+        with self.assertRaisesRegex(ValueError, 'requires remote'):
+            comments.verify_public_comment(record, draft, body[:-1], remote_transport='gitlab')
+
     def test_source_context_status_and_body_hash_tampering_fail_without_mutation(self):
         record = publication_record()
         context = check_classification(record)
@@ -151,6 +186,24 @@ class PublicCommentCliTests(unittest.TestCase):
             self.assertEqual({str(path.relative_to(session)): path.read_bytes()
                               for path in session.rglob('*') if path.is_file()}, before)
             self.assertEqual(record_path.read_bytes(), record_bytes)
+
+            args = [sys.executable, str(helper), 'comment', 'verify', '--input', str(record_path),
+                    '--draft', str(draft_path), '--body', str(body_path)]
+            observed = draft['body'][:-1].replace('\n', '\r\n').encode('utf-8')
+            body_path.write_bytes(observed)
+            receipt = run([*args, '--remote', '--remote-transport', 'gitlab'])
+            self.assertEqual(receipt.returncode, 0, receipt.stderr)
+            result = json.loads(receipt.stdout)
+            self.assertEqual(result['observed_body_sha256'], hashlib.sha256(observed).hexdigest())
+            self.assertEqual(result['normalizations'], ['crlf_to_lf', 'gitlab_missing_terminal_lf'])
+            self.assertEqual(run([*args, '--remote']).returncode, 1)
+            self.assertEqual(run([*args, '--remote-transport', 'gitlab']).returncode, 2)
+            body_path.write_bytes(observed + b'\xff')
+            invalid_utf8 = run([*args, '--remote', '--remote-transport', 'gitlab'])
+            self.assertEqual(invalid_utf8.returncode, 2)
+            self.assertIn('UTF-8', invalid_utf8.stderr)
+            self.assertEqual({str(path.relative_to(session)): path.read_bytes()
+                              for path in session.rglob('*') if path.is_file()}, before)
 
             body_path.write_text(draft['body'] + '\nEdited', encoding='utf-8')
             mismatch = run([sys.executable, str(helper), 'comment', 'verify', '--input', str(record_path),

@@ -52,6 +52,26 @@ class EditorialCommentTests(unittest.TestCase):
         self.assertTrue(comment.verify_public_comment(record,draft,crlf,remote=True)['verified'])
         self.assertEqual(record,before)
 
+    def test_gitlab_comparison_preserves_editorial_accents_punctuation_and_links(self):
+        from ccr.reporting.projections import publication_digest
+        record, context = record_and_context()
+        link = 'https://example.test/repo/-/blob/abc/src/api.py#L12'
+        record['findings'][0]['location']['url'] = link
+        context['source_sha256'] = publication_digest(record)
+        context['findings'][0]['scenario'] = 'Validación: ¿se conserva el vínculo?'
+        draft = comment.prepare_public_comment(record, finding_publication_context=context,
+            coverage_publication_context=coverage_classification(record))
+        observed = draft['body'][:-1]
+        self.assertIn('Validación: ¿se conserva el vínculo?', observed)
+        self.assertIn(link, observed)
+        self.assertTrue(comment.verify_public_comment(record, draft, observed,
+                                                      remote=True, remote_transport='gitlab')['verified'])
+        for original, changed in (('vínculo', 'vi\u0301nculo'), ('vínculo?', 'vínculo!'), ('#L12', '#L13')):
+            modified = observed.replace(original, changed, 1)
+            self.assertNotEqual(modified, observed)
+            with self.subTest(changed=changed), self.assertRaisesRegex(ValueError, 'body_mismatch'):
+                comment.verify_public_comment(record, draft, modified, remote=True, remote_transport='gitlab')
+
     def test_context_reader_rejects_duplicate_keys_nonfinite_and_oversized_input(self):
         from ccr.reporting.finding_publication import read_finding_publication_context
         with tempfile.TemporaryDirectory() as directory:
