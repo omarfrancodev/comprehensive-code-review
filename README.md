@@ -99,6 +99,7 @@ Las referencias operativas se agrupan por flujo, ejecución, contratos, archivo,
 - [SKILL.md](SKILL.md): instrucciones operativas del agente y referencias canónicas.
 - [CHANGELOG.md](CHANGELOG.md): cambios de la skill.
 - [Release 3.7.0](https://github.com/omarfrancodev/comprehensive-code-review/releases/tag/v3.7.0), o [todas las releases](https://github.com/omarfrancodev/comprehensive-code-review/releases).
+- [Cambios de 3.8.0 en preparación](docs/releases/3.8.0.md).
 
 ## Contribuciones
 

@@ -36,6 +36,8 @@ A permission, difficult-to-guess ID, feature flag, off-happy-path input or manua
 
 Reassess prior labels against current evidence while preserving IDs and immutable history. Contrast comparable decisions within the current grouped verification; a change needs facts or a reasoned correction, not deference to a previous label. Keep existing profile/independence and verdict rules. This guide adds no reviewer, discovery sweep, mandatory benchmark or general new phase.
 
+Use the [assessment decision](assessment.md) in the existing verification pass. Record the obligation, reachable trigger and consequence before assigning confirmed severity. Record the origin relative to the reviewed change. For a related consumer, name the boundary and the unanswered question. Coverage gaps and a hypothetical future contract are reasons to record uncertainty or a recommendation. Keep a demonstrated documentation discrepancy or low-impact defect when its obligation and effect are concrete. An authorized resolution exclusion preserves the finding's evidenced priority and conditions.
+
 ## Two boundaries
 
 - A valid catalog entry exceeds a migration column and deterministically aborts its atomic seed. P1 can be justified by the supported deployment being impossible; avoiding partial writes does not remove that failure. A startup path that instead destroys the entire sole essential store immediately without an effective barrier can justify P0.

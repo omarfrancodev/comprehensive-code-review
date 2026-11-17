@@ -26,6 +26,24 @@
       "before": "def timeout(value=None):\n    return 10 if value is None else value\n",
       "after": "def timeout(value=None):\n    return 20 if value is None else value\n",
       "consumer": "def configured(timeout):\n    return timeout(5)\n"
+    },
+    {
+      "id": "future-contract",
+      "scope": "PR; adapt an existing client to an internal response wrapper",
+      "requirements": "Identifiers remain integers. The consumer must preserve navigation for supported responses.",
+      "description": "Read the identifier from the response wrapper.",
+      "before": "def read():\n    return {'id': 7}\n",
+      "after": "def read():\n    return {'item': {'id': 7}}\n",
+      "consumer": "def navigate(read):\n    response = read()\n    item = response.get('item', response)\n    return '/objects/%d' % item['id']\n"
+    },
+    {
+      "id": "accepted-residual",
+      "scope": "PR; read-only inventory listing",
+      "requirements": "The maintainer accepts duplicate read-only messages in this PR. Keep the residual documented. Reconsider the decision before enabling writes.",
+      "description": "Reject writes and keep duplicate read delivery observable.",
+      "before": "def dispatch(messages):\n    return [message['id'] for message in messages]\n",
+      "after": "def dispatch(messages):\n    if any(message['kind'] != 'read' for message in messages):\n        raise ValueError('read-only queue')\n    return [message['id'] for message in messages]\n",
+      "consumer": "def observe(dispatch):\n    return dispatch([{'id': 7, 'kind': 'read'}, {'id': 7, 'kind': 'read'}])\n"
     }
   ]
 }

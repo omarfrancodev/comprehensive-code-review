@@ -2,6 +2,25 @@
 
 Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Sin publicación registrada» identifica estados históricos sin una release en GitHub; no atribuye una fecha de publicación a su commit.
 
+## unreleased
+
+### Changed
+
+#### Artefactos y contratos
+
+- Guardar el final compacto ligado en una sesión propia existente y emitir un recibo breve de su identidad, ruta y hash. El disclosure puede consumir el mismo archivo por referencia y hash. La retención compacta ofrece un resumen de salida y conserva el inventario validado en el manifiesto.
+- Compartir los bytes seleccionados entre preflight y escritura de la retención completa. Generar el informe compacto a partir del registro ligado y releer el destino para validarlo.
+- Añadir `artifacts inspect --summary` para diagnosticar la fase pendiente y `artifacts finish` para cerrar con las observaciones existentes y validar el archivo final.
+- Verificar el archivo previo completo o compacto antes de preparar un seguimiento. Ligar el alcance del dictamen, las decisiones de resolución y las reaperturas a evidencia retenida. Conservar los IDs de causas publicadas y mostrar la deuda aceptada con sus condiciones en el informe y el comentario.
+- Acreditar el disparador de cada hallazgo de código dentro del contrato revisado y cotejar la aplicabilidad de la cobertura con los hallazgos y checks antes de retener el resultado.
+- Vincular las observaciones de la verificación independiente a IDs de dimensión y reconciliarlas con los checks antes de retener, también en revisiones sin hallazgos.
+- Fijar el perfil mediante hechos del alcance y conservar las obligaciones de independencia cuando el harness no puede ejecutarlas. Los perfiles deep y extended requieren persistencia completa.
+- Verificar notas observadas de GitLab con un LF final omitido en borradores 4. Registrar el hash del cuerpo observado y las normalizaciones aplicadas en la comprobación remota.
+
+#### Harness e integraciones
+
+- Retirar la captura de modelo del flujo habitual. Conservar la identidad del harness, la procedencia de la ejecución y la lectura de ledgers históricos o seleccionados explícitamente.
+
 ## 3.7.0 — 2026-11-08
 
 ### Added

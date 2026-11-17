@@ -1,10 +1,12 @@
-# Canonical review record — schema version 12
+# Canonical review record — schema version 13
 
 One final source, rendered for the requested audience. Workers use worker-packets.md; packet_version is independent. The coordinator merges deltas, maps provisional IDs under identifiers.md, supplies judgments and validates the complete record. Legacy full workers retain their schema. Workers return no complete user/public report or delivery. Explicit portable delivery under delivery.md is a projection identified by its separate receipt; preserve the original canonical record for archive retention/closure.
 
 All listed fields are required in applicable objects. Use explicit null/empty arrays for unknown/not applicable values. Unknown fields/enums are errors in this schema version. Evidence is specific, not numeric confidence. Use actual supplied revision/snapshot identities; local edits require a snapshot identifying the selected state.
 
 ## Canonical envelope / legacy full worker fields
+
+The [assessment extension](assessment.md) adds source-bound scope and finding decisions to final 13 without rewriting older records.
 
 - schema_version: integer 13 for new final reviews; stage: final. Helpers accept published versions 1–12 unchanged. Schema 12 preserves the exact fields of schema 11 and changes only topology and verification aggregation. Schema 7 adopts focused/standard names without changing strategy; schema 6 added durable review/source identities and canonical IDs; schema 5 introduced extended. Schema 10 adds immutable profile-selection history and assignment bindings. No guessed missing legacy fields. Compact worker packet_version stays independent; existing full worker/merge outputs may use schema 1/2 until the coordinator completes the final record.
 - review_id (schemas6–12): `CR-` followed by the actual 20 lowercase hex run ID; durable retention binds it to the prepared run.
@@ -117,4 +119,10 @@ Schema 13 keeps the topology, check purposes, profile history, provenance, verdi
 
 `coverage.evidence` is an array of unique `{id, kind, detail, check_id, reference}` entries, with IDs `EV001` onward. Kind `static` requires null `check_id`; kind `check` refers to an existing check. `reference` may be null or a selected source/location. Groups reference these entries by ID and known findings by ID, without repeating their prose. The ABCDE summary is derived, never a separate competing input. Uncertainty and material gaps remain explicit in the report and verdict. Full archives and compact records use the same final schema; delivery does not change coverage.
 
-A compact record also contains `compact_identity` with `inputs_sha256`, `logical_scope_identity` and `created_at`, inserted and checked against its reservation by the compact writer. Before constructing a final-bound disclosure, use `artifacts bind-compact --prepared-input <prepared.json> --input <final13.json>` to obtain the canonical record with this identity. Build the sidecar and retain exactly that record; its complete digest includes `compact_identity`. Binding is read-only and idempotent; direct retention without dependent sidecars remains supported. This identity is not required for a full archive. Existing records and receipts keep their published schemas and bytes.
+A compact record also contains `compact_identity` with `inputs_sha256`, `logical_scope_identity` and `created_at`, inserted and checked against its reservation by the compact writer. Before constructing a final-bound disclosure, use `artifacts bind-compact --prepared-input <prepared.json> --input <final13.json>` to obtain the canonical record with this identity. With an existing owned session, `--session` and `--output` save that record directly and return a compact receipt. Build the sidecar and retain exactly that record; its complete digest includes `compact_identity`. Binding leaves the reservation and archive unchanged, and file output refuses to overwrite an existing candidate. Direct retention without dependent sidecars remains supported. This identity is not required for a full archive. Existing records and receipts keep their published schemas and bytes.
+
+### Reconciling applicability before retention
+
+Before retention, reconcile each proposed `not_applicable` dimension with the scoped flows, confirmed findings, worker invariant observations and observed checks. Attach the existing evidence ID when it establishes the behavior. Use partial or not evaluated when relevant behavior still needs evidence. Apply the same rule on clean reviews and on failed checks.
+
+B02 includes reachable empty inputs and boundary values even when the implementation handles them without an explicit branch. E04 applies when the changed path delivers an error to the inspected caller. Record the observed disclosure at that boundary and distinguish it from any unknown handling or logging beyond it. Keep `not_applicable` for a dimension outside the inspected scope.
