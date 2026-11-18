@@ -91,6 +91,44 @@ def rendered(record, audience):
     return render(record, audience, check_disclosure_context=disclosure, check_disclosure_sources={}, **contexts)
 
 
+def guided_v2(record, previous=None):
+    """Author complete v2 input fixtures for the real archive-writing tests."""
+    assessment = record['assessment']
+    old = (previous or {}).get('assessment', {})
+    members = copy.deepcopy(old.get('lineage', []))
+    rows = {row['id']: row for row in assessment['findings']}
+    findings = {row['id']: row for row in record['findings']}
+    tracking = {row['id']: row for row in record['rereview']}
+    if not members:
+        members = [dict(id=row['id'], cause=row['cause'], survivor=row['id'],
+            title=findings.get(row['id'], {}).get('title') or tracking[row['id']]['previous_title'],
+            last_status='confirmed', resolution=copy.deepcopy(row['resolution']))
+            for row in assessment['findings']]
+        for alias, target in record['aliases'].items():
+            member = copy.deepcopy(next(item for item in members if item['id'] == target))
+            member['id'] = alias
+            members.append(member)
+    for member in members:
+        target = record['aliases'].get(member['survivor'], member['survivor'])
+        member['survivor'] = target
+        if target in rows:
+            value = rows[target]['resolution']
+            choices = value if isinstance(value, list) else [] if value is None else [value]
+            if member['resolution'] not in choices:
+                member['resolution'] = copy.deepcopy(value)
+    descriptors = [item for delta in assessment['scope']['delta'] for item in delta['sources']]
+    if assessment['previous']:
+        descriptors.append(assessment['previous']['source'])
+    for row in assessment['findings']:
+        value = row['resolution']
+        descriptors.extend(item['source'] for item in (value if isinstance(value, list)
+                           else [] if value is None else [value]))
+    assessment.update(schema_version=2, lineage=members,
+        observed_hashes=sorted(set(old.get('observed_hashes', []))
+                               | {item['sha256'] for item in descriptors}))
+    return record
+
+
 class AssessmentTests(unittest.TestCase):
     def test_confirmed_needs_reachable_obligation_and_an_inspected_consumer(self):
         record = assessed()
@@ -357,6 +395,50 @@ class AssessmentCompactTests(unittest.TestCase):
     prepare = compact_fixtures.CompactPrepareTests.prepare
     record_and_sources = compact_fixtures.CompactPrepareTests.record_and_sources
 
+    def test_compact_roundtrip_keeps_distinct_member_decisions_and_sources(self):
+        from ccr.archive import compact
+        second_note = b'Second owner: accept the duplicate while the subscriber is read-only.'
+        decisions = {'evidence/note.txt': NOTE, 'evidence/second-note.txt': second_note,
+                     'evidence/proof.txt': PROOF}
+        inputs = dict(self.inputs, sources={key: hashlib.sha256(raw).hexdigest()
+                      for key, raw in decisions.items() if key != 'evidence/proof.txt'})
+        prepared = self.prepare(inputs=inputs)
+        original, selected = self.record_and_sources(prepared)
+        two_published_findings(original)
+        original['assessment']['findings'][1]['resolution'].update(
+            source=source('second-note.txt', second_note), conditions=['Subscriber remains read-only'])
+        guided_v2(original)
+        saved = compact.create_compact(prepared, original, current_inputs=inputs,
+                                       sources={**selected, **decisions})
+        prior_file = Path(saved['run_dir']) / 'review.json'
+        prior_bytes = prior_file.read_bytes()
+        previous = compact.read_compact(saved['run_dir'])['record']
+        prepared = self.prepare(operation_id='member-decisions-followup')
+        fresh, selected = self.record_and_sources(prepared)
+        current, proof = consolidated_followup(previous)
+        current.pop('compact_identity')
+        current['review_id'] = fresh['review_id']
+        current['coverage']['execution'] = fresh['coverage']['execution']
+        current['previous_reviews'][0]['reference'] = str(prior_file)
+        current['rereview'][0]['previous_reference'] = str(prior_file)
+        current['assessment']['findings'][0]['resolution'] = [
+            copy.deepcopy(row['resolution']) for row in previous['assessment']['findings']]
+        guided_v2(current, previous)
+        kept = compact.create_compact(prepared, current, current_inputs=self.inputs,
+                                      sources={**selected, **proof, **decisions})
+        result = compact.read_compact(kept['run_dir'])['record']
+        self.assertEqual(result['aliases'], {'F002': 'F001'})
+        resolutions = result['assessment']['findings'][0]['resolution']
+        self.assertEqual([decision['conditions'] for decision in resolutions],
+                         [['Writes stay disabled'], ['Subscriber remains read-only']])
+        self.assertEqual([item['source']['reference'] for item in resolutions],
+                         ['evidence/note.txt', 'evidence/second-note.txt'])
+        report = (Path(kept['run_dir']) / 'informe.md').read_text(encoding='utf8')
+        self.assertIn('Writes stay disabled', report)
+        self.assertIn('Subscriber remains read-only', report)
+        self.assertNotIn('Corrección requerida', report)
+        self.assertEqual(prior_file.read_bytes(), prior_bytes)
+
     def test_compact_consolidation_preserves_ids_debt_and_previous_bytes(self):
         from ccr.archive import compact
         for legacy in (True, False):
@@ -366,6 +448,7 @@ class AssessmentCompactTests(unittest.TestCase):
                 prepared = self.prepare(inputs=inputs, operation_id='prior-' + str(legacy))
                 record, selected = self.record_and_sources(prepared)
                 two_published_findings(record)
+                guided_v2(record)
                 assessment = copy.deepcopy(record['assessment'])
                 if legacy:
                     record.pop('assessment')
@@ -387,6 +470,10 @@ class AssessmentCompactTests(unittest.TestCase):
                 current['rereview'][0]['previous_reference'] = str(old_file)
                 current['assessment']['previous']['source'] = source('prior.json', old_bytes)
                 sources['evidence/prior.json'] = old_bytes
+                guided_v2(current, previous)
+                if legacy:
+                    # The legacy duplicate did not publish a stable cause key.
+                    current['assessment']['lineage'][1]['cause'] = None
                 self.assertEqual(review.validate(current), [])
                 kept = compact.create_compact(
                     prepared, current, current_inputs=next_inputs, sources={**selected, **sources})
@@ -442,6 +529,7 @@ class AssessmentCompactTests(unittest.TestCase):
         prepared = self.prepare(inputs=inputs)
         original, selected = self.record_and_sources(prepared)
         assessed(original)
+        guided_v2(original)
         kept = compact.create_compact(prepared, original, current_inputs=inputs, sources={**selected, **sources})
         old_file = Path(kept['run_dir']) / 'review.json'
         previous = json.loads(old_file.read_bytes())
@@ -455,8 +543,10 @@ class AssessmentCompactTests(unittest.TestCase):
             key = 'reference' if item is current['previous_reviews'][0] else 'previous_reference'
             item[key] = str(old_file)
         selected.update(proof)
+        guided_v2(current, previous)
         dropped = copy.deepcopy(current)
         dropped['assessment']['findings'][0]['resolution'] = None
+        dropped['assessment']['lineage'][0]['resolution'] = None
         with self.assertRaisesRegex(ValueError, 'reopening'):
             compact.create_compact(prepared, dropped, current_inputs=self.inputs, sources=selected)
         forged = copy.deepcopy(previous)
@@ -464,6 +554,10 @@ class AssessmentCompactTests(unittest.TestCase):
         forged = archive_bytes(forged)
         wrong = copy.deepcopy(current)
         wrong['assessment']['previous']['source'] = source('prior.json', forged)
+        wrong['assessment']['observed_hashes'] = sorted(
+            (set(wrong['assessment']['observed_hashes'])
+             - {hashlib.sha256(old_file.read_bytes()).hexdigest()})
+            | {hashlib.sha256(forged).hexdigest()})
         with self.assertRaisesRegex(ValueError, 'verified prior archive'):
             compact.create_compact(prepared, wrong, current_inputs=self.inputs,
                                    sources={**selected, 'evidence/prior.json': forged})

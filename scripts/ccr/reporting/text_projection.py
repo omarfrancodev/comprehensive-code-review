@@ -110,6 +110,20 @@ class _Projection:
         assessment.findings[].resolution.conditions[] assessment.findings[].reopening.detail
         assessment.findings[].reopening.condition'''.split())
 
+    STRUCTURAL.update('assessment.lineage[].' + field
+                      for field in ('id', 'cause', 'survivor', 'last_status'))
+    STRUCTURAL.add('assessment.observed_hashes[]')
+    STRUCTURAL.update(base + '.' + field
+                      for base in ('assessment.findings[].resolution[]',
+                                   'assessment.lineage[].resolution',
+                                   'assessment.lineage[].resolution[]')
+                      for field in ('status', 'scope', 'authority', 'channel', 'source.sha256'))
+    PROSE.add('assessment.lineage[].title')
+    PROSE.update(base + '.conditions[]'
+                 for base in ('assessment.findings[].resolution[]',
+                              'assessment.lineage[].resolution',
+                              'assessment.lineage[].resolution[]'))
+
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None,
                  check_disclosure_sources=None, editorial_texts=()):
         self.assessment_references = source_references(record)

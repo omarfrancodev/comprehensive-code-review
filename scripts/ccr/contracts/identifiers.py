@@ -84,6 +84,8 @@ def canonicalize_ids(record, reserved_ids=None):
         raise ValueError('duplicate check IDs; qualify sources before allocation')
     finding_sources += [item['id'] for item in result.get('rereview', [])]
     finding_sources += list(result.get('aliases', {}))
+    for member in result.get('assessment', {}).get('lineage', []):
+        finding_sources.extend((member['id'], member['survivor']))
     finding_map = allocate(finding_sources, 'F', history.get('findings', []), reserved_ids['findings'])
     check_map = allocate(check_sources, 'C', history.get('checks', []), reserved_ids['checks'])
 
@@ -114,6 +116,9 @@ def canonicalize_ids(record, reserved_ids=None):
         row['check_ids'] = [mapped(check_map, identifier) for identifier in row.get('check_ids', [])]
     for row in result.get('assessment', {}).get('findings', []):
         row['id'] = mapped(finding_map, row['id'])
+    for member in result.get('assessment', {}).get('lineage', []):
+        member['id'] = mapped(finding_map, member['id'])
+        member['survivor'] = mapped(finding_map, member['survivor'])
     result['aliases'] = {mapped(finding_map, source): mapped(finding_map, survivor)
                          for source, survivor in result.get('aliases', {}).items()}
     errors = validate(result)

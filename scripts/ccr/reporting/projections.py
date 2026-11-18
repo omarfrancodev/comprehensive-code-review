@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlsplit
 
 from ccr.reporting.markdown import markdown_text, one_line
-from ccr.contracts.assessment import RESOLUTION_LABELS
+from ccr.contracts.assessment import RESOLUTION_LABELS, resolution_decisions
 
 CHECK_PUBLICATION_FIELDS = {'id', 'evidence', 'reuse_reason', 'rerun_reason', 'reference'}
 
@@ -18,7 +18,7 @@ def publication_digest(record):
 
 
 def resolution_by_id(record):
-    return {row['id']: row['resolution'] for row in record.get('assessment', {}).get('findings', [])
+    return {row['id']: resolution_decisions(row['resolution']) for row in record.get('assessment', {}).get('findings', [])
             if row['resolution'] is not None}
 
 
@@ -33,9 +33,10 @@ def assessment_lines(record, *, format_text=markdown_text, format_id=markdown_te
         label = 'Revisión completa' if coverage_reuse_issue(record) is None else 'Revisión con cobertura limitada'
     lines = ['- **Alcance del dictamen:** ' + label, '- **Delta revisado:**']
     lines.extend('  - ' + format_text(entry['detail']) for entry in assessment['scope']['delta'])
-    for identifier, decision in resolution_by_id(record).items():
-        lines.append('- **' + format_id(identifier) + '** · ' + RESOLUTION_LABELS[decision['status']])
-        lines.extend('  - Condición: ' + format_text(text) for text in decision['conditions'])
+    for identifier, decisions in resolution_by_id(record).items():
+        for decision in decisions:
+            lines.append('- **' + format_id(identifier) + '** · ' + RESOLUTION_LABELS[decision['status']])
+            lines.extend('  - Condición: ' + format_text(text) for text in decision['conditions'])
     return lines
 
 
