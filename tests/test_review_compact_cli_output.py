@@ -163,3 +163,55 @@ class CompactOutputTests(unittest.TestCase):
         self.assertFalse((owned / 'wrong.json').exists())
         self.assertFalse(Path(prepared['run_dir']).exists())
 
+    def test_binding_publication_race_preserves_competing_candidate_and_receipt(self):
+        # POSIX rename replaces a racing target; the publisher must reject it atomically.
+        from contextlib import redirect_stdout, redirect_stderr
+        from io import StringIO
+        import os
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from ccr.cli import artifacts
+        from ccr.execution import candidates
+        prepared, _, args = self.inputs_for_bind()
+        session = self.session()
+        evidence = Path(session['session_dir'], 'evidence')
+        evidence.mkdir()
+        target = evidence / 'bound.json'
+        receipt = evidence / 'existing-receipt.json'
+        receipt.write_bytes(b'{"status":"owned-existing-receipt"}')
+        competing = b'{"review_id":"competing-writer"}\n'
+        original_input = Path(args[-1]).read_bytes()
+        original_receipt = receipt.read_bytes()
+        real_link = os.link
+        competing_modes = []
+
+        def publish_with_racer(source, destination, **kwargs):
+            target.write_bytes(competing)
+            competing_modes.append(target.stat().st_mode)
+            # os.replace gives documented POSIX rename semantics on Windows too.
+            return os.replace(source, destination, **kwargs)
+
+        def link_with_racer(source, destination, **kwargs):
+            target.write_bytes(competing)
+            competing_modes.append(target.stat().st_mode)
+            try:
+                return real_link(source, destination, **kwargs)
+            except OSError as exc:
+                # Refusal must be the real collision, never an unrelated host failure.
+                self.assertIsInstance(exc, FileExistsError)
+                raise
+
+        posix_publication = SimpleNamespace(name='posix', fsync=os.fsync,
+            rename=publish_with_racer, link=link_with_racer)
+        with patch.object(candidates, 'os', posix_publication), \
+                redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
+            code = artifacts.main([*map(str, args), '--session', str(session['manifest']),
+                                   '--output', str(target)])
+        self.assertEqual(code, 1, stderr.getvalue())
+        self.assertEqual(stdout.getvalue(), '')
+        self.assertEqual(target.read_bytes(), competing)
+        self.assertEqual(target.stat().st_mode, competing_modes[0])
+        self.assertEqual(Path(args[-1]).read_bytes(), original_input)
+        self.assertEqual(receipt.read_bytes(), original_receipt)
+        self.assertEqual(list(evidence.glob('.review-setup-*.tmp')), [])
+        self.assertFalse(Path(prepared['run_dir']).exists())

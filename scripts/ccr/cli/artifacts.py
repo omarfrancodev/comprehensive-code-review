@@ -105,6 +105,9 @@ def _finish_status(run_dir, *, current=None, candidate=None):
     if freshness == 'changed':
         reason = next(iter(inspected['freshness']['reasons']), 'Captured inputs changed.')
         return pending('current_inputs', 'restart', reason)
+    if current is not None and freshness != 'verified':
+        reason = next(iter(inspected['freshness']['reasons']), 'Current inputs have not been verified.')
+        return pending('current_inputs', 'verify_current_inputs', reason)
     if candidate is not None:
         diagnostic, code = preflight_run(run_dir, candidate['context_input'], phase='retain',
                                        input_file=candidate['input_file'], evidence_inputs=candidate['evidence_inputs'])
@@ -139,7 +142,14 @@ def finish_run(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, rele
         except _GATE_ERRORS:
             return _finish_status(run_dir), 1
         observation = manifest.get('close_observation')
-        if (manifest['state'] not in {'retaining', 'closing'} or not isinstance(observation, dict)
+        pending_trace = manifest.get('pending_trace')
+        trace_events = pending_trace.get('events') if isinstance(pending_trace, dict) else None
+        final_close_pending = (manifest['state'] == 'complete' and isinstance(trace_events, list)
+                               and len(trace_events) == 1 and isinstance(trace_events[0], dict)
+                               and trace_events[0].get('kind') == 'close'
+                               and trace_events[0].get('status') == 'completed')
+        if ((manifest['state'] not in {'retaining', 'closing'} and not final_close_pending)
+                or not isinstance(observation, dict)
                 or manifest['state'] == 'closing' and observation['cleanup'] == 'pending'):
             result = _finish_status(run_dir)
             return result, 0 if result['status'] == 'complete' else 1
