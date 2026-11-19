@@ -54,6 +54,24 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
 _GATE_ERRORS = (OSError, ValueError, TypeError, KeyError, WorkspaceError)
 
 
+def _final_close_pending(manifest):
+    """Recognize the final helper append; callers still verify its owned bytes."""
+    pending = manifest.get('pending_trace')
+    events = pending.get('events') if isinstance(pending, dict) else None
+    return (manifest['state'] == 'complete'
+            and manifest.get('retained') is True
+            and manifest.get('operation', {}).get('disposition') == 'complete'
+            and manifest.get('operation', {}).get('phase') == 'close'
+            and manifest.get('cleanup') in {'complete', 'not_needed'}
+            and manifest.get('residuals') == []
+            and isinstance(manifest.get('close_observation'), dict)
+            and isinstance(events, list) and len(events) == 1
+            and isinstance(events[0], dict) and events[0].get('kind') == 'close'
+            and events[0].get('status') == 'completed'
+            and events[0].get('provenance') == {
+                'kind': 'helper', 'source': 'review_artifacts:close'})
+
+
 def _finish_status(run_dir, *, current=None, candidate=None):
     """Project inspection and existing gates into one next action."""
     inspected = inspect_run(run_dir, current_inputs=current, finalization_details=True)
@@ -69,6 +87,11 @@ def _finish_status(run_dir, *, current=None, candidate=None):
         return pending('integrity', action['action'], (integrity['errors'] or [action['reason']])[0])
     if inspected['operation']['disposition'] == 'complete':
         try:
+            if integrity['status'] == 'recoverable':
+                run, manifest, _ = _load_run(run_dir)
+                if _final_close_pending(manifest):
+                    _verify_files(run, manifest, required=True, allow_pending_trace=True)
+                    return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
             return _complete_status(validate(run_dir, require_complete=True), status['review_id'])
         except _GATE_ERRORS as exc:
             return pending('complete_validation', 'preserve', str(exc))
@@ -142,12 +165,7 @@ def finish_run(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, rele
         except _GATE_ERRORS:
             return _finish_status(run_dir), 1
         observation = manifest.get('close_observation')
-        pending_trace = manifest.get('pending_trace')
-        trace_events = pending_trace.get('events') if isinstance(pending_trace, dict) else None
-        final_close_pending = (manifest['state'] == 'complete' and isinstance(trace_events, list)
-                               and len(trace_events) == 1 and isinstance(trace_events[0], dict)
-                               and trace_events[0].get('kind') == 'close'
-                               and trace_events[0].get('status') == 'completed')
+        final_close_pending = _final_close_pending(manifest)
         if ((manifest['state'] not in {'retaining', 'closing'} and not final_close_pending)
                 or not isinstance(observation, dict)
                 or manifest['state'] == 'closing' and observation['cleanup'] == 'pending'):
@@ -446,6 +464,8 @@ def main(argv=None, *, prog=None):
                                         authority=args.authority, controller=read_json(args.controller_input))
         elif args.command == 'inspect':
             current = read_json(args.current_inputs) if args.current_inputs else None
+            if args.current_inputs and not isinstance(current, dict):
+                raise ValueError('--current-inputs must contain a JSON object')
             if ((args.context_input or args.input or args.evidence_input) and not args.summary
                     or (args.input or args.evidence_input) and not args.context_input):
                 raise ValueError('inspect candidate preflight requires --summary and --context-input')

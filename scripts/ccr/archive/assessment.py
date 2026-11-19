@@ -5,22 +5,9 @@ from pathlib import Path
 from ccr.archive.integrity import CHECKPOINT_METADATA_LIMIT, verify_files
 from ccr.archive.reader import load_run
 from ccr.contracts.review import validate
+from ccr.contracts.guided_writes import require_followup_assessment
 from ccr.shared.json_io import decode_json, read_bounded
 from ccr.shared.paths import safe_path
-
-
-def require_followup_assessment(record):
-    if (isinstance(record, dict) and record.get('schema_version') == 13
-            and 'assessment' in record
-            and (not isinstance(record['assessment'], dict)
-                 or record['assessment'].get('schema_version') != 2)):
-        raise ValueError('new guided writes require assessment version 2; version 1 is historical')
-    if (isinstance(record, dict) and record.get('schema_version') == 13
-            and isinstance(record.get('presentation'), dict)
-            and (record['presentation'].get('kind') in ('rereview', 'complement')
-                 or record.get('rereview') or record.get('previous_reviews'))
-            and 'assessment' not in record):
-        raise ValueError('guided follow-up requires the source-bound assessment')
 
 
 def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=None, compact_reader=None):

@@ -620,7 +620,7 @@ def retain(run_dir, input_file=None, measurement_inputs=None, unavailable_reason
         phase_preflight = review_preflight.validate_preflight(
             phase='retain', manifest=manifest, logical_scope=manifest.get('logical_scope'),
             selection=manifest['profile_history'][-1], context=context, record=value,
-            sources=preflight_sources)
+            sources=preflight_sources, guided_write=expected_schema == 13)
         if not phase_preflight['ready']:
             raise ValueError('; '.join(issue['message'] for issue in phase_preflight['issues']))
     declared_residuals = [str(safe_path(raw)) for raw in value['resources']['residuals']]
