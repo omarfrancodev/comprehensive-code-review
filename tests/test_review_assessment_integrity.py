@@ -1,7 +1,7 @@
 """Regression coverage for current claims and source-bound terminal decisions."""
 import unittest
 
-from test_review_assessment import NOTE, PROOF, assessed, followup, source
+from test_review_assessment import NOTE, PROOF, assessed, followup, guided_v2, source
 from ccr.contracts import review
 from ccr.contracts.assessment import verify_sources
 
@@ -12,12 +12,15 @@ def terminal_followup(status):
     current, sources = followup(previous)
     current['findings'] = []
     current['rereview'][0]['status'] = status
+    guided_v2(current)
+    current['assessment']['lineage'][0]['last_status'] = status
     return current, sources
 
 
 class AssessmentIntegrityTests(unittest.TestCase):
     def test_still_valid_requires_a_retained_confirmed_finding(self):
         current, _ = followup()
+        guided_v2(current)
         self.assertEqual(review.validate(current), [])
         current['findings'] = []
         self.assertTrue(any('follow-up outcome' in error for error in review.validate(current)))
@@ -66,6 +69,7 @@ class AssessmentIntegrityTests(unittest.TestCase):
 
     def test_every_local_delta_observation_requires_its_source_descriptor(self):
         current = assessed()
+        guided_v2(current)
         current['coverage']['evidence'].append(dict(current['coverage']['evidence'][0],
             id='EV002', reference='evidence/second.txt'))
         delta = current['assessment']['scope']['delta'][0]
@@ -78,6 +82,7 @@ class AssessmentIntegrityTests(unittest.TestCase):
 
     def test_source_binding_preserves_exact_observation_fragments(self):
         current = assessed()
+        guided_v2(current)
         current['coverage']['evidence'][0]['reference'] = 'evidence/proof.json#/first'
         current['coverage']['evidence'].append(dict(current['coverage']['evidence'][0],
             id='EV002', reference='evidence/proof.json#/second'))
@@ -89,6 +94,7 @@ class AssessmentIntegrityTests(unittest.TestCase):
         delta['sources'] = [descriptor]
         self.assertTrue(any('.sources' in error for error in review.validate(current)))
         delta['sources'].append(dict(descriptor, reference='evidence/proof.json#/second'))
+        guided_v2(current)
         self.assertEqual(review.validate(current), [])
         verify_sources(current, {'evidence/proof.json': proof, 'evidence/note.txt': NOTE}.__getitem__)
 
@@ -101,6 +107,7 @@ class AssessmentIntegrityTests(unittest.TestCase):
 
     def test_unbound_prior_observation_cannot_be_replayed_as_new_reopening_proof(self):
         previous = assessed()
+        guided_v2(previous)
         previous['assessment']['scope']['delta'][0]['sources'] = []
         current, sources = followup(previous)
         row = current['assessment']['findings'][0]

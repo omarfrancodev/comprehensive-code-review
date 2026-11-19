@@ -84,9 +84,13 @@ def validate_shape(record, state):
     fields = {'schema_version', 'scope', 'previous', 'findings'}
     if version == 2:
         fields |= {'lineage', 'observed_hashes'}
+        if 'history_incomplete' in value:
+            fields.add('history_incomplete')
     assessment = state.fields(value, fields, 'assessment')
     if type(version) is not int or version not in (1, 2):
         state.error('assessment.schema_version', 'expected assessment version 1 or 2')
+    if version == 2 and 'history_incomplete' in assessment:
+        state.boolean(assessment['history_incomplete'], 'assessment.history_incomplete')
     coverage = record.get('coverage')
     evidence = _by_id(_rows(coverage, 'evidence')) if isinstance(coverage, dict) else {}
     checks = _by_id(_rows(record, 'checks'))
@@ -117,7 +121,7 @@ def validate_shape(record, state):
                 bound_refs.add(ref)
                 delta_sources.update((key, ref, descriptor['sha256']) for key in ids
                                      if key in evidence and evidence[key].get('reference') == ref)
-        if not {ref for ref in refs if ref.startswith('evidence/')} <= bound_refs:
+        if version == 2 and not {ref for ref in refs if ref.startswith('evidence/')} <= bound_refs:
             state.error(path + '.sources', 'each local evidence observation requires a source descriptor')
     previous = assessment.get('previous')
     presentation = record.get('presentation')
@@ -160,7 +164,8 @@ def validate_shape(record, state):
         if status == 'not_reevaluated' and finding.get('status') == 'confirmed':
             state.error(path + '.id', 'a claim not reevaluated cannot be confirmed in the current scope')
         if ((status in ('resolved', 'withdrawn') and finding.get('status') == 'confirmed')
-                or (status == 'still_valid' and finding.get('status') != 'confirmed')):
+                or (status == 'still_valid' and (version == 2 or finding)
+                    and finding.get('status') != 'confirmed')):
             state.error(path + '.id', 'current finding conflicts with the follow-up outcome')
         verification = row.get('verification')
         if confirmed or status in ('resolved', 'withdrawn') or relation == 'affected_consumer' or verification is not None:
@@ -168,7 +173,7 @@ def validate_shape(record, state):
                                   path + '.verification', evidence_ids=delta_ids)
             if status in ('resolved', 'withdrawn') and (not isinstance(verification, dict) or not verification.get('evidence_ids')):
                 state.error(path + '.verification.evidence_ids', 'resolution requires observed evidence')
-            if status in ('resolved', 'withdrawn'):
+            if version == 2 and status in ('resolved', 'withdrawn'):
                 linked = verification.get('evidence_ids') if isinstance(verification, dict) else None
                 if not isinstance(linked, list) or not any(
                         isinstance(key, str) and key in delta_ids
@@ -347,6 +352,8 @@ def verify_sources(record, read_source, *, captured_inputs=None):
                     inherited = any(decision in resolution_decisions(member['resolution'])
                         for member in _baseline_lineage(previous).values()
                         if record['aliases'].get(member['survivor'], member['survivor']) == row['id'])
+                if decision['scope'] == 'this_review':
+                    inherited = False
                 if not inherited:
                     descriptor = decision['source']
                     if initial.get(descriptor['reference'].split('#', 1)[0]) != descriptor['sha256']:
@@ -373,10 +380,18 @@ def _baseline_lineage(previous):
     result = {}
     for identifier in findings.keys() | tracked.keys() | decisions.keys() | aliases.keys():
         finding, tracking, decision = findings.get(identifier, {}), tracked.get(identifier, {}), decisions.get(identifier, {})
+        status = _material_status(finding, tracking)
+        if status in ('resolved', 'withdrawn') and assessment.get('schema_version') == 1:
+            evidence = _by_id(_rows(previous.get('coverage') or {}, 'evidence'))
+            checks = _by_id(_rows(previous, 'checks'))
+            verification = decision.get('verification') or {}
+            if not any(_decisive_observation(evidence.get(key, {}), checks)
+                       for key in verification.get('evidence_ids', [])):
+                status = 'unknown'
         result[identifier] = dict(id=identifier, cause=decision.get('cause'),
             survivor=aliases.get(identifier, identifier),
             title=finding.get('title') or tracking.get('previous_title'),
-            last_status=_material_status(finding, tracking), resolution=decision.get('resolution'))
+            last_status=status, resolution=decision.get('resolution'))
     # A published direct alias establishes the same claim as its known target.
     # It does not recover the alias's original cause key or title.
     for identifier, survivor in aliases.items():
@@ -393,8 +408,26 @@ def _observed_hashes(assessment):
             | {descriptor['sha256'] for descriptor in _sources(assessment)})
 
 
+def _unbound_historical_observations(previous):
+    assessment = previous.get('assessment') or {}
+    if assessment.get('schema_version') != 1:
+        return False
+    if assessment['previous'] is not None:
+        # V1 binds its immediate inputs, but has no accumulated hash ledger.
+        # A prior source digest cannot establish the hashes of its ancestors.
+        return True
+    evidence = _by_id(_rows(previous.get('coverage') or {}, 'evidence'))
+    for entry in assessment['scope']['delta']:
+        bound = {descriptor['reference'] for descriptor in entry['sources']}
+        if any(evidence.get(key, {}).get('reference') not in bound for key in entry['evidence_ids']):
+            return True
+    return False
+
+
 def _verify_lineage_continuity(record, assessment, previous):
     old = _baseline_lineage(previous)
+    if any(identifier not in old for identifier in record.get('grandfathered_ids', {}).get('findings', [])):
+        raise ValueError('historical ID requires its own published provenance in the selected previous result')
     members = _by_id(assessment['lineage'])
     decisions = _by_id(assessment['findings'])
     findings, tracking = _by_id(_rows(record, 'findings')), _by_id(_rows(record, 'rereview'))
@@ -403,6 +436,10 @@ def _verify_lineage_continuity(record, assessment, previous):
     if members.keys() != expected_ids:
         raise ValueError('lineage must preserve every published ID and only observed current members')
     old_assessment = previous.get('assessment') or {}
+    incomplete = (old_assessment.get('history_incomplete', False)
+                  or _unbound_historical_observations(previous))
+    if assessment.get('history_incomplete', False) != incomplete:
+        raise ValueError('history_incomplete must preserve unknown historical observation hashes')
     old_hashes = _observed_hashes(old_assessment)
     if assessment['previous'] is not None:
         old_hashes.add(assessment['previous']['source']['sha256'])
@@ -428,6 +465,8 @@ def _verify_lineage_continuity(record, assessment, previous):
             raise ValueError('follow-up ID is absent from the selected previous review')
         reopening = row['reopening']
         if reopening is not None:
+            if reopening['reason'] == 'new_evidence' and incomplete:
+                raise ValueError('historical observation hashes are unknown; establish a current condition or pending gate')
             if reopening['source']['sha256'] in old_hashes:
                 raise ValueError('reopening source was already used by a previous assessment')
             original = [decision for member in old.values()
@@ -493,7 +532,7 @@ def _verify_lineage_continuity(record, assessment, previous):
             if decision['scope'] == 'this_review' and any(
                     decision['source']['sha256'] == item['source']['sha256']
                     and decision['source']['reference'].partition('#')[2] == item['source']['reference'].partition('#')[2]
-                    for item in current):
+                    for item in group):
                 raise ValueError('a this_review exclusion expires and needs a new applicable decision')
         changed = [decision for decision in protected if decision not in current]
         if protected and (expected_status in ('resolved', 'withdrawn')

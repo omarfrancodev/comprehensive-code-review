@@ -323,8 +323,18 @@ def validate(record, *, reference_index=None, reference_sources=None,
                     and alias not in finding_ids | previous_ids):
                 historical_aliases.add(alias)
     if schema_version in (6, 7, 8, 9, 10, 11, 12, 13):
+        assessment = record.get('assessment')
+        lineage_ids = set()
+        if isinstance(assessment, dict) and assessment.get('schema_version') == 2:
+            previous = assessment.get('previous')
+            if (isinstance(previous, dict) and any(prior.get('verified') is True
+                    and prior.get('review_id') == previous.get('review_id') for prior in prior_reviews)):
+                lineage_ids = {member.get('id') for member in array(assessment.get('lineage'), 'assessment.lineage')
+                               if isinstance(member, dict) and isinstance(member.get('id'), str)
+                               and member['id'] not in finding_ids | previous_ids}
         for identifier in historical['findings']:
             if (not isinstance(identifier, str) or (identifier not in historical_aliases
+                    and identifier not in lineage_ids
                     and (identifier not in historical_sources or identifier not in finding_ids | previous_ids))):
                 error('grandfathered_ids.findings', 'historical ID requires retained original identity and verified prior finding provenance')
         for identifier in historical['checks']:

@@ -220,6 +220,7 @@ class AssessmentLineageTests(unittest.TestCase):
         track(current, dict(previous, assessment=dict(previous['assessment'], lineage=current['assessment']['lineage'])),
               'not_reevaluated')
         current['assessment']['findings'][0].update(relation='outside_scope', verification=None)
+        current['assessment']['history_incomplete'] = True
         current['assessment']['observed_hashes'] = sorted({hashlib.sha256(PROOF).hexdigest(),
             previous['assessment']['previous']['source']['sha256'], hashlib.sha256(raw).hexdigest()})
         sources['evidence/prior.json'] = raw
@@ -348,6 +349,7 @@ class AssessmentLineageTests(unittest.TestCase):
                 current['aliases'] = {'F003': 'F001'}
                 current['assessment']['lineage'].append(dict(id='F003', cause=None, survivor='F001',
                     title=None, last_status='confirmed', resolution=None))
+                current['assessment']['history_incomplete'] = True
                 current['assessment']['observed_hashes'] = sorted({hashlib.sha256(PROOF).hexdigest(),
                     previous['assessment']['previous']['source']['sha256'], hashlib.sha256(raw).hexdigest()})
                 sources['evidence/prior.json'] = raw
