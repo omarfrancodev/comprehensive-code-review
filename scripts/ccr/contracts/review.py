@@ -325,7 +325,7 @@ def validate(record, *, reference_index=None, reference_sources=None,
     if schema_version in (6, 7, 8, 9, 10, 11, 12, 13):
         assessment = record.get('assessment')
         lineage_ids = set()
-        if isinstance(assessment, dict) and assessment.get('schema_version') == 2:
+        if isinstance(assessment, dict) and assessment.get('schema_version') in (2, 3):
             previous = assessment.get('previous')
             if (isinstance(previous, dict) and any(prior.get('verified') is True
                     and prior.get('review_id') == previous.get('review_id') for prior in prior_reviews)):

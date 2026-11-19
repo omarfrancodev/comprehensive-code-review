@@ -3,7 +3,7 @@ import copy
 import hashlib
 import unittest
 
-from test_review_assessment import NOTE, PROOF, assessed, followup, source, two_published_findings
+from test_review_assessment import NOTE, PROOF, assessed, followup, guided_current, source, two_published_findings
 from ccr.contracts import review
 from ccr.contracts.assessment import verify_sources
 from ccr.shared.encoding import archive_bytes
@@ -49,6 +49,10 @@ def following(previous, digit):
                      'evidence/note.txt': NOTE, 'evidence/second-note.txt': SECOND_NOTE}
 
 
+def root_current(*, debt=True, two=False):
+    return guided_current(root_v2(debt=debt, two=two))
+
+
 def track(current, previous, status):
     current['rereview'] = [dict(id='F001', status=status, details='Published claim follow-up',
         previous_review_id=previous['review_id'], previous_reference=current['previous_reviews'][0]['reference'],
@@ -57,7 +61,7 @@ def track(current, previous, status):
 
 
 def terminal_chain(status):
-    original = root_v2(debt=False)
+    original = root_current(debt=False)
     terminal, sources = following(original, 'd')
     terminal['findings'] = []
     terminal['rereview'][0]['status'] = status
@@ -66,7 +70,7 @@ def terminal_chain(status):
 
 
 class AssessmentLineageTests(unittest.TestCase):
-    def test_v2_preserves_terminal_material_outcome_through_not_reevaluated(self):
+    def test_v3_preserves_terminal_material_outcome_through_not_reevaluated(self):
         for status in ('resolved', 'withdrawn'):
             with self.subTest(status=status):
                 terminal, sources = terminal_chain(status)
@@ -78,8 +82,8 @@ class AssessmentLineageTests(unittest.TestCase):
                 verify_sources(bounded, sources.__getitem__)
                 self.assertEqual(bounded['assessment']['lineage'][0]['last_status'], status)
                 revived, sources = following(bounded, 'c')
-                revived['findings'] = copy.deepcopy(root_v2(debt=False)['findings'])
-                revived['assessment']['findings'] = copy.deepcopy(root_v2(debt=False)['assessment']['findings'])
+                revived['findings'] = copy.deepcopy(root_current(debt=False)['findings'])
+                revived['assessment']['findings'] = copy.deepcopy(root_current(debt=False)['assessment']['findings'])
                 track(revived, bounded, 'still_valid')
                 revived['assessment']['lineage'][0]['last_status'] = 'confirmed'
                 self.assertEqual(review.validate(revived), [])
@@ -95,7 +99,7 @@ class AssessmentLineageTests(unittest.TestCase):
         for identifier, cause in (('F001', 'unrelated-cause'), ('F002', 'duplicate-delivery')):
             with self.subTest(identifier=identifier, cause=cause):
                 current, sources = following(omitted, 'c')
-                seed = root_v2(debt=False)
+                seed = root_current(debt=False)
                 current['findings'] = [dict(seed['findings'][0], id=identifier)]
                 current['assessment']['findings'] = [dict(seed['assessment']['findings'][0],
                     id=identifier, cause=cause)]
@@ -111,7 +115,7 @@ class AssessmentLineageTests(unittest.TestCase):
                     verify_sources(current, sources.__getitem__)
 
     def test_two_member_decisions_survive_consolidation_and_another_generation(self):
-        previous = root_v2(two=True)
+        previous = root_current(two=True)
         current, sources = following(previous, 'b')
         first, second = [copy.deepcopy(row['resolution']) for row in previous['assessment']['findings']]
         current['findings'] = current['findings'][:1]
@@ -137,7 +141,7 @@ class AssessmentLineageTests(unittest.TestCase):
             verify_sources(dropped, sources.__getitem__, captured_inputs={'sources': {}})
 
     def test_older_observation_is_not_new_after_an_intermediate_generation(self):
-        previous = root_v2()
+        previous = root_current()
         current, sources = following(previous, 'b')
         verify_sources(current, sources.__getitem__)
         current['coverage']['evidence'][0]['reference'] = 'evidence/fresh.txt'
@@ -156,7 +160,7 @@ class AssessmentLineageTests(unittest.TestCase):
             verify_sources(later, sources.__getitem__)
 
     def test_lineage_and_observed_hashes_cannot_drop_or_invent_history(self):
-        previous = root_v2()
+        previous = root_current()
         current, sources = following(previous, 'b')
         for field, value in (('lineage', []), ('observed_hashes', []),
                              ('observed_hashes', current['assessment']['observed_hashes'] + ['0' * 64])):
@@ -167,7 +171,7 @@ class AssessmentLineageTests(unittest.TestCase):
                     verify_sources(altered, sources.__getitem__)
 
     def test_expanding_a_members_debt_still_requires_material_reopening(self):
-        previous = root_v2()
+        previous = root_current()
         current, sources = following(previous, 'b')
         extra = dict(copy.deepcopy(previous['assessment']['findings'][0]['resolution']),
                      conditions=['Subscriber remains read-only'], source=source('second-note.txt', SECOND_NOTE))
@@ -175,17 +179,19 @@ class AssessmentLineageTests(unittest.TestCase):
         current['assessment']['findings'][0]['resolution'] = both
         current['assessment']['lineage'][0]['resolution'] = copy.deepcopy(both)
         current['assessment']['observed_hashes'].append(hashlib.sha256(SECOND_NOTE).hexdigest())
+        guided_current(current, previous)
         with self.assertRaisesRegex(ValueError, 'reopening'):
             verify_sources(current, sources.__getitem__, captured_inputs={'sources': {
                 'evidence/second-note.txt': hashlib.sha256(SECOND_NOTE).hexdigest()}})
 
     def test_published_alias_cannot_leave_its_survivor_group(self):
-        original = root_v2(two=True)
+        original = root_current(two=True)
         original['findings'].append(dict(original['findings'][0], id='F003', title='Third report'))
         original['assessment']['findings'].append(dict(copy.deepcopy(original['assessment']['findings'][0]),
                                                      id='F003', cause='third-report'))
         original['assessment']['lineage'].append(dict(copy.deepcopy(original['assessment']['lineage'][0]),
             id='F003', cause='third-report', survivor='F003', title='Third report'))
+        guided_current(original)
         merged, sources = following(original, 'b')
         second = merged['assessment']['findings'][1]['resolution']
         merged['assessment']['findings'][0]['resolution'] = [merged['assessment']['findings'][0]['resolution'], second]
@@ -212,7 +218,7 @@ class AssessmentLineageTests(unittest.TestCase):
         previous['assessment']['findings'][0].update(relation='outside_scope', verification=None)
         previous['assessment']['findings'][0]['resolution'] = None
         raw = archive_bytes(previous)
-        current, sources = following(root_v2(debt=False), 'b')
+        current, sources = following(root_current(debt=False), 'b')
         current['assessment']['previous'] = dict(review_id=previous['review_id'], source=source('prior.json', raw))
         current['previous_reviews'][0]['review_id'] = previous['review_id']
         current['findings'] = []
@@ -226,8 +232,8 @@ class AssessmentLineageTests(unittest.TestCase):
         sources['evidence/prior.json'] = raw
         verify_sources(current, sources.__getitem__)
         revived, sources = following(current, 'c')
-        revived['findings'] = copy.deepcopy(root_v2(debt=False)['findings'])
-        revived['assessment']['findings'] = copy.deepcopy(root_v2(debt=False)['assessment']['findings'])
+        revived['findings'] = copy.deepcopy(root_current(debt=False)['findings'])
+        revived['assessment']['findings'] = copy.deepcopy(root_current(debt=False)['assessment']['findings'])
         track(revived, current, 'still_valid')
         revived['assessment']['lineage'][0]['last_status'] = 'confirmed'
         with self.assertRaisesRegex(ValueError, 'reopening'):
@@ -236,8 +242,8 @@ class AssessmentLineageTests(unittest.TestCase):
     def test_material_reopening_accepts_a_fresh_static_source(self):
         terminal, _ = terminal_chain('resolved')
         current, sources = following(terminal, 'b')
-        current['findings'] = copy.deepcopy(root_v2(debt=False)['findings'])
-        current['assessment']['findings'] = copy.deepcopy(root_v2(debt=False)['assessment']['findings'])
+        current['findings'] = copy.deepcopy(root_current(debt=False)['findings'])
+        current['assessment']['findings'] = copy.deepcopy(root_current(debt=False)['assessment']['findings'])
         track(current, terminal, 'still_valid')
         current['assessment']['lineage'][0]['last_status'] = 'confirmed'
         current['coverage']['evidence'][0]['reference'] = 'evidence/fresh.txt'
@@ -250,9 +256,10 @@ class AssessmentLineageTests(unittest.TestCase):
         verify_sources(current, sources.__getitem__)
 
     def test_this_review_disposition_expires_without_becoming_inherited_debt(self):
-        previous = root_v2()
+        previous = root_current()
         for row in (previous['assessment']['findings'][0], previous['assessment']['lineage'][0]):
             row['resolution'].update(status='out_of_scope', scope='this_review')
+        guided_current(previous)
         current, sources = following(previous, 'b')
         with self.assertRaisesRegex(ValueError, 'this_review'):
             verify_sources(current, sources.__getitem__)
@@ -261,22 +268,24 @@ class AssessmentLineageTests(unittest.TestCase):
         verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
 
     def test_new_decision_requires_initial_capture_while_unchanged_debt_does_not(self):
-        previous = root_v2(debt=False)
+        previous = root_current(debt=False)
         current, sources = following(previous, 'b')
-        disposition = copy.deepcopy(root_v2()['assessment']['findings'][0]['resolution'])
+        disposition = copy.deepcopy(root_current()['assessment']['findings'][0]['resolution'])
         current['assessment']['findings'][0]['resolution'] = disposition
         current['assessment']['lineage'][0]['resolution'] = copy.deepcopy(disposition)
         current['assessment']['observed_hashes'].append(hashlib.sha256(NOTE).hexdigest())
+        guided_current(current, previous)
         with self.assertRaisesRegex(ValueError, 'initially captured'):
             verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
         verify_sources(current, sources.__getitem__, captured_inputs={'sources': {
             'evidence/note.txt': hashlib.sha256(NOTE).hexdigest()}})
 
     def test_omitted_terminal_alias_remains_reserved_and_can_return_under_its_survivor(self):
-        root = root_v2(two=True)
+        root = root_current(two=True)
         for row in root['assessment']['findings'] + root['assessment']['lineage']:
             row['resolution'] = None
         root['assessment']['observed_hashes'] = [hashlib.sha256(PROOF).hexdigest()]
+        guided_current(root)
         merged, sources = following(root, 'b')
         merged['findings'] = []
         merged['rereview'] = merged['rereview'][:1]
@@ -317,7 +326,7 @@ class AssessmentLineageTests(unittest.TestCase):
     def test_v1_alias_of_a_confirmed_target_keeps_known_disposition_without_reopening(self):
         previous = assessed()
         previous['aliases'] = {'F003': 'F001'}
-        current, sources = following(root_v2(), 'b')
+        current, sources = following(root_current(), 'b')
         raw = archive_bytes(previous)
         current['assessment']['previous']['source'] = source('prior.json', raw)
         current['assessment']['observed_hashes'] = sorted({hashlib.sha256(NOTE).hexdigest(),
@@ -327,6 +336,7 @@ class AssessmentLineageTests(unittest.TestCase):
             title=None, last_status='confirmed', resolution=copy.deepcopy(
                 previous['assessment']['findings'][0]['resolution'])))
         sources['evidence/prior.json'] = raw
+        guided_current(current, previous)
         self.assertEqual(review.validate(current), [])
         verify_sources(current, sources.__getitem__, captured_inputs={'sources': {}})
 
@@ -342,7 +352,7 @@ class AssessmentLineageTests(unittest.TestCase):
                 if old_status == 'not_reevaluated':
                     previous['assessment']['findings'][0].update(relation='outside_scope', verification=None)
                 raw = archive_bytes(previous)
-                current, sources = following(root_v2(debt=False), 'b')
+                current, sources = following(root_current(debt=False), 'b')
                 current['assessment']['previous'] = dict(review_id=previous['review_id'], source=source('prior.json', raw))
                 current['previous_reviews'][0]['review_id'] = previous['review_id']
                 current['rereview'][0]['previous_review_id'] = previous['review_id']

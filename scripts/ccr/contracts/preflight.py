@@ -235,7 +235,7 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                 require_followup_assessment(record)
             except ValueError as exc:
                 issues.append(_issue('invalid_record', 'candidate.assessment', None, str(exc),
-                                     'a source-bound assessment version 2 for new guided writes'))
+                                     'a source-bound assessment version 3 for new guided writes'))
         if record.get('schema_version') in (11, 12, 13):
             from ccr.contracts.review import validate as validate_review
             for error in validate_review(record):

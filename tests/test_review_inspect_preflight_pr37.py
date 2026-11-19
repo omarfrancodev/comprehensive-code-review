@@ -157,8 +157,10 @@ class InspectPreflightPR37Tests(unittest.TestCase):
                    'delta': [dict(detail='Inspected captured review notes', evidence_ids=['EV001'],
                        sources=[dict(reference='evidence/notes.json', sha256=digest)])]},
             previous=None, findings=[])
-        if version == 2:
+        if version in (2, 3):
             record['assessment'].update(lineage=[], observed_hashes=[digest])
+        if version == 3:
+            record['assessment'].update(history_incomplete=False, authorizations=[])
         self.assertEqual(review.validate(record), [])
         case['record'] = fixture.write('assessed-final.json', record)
         return record
@@ -176,7 +178,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
                              *self.candidate_args(case))
         self.assertEqual(status['gate'], 'retain_preflight')
         self.assertNotEqual(status['next_action'], 'retain')
-        with self.assertRaisesRegex(ValueError, 'version 2'):
+        with self.assertRaisesRegex(ValueError, 'version 3'):
             self.retain13(case)
         self.assertEqual(fixture.snapshot(case['run']), before)
         self.assertEqual(review.validate(record), [])
@@ -194,9 +196,9 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         self.assertFalse(diagnostic['ready'])
         self.assertTrue(any(row['field'] == 'candidate.assessment' for row in diagnostic['issues']))
 
-    def test_assessment_v2_passes_preflight_and_full_retention(self):
+    def test_assessment_v3_passes_preflight_and_full_retention(self):
         fixture, case = self.guided_run()
-        self.assessed_candidate(fixture, case, 2)
+        self.assessed_candidate(fixture, case, 3)
         result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
                                       '--phase', 'retain', *self.candidate_args(case))
         self.assertEqual((result.returncode, diagnostic['ready']), (0, True), diagnostic)
@@ -224,7 +226,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         fixture, case = self.guided_run()
         self.assessed_candidate(fixture, case, 1)
         before = fixture.snapshot(case['run'])
-        with self.assertRaisesRegex(ValueError, 'version 2'):
+        with self.assertRaisesRegex(ValueError, 'version 3'):
             self.retain13(case)
         self.assertEqual(fixture.snapshot(case['run']), before)
         retention.retain(case['run'], case['record'], context_input=case['context'],
@@ -237,7 +239,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
 
     def test_ordinary_schema13_without_assessment_still_passes_preflight_and_retention(self):
         fixture, case = self.guided_run()
-        record = self.assessed_candidate(fixture, case, 2)
+        record = self.assessed_candidate(fixture, case, 3)
         record.pop('assessment')
         case['record'] = fixture.write('ordinary-final.json', record)
         result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
@@ -258,7 +260,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
                    'delta': [dict(detail='Inspected pinned flow', evidence_ids=['EV001'], sources=[])]},
             previous=None, findings=[])
         self.assertEqual(review.validate(record), [])
-        with self.assertRaisesRegex(ValueError, 'version 2'):
+        with self.assertRaisesRegex(ValueError, 'version 3'):
             compact.create_compact(prepared, record, current_inputs=fixture.inputs, sources=sources)
         # Reconstruct a historical v1 artifact by bypassing only new-write admission.
         with patch.object(compact, 'require_followup_assessment'):
@@ -268,7 +270,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         self.assertEqual(historical['record']['assessment']['schema_version'], 1)
         self.assertEqual({path: path.read_bytes() for path in before}, before)
 
-    def test_compact_writer_and_reader_accept_assessment_v2(self):
+    def test_compact_writer_and_reader_accept_assessment_v3(self):
         fixture = compact_fixtures.CompactPrepareTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
@@ -277,11 +279,12 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         proof = b'Pinned producer and consumer flow inspected'
         digest = hashlib.sha256(proof).hexdigest()
         record['coverage']['evidence'][0]['reference'] = 'evidence/proof.txt'
-        record['assessment'] = dict(schema_version=2,
+        record['assessment'] = dict(schema_version=3,
             scope={**{key: record['scope'][key] for key in ('base', 'head', 'snapshot')},
                    'delta': [dict(detail='Inspected pinned flow', evidence_ids=['EV001'],
                        sources=[dict(reference='evidence/proof.txt', sha256=digest)])]},
-            previous=None, findings=[], lineage=[], observed_hashes=[digest])
+            previous=None, findings=[], lineage=[], observed_hashes=[digest],
+            history_incomplete=False, authorizations=[])
         sources['evidence/proof.txt'] = proof
         saved = compact.create_compact(prepared, record, current_inputs=fixture.inputs, sources=sources)
-        self.assertEqual(compact.read_compact(saved['run_dir'])['record']['assessment']['schema_version'], 2)
+        self.assertEqual(compact.read_compact(saved['run_dir'])['record']['assessment']['schema_version'], 3)

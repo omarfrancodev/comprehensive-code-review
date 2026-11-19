@@ -119,6 +119,8 @@ def canonicalize_ids(record, reserved_ids=None):
     for member in result.get('assessment', {}).get('lineage', []):
         member['id'] = mapped(finding_map, member['id'])
         member['survivor'] = mapped(finding_map, member['survivor'])
+    for authorization in result.get('assessment', {}).get('authorizations', []):
+        authorization['member_id'] = mapped(finding_map, authorization['member_id'])
     result['aliases'] = {mapped(finding_map, source): mapped(finding_map, survivor)
                          for source, survivor in result.get('aliases', {}).items()}
     errors = validate(result)

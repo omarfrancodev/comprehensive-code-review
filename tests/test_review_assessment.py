@@ -129,6 +129,82 @@ def guided_v2(record, previous=None):
     return record
 
 
+def guided_current(record, previous=None):
+    """Author v3 fixtures, retaining the original helper for legacy records."""
+    old = (previous or {}).get('assessment', {})
+    authored_members = {member['id']: copy.deepcopy(member)
+                        for member in record['assessment'].get('lineage', [])}
+    previous_members = copy.deepcopy(old.get('lineage', []))
+    if not previous_members and previous is not None:
+        old_rows = {row['id']: row for row in old.get('findings', [])}
+        previous_members = [dict(id=identifier, resolution=copy.deepcopy(row['resolution']))
+                            for identifier, row in sorted(old_rows.items())]
+        previous_members.extend(dict(id=alias, resolution=copy.deepcopy(old_rows[target]['resolution']))
+                                for alias, target in previous.get('aliases', {}).items() if target in old_rows)
+    ledger = copy.deepcopy(old.get('authorizations', []))
+    if old.get('schema_version') != 3:
+        ledger = [dict(id=f'AU{index:03d}', member_id=member['id'],
+                       review_id=previous['review_id'],
+                       scope={key: previous['scope'][key] for key in ('base', 'head', 'snapshot')},
+                       decision=copy.deepcopy(decision))
+                  for index, (member, decision) in enumerate(
+                      ((member, decision) for member in sorted(previous_members, key=lambda item: item['id'])
+                       for decision in (member['resolution'] if isinstance(member['resolution'], list)
+                                        else [] if member['resolution'] is None else [member['resolution']])), 1)]
+    guided_v2(record, previous)
+    assessment = record['assessment']
+    decisions = lambda value: value if isinstance(value, list) else [] if value is None else [value]
+    plain = lambda decision: {key: value for key, value in decision.items() if key != 'authorization_id'}
+    rows = {row['id']: row for row in assessment['findings']}
+    old_members = {member['id']: member for member in previous_members}
+    for member in assessment['lineage']:
+        if member['id'] in authored_members:
+            for field in ('cause', 'title', 'last_status'):
+                member[field] = authored_members[member['id']][field]
+        row = rows.get(member['survivor'])
+        original = old_members.get(member['id'])
+        choices = [plain(item) for item in decisions(row['resolution'])] if row else []
+        authored = authored_members.get(member['id'])
+        if authored and all(plain(item) in choices for item in decisions(authored['resolution'])):
+            member['resolution'] = copy.deepcopy(authored['resolution'])
+        elif original and all(plain(item) in choices for item in decisions(original['resolution'])):
+            member['resolution'] = copy.deepcopy(original['resolution'])
+        bound = []
+        for decision in decisions(member['resolution']):
+            value = plain(decision)
+            candidates = [entry for entry in ledger if entry['member_id'] == member['id']
+                          and entry['decision'] == value]
+            if candidates:
+                entry = candidates[0]
+            else:
+                entry = dict(id=f'AU{len(ledger) + 1:03d}', member_id=member['id'],
+                    review_id=record['review_id'],
+                    scope={key: record['scope'][key] for key in ('base', 'head', 'snapshot')},
+                    decision=copy.deepcopy(value))
+                ledger.append(entry)
+            bound.append(dict(value, authorization_id=entry['id']))
+        member['resolution'] = bound if isinstance(member['resolution'], list) else bound[0] if bound else None
+    for identifier, row in rows.items():
+        active = []
+        for member in assessment['lineage']:
+            if member['survivor'] == identifier:
+                for decision in decisions(member['resolution']):
+                    if decision not in active:
+                        active.append(copy.deepcopy(decision))
+        row['resolution'] = active if len(active) > 1 else active[0] if active else None
+    incomplete = old.get('history_incomplete', False)
+    if previous is not None:
+        incomplete = incomplete or old.get('schema_version') not in (1, 2, 3) or (
+            old.get('schema_version') in (1, 2) and old.get('previous') is not None)
+        if old.get('schema_version') == 1:
+            evidence = {row['id']: row for row in previous['coverage']['evidence']}
+            incomplete = incomplete or any(evidence[key]['reference'] not in
+                {descriptor['reference'] for descriptor in item['sources']}
+                for item in old['scope']['delta'] for key in item['evidence_ids'])
+    assessment.update(schema_version=3, history_incomplete=incomplete, authorizations=ledger)
+    return record
+
+
 class AssessmentTests(unittest.TestCase):
     def test_confirmed_needs_reachable_obligation_and_an_inspected_consumer(self):
         record = assessed()
@@ -407,7 +483,7 @@ class AssessmentCompactTests(unittest.TestCase):
         two_published_findings(original)
         original['assessment']['findings'][1]['resolution'].update(
             source=source('second-note.txt', second_note), conditions=['Subscriber remains read-only'])
-        guided_v2(original)
+        guided_current(original)
         saved = compact.create_compact(prepared, original, current_inputs=inputs,
                                        sources={**selected, **decisions})
         prior_file = Path(saved['run_dir']) / 'review.json'
@@ -423,7 +499,7 @@ class AssessmentCompactTests(unittest.TestCase):
         current['rereview'][0]['previous_reference'] = str(prior_file)
         current['assessment']['findings'][0]['resolution'] = [
             copy.deepcopy(row['resolution']) for row in previous['assessment']['findings']]
-        guided_v2(current, previous)
+        guided_current(current, previous)
         kept = compact.create_compact(prepared, current, current_inputs=self.inputs,
                                       sources={**selected, **proof, **decisions})
         result = compact.read_compact(kept['run_dir'])['record']
@@ -448,7 +524,7 @@ class AssessmentCompactTests(unittest.TestCase):
                 prepared = self.prepare(inputs=inputs, operation_id='prior-' + str(legacy))
                 record, selected = self.record_and_sources(prepared)
                 two_published_findings(record)
-                guided_v2(record)
+                guided_current(record)
                 assessment = copy.deepcopy(record['assessment'])
                 if legacy:
                     record.pop('assessment')
@@ -470,7 +546,7 @@ class AssessmentCompactTests(unittest.TestCase):
                 current['rereview'][0]['previous_reference'] = str(old_file)
                 current['assessment']['previous']['source'] = source('prior.json', old_bytes)
                 sources['evidence/prior.json'] = old_bytes
-                guided_v2(current, previous)
+                guided_current(current, json.loads(old_bytes) if legacy else previous)
                 if legacy:
                     # The legacy duplicate did not publish a stable cause key.
                     current['assessment']['lineage'][1]['cause'] = None
@@ -480,8 +556,13 @@ class AssessmentCompactTests(unittest.TestCase):
                 retained = compact.read_compact(kept['run_dir'])['record']
                 self.assertEqual(retained['aliases'], {'F002': 'F001'})
                 self.assertEqual([row['id'] for row in retained['findings']], ['F001'])
-                self.assertEqual(retained['assessment']['findings'][0]['resolution'],
-                                 assessment['findings'][0]['resolution'])
+                dispositions = retained['assessment']['findings'][0]['resolution']
+                dispositions = dispositions if isinstance(dispositions, list) else [dispositions]
+                expected = {key: value for key, value in assessment['findings'][0]['resolution'].items()
+                            if key != 'authorization_id'}
+                self.assertTrue(dispositions)
+                self.assertTrue(all({key: value for key, value in item.items() if key != 'authorization_id'}
+                                    == expected for item in dispositions))
                 output = (Path(kept['run_dir']) / 'informe.md').read_text(encoding='utf-8')
                 self.assertIn('Deuda aceptada', output)
                 self.assertIn('Writes stay disabled', output)
@@ -529,7 +610,7 @@ class AssessmentCompactTests(unittest.TestCase):
         prepared = self.prepare(inputs=inputs)
         original, selected = self.record_and_sources(prepared)
         assessed(original)
-        guided_v2(original)
+        guided_current(original)
         kept = compact.create_compact(prepared, original, current_inputs=inputs, sources={**selected, **sources})
         old_file = Path(kept['run_dir']) / 'review.json'
         previous = json.loads(old_file.read_bytes())
@@ -543,7 +624,7 @@ class AssessmentCompactTests(unittest.TestCase):
             key = 'reference' if item is current['previous_reviews'][0] else 'previous_reference'
             item[key] = str(old_file)
         selected.update(proof)
-        guided_v2(current, previous)
+        guided_current(current, previous)
         dropped = copy.deepcopy(current)
         dropped['assessment']['findings'][0]['resolution'] = None
         dropped['assessment']['lineage'][0]['resolution'] = None

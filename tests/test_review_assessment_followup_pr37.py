@@ -4,7 +4,7 @@ import hashlib
 from pathlib import Path
 import unittest
 
-from test_review_assessment import NOTE, PROOF, assessed, followup, source
+from test_review_assessment import NOTE, PROOF, assessed, followup, guided_current, source
 from test_review_assessment_lineage import following, root_v2
 from ccr.contracts import review
 from ccr.contracts.assessment import _verify_lineage_continuity, verify_sources
@@ -45,11 +45,19 @@ def migrate(previous):
     return current, sources
 
 
+def migrate_current(previous):
+    current, sources = migrate(previous)
+    hashes = current['assessment']['observed_hashes']
+    guided_current(current, previous)
+    current['assessment']['observed_hashes'] = hashes
+    return current, sources
+
+
 class HistoricalAssessmentTests(unittest.TestCase):
     def test_hashed_v1_followup_still_has_unknown_ancestral_observations(self):
         previous = historical()
         self.assertTrue(previous['assessment']['scope']['delta'][0]['sources'])
-        current, sources = migrate(previous)
+        current, sources = migrate_current(previous)
         current['assessment']['history_incomplete'] = False
         with self.assertRaisesRegex(ValueError, 'history_incomplete'):
             verify_sources(current, sources.__getitem__)
@@ -66,7 +74,7 @@ class HistoricalAssessmentTests(unittest.TestCase):
         for outcome in ('still_valid', 'resolved', 'withdrawn'):
             with self.subTest(outcome=outcome):
                 previous = historical(outcome, unbound=True)
-                current, sources = migrate(previous)
+                current, sources = migrate_current(previous)
                 self.assertEqual(review.validate(current), [])
                 verify_sources(current, sources.__getitem__)
                 claimed = copy.deepcopy(current)
@@ -76,7 +84,7 @@ class HistoricalAssessmentTests(unittest.TestCase):
 
     def test_unbound_v1_evidence_is_not_proven_new_by_its_missing_hash(self):
         previous = historical('still_valid', unbound=True)
-        current, sources = migrate(previous)
+        current, sources = migrate_current(previous)
         seed = root_v2(debt=False)
         current['findings'] = copy.deepcopy(seed['findings'])
         current['rereview'][0]['status'] = 'still_valid'
@@ -89,7 +97,7 @@ class HistoricalAssessmentTests(unittest.TestCase):
             verify_sources(current, sources.__getitem__)
 
     def test_unknown_observation_history_survives_another_generation(self):
-        current, sources = migrate(historical(unbound=True))
+        current, sources = migrate_current(historical(unbound=True))
         verify_sources(current, sources.__getitem__)
         later, sources = following(current, 'c')
         later['rereview'] = copy.deepcopy(current['rereview'])
@@ -123,7 +131,7 @@ class HistoricalAssessmentTests(unittest.TestCase):
             verify_sources(later, sources.__getitem__)
 
     def test_unknown_history_still_allows_a_decisive_current_pending_gate(self):
-        current, sources = migrate(historical(unbound=True))
+        current, sources = migrate_current(historical(unbound=True))
         seed = root_v2(debt=False)
         proof = b'Current producer and consumer demonstrate the pending obligation fails.'
         current['findings'] = copy.deepcopy(seed['findings'])
@@ -170,6 +178,7 @@ class ConsolidationExpiryTests(unittest.TestCase):
         previous['assessment']['lineage'][1]['resolution'] = None
         for row in (previous['assessment']['findings'][0], previous['assessment']['lineage'][0]):
             row['resolution'].update(status='out_of_scope', scope='this_review')
+        guided_current(previous)
         previous['assessment']['observed_hashes'] = sorted({hashlib.sha256(PROOF).hexdigest(),
             previous['assessment']['findings'][0]['resolution']['source']['sha256']})
         current, sources = following(previous, 'b')
@@ -190,6 +199,12 @@ class ConsolidationExpiryTests(unittest.TestCase):
         replacement = dict(copy.deepcopy(decision), source=source('renewed.txt', renewed))
         current['assessment']['findings'][0]['resolution'] = replacement
         current['assessment']['lineage'][1]['resolution'] = copy.deepcopy(replacement)
+        plain = {key: value for key, value in replacement.items() if key != 'authorization_id'}
+        replacement['authorization_id'] = 'AU002'
+        current['assessment']['lineage'][1]['resolution']['authorization_id'] = 'AU002'
+        current['assessment']['authorizations'].append(dict(id='AU002', member_id='F002',
+            review_id=current['review_id'], scope={key: current['scope'][key] for key in ('base', 'head', 'snapshot')},
+            decision=plain))
         current['assessment']['observed_hashes'].append(hashlib.sha256(renewed).hexdigest())
         sources['evidence/renewed.txt'] = renewed
         with self.assertRaisesRegex(ValueError, 'initially captured'):
@@ -248,7 +263,7 @@ class HistoricalIdentifierLineageTests(unittest.TestCase):
 
     def test_verified_historical_id_survives_as_lineage_only(self):
         previous = self.terminal_previous()
-        current, sources = migrate(previous)
+        current, sources = migrate_current(previous)
         current['grandfathered_ids']['findings'] = ['F-01']
         current['rereview'] = []
         current['assessment']['findings'] = []
@@ -257,7 +272,7 @@ class HistoricalIdentifierLineageTests(unittest.TestCase):
         verify_sources(current, sources.__getitem__)
 
     def test_unpublished_historical_id_cannot_be_added_to_lineage(self):
-        current, sources = migrate(historical('resolved'))
+        current, sources = migrate_current(historical('resolved'))
         current['grandfathered_ids']['findings'] = ['F-01']
         current['assessment']['lineage'].append(dict(id='F-01', survivor='F-01', cause=None,
             title='Invented historical identity', last_status='resolved', resolution=None))
@@ -311,7 +326,7 @@ class HistoricalCompactReaderTests(unittest.TestCase):
         prior_file = Path(saved['run_dir']) / 'review.json'
         prepared = self.prepare(operation_id='lineage-only-historical-id')
         fresh, selected = self.record_and_sources(prepared)
-        current, sources = migrate(previous)
+        current, sources = migrate_current(previous)
         current['review_id'] = fresh['review_id']
         current['coverage']['execution'] = fresh['coverage']['execution']
         current['grandfathered_ids']['findings'] = ['F-01']
@@ -327,7 +342,7 @@ class HistoricalCompactReaderTests(unittest.TestCase):
         self.assertEqual(result['rereview'], [])
         self.assertEqual(result['assessment']['lineage'][0]['id'], 'F-01')
 
-    def test_historical_v1_archive_remains_readable_and_seeds_guided_v2(self):
+    def test_historical_v1_archive_remains_readable_and_seeds_guided_v3(self):
         from ccr.archive import compact
         from ccr.reporting.render import render
 
@@ -364,7 +379,7 @@ class HistoricalCompactReaderTests(unittest.TestCase):
                 old_bytes = old_file.read_bytes()
                 prepared = self.prepare(operation_id='guided-' + outcome)
                 fresh, selected = self.record_and_sources(prepared)
-                current, sources = migrate(previous)
+                current, sources = migrate_current(previous)
                 current['review_id'] = fresh['review_id']
                 current['coverage']['execution'] = fresh['coverage']['execution']
                 current['previous_reviews'][0]['reference'] = str(old_file)

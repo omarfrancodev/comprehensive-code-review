@@ -4,7 +4,7 @@ import hashlib
 import json
 import unittest
 
-from test_review_assessment import assessed, NOTE, PROOF, source
+from test_review_assessment import assessed, guided_current, NOTE, PROOF, source
 from ccr.contracts import review
 from ccr.contracts.check_disclosure import input_identity_for
 from ccr.reporting.projections import assessment_lines
@@ -35,13 +35,17 @@ def grouped_record():
 
 
 class AssessmentProjection2Tests(unittest.TestCase):
-    def test_new_guided_writes_require_v2_while_v1_remains_readable(self):
+    def test_new_guided_writes_require_v3_while_v1_and_v2_remain_readable(self):
         from ccr.archive.assessment import require_followup_assessment
         legacy = assessed()
         self.assertEqual(review.validate(legacy), [])
-        with self.assertRaisesRegex(ValueError, 'version 2'):
+        with self.assertRaisesRegex(ValueError, 'version 3'):
             require_followup_assessment(legacy)
-        require_followup_assessment(grouped_record())
+        previous = grouped_record()
+        self.assertEqual(review.validate(previous), [])
+        with self.assertRaisesRegex(ValueError, 'version 3'):
+            require_followup_assessment(previous)
+        require_followup_assessment(guided_current(previous))
 
     def test_member_conditions_with_distinct_sources_are_both_presented(self):
         output = '\n'.join(assessment_lines(grouped_record()))
