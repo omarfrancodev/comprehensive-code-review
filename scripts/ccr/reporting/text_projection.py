@@ -428,6 +428,12 @@ class _Projection:
                 projected = '[ubicación privada retenida]'
         elif field in self.PROSE:
             projected = self.text(value)
+            if (projected != value and field.startswith('assessment.')
+                    and field.endswith('.conditions[]')):
+                # Redaction is lossy, while complete resolution decisions must
+                # remain distinct. Bind each altered condition to its original
+                # spelling, independently of its row/list/lineage position.
+                projected += ' [condición retenida: ' + _hash(value.encode('utf-8'))[:16] + ']'
         else:
             raise ValueError('unclassified portable field: ' + path)
         if projected != value:
