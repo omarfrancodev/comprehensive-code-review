@@ -40,5 +40,18 @@ class ScenarioGroundTruthTests(unittest.TestCase):
             self.assertEqual(functions['configured'](functions['timeout']), 5)
 
 
+    def test_wrapped_integer_identifier_still_supports_the_consumer(self):
+        for version in ('before', 'after'):
+            functions = load_case('future-contract', version)
+            self.assertEqual(functions['navigate'](functions['read']), '/objects/7')
+
+    def test_accepted_duplicates_are_observable_with_writes_disabled(self):
+        for version in ('before', 'after'):
+            functions = load_case('accepted-residual', version)
+            self.assertEqual(functions['observe'](functions['dispatch']), [7, 7])
+        with self.assertRaisesRegex(ValueError, 'read-only'):
+            functions['dispatch']([{'id': 7, 'kind': 'write'}])
+
+
 if __name__ == '__main__':
     unittest.main()

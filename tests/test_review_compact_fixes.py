@@ -1,5 +1,7 @@
 import copy
+from contextlib import redirect_stdout
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -100,3 +102,56 @@ class ReviewFixTests(unittest.TestCase):
         for mode in ('brief', 'full'):
             path = delivery.deliver(result['run_dir'], mode, repo, repo / mode)
             self.assertTrue((path / '.ccr-delivery.json').is_file())
+
+    def test_automatic_report_renders_once_before_independent_readback(self):
+        from ccr.cli.artifacts import main
+
+        def write_json(name, value):
+            path = self.root / name
+            path.write_text(json.dumps(value), encoding='utf-8')
+            return str(path)
+
+        for with_disclosure in (False, True):
+            with self.subTest(disclosure=with_disclosure):
+                prepared = self.prepare(operation_id='report-' + str(with_disclosure))
+                record, sources = self.record_and_sources(prepared)
+                bound = compact.bind_compact_record(prepared, record)
+                if with_disclosure:
+                    identity = {'head': bound['scope']['head'], 'snapshot': bound['scope']['snapshot'],
+                                'resource_manifest_sha256': None}
+                    disclosure = build_check_disclosure(bound, identity, {}, sources)
+                    context = json.loads(sources['evidence/context.json'])
+                    context.update(check_disclosure_reference='evidence/check-disclosure.json',
+                                   check_disclosure_input_identity=identity)
+                    sources.update({'evidence/context.json': json.dumps(context).encode(),
+                                    'evidence/check-disclosure.json': json.dumps(disclosure).encode()})
+                with self.assertRaisesRegex(ValueError, 'canonical result'):
+                    compact.create_compact(prepared, record, 'wrong report', self.inputs, sources)
+                catalog = {}
+                for reference, data in sources.items():
+                    path = self.root / Path(reference).name
+                    path.write_bytes(data)
+                    catalog[reference] = str(path)
+                args = ['retain-compact', '--prepared-input', write_json('prepared.json', prepared),
+                        '--input', write_json('record.json', record),
+                        '--current-inputs', write_json('inputs.json', self.inputs),
+                        '--sources-input', write_json('catalog.json', catalog)]
+                reads = dict.fromkeys(map(Path, catalog.values()), 0)
+                original_open = Path.open
+
+                def count_source_reads(path, mode='r', *args, **kwargs):
+                    if path in reads and mode == 'rb':
+                        reads[path] += 1
+                    return original_open(path, mode, *args, **kwargs)
+
+                with patch.object(render, 'render', wraps=render.render) as render_once, \
+                        patch.object(Path, 'open', count_source_reads), redirect_stdout(StringIO()) as stdout:
+                    self.assertEqual(main(args), 0)
+                result = json.loads(stdout.getvalue())
+                self.assertEqual(render_once.call_count, 2)
+                self.assertEqual(set(reads.values()), {1}, reads)
+                report = Path(result['run_dir']) / 'informe.md'
+                written = report.read_bytes()
+                legacy = compact.create_compact(prepared, record, render.render(bound), self.inputs, sources)
+                self.assertEqual(result, legacy)
+                self.assertEqual(report.read_bytes(), written)

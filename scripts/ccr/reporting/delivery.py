@@ -17,6 +17,7 @@ from ccr.reporting.blocks import coverage_lines, evidence_groups, evidence_lines
 from ccr.reporting.check_disclosure import disclosure_view, disclosure_lines
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, safe_text, private_values, sensitive_text_ranges
 from ccr.reporting.render import confirmed_counts_text, previous_reviews_text, render_portable as render_record
+from ccr.reporting.projections import assessment_lines, resolution_by_id
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.json_io import read_json
 from ccr.shared.paths import contains, safe_path
@@ -119,9 +120,11 @@ def _brief(record, *, evidence_by_finding=None):
         lines.append('- **ID de revisión:** ' + record['review_id'])
     if record.get('previous_reviews'):
         lines.append('- **Revisiones previas:** ' + previous_reviews_text(record, 'user'))
+    lines.extend(assessment_lines(record))
     lines.extend(['', '### Hallazgos', ''])
     confirmed = sorted((item for item in record['findings'] if item['status'] == 'confirmed'), key=lambda item: (item['priority'], item['id']))
     lines.extend(['**Confirmados:** ' + confirmed_counts_text(record['findings']), ''])
+    resolutions = resolution_by_id(record)
     for item in confirmed:
         location = item['location']
         label = (str(location['path']) + ':' + str(location['line'])) if item['type'] == 'code' else location['section']
@@ -129,7 +132,8 @@ def _brief(record, *, evidence_by_finding=None):
                      + ' · ' + (markdown.reference_text(location['url']) + ' · ' if location['url'] else '')
                      + markdown.markdown_text(label) + ' · bloqueante: ' + ('sí' if item['blocking'] else 'no'))
         for key, label in [('scenario', 'Escenario'), ('impact', 'Impacto'), ('correction', 'Corrección requerida')]:
-            lines.append('  - **' + label + ':** ' + markdown.markdown_text(item[key]))
+            if key != 'correction' or item['id'] not in resolutions:
+                lines.append('  - **' + label + ':** ' + markdown.markdown_text(item[key]))
         lines.append('  - **Evidencia:**')
         groups = (evidence_by_finding[item['id']] if evidence_by_finding is not None else
                   evidence_groups(item['evidence'], {c['id']: c for c in record['checks']}))

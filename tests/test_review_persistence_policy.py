@@ -24,6 +24,16 @@ class PersistencePolicyTests(unittest.TestCase):
     def test_fully_observed_bounded_review_is_compact(self):
         self.assertEqual(persistence.select_persistence(facts())['mode'], 'compact')
 
+    def test_acquired_profile_obligations_do_not_depend_on_available_slots(self):
+        for profile in ('deep', 'extended'):
+            with self.subTest(profile=profile):
+                observed = dict(facts(), profile=profile, available_slots=0)
+                self.assertEqual(persistence.select_persistence(observed)['mode'], 'full')
+                self.assertEqual(persistence.promotion_decision(
+                    {'mode': 'compact', 'reason': 'Initially bounded'}, observed)['mode'], 'full')
+        self.assertEqual(persistence.select_persistence(dict(facts(), profile='standard',
+                                                            available_slots=0))['mode'], 'compact')
+
     def test_scope_type_and_delivery_do_not_change_selection(self):
         for scope in ('pr', 'mr', 'commit', 'range', 'staged', 'unstaged', 'working', 'module', 'feature'):
             for delivery in ('brief', 'full', None):

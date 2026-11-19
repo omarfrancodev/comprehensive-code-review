@@ -5,6 +5,7 @@ import re
 from urllib.parse import urlsplit
 
 from ccr.reporting.markdown import markdown_text, one_line
+from ccr.contracts.assessment import RESOLUTION_LABELS, resolution_decisions
 
 CHECK_PUBLICATION_FIELDS = {'id', 'evidence', 'reuse_reason', 'rerun_reason', 'reference'}
 
@@ -14,6 +15,29 @@ PUBLIC_CHECK_FIELDS = {'id', 'revision', 'status', 'failure_kind', 'evidence', '
 def publication_digest(record):
     return hashlib.sha256(json.dumps(record, ensure_ascii=False, sort_keys=True,
         separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest()
+
+
+def resolution_by_id(record):
+    return {row['id']: resolution_decisions(row['resolution']) for row in record.get('assessment', {}).get('findings', [])
+            if row['resolution'] is not None}
+
+
+def assessment_lines(record, *, format_text=markdown_text, format_id=markdown_text):
+    assessment = record.get('assessment')
+    if assessment is None:
+        return []
+    from ccr.workflow.reuse import coverage_reuse_issue
+    if record['presentation']['kind'] in ('rereview', 'complement'):
+        label = 'Seguimiento acotado'
+    else:
+        label = 'Revisión completa' if coverage_reuse_issue(record) is None else 'Revisión con cobertura limitada'
+    lines = ['- **Alcance del dictamen:** ' + label, '- **Delta revisado:**']
+    lines.extend('  - ' + format_text(entry['detail']) for entry in assessment['scope']['delta'])
+    for identifier, decisions in resolution_by_id(record).items():
+        for decision in decisions:
+            lines.append('- **' + format_id(identifier) + '** · ' + RESOLUTION_LABELS[decision['status']])
+            lines.extend('  - Condición: ' + format_text(text) for text in decision['conditions'])
+    return lines
 
 
 def _text_values(value):

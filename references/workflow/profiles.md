@@ -4,6 +4,8 @@ Profiles describe review strategies: focused for demonstrated bounded scope, sta
 
 Select once during shared scope/context discovery, before delegating. Reuse already collected facts; no separate selection agent, full audit, scoring system or measurement probe. Record selection source (explicit/automatic), effective profile and concrete basis in the existing profile_reason/context. Line count, urgency, model, available slots, technology names and ABCDE letters do not determine depth.
 
+For guided selection, pass `{selection, technical_facts}` as the arguments to `setup profile`. Use the existing selection fields and the observed technical booleans `deep_trigger`, `bounded_scope`, `requirements_known`, `consumers_known` and `independent_gate_required`. When necessary, give `discovery_assignments` as the number required after grouping. These are obligations established by scope. Missing facts are unknown. The helper verifies automatic selections against these facts and preserves explicit user selections. It returns the existing selection object for prepare.
+
 An explicit selection remains authoritative until a later explicit user selection with its own authority. Automatically recapturing the same profile cannot remove that protection or enable a later automatic downgrade. The helper enforces this rule on selection, retained history and final profile obligations.
 
 ## Selection precedence
@@ -13,6 +15,8 @@ An explicit selection remains authoritative until a later explicit user selectio
 3. Automatic selection may escalate focused to standard/deep/extended, standard to deep/extended or deep to extended when new facts invalidate its basis. Record the fact/transition; reuse context, checks and unaffected discovery, refreshing affected assignments only. Count valid existing independent discovery toward the new plan; escalation is not permission to launch a second complete team. Do not downgrade after discovery starts to evade verification. Follow-ups select for their own current scope.
 
 An automatic downgrade is allowed only when new verified evidence changes the original justification, including evidence that the earlier trigger does not apply to the pinned scope. Record the new source and reason in the selection history before changing assignments. Urgency, cost, token/credit limits, available slots, low finding count or a clean early pass never justify it. Keep started/completed assignments and their original profile bindings; preserve any acquired stronger-profile obligations. A changed base, head, snapshot or other review scope is a new linked run, not a downgrade.
+
+Supply the same `{selection, technical_facts}` envelope to `artifacts select-profile --selection-input` for an automatic downgrade. Identify the new technical observation explicitly. An extended-to-deep transition needs evidence that only two independent discovery assignments are necessary. A failed or blocked dispatch source belongs to execution evidence and cannot authorize a downgrade.
 
 ## Automatic focused eligibility
 
@@ -73,6 +77,8 @@ Only the user/verified policy accepts material exceptions. Reservations cannot w
 ## Observed profile fulfillment
 
 Invocation requests necessary profile delegation without an extra “use subagents” phrase. Schema 8 records coverage.execution under [result-contract.md](../contracts/result-contract.md): planned assignments, completed contexts and actual impediments. Fulfilled requires actual passes/independence; degraded preserves the requested profile and documents each unmet requirement. Same-session fallback is not independence. Few slots require fresh-context batches, not fallback. Real tool restriction/failure/quota permits fallback with an existing source. Degradation alone is not a product finding or public reservation; unmet project gates/material validation still affect the verdict.
+
+Capture a required independent assignment before dispatch and keep it in the plan when the harness cannot execute it. Record the observed impediment in the trace and select its source for the corresponding fallback. A new guided final 13 with an unmet independent obligation needs a material `execution` limitation explaining what remains unverified. Standard can close with `skipped` when the existing candidate, uncertainty and project-gate rules make a verifier unnecessary.
 
 ## Schema-12 history and final batches
 

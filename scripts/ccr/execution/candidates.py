@@ -29,7 +29,12 @@ def write_new_json(session_dir: Path, output: str, value: dict) -> Path:
         workspace_ops.no_links(target)
         if target.exists() or target.is_symlink():
             raise FileExistsError('setup output already exists; choose a new evidence filename')
-        os.rename(temporary, target)
+        # Windows rename refuses existing destinations. POSIX rename replaces
+        # them, so publish the fully flushed inode with an exclusive hard link.
+        if os.name == 'nt':
+            os.rename(temporary, target)
+        else:
+            os.link(temporary, target)
         if target.read_bytes() != payload:
             target.unlink(missing_ok=True)
             raise OSError('setup output verification failed')

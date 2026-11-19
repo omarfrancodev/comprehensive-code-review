@@ -93,6 +93,20 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
     def test_close_recovers_after_disclosure_replacement(self):
         self.assert_recovers('after')
 
+    def test_finish_replays_only_the_recorded_close_observation(self):
+        from ccr.cli.artifacts import finish_run
+        from ccr.archive.inspection import inspect_run
+        case, run, _ = self.retained_cleaned_run()
+        self.interrupt(case, run, 'after')
+        before = case.snapshot(run)
+        self.assertIn({'kind': 'retention', 'status': 'pending'}, inspect_run(run)['pending_transaction'])
+        rejected, code = finish_run(run, cleanup='not_needed')
+        self.assertEqual((code, rejected['gate'], rejected['next_action']), (1, 'close', 'retry_close'))
+        self.assertEqual(case.snapshot(run), before)
+        completed, code = finish_run(run)
+        self.assertEqual((code, completed['status']), (0, 'complete'))
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+
     def test_close_recovers_with_selected_model_sidecar_and_handoff(self):
         self.assert_recovers('before', optional_evidence=True)
 

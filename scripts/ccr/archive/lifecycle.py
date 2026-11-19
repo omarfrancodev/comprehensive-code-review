@@ -473,7 +473,7 @@ def prepare(repo, scope_file, skill_version, harness, output_root=None, previous
 @_locked_run
 def select_profile(run_dir, selection_input):
     """Capture a profile transition and its trace event as one idempotent mutation."""
-    raw = _input_object(selection_input, 'profile selection')
+    raw, technical_facts = review_profiles.profile_input_parts(_input_object(selection_input, 'profile selection'))
     run, manifest, marker = _load_run(run_dir)
     if manifest['schema_version'] != 8:
         raise ValueError('profile transitions require an archive 8 run')
@@ -487,11 +487,10 @@ def select_profile(run_dir, selection_input):
         raise ValueError('profile transition input cannot supply archive-assigned identity fields')
     history = manifest['profile_history']
     previous = history[-1]
-    try:
-        candidate = review_profiles.validate_selection(raw, previous=previous)
-    except ValueError:
-        raise
+    candidate = review_profiles.validate_selection(raw, previous=previous)
     if candidate == previous:
+        if technical_facts is not None:
+            review_profiles.verify_technical_selection(candidate, technical_facts)
         return manifest
     if candidate['phase'] == 'prepare':
         raise ValueError('profile transitions cannot use prepare phase')
@@ -502,6 +501,7 @@ def select_profile(run_dir, selection_input):
     for row in manifest.get('assignment_registry', []):
         if row['id'] in affected and review_profiles._assignment_started(row, events):
             raise ValueError('started assignment cannot be affected by a profile transition: ' + row['id'])
+    review_profiles.verify_transition_basis(candidate, previous, technical_facts, events)
     candidate.update(id='S' + str(len(history) + 1).zfill(3),
                      changed_from=previous['profile'],
                      event_id='E' + str(manifest['trace']['events'] + 1).zfill(6))
@@ -768,6 +768,35 @@ def resume(run_dir, *, controller, authority, current_inputs):
             str(manifest['trace']['events']).zfill(6)}))
     return manifest
 
+def _validate_retained_record(run, manifest, contents=None):
+    """Apply the retained reader gate to verified sources without writing."""
+    if manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}:
+        raise ValueError('retained final review is required before cleanup')
+    value = read_json(run / 'review.json')
+    errors = review_contract.validate(value)
+    if errors or not isinstance(value, dict) or value.get('stage') != 'final':
+        raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
+    if value['scope'] != manifest['scope']:
+        raise ValueError('retained review scope differs from the pinned scope')
+    if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        raise ValueError('retained review ID differs from archive run ID')
+    if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12, 13):
+        raise ValueError('archive 8 requires final review schema 10, 11, 12 or 13')
+    if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
+        _execution_gate(run, manifest, value, contents or {})
+    return value
+
+
+def _validate_complete_record(manifest, value):
+    """Apply the completed reader gate without recording a transition."""
+    if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
+            or manifest.get('residuals')):
+        raise ValueError('complete durable review and observed cleanup are required')
+    if (value['resources']['cleanup'] != manifest['cleanup']
+            or value['resources']['residuals'] != manifest.get('residuals', [])):
+        raise ValueError('retained review resources differ from completed closure')
+
+
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
 def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
@@ -790,28 +819,10 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
     _verify_files(run, manifest, required=require_retained,
                   allow_checkpoint_transaction=superseded and not require_retained)
-    if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
-        raise ValueError('retained final review is required before cleanup')
     if require_retained:
-        value = read_json(run / 'review.json')
-        errors = review_contract.validate(value)
-        if errors or not isinstance(value, dict) or value.get('stage') != 'final':
-            raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
-        if value['scope'] != manifest['scope']:
-            raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
-            raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12, 13):
-            raise ValueError('archive 8 requires final review schema 10, 11, 12 or 13')
-        if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
-            _execution_gate(run, manifest, value, {})
+        value = _validate_retained_record(run, manifest)
     if require_complete:
-        if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
-                or manifest.get('residuals')):
-            raise ValueError('complete durable review and observed cleanup are required')
-        if (value['resources']['cleanup'] != manifest['cleanup']
-                or value['resources']['residuals'] != manifest.get('residuals', [])):
-            raise ValueError('retained review resources differ from completed closure')
+        _validate_complete_record(manifest, value)
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')

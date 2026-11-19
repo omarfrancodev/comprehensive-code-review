@@ -59,8 +59,11 @@ def prepare_public_comment(record: dict, *, publication_context: dict | None = N
     return result
 
 def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool = False,
+                          remote_transport: str | None = None,
                           check_disclosure_context=None, check_disclosure_sources=None) -> dict:
     """Verify an exact outbound body or an observed remote body against a fresh render."""
+    if remote_transport is not None and (not remote or remote_transport != 'gitlab'):
+        raise ValueError('GitLab transport requires remote verification with a supported selector')
     _validate_final_record(record)
     source_hash = publication_digest(record)
     if (isinstance(draft, dict) and type(draft.get('schema_version')) is int
@@ -117,9 +120,18 @@ def verify_public_comment(record: dict, draft: dict, body: str, *, remote: bool 
     if len(encoded_body) > MAX_BODY_BYTES:
         raise ValueError('body_mismatch: supplied body is missing or exceeds the bound')
     comparable = body.replace('\r\n', '\n') if remote else body
-    if comparable != draft['body']:
+    normalizations = ['crlf_to_lf'] if comparable != body else []
+    missing_gitlab_lf = (remote_transport == 'gitlab' and version == 4 and expected.endswith('\n')
+                         and comparable == expected[:-1])
+    if missing_gitlab_lf:
+        normalizations.append('gitlab_missing_terminal_lf')
+    elif comparable != expected:
         raise ValueError('body_mismatch: supplied body differs from the canonical draft')
-    return {'verified': True, 'source_sha256': source_hash, 'body_sha256': draft_hash}
+    result = {'verified': True, 'source_sha256': source_hash, 'body_sha256': draft_hash}
+    if remote:
+        result.update(transport=remote_transport or 'generic', normalizations=normalizations,
+                      observed_body_sha256=hashlib.sha256(encoded_body).hexdigest())
+    return result
 
 def _read_json(path, label):
     source = Path(path)

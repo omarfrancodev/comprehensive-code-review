@@ -11,6 +11,45 @@ from recovery_fixtures import record10
 
 
 class ProfileTopologyTests(unittest.TestCase):
+    def test_guided_harness_fallback_preserves_independence_and_material_gap(self):
+        from test_review_coverage13 import record13
+        value = record13('deep')
+        coverage = value['coverage']
+        execution = coverage['execution']
+        execution.update(status='degraded', results=[], fallbacks=[dict(
+            assignments=['D1', 'D2', 'V1'], reason='explicit_restriction',
+            detail='Harness blocked the required independent dispatch',
+            source='evidence/dispatch-limit.json')])
+        coverage['verification'] = 'unavailable'
+        errors = execution_contract.validate_execution(value, require_material_fallbacks=True)
+        self.assertTrue(any('material execution limitation' in item for item in errors), errors)
+        coverage['limitations'].append(dict(kind='execution', material=True,
+            detail='The two discovery contexts and final verifier were unavailable',
+            public_summary='Required independent coverage of the affected flow remains pending'))
+        self.assertEqual(execution_contract.validate_execution(value, require_material_fallbacks=True), [])
+        self.assertEqual(value['profile'], 'deep')
+        coverage['adequate'] = False
+        value['verdict'] = 'insufficient_evidence'
+        self.assertEqual(review.validate(value, require_material_fallbacks=True), [])
+        context, events, refs = source_fixture12(value)
+        self.assertEqual(execution_contract.validate_execution_sources(value, context, events, refs), [])
+        refs.remove(execution['fallbacks'][0]['source'])
+        self.assertTrue(any('fallback lacks retained' in item for item in
+                            execution_contract.validate_execution_sources(value, context, events, refs)))
+        execution['plan'][0]['independent'] = False
+        self.assertTrue(any('cardinality' in item for item in
+                            execution_contract.validate_execution(value, require_material_fallbacks=True)))
+
+    def test_clean_standard_can_omit_verification_without_fallback(self):
+        from test_review_coverage13 import record13
+        standard = record12('standard', 'automatic', discovery=1, verification=0)
+        value = record13()
+        value['profile'] = standard['profile']
+        value['coverage']['execution'] = standard['coverage']['execution']
+        value['coverage']['verification'] = standard['coverage']['verification']
+        self.assertEqual(value['coverage']['verification'], 'skipped')
+        self.assertEqual(execution_contract.validate_execution(value, require_material_fallbacks=True), [])
+
     def test_missing_final_result_checks_own_coordinator_fallback_start(self):
         value = record12('extended', 'explicit', discovery=3, verification=2)
         execution = value['coverage']['execution']

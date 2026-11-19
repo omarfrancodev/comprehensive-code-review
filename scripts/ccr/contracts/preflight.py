@@ -4,6 +4,7 @@ import json
 from ccr.archive.layout import ARCHIVE_SCHEMA_VERSION, LAYOUT_VERSION
 from ccr.contracts.reference_types import ReferenceIssue, _issue
 from ccr.contracts import dispatch
+from ccr.contracts.guided_writes import require_followup_assessment
 from ccr.contracts.reference_index import validate_reference_selection, validate_selection_reference
 from ccr.contracts.receipts import validate_record_receipts
 from ccr.contracts.material_inputs import validate_captured_material_sources
@@ -90,8 +91,9 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                        logical_scope: dict | None, selection: dict | None,
                        context: dict | None, record: dict | None,
                        sources: dict[str, bytes],
-                       check_material_sources: bool = True) -> dict:
-    """Check only the supplied phase inputs; never reads or writes files."""
+                       check_material_sources: bool = True,
+                       guided_write: bool = True) -> dict:
+    """Check phase inputs and new-write admission; never reads or writes files."""
     if phase not in PHASES:
         raise ValueError('phase must be prepare, register, discovery or retain')
     issues: list[ReferenceIssue] = []
@@ -228,6 +230,12 @@ def validate_preflight(*, phase: str, manifest: dict | None,
                              'retain preflight is incomplete without a final candidate',
                              'the structurally final review candidate'))
     elif phase == 'retain' and record.get('schema_version') in (9, 10, 11, 12, 13):
+        if guided_write:
+            try:
+                require_followup_assessment(record)
+            except ValueError as exc:
+                issues.append(_issue('invalid_record', 'candidate.assessment', None, str(exc),
+                                     'a source-bound assessment version 3 for new guided writes'))
         if record.get('schema_version') in (11, 12, 13):
             from ccr.contracts.review import validate as validate_review
             for error in validate_review(record):

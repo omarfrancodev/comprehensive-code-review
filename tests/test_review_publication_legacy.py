@@ -21,6 +21,12 @@ class LegacyPublicationTests(unittest.TestCase):
                 kwargs = dict(check_disclosure_context=data['disclosure'],
                               check_disclosure_sources={k: bytes.fromhex(v) for k, v in data['sources'].items()})
                 self.assertTrue(verify_public_comment(record, draft, draft['body'], **kwargs)['verified'])
+                crlf = draft['body'].replace('\n', '\r\n')
+                self.assertTrue(verify_public_comment(record, draft, crlf,
+                    remote=True, remote_transport='gitlab', **kwargs)['verified'])
+                with self.assertRaisesRegex(ValueError, 'body_mismatch'):
+                    verify_public_comment(record, draft, draft['body'][:-1],
+                                          remote=True, remote_transport='gitlab', **kwargs)
                 edited = copy.deepcopy(draft)
                 edited['body'] += '\nManual edit'
                 edited['body_sha256'] = hashlib.sha256(edited['body'].encode()).hexdigest()

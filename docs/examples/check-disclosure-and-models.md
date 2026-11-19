@@ -22,11 +22,13 @@ python /absolute/skill/scripts setup check-disclosure \
   --output /absolute/owned/session/evidence/check-disclosure.json
 ```
 
-The request uses `{session, arguments}`. Arguments are exactly `record` (the current final object), `input_identity` (the initially pinned identity), `execution_observations` and `sources`. Each observation is keyed by the actual check ID and selects the captured execution/input references plus a safe specific explanation. Each source selects an owned-session `reference` and exact `sha256`; these are supplied from observed capture, not guessed fixture hashes. Set `context.check_disclosure_reference` and retain the sidecar plus every selected proof source before cleanup. This example is exercised in `test_review_disclosure_integration`; the synthetic expected command does not authorize a real run.
+The request uses `{session, arguments}`. Supply `input_identity` (the initially pinned identity), `execution_observations`, `sources`, and either `record` (the current final object) or `record_source: {reference, sha256}` for the same record in the owned session. For a bound compact candidate, use its evidence reference and the digest from the binding receipt. Each observation is keyed by the actual check ID and selects the captured execution/input references plus a safe specific explanation. Each source selects an owned-session `reference` and exact `sha256`; these are supplied from observed capture, not guessed fixture hashes. Set `context.check_disclosure_reference` and retain the sidecar plus every selected proof source before cleanup. These paths are exercised in `test_review_disclosure_integration` and `test_review_compact_cli_output`.
 
 For standalone comment/render, use paired `--check-disclosure-context` and `--check-disclosure-sources`. The source catalog contains initially pinned `input_identity` and `sources` mapping logical references to `{path, sha256}`; snapshots additionally require `run_dir` so the loader verifies that original registration and selected inventory. A standalone commit source needs the retained commit/tree/blob chain. Rehashing a fabricated sidecar and fabricated resource map together cannot establish original membership.
 
-## Supplied model metadata
+## Optional model provenance
+
+This example applies to an explicit request with supplied metadata. Ordinary reviews skip model capture and still record the harness and observed execution provenance.
 
 After preparing the run, use its actual review ID and known harness ID. Prepare this setup request with the current context and ledger; the empty context/null ledger below illustrate only the first synthetic observation:
 
