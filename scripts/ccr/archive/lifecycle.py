@@ -768,6 +768,35 @@ def resume(run_dir, *, controller, authority, current_inputs):
             str(manifest['trace']['events']).zfill(6)}))
     return manifest
 
+def _validate_retained_record(run, manifest, contents=None):
+    """Apply the retained reader gate to verified sources without writing."""
+    if manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}:
+        raise ValueError('retained final review is required before cleanup')
+    value = read_json(run / 'review.json')
+    errors = review_contract.validate(value)
+    if errors or not isinstance(value, dict) or value.get('stage') != 'final':
+        raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
+    if value['scope'] != manifest['scope']:
+        raise ValueError('retained review scope differs from the pinned scope')
+    if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
+        raise ValueError('retained review ID differs from archive run ID')
+    if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12, 13):
+        raise ValueError('archive 8 requires final review schema 10, 11, 12 or 13')
+    if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
+        _execution_gate(run, manifest, value, contents or {})
+    return value
+
+
+def _validate_complete_record(manifest, value):
+    """Apply the completed reader gate without recording a transition."""
+    if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
+            or manifest.get('residuals')):
+        raise ValueError('complete durable review and observed cleanup are required')
+    if (value['resources']['cleanup'] != manifest['cleanup']
+            or value['resources']['residuals'] != manifest.get('residuals', [])):
+        raise ValueError('retained review resources differ from completed closure')
+
+
 @_locked_run(when=lambda args, kwargs: kwargs.get('record_checkpoint', args[1] if len(args) > 1 else False))
 def validate(run_dir, require_retained=False, record_checkpoint=False, *, require_complete=False):
     """Read-only archive gate; selected evidence is verified, never copied here."""
@@ -790,28 +819,10 @@ def validate(run_dir, require_retained=False, record_checkpoint=False, *, requir
         raise ValueError('ownership transition is pending; retry the interrupted helper mutation')
     _verify_files(run, manifest, required=require_retained,
                   allow_checkpoint_transaction=superseded and not require_retained)
-    if require_retained and (manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}):
-        raise ValueError('retained final review is required before cleanup')
     if require_retained:
-        value = read_json(run / 'review.json')
-        errors = review_contract.validate(value)
-        if errors or not isinstance(value, dict) or value.get('stage') != 'final':
-            raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
-        if value['scope'] != manifest['scope']:
-            raise ValueError('retained review scope differs from the pinned scope')
-        if value.get('schema_version') in (6, 7, 8, 9, 10, 11, 12, 13) and value.get('review_id') != 'CR-' + manifest.get('run_id', ''):
-            raise ValueError('retained review ID differs from archive run ID')
-        if manifest['schema_version'] == 8 and value.get('schema_version') not in (10, 11, 12, 13):
-            raise ValueError('archive 8 requires final review schema 10, 11, 12 or 13')
-        if value.get('schema_version') in (8, 9, 10, 11, 12, 13):
-            _execution_gate(run, manifest, value, {})
+        value = _validate_retained_record(run, manifest)
     if require_complete:
-        if (manifest['state'] != 'complete' or manifest['cleanup'] not in {'complete', 'not_needed'}
-                or manifest.get('residuals')):
-            raise ValueError('complete durable review and observed cleanup are required')
-        if (value['resources']['cleanup'] != manifest['cleanup']
-                or value['resources']['residuals'] != manifest.get('residuals', [])):
-            raise ValueError('retained review resources differ from completed closure')
+        _validate_complete_record(manifest, value)
     if record_checkpoint:
         if manifest['state'] == 'complete':
             raise ValueError('completed review history is immutable; validate without --record-checkpoint')
