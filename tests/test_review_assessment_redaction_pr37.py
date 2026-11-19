@@ -11,7 +11,7 @@ import test_review_compact_archive as fixtures
 from ccr.archive import compact
 from ccr.contracts import review
 from ccr.contracts.check_disclosure import input_identity_for
-from ccr.reporting import delivery
+from ccr.reporting import delivery, render
 from ccr.reporting.text_projection import _Projection
 from ccr.shared.git import repository_identity
 from ccr.workflow.builders import build_check_disclosure
@@ -44,7 +44,10 @@ class AssessmentRedactionPr37Tests(unittest.TestCase):
         self.assertEqual(review.validate(portable), [])
         decisions = portable['assessment']['findings'][0]['resolution']
         self.assertNotEqual(decisions[0], decisions[1])
-        self.assertEqual(decisions[0]['source'], decisions[1]['source'])
+        self.assertEqual(decisions[0]['source']['sha256'], decisions[1]['source']['sha256'])
+        self.assertEqual(decisions[0]['source']['reference'].partition('#')[0],
+                         decisions[1]['source']['reference'].partition('#')[0])
+        self.assertNotEqual(decisions[0]['source']['reference'], decisions[1]['source']['reference'])
         for index, decision in enumerate(decisions):
             self.assertEqual(len(decision['conditions']), 2)
             self.assertEqual(decision['conditions'][1], 'Keep the existing read-only policy')
@@ -79,7 +82,8 @@ class AssessmentRedactionDeliveryPr37Tests(unittest.TestCase):
         record['review_id'] = fresh['review_id']
         record['coverage']['execution'] = fresh['coverage']['execution']
         selected.update({'evidence/note.txt': NOTE, 'evidence/proof.txt': PROOF})
-        saved = compact.create_compact(prepared, record, current_inputs=inputs, sources=selected)
+        saved = compact.create_compact(prepared, record, render.render(record),
+                                       current_inputs=inputs, sources=selected)
         run = Path(saved['run_dir'])
         before = {str(path.relative_to(run)): path.read_bytes() for path in run.rglob('*') if path.is_file()}
         for mode in ('full', 'brief'):
@@ -89,12 +93,18 @@ class AssessmentRedactionDeliveryPr37Tests(unittest.TestCase):
                 self.assertEqual(report.count('Condición: Writes stay disabled at'), 2)
                 self.assertEqual(report.count('Condición: Keep the existing read-only policy'), 2)
                 conditions = [line for line in report.splitlines() if 'Condición: Writes stay disabled at' in line]
-                self.assertNotEqual(conditions[0], conditions[1])
+                # Public prose may coincide; identity is separate from user text.
+                self.assertEqual(conditions[0], conditions[1])
                 contents = '\n'.join(path.read_text(encoding='utf-8') for path in target.iterdir())
                 for private in (*PRIVATE_PATHS, 'tenant-alpha', 'tenant-beta', 'evidence/note.txt'):
                     self.assertNotIn(private, contents)
                 if mode == 'full':
                     portable = json.loads((target / 'review.json').read_bytes())
                     self.assertEqual(review.validate(portable), [])
+                    decisions = portable['assessment']['findings'][0]['resolution']
+                    self.assertEqual(len(decisions), 2)
+                    self.assertNotEqual(decisions[0]['source']['reference'],
+                                        decisions[1]['source']['reference'])
+                    self.assertEqual(decisions[0]['conditions'], decisions[1]['conditions'])
                 self.assertEqual(before, {str(path.relative_to(run)): path.read_bytes()
                                           for path in run.rglob('*') if path.is_file()})

@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
-from ccr.contracts.assessment import source_references
+from ccr.contracts.assessment import resolution_decisions, source_references
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, sensitive_text_ranges
 from ccr.contracts.disclosure_paths import _POSIX_PATH, _QUOTED_PATH, _SOURCE_TOKENS, _local_start, source_tokens
 from ccr.contracts.disclosure_text import sensitive_values_from_text
@@ -37,6 +37,13 @@ def _hash(data):
 
 def _json(value):
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
+
+
+def _decision_key(value, authorization_id=None):
+    """Private equality key; public ordinals never encode its contents."""
+    return _json([authorization_id or value.get('authorization_id'),
+                  {name: item for name, item in value.items() if name != 'authorization_id'}])
+
 
 def _public_url(value):
     try:
@@ -115,18 +122,40 @@ class _Projection:
     STRUCTURAL.add('assessment.observed_hashes[]')
     STRUCTURAL.update(base + '.' + field
                       for base in ('assessment.findings[].resolution[]',
+                                   'assessment.findings[].resolution',
                                    'assessment.lineage[].resolution',
-                                   'assessment.lineage[].resolution[]')
-                      for field in ('status', 'scope', 'authority', 'channel', 'source.sha256'))
+                                   'assessment.lineage[].resolution[]',
+                                   'assessment.authorizations[].decision')
+                      for field in ('status', 'scope', 'authority', 'channel', 'source.sha256',
+                                    'authorization_id'))
+    STRUCTURAL.update('assessment.authorizations[].' + field
+                      for field in ('id', 'member_id', 'review_id', 'scope.base', 'scope.head', 'scope.snapshot'))
     PROSE.add('assessment.lineage[].title')
     PROSE.update(base + '.conditions[]'
                  for base in ('assessment.findings[].resolution[]',
                               'assessment.lineage[].resolution',
-                              'assessment.lineage[].resolution[]'))
+                              'assessment.lineage[].resolution[]',
+                              'assessment.authorizations[].decision'))
 
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None,
                  check_disclosure_sources=None, editorial_texts=()):
-        self.assessment_references = source_references(record)
+        self.assessment_references = source_references(record, include_history=True)
+        # Public decision identity is positional, never a verifier of private
+        # conditions. Exact original equality only links repeated row/lineage
+        # occurrences inside this projection; these private keys never leave it.
+        self.decision_ordinals = {}
+        assessment = record.get('assessment') or {}
+        self.authorization_ids = {'record.assessment.authorizations[' + str(index) + '].decision': row['id']
+                                  for index, row in enumerate(assessment.get('authorizations', []))}
+        for row in assessment.get('findings', []) + assessment.get('lineage', []):
+            for decision in resolution_decisions(row.get('resolution')):
+                key = _decision_key(decision)
+                if key not in self.decision_ordinals:
+                    self.decision_ordinals[key] = len(self.decision_ordinals) + 1
+        for row in assessment.get('authorizations', []):
+            key = _decision_key(row['decision'], row['id'])
+            if key not in self.decision_ordinals:
+                self.decision_ordinals[key] = len(self.decision_ordinals) + 1
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
         editorial_texts = tuple(editorial_texts)
@@ -399,7 +428,18 @@ class _Projection:
             if path == 'record.aliases':
                 return {self.structural(key, path + ' key'): self.structural(item, path + ' value')
                         for key, item in value.items()}
-            return {key: self.value(item, path + '.' + key) for key, item in value.items()}
+            projected = {key: self.value(item, path + '.' + key) for key, item in value.items()}
+            field = re.sub(r'\[\d+\]', '[]', path.removeprefix('record.'))
+            if field in {'assessment.findings[].resolution', 'assessment.findings[].resolution[]',
+                         'assessment.lineage[].resolution', 'assessment.lineage[].resolution[]',
+                         'assessment.authorizations[].decision'}:
+                # Keep the retained source label as provenance and attach a
+                # separate display identity to every complete decision. User
+                # text, including literal previous output, cannot forge it.
+                ordinal = self.decision_ordinals[_decision_key(value, self.authorization_ids.get(path))]
+                reference = projected['source']['reference'].partition('#')[0]
+                projected['source']['reference'] = reference + '#decision-' + str(ordinal)
+            return projected
         if isinstance(value, list):
             return [self.value(item, path + '[' + str(index) + ']') for index, item in enumerate(value)]
         if not isinstance(value, str):
@@ -428,12 +468,6 @@ class _Projection:
                 projected = '[ubicación privada retenida]'
         elif field in self.PROSE:
             projected = self.text(value)
-            if (projected != value and field.startswith('assessment.')
-                    and field.endswith('.conditions[]')):
-                # Redaction is lossy, while complete resolution decisions must
-                # remain distinct. Bind each altered condition to its original
-                # spelling, independently of its row/list/lineage position.
-                projected += ' [condición retenida: ' + _hash(value.encode('utf-8'))[:16] + ']'
         else:
             raise ValueError('unclassified portable field: ' + path)
         if projected != value:
