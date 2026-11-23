@@ -36,4 +36,3 @@ Después de incorporar el disclosure por referencia pasaron 56 casos distintos d
 La suite amplia se ejecutó por grupos. De 1 331 casos descubiertos, 1 322 pasaron, 8 se omitieron por restricciones del host (enlaces o Git Bash) y una matriz de interrupciones de transferencia de recursos quedó sin resultado al cierre de esta verificación. Las tres pruebas de clonación parcial pasaron al repetirlas fuera de la restricción de Git Bash; el caso de entrega que recibió un acceso denegado al reemplazar un archivo temporal pasó al repetirlo de forma aislada. El inventario del CLI volvió a pasar tras incorporar las tres opciones al fixture de caracterización.
 
 La matriz pendiente, `test_claimed_workspace_all_transfer_replacements`, terminó correctamente. El grupo original cerró con 119 casos y una omisión ya contabilizada. El registro de las [tareas 3 y 4](2026-11-12-ccr-fiabilidad-y-eficiencia-tareas-3-4.md) da continuidad a la verificación.
-

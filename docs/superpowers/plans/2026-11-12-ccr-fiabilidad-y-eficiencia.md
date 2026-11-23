@@ -194,4 +194,3 @@ La prueba inicial de Codex CLI quedó bloqueada al lanzar PowerShell. El piloto 
 - El proceso se interrumpe después de remover un recurso y antes de persistir su receipt. Tarea 4.
 - Una aceptación de riesgo tiene autoridad y alcance distintos al comentario que la cita. Tarea 6.
 - La lectura remota difiere por algo adicional a la normalización admitida o carece de procedencia. Tarea 8.
-
