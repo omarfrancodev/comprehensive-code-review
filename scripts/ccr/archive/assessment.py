@@ -10,7 +10,16 @@ from ccr.shared.json_io import decode_json, read_bounded
 from ccr.shared.paths import safe_path
 
 
-def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=None, compact_reader=None):
+class PrecursorSelectionError(ValueError):
+    """The verified archive offers exact precursor bytes required for adoption."""
+
+    def __init__(self, message, reference):
+        super().__init__(message)
+        self.reference = reference
+
+
+def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=None,
+                         compact_reader=None, read_source=None):
     assessment = record.get('assessment')
     if assessment is None or assessment['previous'] is None:
         return
@@ -31,7 +40,20 @@ def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=
     if assessment['schema_version'] == 3 and predecessor is not None:
         selected = previous.get('legacy_source')
         if selected is None or selected['sha256'] != predecessor['sha256']:
-            raise ValueError('v3 adoption requires the inventoried legacy predecessor in assessment.previous.legacy_source')
+            raise PrecursorSelectionError(
+                'v3 adoption requires the inventoried legacy predecessor in assessment.previous.legacy_source',
+                predecessor['review_file'])
+        if read_source is not None:
+            try:
+                raw = read_source(selected['reference'])
+            except (OSError, KeyError, ValueError) as exc:
+                raise PrecursorSelectionError(
+                    'select the inventoried legacy predecessor as ' + selected['reference'],
+                    predecessor['review_file']) from exc
+            if hashlib.sha256(raw).hexdigest() != predecessor['sha256']:
+                raise PrecursorSelectionError(
+                    'selected legacy predecessor bytes differ from the inventoried digest',
+                    predecessor['review_file'])
 
 
 def read_followup_baseline(run_dir, logical_scope, repository_key, *, compact_reader):

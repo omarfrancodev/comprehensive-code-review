@@ -11,10 +11,13 @@ enable_package_imports()
 from ccr.archive import compact, lifecycle, retention, transactions
 from ccr.cli import artifacts
 from ccr.contracts import preflight, review
+from ccr.reporting.render import render
 from ccr.shared.encoding import archive_bytes
+from ccr.shared.git import repository_identity
 from test_review_coverage13 import record13
 import test_review_closure_consistency as guided
 import test_review_compact_archive as compact_fixtures
+import test_review_legacy_alias_authority_pr37 as legacy
 
 
 class InspectPreflightPR37Tests(unittest.TestCase):
@@ -206,6 +209,76 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         lifecycle.close(case['run'], cleanup='not_needed')
         self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
 
+    def test_preflight_and_retention_require_the_inventoried_v2_precursor(self):
+        fixture, case = self.guided_run()
+        native = fixture.read(case['record'])
+        historical = legacy.RetainedLegacyAliasAuthorityTests()
+        historical.setUp()
+        self.addCleanup(historical.doCleanups)
+        historical.scope = native['scope']
+        historical.inputs['scope'] = native['scope']
+        repository = repository_identity(fixture.repo)
+        first_run, original = historical.publish_v1_alias(repo_identity=repository)
+        prepared = historical.prepare(operation_id='v2-preflight-baseline', repo_identity=repository)
+        previous, sources = legacy.v2_alias_copy(original)
+        selected = historical.bind_followup(previous, first_run, prepared)
+        saved = compact.create_compact(prepared, previous, render(previous), historical.inputs,
+                                       sources={**selected, **sources})
+        prior_run = Path(saved['run_dir'])
+        previous = compact.read_compact(prior_run)['record']
+        precursor = prior_run / previous['assessment']['previous']['source']['reference']
+        before_prior = fixture.snapshot(prior_run)
+        before_run = fixture.snapshot(case['run'])
+        base_evidence = list(case['evidence_inputs'])
+
+        def select_candidate(*, descriptor, include_precursor, tampered=False):
+            record, sources = legacy.adopt_v2_copy(previous, original, select_history=descriptor)
+            record.pop('compact_identity', None)
+            for field in ('review_id', 'description', 'profile'):
+                record[field] = native[field]
+            record['coverage']['execution'] = native['coverage']['execution']
+            reference = str(prior_run / 'review.json')
+            record['previous_reviews'][0]['reference'] = reference
+            record['rereview'][0]['previous_reference'] = reference
+            self.assertEqual(review.validate(record), [])
+            case['record'] = fixture.write('v3-followup.json', record)
+            case['evidence_inputs'] = list(base_evidence)
+            for name, data in sources.items():
+                if name == 'evidence/legacy.json' and not include_precursor:
+                    continue
+                if name == 'evidence/legacy.json' and tampered:
+                    data += b' '
+                path = fixture.root / Path(name).name
+                path.write_bytes(data)
+                case['evidence_inputs'].append(str(path))
+
+        for descriptor, tampered in ((False, False), (True, False), (True, True)):
+            with self.subTest(descriptor=descriptor, tampered=tampered):
+                select_candidate(descriptor=descriptor, include_precursor=tampered, tampered=tampered)
+                result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
+                                              '--phase', 'retain', *self.candidate_args(case))
+                self.assertEqual((result.returncode, diagnostic.get('ready')), (1, False), diagnostic)
+                issue, = diagnostic['issues']
+                self.assertEqual(issue['field'], 'candidate.assessment.previous.legacy_source')
+                self.assertEqual(Path(issue['reference']), precursor)
+                _, status = self.cli(fixture, 'inspect', '--run-dir', case['run'], '--summary',
+                                     *self.candidate_args(case))
+                self.assertEqual((status['gate'], status['field']), ('retain_preflight', issue['field']))
+                with self.assertRaisesRegex(ValueError, 'legacy predecessor|evidence/legacy.json'):
+                    self.retain13(case)
+                self.assertEqual(fixture.snapshot(case['run']), before_run)
+                self.assertEqual(fixture.snapshot(prior_run), before_prior)
+
+        select_candidate(descriptor=True, include_precursor=True)
+        result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
+                                      '--phase', 'retain', *self.candidate_args(case))
+        self.assertEqual((result.returncode, diagnostic.get('ready')), (0, True), diagnostic)
+        self.assertEqual(fixture.snapshot(case['run']), before_run)
+        self.assertEqual(fixture.snapshot(prior_run), before_prior)
+        self.retain13(case)
+        lifecycle.close(case['run'], cleanup='not_needed')
+        self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
     def test_full_reader_accepts_historical_assessment_v1(self):
         fixture, case = self.guided_run()
         self.assessed_candidate(fixture, case, 1)
@@ -248,6 +321,17 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         self.retain13(case)
         lifecycle.close(case['run'], cleanup='not_needed')
         self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_preflight_keeps_its_structured_result_for_a_candidate_outside_assessment_schema(self):
+        fixture, case = self.guided_run()
+        record = fixture.read(case['record'])
+        self.assertEqual(record['schema_version'], 10)
+        record['assessment'] = 'untyped legacy input'
+        case['record'] = fixture.write('legacy-candidate.json', record)
+        result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
+                                      '--phase', 'retain', *self.candidate_args(case))
+        self.assertIn(result.returncode, (0, 1))
+        self.assertEqual(diagnostic['phase'], 'retain')
 
     def test_compact_writer_refuses_v1_but_historical_reader_accepts_it(self):
         fixture = compact_fixtures.CompactPrepareTests()

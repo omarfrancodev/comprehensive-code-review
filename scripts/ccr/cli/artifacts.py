@@ -6,8 +6,9 @@ import json
 from pathlib import Path
 import stat
 import sys
+from ccr.archive.assessment import PrecursorSelectionError, verify_prior_archive
 from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
-from ccr.archive.evidence import _input_object, select_preflight_sources
+from ccr.archive.evidence import _input_object, selected_source_bytes, select_preflight_sources
 from ccr.archive.inspection import inspect_run
 from ccr.archive.integrity import (CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT,
                                    _evidence_name, verify_files as _verify_files)
@@ -26,6 +27,7 @@ from ccr.shared.paths import safe_path
 from ccr.execution.workspace_manifest import ReviewError as WorkspaceError
 from ccr.execution import claims as resource_claims
 from ccr.contracts import preflight as review_preflight
+from ccr.contracts.reference_types import _issue
 from ccr.workflow import profiles as review_profiles
 
 def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_inputs=None):
@@ -51,6 +53,22 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
     result = review_preflight.validate_preflight(
         phase=phase, manifest=manifest, logical_scope=manifest.get('logical_scope'),
         selection=None, context=context, record=record, sources=sources)
+    if (phase == 'retain' and result['ready'] and manifest['state'] != 'retaining'
+            and record.get('schema_version') == 13
+            and (record.get('assessment') or {}).get('previous') is not None):
+        from ccr.archive.compact import read_compact
+        try:
+            verify_prior_archive(
+                record, manifest.get('logical_scope'), manifest['repository_key'],
+                previous_run=manifest.get('previous_run'), compact_reader=read_compact,
+                read_source=lambda name: selected_source_bytes(run, manifest, sources, name))
+        except PrecursorSelectionError as exc:
+            result.update(ready=False, issues=[_issue(
+                'invalid_precursor_selection', 'candidate.assessment.previous.legacy_source',
+                exc.reference, str(exc), 'the exact selected copy of the inventoried legacy predecessor')])
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            result.update(ready=False, issues=[_issue(
+                'invalid_baseline', 'assessment.baseline', None, str(exc), 'the verified prior archive')])
     return result, 0 if result['ready'] else 1
 
 
