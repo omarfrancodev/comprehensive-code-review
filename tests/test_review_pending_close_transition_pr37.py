@@ -102,17 +102,49 @@ class PendingCloseTransitionTests(unittest.TestCase):
                 raise OSError('interrupted at the final review replacement')
             return original(path, data, **kwargs)
 
-        with patch.object(retention, 'atomic_write', side_effect=interrupt):
+        replacement = (patch.object(lifecycle, '_retain_data',
+                                    side_effect=OSError('interrupted at the final review replacement'))
+                       if boundary == 'before_intent'
+                       else patch.object(retention, 'atomic_write', side_effect=interrupt))
+        with replacement:
             with self.assertRaisesRegex(OSError, 'interrupted at the final review replacement'):
                 lifecycle.close(run, cleanup='complete')
         manifest = fixture.read(run / 'cierre.json')
-        self.assertEqual(manifest['state'], 'retaining')
+        self.assertEqual(manifest['state'], 'closing' if boundary == 'before_intent' else 'retaining')
+        self.assertEqual('planned_hashes' in manifest, boundary != 'before_intent')
         self.assertEqual(manifest['hashes']['review.json'], hashlib.sha256(old_bytes).hexdigest())
         self.assertEqual(fixture.read(review)['resources']['cleanup'],
-                         'pending' if boundary == 'before' else 'complete')
-        if boundary == 'before':
+                         'complete' if boundary == 'after' else 'pending')
+        if boundary != 'after':
             self.assertEqual(review.read_bytes(), old_bytes)
         return fixture, run
+
+    def test_chained_close_replays_terminal_observation_before_replacement_intent(self):
+        fixture, run = self.interrupted_chained_close('before_intent', noncanonical=True)
+        manifest = fixture.read(run / 'cierre.json')
+        observation = manifest['close_observation']
+        self.assertEqual(observation['cleanup'], 'complete')
+        self.assertEqual(len(observation['released_claims']), 1)
+        self.assertNotEqual(fixture.read(run / 'review.json')['resources']['residuals'],
+                            manifest['residuals'])
+        before = fixture.snapshot(run)
+
+        summary = artifacts._finish_status(run)
+        self.assertEqual(fixture.snapshot(run), before)
+        self.assertEqual((summary['gate'], summary['next_action']), ('close', 'retry_close'), summary)
+        result, code = artifacts.finish_run(run)
+        self.assertEqual((code, result['status'], result.get('cleanup')),
+                         (0, 'complete', 'complete'), result)
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+        final = fixture.read(run / 'cierre.json')
+        self.assertEqual(final['close_observation'], observation)
+        self.assertEqual(final['cleanup_receipts'], observation['released_claims'])
+        trace = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
+        self.assertEqual(sum(event['kind'] == 'close' and event['status'] == 'completed'
+                             for event in trace), 1)
+        completed = fixture.snapshot(run)
+        self.assertEqual(artifacts.finish_run(run)[1], 0)
+        self.assertEqual(fixture.snapshot(run), completed)
 
     def test_chained_close_replays_with_verified_previous_review(self):
         cases = (('before', False, False), ('before', True, False), ('after', False, True))

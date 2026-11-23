@@ -117,6 +117,8 @@ Once a close has an owned replacement plan, summary and close verify the full re
 
 If successive observations of pending cleanup changed the residual list, use the surviving previous review when its exact bytes match the previous digest. If the replacement has already reached disk, replay requires enough retained cleanup data to reconstruct the previous review and match that digest.
 
+Before a replacement plan is saved, a run in `closing` can replay its recorded terminal observation when both the manifest and the hash-verified retained review still record pending cleanup. The retained review may already reflect a newer residual list. The observation and all registered resource checks still apply under the run lock.
+
 When the summary returns `recover_cleanup`, use the exact recorded cleanup operation. Retry `workspace cleanup` while the claimed session remains. If the session was already removed, use the existing `artifacts recover` path to verify the remaining worktree inventory and persist the receipt. Without a matching intent, an absent claimed session remains `missing_unknown`.
 
 ### Recover or restart without duplicating a run

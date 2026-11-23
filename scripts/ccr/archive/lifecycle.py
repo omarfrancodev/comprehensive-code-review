@@ -976,9 +976,10 @@ def _validate_close_record(run, manifest, *, require_replay_match=False):
             and observation is not None and observation['cleanup'] != 'pending'):
         recorded = value['resources']
         matches_observation = all(recorded[key] == observation[key] for key in ('cleanup', 'residuals'))
-        # The exact prior cleanup can still be retained until replacement begins.
-        matches_previous = (manifest['state'] != 'complete' and recorded['cleanup'] == 'pending'
-                            and all(recorded[key] == manifest[key] for key in ('cleanup', 'residuals')))
+        # In closing, _verify_files accepts review.json only at its retained hash.
+        # A previous pending close can leave the manifest's residual list stale.
+        matches_previous = (manifest['state'] == 'closing'
+                            and recorded['cleanup'] == manifest['cleanup'] == 'pending')
         if not matches_observation and not matches_previous:
             raise ValueError('retained resources differ from the durable close observation')
     return recovery_contents
