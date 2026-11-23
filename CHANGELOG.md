@@ -25,9 +25,13 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 
 ### Fixed
 
+#### Ciclo de vida y recuperación
+
+- Reintentar el cierre automático cuando una transición íntegra conserva el manifiesto anterior. Verificar las solicitudes de cierre contra la observación durable dentro del mismo bloqueo, antes de recuperar la traza o confirmar el manifiesto.
+
 #### Artefactos y contratos
 
-- Permitir la consolidación acreditada de hallazgos publicados mediante aliases directos al ID superviviente. Conservar los aliases heredados y las decisiones de deuda de cada miembro, con sus condiciones, evidencia y límites de reapertura. Retener el historial de autorizaciones caducadas para impedir su reutilización tras revisiones intermedias, conservando las deudas independientes de la misma nota.
+- Permitir la consolidación acreditada de hallazgos publicados mediante aliases directos al ID superviviente. Conservar los aliases heredados y las decisiones de deuda de cada miembro, con sus condiciones, evidencia y límites de reapertura. Al adoptar un alias v1, vincularlo a la autorización original sin inventar otra atribución. Retener el historial de autorizaciones caducadas para impedir su reutilización tras revisiones intermedias, conservando las deudas independientes de la misma nota.
 
 #### Reportes y entregas
 
