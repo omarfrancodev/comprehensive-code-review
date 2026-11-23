@@ -57,4 +57,14 @@ def read_followup_baseline(run_dir, logical_scope, repository_key, *, compact_re
     if (validate(prior) or prior.get('review_id') != expected_id
             or prior.get('stage') != 'final' or prior.get('scope') != expected_scope):
         raise ValueError('assessment baseline is not a valid final result')
-    return {'review_id': expected_id, 'review_file': str(run / 'review.json'), 'sha256': digest}
+    selected = {'review_id': expected_id, 'review_file': str(run / 'review.json'), 'sha256': digest}
+    assessment = prior.get('assessment') or {}
+    link = assessment.get('previous')
+    if assessment.get('schema_version') == 2 and link is not None and any(
+            row['id'] != row['survivor'] and row['resolution'] is not None for row in assessment['lineage']):
+        source = link['source']
+        reference = source['reference']
+        if manifest['hashes'].get(reference) == source['sha256']:
+            selected['legacy_previous'] = {'review_id': link['review_id'],
+                'review_file': str(safe_path(run / reference)), 'sha256': source['sha256']}
+    return selected

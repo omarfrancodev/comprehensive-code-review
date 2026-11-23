@@ -204,7 +204,7 @@ def _present_resources(registered):
         # PermissionError and other unverifiable states deliberately propagate.
     return present
 
-def _execution_gate(run, manifest, value, contents):
+def _execution_gate(run, manifest, value, contents, *, retained=False):
     """Read only selected source bytes and observed same-run trace; no archive scan."""
     selected = dict(contents)
 
@@ -213,7 +213,7 @@ def _execution_gate(run, manifest, value, contents):
         selected[name] = raw
         return raw
 
-    verify_assessment_sources(value, source, captured_inputs=manifest.get('review_inputs') or {})
+    verify_assessment_sources(value, source, captured_inputs=manifest.get('review_inputs') or {}, retained=retained)
     context = json.loads(source('evidence/context.json'))
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')

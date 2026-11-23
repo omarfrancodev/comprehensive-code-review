@@ -10,19 +10,23 @@ from unittest.mock import patch
 from script_test_support import enable_package_imports, run_cli
 
 enable_package_imports()
-from ccr.archive import lifecycle, reader, resources, transactions
+from ccr.archive import lifecycle, reader, resources, retention, transactions
 from ccr.cli import artifacts
 from ccr.shared.encoding import archive_bytes
 import test_review_closure_consistency as guided
 
 
 class ClosingObservationPR37Tests(unittest.TestCase):
-    def retained_run(self, *, owned_session=False):
+    def retained_run(self, *, owned_session=False, initial_cleanup=None):
         fixture = guided.ClosureConsistencyTests()
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         case = fixture.make_guided_run(complete_capture=True, explicit_identities=True,
                                        owned_session=owned_session)
+        if initial_cleanup is not None:
+            value = fixture.read(case['record'])
+            value['resources']['cleanup'] = initial_cleanup
+            case['record'] = fixture.write('final.json', value)
         fixture.retain(case)
         return fixture, case
 
@@ -120,6 +124,106 @@ class ClosingObservationPR37Tests(unittest.TestCase):
         code, status = self.cli(fixture, 'finish', '--run-dir', run)
         self.assertEqual((code, status['status']), (0, 'complete'))
         self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+
+    def interrupt_planned_close(self, run, *, marker_boundary=None):
+        if marker_boundary is not None:
+            original = transactions.atomic_write
+
+            def interrupt(path, data, **kwargs):
+                if json.loads((run / 'cierre.json').read_bytes())['state'] == 'retaining':
+                    if (marker_boundary == 'planned' and Path(path).name == transactions.MARKER
+                            and 'previous_manifest_sha256' not in json.loads(data)):
+                        raise OSError('interrupted while committing the planned close marker')
+                    if (marker_boundary == 'previous' and Path(path).name == 'cierre.json'
+                            and json.loads(data)['state'] == 'closing'):
+                        raise OSError('interrupted before committing the planned close replacement')
+                return original(path, data, **kwargs)
+
+            target = transactions
+        else:
+            original = retention.atomic_write
+
+            def interrupt(path, data, **kwargs):
+                if Path(path).name == 'review.json':
+                    raise OSError('interrupted before planned close record replacement')
+                return original(path, data, **kwargs)
+
+            target = retention
+
+        with patch.object(target, 'atomic_write', side_effect=interrupt):
+            with self.assertRaisesRegex(OSError, 'interrupted .* planned close'):
+                lifecycle.close(run, cleanup='not_needed')
+
+    def test_planned_close_without_disclosure_can_replay_the_prior_terminal_record(self):
+        marker_digest_field = {None: 'manifest_sha256', 'planned': 'manifest_sha256',
+                               'previous': 'previous_manifest_sha256'}
+        for marker_boundary, digest_field in marker_digest_field.items():
+            for entry in ('automatic', 'explicit'):
+                with self.subTest(marker_boundary=marker_boundary, entry=entry):
+                    fixture, case = self.retained_run(initial_cleanup='complete')
+                    run = case['run']
+                    self.interrupt_planned_close(run, marker_boundary=marker_boundary)
+                    _, manifest, marker = reader.load_run(run)
+                    self.assertEqual(manifest['state'], 'retaining')
+                    self.assertEqual('previous_manifest_sha256' in marker, marker_boundary is not None)
+                    self.assertEqual(hashlib.sha256((run / 'cierre.json').read_bytes()).hexdigest(),
+                                     marker[digest_field])
+                    cleanup = 'not_needed' if marker_boundary == 'previous' else 'complete'
+                    self.assertEqual(fixture.read(run / 'review.json')['resources']['cleanup'], cleanup)
+                    self.assertEqual(set(manifest['planned_hashes']), {'review.json', 'informe.md'})
+                    self.assertNotIn('check_disclosure_reference', fixture.read(run / 'evidence/context.json'))
+                    before = fixture.snapshot(run)
+
+                    code, summary = self.cli(fixture, 'inspect', '--run-dir', run, '--summary')
+                    self.assertEqual((code, summary['gate'], summary['next_action']), (0, 'close', 'retry_close'))
+                    self.assertEqual(fixture.snapshot(run), before)
+                    rejected, code = artifacts.finish_run(run, cleanup='complete')
+                    self.assertEqual(code, 1)
+                    self.assertIn('exact durable cleanup observation', rejected['reason'])
+                    self.assertEqual(fixture.snapshot(run), before)
+
+                    args = [] if entry == 'automatic' else ['--cleanup', 'not_needed']
+                    code, result = self.cli(fixture, 'finish', '--run-dir', run, *args)
+                    self.assertEqual((code, result['status'], result['cleanup']), (0, 'complete', 'not_needed'))
+                    self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+                    _, final, marker = reader.load_run(run)
+                    self.assertNotIn('previous_manifest_sha256', marker)
+                    self.assertNotIn('planned_hashes', final)
+                    self.assertEqual(final['close_observation'], manifest['close_observation'])
+                    for name, raw in before.items():
+                        if name not in manifest['planned_hashes'] and name not in {
+                                'cierre.json', transactions.MARKER, 'trazabilidad.jsonl'}:
+                            self.assertEqual((run / name).read_bytes(), raw, name)
+                    trace = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
+                    self.assertEqual(sum(event['kind'] == 'close' for event in trace), 1)
+                    completed = fixture.snapshot(run)
+                    self.assertEqual(artifacts.finish_run(run)[1], 0)
+                    self.assertEqual(fixture.snapshot(run), completed)
+
+    def test_planned_close_without_disclosure_rejects_different_report_hash(self):
+        fixture, case = self.retained_run(initial_cleanup='complete')
+        run = case['run']
+        self.interrupt_planned_close(run)
+        manifest = fixture.read(run / 'cierre.json')
+        manifest['planned_hashes']['informe.md'] = '0' * 64
+        self.save(fixture, run, manifest)
+        self.assert_preserved(fixture, run)
+        before = fixture.snapshot(run)
+        with self.assertRaisesRegex(ValueError, 'exact planned inventory'):
+            lifecycle.close(run, cleanup='not_needed')
+        self.assertEqual(fixture.snapshot(run), before)
+
+    def test_planned_close_needs_surviving_canonical_review_bytes(self):
+        fixture, case = self.retained_run(initial_cleanup='complete')
+        run = case['run']
+        self.interrupt_planned_close(run, marker_boundary='planned')
+        self.assertIn('review.json', fixture.read(run / 'cierre.json')['planned_hashes'])
+        (run / 'review.json').unlink()
+        self.assert_preserved(fixture, run)
+        before = fixture.snapshot(run)
+        result, code = artifacts.finish_run(run, cleanup='not_needed')
+        self.assertEqual((code, result['next_action']), (1, 'preserve'))
+        self.assertEqual(fixture.snapshot(run), before)
 
     def test_live_claim_requires_actual_workspace_cleanup(self):
         fixture, case = self.retained_run(owned_session=True)

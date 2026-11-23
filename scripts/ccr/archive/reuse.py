@@ -154,7 +154,7 @@ def _ordinary_lineage(repo,scope,inputs,descriptor,materials,run,manifest,record
         if parent_record is None or parent_record.get('scope')!=parent_manifest['scope']:
             raise ValueError('Ordinary coverage parent record is unavailable or differs from its native scope.')
         verify_assessment_sources(parent_record, lambda name: _source(parent, parent_manifest, name),
-                                  captured_inputs=parent_manifest.get('review_inputs') or {})
+                                  captured_inputs=parent_manifest.get('review_inputs') or {}, retained=True)
         parent_id=parent_record.get('review_id')
         if parent_id is not None and parent_id!='CR-'+parent_manifest['run_id']:
             raise ValueError('Ordinary coverage parent identity differs from its native run.')
@@ -240,7 +240,7 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
         initial_manifest=copy.deepcopy(manifest)
         record=json.loads(_source(run,manifest,'review.json'))
         verify_assessment_sources(record, lambda name: _source(run, manifest, name),
-                                  captured_inputs=manifest.get('review_inputs') or {})
+                                  captured_inputs=manifest.get('review_inputs') or {}, retained=True)
         coverage_issue=coverage_reuse_issue(record)
         if coverage_issue is not None and coverage_issue['code']!='ordinary_coverage_unproven':
             return finish(context=dict(applicability='changed',reasons=[coverage_issue]))

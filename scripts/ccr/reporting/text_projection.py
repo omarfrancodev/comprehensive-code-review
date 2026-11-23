@@ -91,7 +91,7 @@ class _Projection:
         compact_identity.inputs_sha256 compact_identity.logical_scope_identity compact_identity.created_at
         assessment.scope.base assessment.scope.head assessment.scope.snapshot
         assessment.scope.delta[].evidence_ids[] assessment.scope.delta[].sources[].sha256
-        assessment.previous.review_id assessment.previous.source.sha256
+        assessment.previous.review_id assessment.previous.source.sha256 assessment.previous.legacy_source.sha256
         assessment.findings[].id assessment.findings[].cause assessment.findings[].relation
         assessment.findings[].verification.evidence_ids[] assessment.findings[].resolution.status
         assessment.findings[].resolution.scope assessment.findings[].resolution.authority

@@ -5,8 +5,9 @@ import re
 
 from ccr.contracts.references import parse_reference, resolve_reference
 from ccr.contracts.identifier_types import canonical_id, review_id
+from ccr.contracts.scope import validate_scope
 from ccr.contracts.validation import ValidationState
-from ccr.shared.encoding import decode_json
+from ccr.shared.encoding import compact_bytes, decode_json
 
 
 VERIFICATION_FIELDS = {'obligation', 'trigger', 'consequence', 'consumer', 'question'}
@@ -130,8 +131,17 @@ def validate_shape(record, state):
     presentation = record.get('presentation')
     kind = presentation.get('kind') if isinstance(presentation, dict) else None
     if previous is not None:
-        previous = state.fields(previous, {'review_id', 'source'}, 'assessment.previous')
+        fields = {'review_id', 'source'}
+        if version == 3 and isinstance(previous, dict) and 'legacy_source' in previous:
+            fields.add('legacy_source')
+        previous = state.fields(previous, fields, 'assessment.previous')
         _source(previous.get('source'), state, 'assessment.previous.source', whole=True)
+        if 'legacy_source' in fields:
+            legacy = previous['legacy_source']
+            _source(legacy, state, 'assessment.previous.legacy_source', whole=True)
+            if (isinstance(legacy, dict) and isinstance(previous.get('source'), dict)
+                    and legacy.get('reference') == previous['source'].get('reference')):
+                state.error('assessment.previous.legacy_source', 'expected a distinct selected predecessor file')
         identifier = previous.get('review_id')
         if not isinstance(identifier, str) or sum(row.get('review_id') == identifier and row.get('verified') is True
                                                  for row in _rows(record, 'previous_reviews')) != 1:
@@ -355,6 +365,8 @@ def _sources(assessment):
     previous = assessment['previous']
     if previous:
         yield previous['source']
+        if 'legacy_source' in previous:
+            yield previous['legacy_source']
     for entry in assessment['scope']['delta']:
         yield from entry['sources']
     for row in assessment['findings']:
@@ -379,7 +391,34 @@ def source_references(record, *, include_history=False):
     return references
 
 
-def verify_sources(record, read_source, *, captured_inputs=None):
+def _legacy_predecessor(previous, descriptor, captured):
+    """Verify one explicitly selected predecessor of a v2 baseline."""
+    assessment = previous.get('assessment') or {}
+    link = assessment.get('previous')
+    if assessment.get('schema_version') != 2 or link is None:
+        raise ValueError('legacy predecessor evidence requires a chained assessment version 2 baseline')
+    if descriptor['sha256'] != link['source']['sha256']:
+        raise ValueError('legacy predecessor bytes differ from the selected v2 commitment')
+    legacy = decode_json(captured[descriptor['reference']])
+    if (not isinstance(legacy, dict) or legacy.get('stage') != 'final'
+            or legacy.get('review_id') != link['review_id'] or validate_scope(legacy.get('scope'))
+            or not isinstance(legacy.get('aliases'), dict)):
+        raise ValueError('legacy predecessor is not the linked final result of the selected v2 baseline')
+    if 'assessment' in legacy:
+        state = ValidationState()
+        validate_shape(legacy, state)
+        if state.errors or legacy['assessment']['schema_version'] == 3:
+            raise ValueError('legacy predecessor has an invalid assessment')
+    try:
+        _verify_lineage_continuity(previous, assessment, legacy)
+    except ValueError:
+        if 'history_incomplete' in assessment:
+            raise
+        _verify_lineage_continuity(previous, assessment, legacy, legacy_v2=True)
+    return legacy
+
+
+def verify_sources(record, read_source, *, captured_inputs=None, retained=False):
     """Verify selected bytes and follow-up continuity, without consulting external paths."""
     assessment = record.get('assessment')
     if assessment is None:
@@ -404,6 +443,7 @@ def verify_sources(record, read_source, *, captured_inputs=None):
         resolve_reference(reference, {path: raw}, field='assessment source')
     prior = assessment['previous']
     previous = {}
+    legacy_previous = None
     if prior is not None:
         previous = decode_json(captured[prior['source']['reference']])
         if not isinstance(previous, dict) or previous.get('stage') != 'final' or previous.get('review_id') != prior['review_id']:
@@ -419,17 +459,24 @@ def verify_sources(record, read_source, *, captured_inputs=None):
             if (previous.get('assessment') or {}).get('schema_version') in (2, 3):
                 raise ValueError('follow-up of assessment version 2 or 3 requires lineage continuity')
             _verify_continuity(record, assessment, previous)
+        if 'legacy_source' in prior:
+            legacy_previous = _legacy_predecessor(previous, prior['legacy_source'], captured)
+    members = {}
     if assessment['schema_version'] in (2, 3):
         try:
-            _verify_lineage_continuity(record, assessment, previous)
+            members = _verify_ledger_and_lineage(record, assessment, previous, legacy_previous)
         except ValueError:
-            if assessment['schema_version'] != 2 or 'history_incomplete' in assessment:
+            if assessment['schema_version'] == 2 and 'history_incomplete' not in assessment:
+                # Both historical v2 emitters used this same shape, with
+                # different interpretations of the assessment v1 outcome.
+                members = _verify_lineage_continuity(record, assessment, previous, legacy_v2=True)
+            elif (retained and assessment['schema_version'] == 3 and legacy_previous is None
+                  and (previous.get('assessment') or {}).get('schema_version') in (1, 2)):
+                # Earlier v3 writers registered each legacy lineage row as
+                # its own entry. Recompute that exact ledger for reads.
+                members = _verify_ledger_and_lineage(record, assessment, previous, None, legacy_v3=True)
+            else:
                 raise
-            # Both historical v2 emitters used this same shape. Their v1
-            # outcome interpretation differed; retain the union for reading.
-            _verify_lineage_continuity(record, assessment, previous, legacy_v2=True)
-    if assessment['schema_version'] == 3:
-        _verify_authorization_continuity(record, assessment, previous)
     if captured_inputs is not None:
         initial = {key.split('#', 1)[0]: digest for key, digest in captured_inputs.get('sources', {}).items()}
         old = _by_id(_rows(previous.get('assessment') or {}, 'findings'))
@@ -440,7 +487,7 @@ def verify_sources(record, read_source, *, captured_inputs=None):
                                 if record['aliases'].get(identifier, identifier) == row['id'])
                 if assessment['schema_version'] in (2, 3):
                     inherited = any(decision in resolution_decisions(member['resolution'])
-                        for member in _continuity_baseline(previous, assessment).values()
+                        for member in members.values()
                         if record['aliases'].get(member['survivor'], member['survivor']) == row['id'])
                 if decision['scope'] == 'this_review':
                     inherited = False
@@ -491,41 +538,110 @@ def _baseline_lineage(previous, *, legacy_v2=False):
     return result
 
 
-def baseline_authorizations(previous):
+def baseline_authorizations(previous, *, legacy_previous=None):
     """Import only decisions demonstrated by the selected prior review bytes."""
+    return _authorization_baseline(previous, legacy_previous)[0]
+
+
+def _v2_resolution_groups(members):
+    groups = {}
+    for identifier, member in members.items():
+        for decision in resolution_decisions(member['resolution']):
+            key = compact_bytes(decision)
+            groups.setdefault((member['survivor'], key), {})[identifier] = decision
+    return groups
+
+
+def _v2_group_origin(members, survivor, group):
+    # A distinct disposition on a member with its own published cause can
+    # keep that member. A copy within a group adds no independent act.
+    if len(group) == 1:
+        identifier = next(iter(group))
+        if members[identifier]['cause'] is not None:
+            return identifier
+    return survivor
+
+
+def _v2_authority_origins(members, legacy_previous):
+    """Locate independently published decisions within each v2 survivor group."""
+    earlier = _baseline_lineage(legacy_previous or {})
+    legacy_version = ((legacy_previous or {}).get('assessment') or {}).get('schema_version')
+    if legacy_version == 2:
+        earlier_origins = {
+            (identifier, key): _v2_group_origin(earlier, survivor, group)
+            for (survivor, key), group in _v2_resolution_groups(earlier).items()
+            for identifier in group
+        }
+    else:
+        earlier_origins = {
+            (identifier, compact_bytes(decision)): member['survivor']
+            for identifier, member in earlier.items()
+            for decision in resolution_decisions(member['resolution'])
+        }
+    groups = _v2_resolution_groups(members)
+    for (survivor, key), group in groups.items():
+        proven = {}
+        for identifier in group:
+            origin = earlier_origins.get((identifier, key))
+            if members.get(origin, {}).get('survivor') == survivor:
+                proven[identifier] = origin
+        fallback = (proven.get(survivor, min(proven.values())) if proven
+                    else _v2_group_origin(members, survivor, group))
+        for identifier, decision in group.items():
+            yield (identifier, key), proven.get(identifier, fallback), decision, bool(proven)
+
+
+def _authorization_baseline(previous, legacy_previous=None, *, legacy_v3=False):
     assessment = previous.get('assessment') or {}
     version = assessment.get('schema_version')
     if version == 3:
-        return copy.deepcopy(assessment['authorizations'])
+        return copy.deepcopy(assessment['authorizations']), {}
     # V1 publishes group dispositions on survivors. The copies made for
     # lineage continuity do not establish grants on those alias IDs.
-    members = _by_id(_rows(assessment, 'lineage' if version == 2 else 'findings'))
+    members = _baseline_lineage(previous)
+    if version == 2 and not legacy_v3:
+        origins = _v2_authority_origins(members, legacy_previous)
+    else:
+        origins = (((member['id'], compact_bytes(decision)),
+                    member['id'] if legacy_v3 else member['survivor'], decision, False)
+                   for member in members.values()
+                   for decision in resolution_decisions(member['resolution']))
+    # Order by original member, preserving that member's decision list order.
+    ordered = sorted(origins, key=lambda item: (item[1], item[0][0] != item[1], item[0][0]))
+    grants, links = {}, {}
     entries = []
-    for identifier, member in sorted(members.items()):
-        for decision in resolution_decisions(member['resolution']):
-            entries.append(dict(id=f'AU{len(entries) + 1:03d}', member_id=identifier,
-                review_id=previous['review_id'],
-                scope={key: previous['scope'][key] for key in ('base', 'head', 'snapshot')},
+    for (identifier, key), origin, decision, earlier in ordered:
+        authorizing = legacy_previous if earlier else previous
+        grant = (origin, key, authorizing['review_id'])
+        if grant not in grants:
+            grant_id = f'AU{len(entries) + 1:03d}'
+            grants[grant] = grant_id
+            entries.append(dict(id=grant_id, member_id=origin, review_id=authorizing['review_id'],
+                scope={field: authorizing['scope'][field] for field in ('base', 'head', 'snapshot')},
                 decision=copy.deepcopy(decision)))
-    return entries
+        links[(identifier, key)] = grants[grant]
+    return entries, links
 
 
-def _continuity_baseline(previous, assessment, *, legacy_v2=False):
+def _continuity_baseline(previous, assessment, *, legacy_v2=False, links=None):
     members = copy.deepcopy(_baseline_lineage(previous, legacy_v2=legacy_v2))
     previous_version = (previous.get('assessment') or {}).get('schema_version')
     if assessment['schema_version'] != 3 or previous_version == 3:
         return members
-    ledger = baseline_authorizations(previous)
     for member in members.values():
-        original = member['id'] if previous_version == 2 else member['survivor']
-        bound = []
-        for decision in resolution_decisions(member['resolution']):
-            identifier = next((entry['id'] for entry in ledger
-                               if entry['member_id'] == original and entry['decision'] == decision), None)
-            if identifier is None:
-                raise ValueError('legacy resolution requires a decision on its published authorization member')
-            bound.append(dict(decision, authorization_id=identifier))
+        bound = [dict(decision, authorization_id=links[(member['id'], compact_bytes(decision))])
+                 for decision in resolution_decisions(member['resolution'])]
         member['resolution'] = bound if isinstance(member['resolution'], list) else bound[0] if bound else None
+    return members
+
+
+def _verify_ledger_and_lineage(record, assessment, previous, legacy_previous, *, legacy_v3=False):
+    ledger, links = ([], {})
+    if assessment['schema_version'] == 3:
+        ledger, links = _authorization_baseline(previous, legacy_previous, legacy_v3=legacy_v3)
+    members = _verify_lineage_continuity(record, assessment, previous, links=links, legacy_v3=legacy_v3)
+    if assessment['schema_version'] == 3:
+        _verify_authorization_continuity(record, assessment, previous, ledger)
     return members
 
 
@@ -552,8 +668,10 @@ def _unbound_historical_observations(previous):
     return False
 
 
-def _verify_lineage_continuity(record, assessment, previous, *, legacy_v2=False):
-    old = _continuity_baseline(previous, assessment, legacy_v2=legacy_v2)
+def _verify_lineage_continuity(record, assessment, previous, *, legacy_v2=False, links=None, legacy_v3=False):
+    if links is None and assessment['schema_version'] == 3:
+        _, links = _authorization_baseline(previous)
+    old = _continuity_baseline(previous, assessment, legacy_v2=legacy_v2, links=links)
     if any(identifier not in old for identifier in record.get('grandfathered_ids', {}).get('findings', [])):
         raise ValueError('historical ID requires its own published provenance in the selected previous result')
     members = _by_id(assessment['lineage'])
@@ -572,6 +690,9 @@ def _verify_lineage_continuity(record, assessment, previous, *, legacy_v2=False)
         incomplete = incomplete or (old_assessment.get('schema_version') in (1, 2)
                                      and old_assessment.get('previous') is not None)
         incomplete = incomplete or bool(previous and not old_assessment)
+        if not legacy_v3 and old_assessment.get('schema_version') == 2:
+            incomplete = incomplete or any(member['id'] != member['survivor'] and member['resolution'] is not None
+                                           for member in old.values())
     enforce_history = assessment['schema_version'] == 3 or 'history_incomplete' in assessment
     if enforce_history and assessment.get('history_incomplete', False) != incomplete:
         raise ValueError('history_incomplete must preserve unknown historical observation hashes')
@@ -690,10 +811,11 @@ def _verify_lineage_continuity(record, assessment, previous, *, legacy_v2=False)
                      for decision in resolution_decisions(member['resolution'])]
         if any(decision not in projected for decision in resolution_decisions(row['resolution'])):
             raise ValueError('survivor disposition requires an exact member decision in lineage')
+    return old
 
 
-def _verify_authorization_continuity(record, assessment, previous):
-    old = _by_id(baseline_authorizations(previous))
+def _verify_authorization_continuity(record, assessment, previous, previous_ledger):
+    old = _by_id(previous_ledger)
     ledger = _by_id(assessment['authorizations'])
     if any(identifier not in ledger or ledger[identifier] != entry for identifier, entry in old.items()):
         raise ValueError('authorization history must preserve every immutable published entry')

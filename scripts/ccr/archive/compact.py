@@ -558,7 +558,7 @@ def read_compact(run_dir):
     if normalized.get('scope') != request['scope'] or normalized.get('logical_scope_identity') != logical['identity']:
         raise ValueError('compact initial input identity differs from the pinned scope')
     selected = {name: data for name, data in content.items() if name.startswith('evidence/')}
-    verify_assessment_sources(record, selected.__getitem__, captured_inputs=request['review_inputs'])
+    verify_assessment_sources(record, selected.__getitem__, captured_inputs=request['review_inputs'], retained=True)
     index = _validate_compact_sources(record, request, selected)
     if content['informe.md'] != _render_compact(record, request, selected).encode('utf-8'):
         raise ValueError('compact report does not match the canonical record')
