@@ -494,10 +494,14 @@ def _baseline_lineage(previous, *, legacy_v2=False):
 def baseline_authorizations(previous):
     """Import only decisions demonstrated by the selected prior review bytes."""
     assessment = previous.get('assessment') or {}
-    if assessment.get('schema_version') == 3:
+    version = assessment.get('schema_version')
+    if version == 3:
         return copy.deepcopy(assessment['authorizations'])
+    # V1 publishes group dispositions on survivors. The copies made for
+    # lineage continuity do not establish grants on those alias IDs.
+    members = _by_id(_rows(assessment, 'lineage' if version == 2 else 'findings'))
     entries = []
-    for identifier, member in sorted(_baseline_lineage(previous).items()):
+    for identifier, member in sorted(members.items()):
         for decision in resolution_decisions(member['resolution']):
             entries.append(dict(id=f'AU{len(entries) + 1:03d}', member_id=identifier,
                 review_id=previous['review_id'],
@@ -508,14 +512,19 @@ def baseline_authorizations(previous):
 
 def _continuity_baseline(previous, assessment, *, legacy_v2=False):
     members = copy.deepcopy(_baseline_lineage(previous, legacy_v2=legacy_v2))
-    if assessment['schema_version'] != 3 or (previous.get('assessment') or {}).get('schema_version') == 3:
+    previous_version = (previous.get('assessment') or {}).get('schema_version')
+    if assessment['schema_version'] != 3 or previous_version == 3:
         return members
     ledger = baseline_authorizations(previous)
     for member in members.values():
-        choices = resolution_decisions(member['resolution'])
-        bound = [dict(decision, authorization_id=next(entry['id'] for entry in ledger
-                     if entry['member_id'] == member['id'] and entry['decision'] == decision))
-                 for decision in choices]
+        original = member['id'] if previous_version == 2 else member['survivor']
+        bound = []
+        for decision in resolution_decisions(member['resolution']):
+            identifier = next((entry['id'] for entry in ledger
+                               if entry['member_id'] == original and entry['decision'] == decision), None)
+            if identifier is None:
+                raise ValueError('legacy resolution requires a decision on its published authorization member')
+            bound.append(dict(decision, authorization_id=identifier))
         member['resolution'] = bound if isinstance(member['resolution'], list) else bound[0] if bound else None
     return members
 

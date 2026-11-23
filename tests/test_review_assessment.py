@@ -132,6 +132,7 @@ def guided_v2(record, previous=None):
 def guided_current(record, previous=None):
     """Author v3 fixtures, retaining the original helper for legacy records."""
     old = (previous or {}).get('assessment', {})
+    prior_v1_aliases = previous.get('aliases', {}) if old.get('schema_version') == 1 else {}
     authored_members = {member['id']: copy.deepcopy(member)
                         for member in record['assessment'].get('lineage', [])}
     previous_members = copy.deepcopy(old.get('lineage', []))
@@ -139,8 +140,6 @@ def guided_current(record, previous=None):
         old_rows = {row['id']: row for row in old.get('findings', [])}
         previous_members = [dict(id=identifier, resolution=copy.deepcopy(row['resolution']))
                             for identifier, row in sorted(old_rows.items())]
-        previous_members.extend(dict(id=alias, resolution=copy.deepcopy(old_rows[target]['resolution']))
-                                for alias, target in previous.get('aliases', {}).items() if target in old_rows)
     ledger = copy.deepcopy(old.get('authorizations', []))
     if old.get('schema_version') != 3:
         ledger = [dict(id=f'AU{index:03d}', member_id=member['id'],
@@ -157,12 +156,17 @@ def guided_current(record, previous=None):
     plain = lambda decision: {key: value for key, value in decision.items() if key != 'authorization_id'}
     rows = {row['id']: row for row in assessment['findings']}
     old_members = {member['id']: member for member in previous_members}
+    retained = {grant['id']: grant for grant in ledger}
+    groups = {member['id']: member['survivor'] for member in assessment['lineage']}
     for member in assessment['lineage']:
         if member['id'] in authored_members:
             for field in ('cause', 'title', 'last_status'):
                 member[field] = authored_members[member['id']][field]
+        elif member['id'] in prior_v1_aliases:
+            member.update(cause=None, title=None)
         row = rows.get(member['survivor'])
-        original = old_members.get(member['id'])
+        authorization_member = prior_v1_aliases.get(member['id'], member['id'])
+        original = old_members.get(authorization_member)
         choices = [plain(item) for item in decisions(row['resolution'])] if row else []
         authored = authored_members.get(member['id'])
         if authored and all(plain(item) in choices for item in decisions(authored['resolution'])):
@@ -172,12 +176,13 @@ def guided_current(record, previous=None):
         bound = []
         for decision in decisions(member['resolution']):
             value = plain(decision)
-            candidates = [entry for entry in ledger if entry['member_id'] == member['id']
-                          and entry['decision'] == value]
-            if candidates:
-                entry = candidates[0]
-            else:
-                entry = dict(id=f'AU{len(ledger) + 1:03d}', member_id=member['id'],
+            entry = retained.get(decision.get('authorization_id'))
+            if (entry is None or entry['decision'] != value
+                    or groups.get(entry['member_id']) != member['survivor']):
+                entry = next((grant for grant in ledger if grant['member_id'] == authorization_member
+                              and grant['decision'] == value), None)
+            if entry is None:
+                entry = dict(id=f'AU{len(ledger) + 1:03d}', member_id=authorization_member,
                     review_id=record['review_id'],
                     scope={key: record['scope'][key] for key in ('base', 'head', 'snapshot')},
                     decision=copy.deepcopy(value))
