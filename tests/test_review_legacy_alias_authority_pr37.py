@@ -368,5 +368,57 @@ class RetainedLegacyAliasAuthorityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'hash differs'):
             compact.read_compact(saved['run_dir'])
 
+    def test_guided_compact_requires_available_evidence_of_independent_v2_acts(self):
+        self.inputs['sources'] = {'evidence/note.txt': source('note.txt', NOTE)['sha256']}
+        prepared = self.prepare(operation_id='independent-v2-acts')
+        seed, selected = self.record_and_sources(prepared)
+        original = root_v2(two=True)
+        original['review_id'] = seed['review_id']
+        original['coverage']['execution'] = seed['coverage']['execution']
+        assessment = original['assessment']
+        decision = assessment['lineage'][0]['resolution']
+        assessment['lineage'][1]['resolution'] = copy.deepcopy(decision)
+        assessment['findings'][1]['resolution'] = copy.deepcopy(decision)
+        assessment['observed_hashes'] = sorted({source('proof.txt', PROOF)['sha256'],
+                                                decision['source']['sha256']})
+        first = compact.create_compact(prepared, original, render(original), self.inputs,
+            sources={**selected, 'evidence/proof.txt': PROOF, 'evidence/note.txt': NOTE})
+        original = compact.read_compact(first['run_dir'])['record']
+
+        self.inputs['sources'] = {}
+        prepared = self.prepare(operation_id='consolidated-v2-acts')
+        previous, sources = following(original, 'b')
+        previous['assessment']['lineage'][1]['survivor'] = 'F001'
+        previous['aliases'] = {'F002': 'F001'}
+        for rows in (previous['findings'], previous['rereview'], previous['assessment']['findings']):
+            rows.pop()
+        selected = self.bind_followup(previous, first['run_dir'], prepared)
+        saved = compact.create_compact(prepared, previous, render(previous), self.inputs,
+                                       sources={**selected, **sources})
+        previous = compact.read_compact(saved['run_dir'])['record']
+
+        prepared = self.prepare(operation_id='v3-with-available-v2-precursor')
+        current, sources = adopt_v2_copy(previous, original, select_history=False)
+        selected = self.bind_followup(current, saved['run_dir'], prepared)
+        with self.assertRaisesRegex(ValueError, 'inventoried legacy predecessor'):
+            compact.create_compact(prepared, current, current_inputs=self.inputs,
+                                   sources={**selected, **sources})
+        self.assertFalse(Path(prepared['run_dir']).exists())
+        self.assertFalse((Path(prepared['staging_dir']) / 'payload-intent.json').exists())
+
+        current, sources = adopt_v2_copy(previous, original, select_history=True)
+        assessment = current['assessment']
+        assessment['authorizations'].append(authorization(original, 'AU002', 'F002', decision))
+        assessment['lineage'][1]['resolution']['authorization_id'] = 'AU002'
+        assessment['findings'][0]['resolution'] = [
+            copy.deepcopy(member['resolution']) for member in assessment['lineage']]
+        selected = self.bind_followup(current, saved['run_dir'], prepared)
+        result = compact.create_compact(prepared, current, current_inputs=self.inputs,
+                                        sources={**selected, **sources})
+        retained = compact.read_compact(result['run_dir'])
+        self.assertEqual([entry['member_id'] for entry in retained['record']['assessment']['authorizations']],
+                         ['F001', 'F002'])
+
+
 if __name__ == '__main__':
     unittest.main()

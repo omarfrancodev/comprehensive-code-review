@@ -27,6 +27,11 @@ def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=
         raise ValueError('assessment baseline ID differs from the selected archive')
     if previous['source']['sha256'] != baseline['sha256']:
         raise ValueError('assessment baseline bytes differ from the verified prior archive')
+    predecessor = baseline.get('legacy_previous')
+    if assessment['schema_version'] == 3 and predecessor is not None:
+        selected = previous.get('legacy_source')
+        if selected is None or selected['sha256'] != predecessor['sha256']:
+            raise ValueError('v3 adoption requires the inventoried legacy predecessor in assessment.previous.legacy_source')
 
 
 def read_followup_baseline(run_dir, logical_scope, repository_key, *, compact_reader):
