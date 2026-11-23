@@ -1,6 +1,8 @@
 """Interrupted close transitions must be verified before replay changes the archive."""
+import argparse
 import copy
 from contextlib import contextmanager
+import hashlib
 import json
 from pathlib import Path
 import unittest
@@ -9,8 +11,9 @@ from unittest.mock import patch
 from script_test_support import enable_package_imports
 
 enable_package_imports()
-from ccr.archive import coordination, inspection, lifecycle, reader, transactions
+from ccr.archive import coordination, inspection, lifecycle, reader, resources, retention, transactions
 from ccr.cli import artifacts
+import test_review_closure_consistency as guided
 import test_review_closing_observation_pr37 as fixtures
 
 
@@ -46,6 +49,114 @@ class PendingCloseTransitionTests(unittest.TestCase):
         with patch.object(transactions, 'atomic_write', side_effect=interrupt):
             with self.assertRaisesRegex(OSError, 'interrupted during close trace'):
                 lifecycle.close(run, cleanup=cleanup, residuals=residuals)
+
+    def interrupted_chained_close(self, boundary, *, noncanonical=False, prior_trace_intent=False,
+                                  session_already_cleaned=False):
+        fixture = guided.ClosureConsistencyTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        case = fixture.make_guided_run(complete_capture=True, explicit_identities=True,
+                                       owned_session=True)
+        run, session = case['run'], case['session']
+        extra = fixture.root / 'temporary'
+        extra.mkdir()
+        lifecycle.register(run, [str(extra)], context_input=case['context'])
+        fixture.retain(case)
+        self.assertNotIn('evidence/check-disclosure.json', fixture.read(run / 'cierre.json')['hashes'])
+        extra.rmdir()
+        cleanup_args = argparse.Namespace(manifest=str(session / 'manifest.json'), run_dir=str(run))
+        if session_already_cleaned:
+            resources.cleanup_workspace(cleanup_args)
+        previous_residuals = [] if session_already_cleaned else [str(session)]
+        if prior_trace_intent:
+            self.interrupt_close_trace(run, 'pending', 'before', residuals=previous_residuals)
+        else:
+            with patch.object(lifecycle, '_append_trace', side_effect=OSError('before pending close intent')):
+                with self.assertRaisesRegex(OSError, 'before pending close intent'):
+                    lifecycle.close(run, cleanup='pending', residuals=previous_residuals)
+        manifest = fixture.read(run / 'cierre.json')
+        if prior_trace_intent:
+            self.assertEqual(manifest['residuals'], previous_residuals)
+        else:
+            self.assertCountEqual(manifest['residuals'], [str(session), str(extra)])
+        review = run / 'review.json'
+        previous = fixture.read(review)
+        self.assertEqual(previous['resources']['residuals'], previous_residuals)
+        if noncanonical:
+            raw = (' \n' + json.dumps(previous, ensure_ascii=False) + '\n\t').encode('utf-8')
+            review.write_bytes(raw)
+            manifest['hashes']['review.json'] = hashlib.sha256(raw).hexdigest()
+            self.save(fixture, run, manifest)
+        old_bytes = review.read_bytes()
+
+        if prior_trace_intent:
+            lifecycle.close(run, cleanup='pending', residuals=previous_residuals)
+        if not session_already_cleaned:
+            resources.cleanup_workspace(cleanup_args)
+        original = retention.atomic_write
+
+        def interrupt(path, data, **kwargs):
+            if Path(path).name == 'review.json':
+                if boundary == 'after':
+                    original(path, data, **kwargs)
+                raise OSError('interrupted at the final review replacement')
+            return original(path, data, **kwargs)
+
+        with patch.object(retention, 'atomic_write', side_effect=interrupt):
+            with self.assertRaisesRegex(OSError, 'interrupted at the final review replacement'):
+                lifecycle.close(run, cleanup='complete')
+        manifest = fixture.read(run / 'cierre.json')
+        self.assertEqual(manifest['state'], 'retaining')
+        self.assertEqual(manifest['hashes']['review.json'], hashlib.sha256(old_bytes).hexdigest())
+        self.assertEqual(fixture.read(review)['resources']['cleanup'],
+                         'pending' if boundary == 'before' else 'complete')
+        if boundary == 'before':
+            self.assertEqual(review.read_bytes(), old_bytes)
+        return fixture, run
+
+    def test_chained_close_replays_with_verified_previous_review(self):
+        cases = (('before', False, False), ('before', True, False), ('after', False, True))
+        for boundary, noncanonical, prior_trace_intent in cases:
+            for observation in ({}, {'cleanup': 'complete'}):
+                with self.subTest(boundary=boundary, noncanonical=noncanonical, explicit=bool(observation)):
+                    fixture, run = self.interrupted_chained_close(
+                        boundary, noncanonical=noncanonical, prior_trace_intent=prior_trace_intent)
+                    before = fixture.snapshot(run)
+                    summary = artifacts._finish_status(run)
+                    self.assertEqual(fixture.snapshot(run), before)
+                    self.assertEqual((summary['gate'], summary['next_action']), ('close', 'retry_close'), summary)
+                    result, code = artifacts.finish_run(run, **observation)
+                    self.assertEqual((code, result['status'], result.get('cleanup')),
+                                     (0, 'complete', 'complete'), result)
+                    self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+                    trace = [json.loads(line) for line in (run / 'trazabilidad.jsonl').read_bytes().splitlines()]
+                    self.assertEqual(sum(event['kind'] == 'close' and event['status'] == 'completed'
+                                         for event in trace), 1)
+                    completed = fixture.snapshot(run)
+                    self.assertEqual(artifacts.finish_run(run, **observation)[1], 0)
+                    self.assertEqual(fixture.snapshot(run), completed)
+
+    def test_chained_close_recovers_from_verified_planned_residuals(self):
+        fixture, run = self.interrupted_chained_close('after', session_already_cleaned=True)
+        before = fixture.snapshot(run)
+        summary = artifacts._finish_status(run)
+        self.assertEqual(fixture.snapshot(run), before)
+        self.assertEqual((summary['gate'], summary['next_action']), ('close', 'retry_close'), summary)
+        result, code = artifacts.finish_run(run)
+        self.assertEqual((code, result['status']), (0, 'complete'), result)
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['cleanup'], 'complete')
+
+    def test_chained_close_preserves_archive_if_previous_review_cannot_be_verified(self):
+        fixture, run = self.interrupted_chained_close('after')
+        before = fixture.snapshot(run)
+        summary = artifacts._finish_status(run)
+        self.assertEqual(summary['next_action'], 'preserve')
+        for observation in ({}, {'cleanup': 'complete'}):
+            with self.subTest(explicit=bool(observation)):
+                result, code = artifacts.finish_run(run, **observation)
+                self.assertEqual((code, result['next_action']), (1, 'preserve'))
+                self.assertIn('owned previous review', result['reason'])
+                self.assertEqual(fixture.snapshot(run), before)
 
     @contextmanager
     def before_finish_lock(self, compete):

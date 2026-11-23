@@ -115,6 +115,8 @@ The summary verifies an interrupted close transaction without changing its files
 
 Once a close has an owned replacement plan, summary and close verify the full retained inventory outside that plan. They reconstruct the planned record and reports, including runs without disclosure, and check every planned digest before replay. Preserve the archive if any unplanned retained file is missing or the planned bytes cannot be reconstructed exactly.
 
+If successive observations of pending cleanup changed the residual list, use the surviving previous review when its exact bytes match the previous digest. If the replacement has already reached disk, replay requires enough retained cleanup data to reconstruct the previous review and match that digest.
+
 When the summary returns `recover_cleanup`, use the exact recorded cleanup operation. Retry `workspace cleanup` while the claimed session remains. If the session was already removed, use the existing `artifacts recover` path to verify the remaining worktree inventory and persist the receipt. Without a matching intent, an absent claimed session remains `missing_unknown`.
 
 ### Recover or restart without duplicating a run

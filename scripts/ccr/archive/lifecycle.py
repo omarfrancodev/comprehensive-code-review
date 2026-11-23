@@ -4,6 +4,7 @@ import copy
 from contextlib import ExitStack
 from datetime import datetime, timezone
 import hashlib
+from itertools import product
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -44,6 +45,7 @@ from ccr.contracts.scope import require_scope as _scope
 from ccr.execution import harness as review_harness
 from ccr.execution.locks import run_locks
 from ccr.shared.encoding import archive_bytes as _json_bytes
+from ccr.shared.encoding import decode_json
 from ccr.shared.git import git as _git, repository_identity
 from ccr.shared.installation import resource_path, skill_root
 from ccr.shared.json_io import atomic_write, read_bounded, read_json
@@ -844,21 +846,27 @@ def _close_recovery_contents(run, manifest):
     context = json.loads(selected_source_bytes(run, manifest, {}, 'evidence/context.json'))
     if not isinstance(context, dict):
         raise ValueError('execution context must be an object')
-    current = read_json(run / 'review.json')
-    if not isinstance(current, dict) or not isinstance(current.get('resources'), dict):
+    raw = safe_path(run / 'review.json').read_bytes()
+    previous_digest = manifest['hashes']['review.json']
+    current_digest = _digest(raw)
+    planned_digest = manifest.get('planned_hashes', {}).get('review.json')
+    if current_digest not in {previous_digest, planned_digest}:
+        raise ValueError('refusing to clobber modified archived file: review.json')
+    previous = decode_json(raw)
+    if not isinstance(previous, dict) or not isinstance(previous.get('resources'), dict):
         raise ValueError('interrupted close has an invalid retained review')
-    # _verify_files has already checked every surviving file against old/planned
-    # hashes. Reconstruct the old canonical record from its bounded cleanup facts,
-    # accepting it only if its bytes match the original retained inventory.
-    previous = None
-    for cleanup in ('pending', 'complete', 'not_needed'):
-        candidate = copy.deepcopy(current)
-        candidate['resources'].update(cleanup=cleanup, residuals=manifest['residuals'])
-        if _digest(_json_bytes(candidate)) == manifest['hashes'].get('review.json'):
-            previous = candidate
-            break
-    if previous is None:
-        raise ValueError('interrupted close cannot reconstruct the owned previous review')
+    # A pending close can update the retained resources before recording them
+    # in the manifest. Keep the original when its exact bytes still survive.
+    if current_digest != previous_digest:
+        # Only the two retained residual lists can supply candidates. The
+        # original digest must prove that the reconstructed bytes are exact.
+        retained_residuals = (manifest['residuals'], previous['resources'].get('residuals'))
+        for residuals, cleanup in product(retained_residuals, ('pending', 'complete', 'not_needed')):
+            previous['resources'].update(cleanup=cleanup, residuals=residuals)
+            if _digest(_json_bytes(previous)) == previous_digest:
+                break
+        else:
+            raise ValueError('interrupted close cannot reconstruct the owned previous review')
     value = copy.deepcopy(previous)
     observation = manifest['close_observation']
     value['resources'].update(cleanup=observation['cleanup'], residuals=observation['residuals'])
