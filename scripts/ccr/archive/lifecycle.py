@@ -22,7 +22,7 @@ from ccr.archive.evidence import _capture_review_inputs, _input_object
 from ccr.archive.integrity import (
     CHECKPOINT_EVIDENCE_COUNT_LIMIT, CHECKPOINT_EVIDENCE_LIMIT,
     CHECKPOINT_METADATA_LIMIT, FILES, OPTIONAL_FILES, PENDING_CONTEXT_LIMIT,
-    TRACE_ARCHIVE_SCHEMAS, TRACE_FILES, _evidence_name, _retained_name,
+    TRACE_ARCHIVE_SCHEMAS, TRACE_FILES, _evidence_name, _retained_name, _trace_recovery_plan,
     verify_files as _verify_files,
 )
 from ccr.archive.intent_contracts import _validate_cleanup_metadata, normalize_transfer_history
@@ -772,7 +772,8 @@ def _validate_retained_record(run, manifest, contents=None):
     """Apply the retained reader gate to verified sources without writing."""
     if manifest.get('retained') is not True or manifest['state'] not in {'closing', 'complete'}:
         raise ValueError('retained final review is required before cleanup')
-    value = read_json(run / 'review.json')
+    value = (json.loads(contents['review.json']) if contents and 'review.json' in contents
+             else read_json(run / 'review.json'))
     errors = review_contract.validate(value)
     if errors or not isinstance(value, dict) or value.get('stage') != 'final':
         raise ValueError('; '.join(errors) if errors else 'retained record must be a final review')
@@ -883,34 +884,97 @@ def _close_recovery_contents(run, manifest):
     return contents
 
 
-@_locked_run
-def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
-    """Observe exact registered resources and persist closure; never remove resources."""
-    run, manifest, marker = _load_run(run_dir)
-    marker = _recover_trace(run, manifest, marker)
-    if 'previous_manifest_sha256' in marker:
-        # _load_run already bound these exact bytes to an owned old/new intent.
-        # A stop before manifest replacement leaves no pending_trace to replay;
-        # pin the authorized surviving manifest, then retry this mutation normally.
-        marker = dict(marker, manifest_sha256=_digest((run / 'cierre.json').read_bytes()))
-        marker.pop('previous_manifest_sha256')
-        atomic_write(run / MARKER, _json_bytes(marker))
-    pending_close = (manifest['state'] == 'retaining'
-                     and isinstance(manifest.get('close_observation'), dict))
+def _final_close_pending(manifest):
+    """Recognize the final helper append; callers still verify its owned bytes."""
+    pending = manifest.get('pending_trace')
+    events = pending.get('events') if isinstance(pending, dict) else None
+    return (manifest['state'] == 'complete'
+            and manifest.get('retained') is True
+            and manifest.get('operation', {}).get('disposition') == 'complete'
+            and manifest.get('operation', {}).get('phase') == 'close'
+            and manifest.get('cleanup') in {'complete', 'not_needed'}
+            and manifest.get('residuals') == []
+            and isinstance(events, list) and len(events) == 1
+            and isinstance(events[0], dict) and events[0].get('kind') == 'close'
+            and events[0].get('status') == 'completed'
+            and events[0].get('provenance') == {
+                'kind': 'helper', 'source': 'review_artifacts:close'})
+
+
+def _recorded_close_replay(manifest):
+    """Select the observation from a manifest already bound to archive ownership."""
+    observation = _durable_close_observation(manifest)
+    if observation is not None and (
+            manifest['state'] == 'retaining'
+            or manifest['state'] == 'closing' and observation['cleanup'] != 'pending'
+            or _final_close_pending(manifest)):
+        return observation
+    return None
+
+
+def _durable_close_observation(manifest):
+    observation = manifest.get('close_observation')
+    if observation is None:
+        return None
+    if (not isinstance(observation, dict)
+            or set(observation) != {'cleanup', 'residuals', 'released_claims'}
+            or observation['cleanup'] not in {'pending', 'complete', 'not_needed'}
+            or not isinstance(observation['residuals'], list)
+            or not isinstance(observation['released_claims'], list)
+            or 'cleanup_receipts' not in manifest or 'resource_cleanup' not in manifest):
+        raise ValueError('invalid or detached durable close observation')
+    recorded_receipts = observation['released_claims']
+    receipts = manifest['cleanup_receipts']
+    expected = receipts[:len(recorded_receipts)] if observation['cleanup'] == 'pending' else receipts
+    if recorded_receipts != expected:
+        raise ValueError('durable close observation conflicts with the cleanup receipt history')
+    return observation
+
+
+def _validate_close_record(run, manifest, *, require_replay_match=False):
+    """Validate retained and final gates for an ownership-checked close snapshot."""
+    observation = _durable_close_observation(manifest)
+    pending_close = manifest['state'] == 'retaining' and observation is not None
+    pending_trace = manifest.get('pending_trace')
+    _verify_files(run, manifest, required=not pending_close, allow_pending_trace=True)
     recovery_contents = None
-    if pending_close:
-        _verify_files(run, manifest)
-        if manifest['schema_version'] == 8:
-            recovery_contents = _close_recovery_contents(run, manifest)
-        candidate = (json.loads(recovery_contents['review.json']) if recovery_contents is not None
-                     else read_json(run / 'review.json'))
-        errors = review_contract.validate(candidate) if isinstance(candidate, dict) else ['retained review is not an object']
-        if errors or candidate.get('stage') != 'final' or candidate.get('scope') != manifest['scope']:
-            raise ValueError('; '.join(errors) if errors else 'interrupted close has no valid retained final review')
-        if manifest['schema_version'] == 8:
-            _execution_gate(run, manifest, candidate, recovery_contents or {})
-    else:
-        validate(run, require_retained=True, require_complete=manifest['state'] == 'complete')
+    retained = manifest
+    if pending_close and manifest['schema_version'] == 8:
+        recovery_contents = _close_recovery_contents(run, manifest)
+        retained = dict(manifest, state='closing', retained=True)
+    sources = recovery_contents or {}
+    if pending_trace is not None:
+        _, planned_trace = _trace_recovery_plan(run, manifest)
+        if manifest['state'] == 'complete':
+            # Older archives can retry explicitly without durable cleanup
+            # metadata. Archives using it must retain the exact observation.
+            if (not _final_close_pending(manifest)
+                    or observation is None and 'cleanup_receipts' in manifest):
+                raise ValueError('pending trace is not the final close transition')
+            suffix = review_trace.encoded(pending_trace['events'][0]) + b'\n'
+            previous_hash = manifest['hashes'][review_trace.NAME]
+            if (not planned_trace.endswith(suffix)
+                    or pending_trace['previous_sha256'] != previous_hash
+                    or _digest(planned_trace[:-len(suffix)]) != previous_hash):
+                raise ValueError('final close event differs from the owned trace transition')
+        sources = dict(sources, **{review_trace.NAME: planned_trace})
+    value = _validate_retained_record(run, retained, sources)
+    if manifest['state'] == 'complete':
+        _validate_complete_record(manifest, value)
+    if ((require_replay_match or manifest['state'] == 'complete')
+            and observation is not None and observation['cleanup'] != 'pending'):
+        recorded = value['resources']
+        matches_observation = all(recorded[key] == observation[key] for key in ('cleanup', 'residuals'))
+        # The exact prior cleanup can still be retained until replacement begins.
+        matches_previous = (manifest['state'] != 'complete' and recorded['cleanup'] == 'pending'
+                            and all(recorded[key] == manifest[key] for key in ('cleanup', 'residuals')))
+        if not matches_observation and not matches_previous:
+            raise ValueError('retained resources differ from the durable close observation')
+    return recovery_contents
+
+
+def _read_close_request(cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
+    """Capture the caller's observation once before a close can write."""
     if (cleanup_file is None) == (cleanup is None):
         raise ValueError('supply either cleanup_file or an inline cleanup observation')
     if cleanup_file is not None:
@@ -926,6 +990,11 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
             or observed['cleanup'] not in {'complete', 'not_needed', 'pending'}
             or not isinstance(observed['residuals'], list)):
         raise ValueError('cleanup must be an explicit cleanup/residuals object')
+    return observed
+
+
+def _validate_close_request(run, manifest, observed):
+    """Bind the requested cleanup to the current verified evidence and claims."""
     residuals = [str(safe_path(raw)) for raw in observed['residuals']]
     registered = [str(safe_path(raw)) for raw in manifest['temporary_paths']]
     if len(set(residuals)) != len(residuals) or set(residuals) - set(registered):
@@ -933,17 +1002,20 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     present = _present_resources(registered)
     if set(residuals) != set(present):
         raise ValueError('observed cleanup does not disclose every existing registered resource')
+    has_durable_cleanup = 'cleanup_receipts' in manifest and 'resource_cleanup' in manifest
+    claims = None
     if manifest['schema_version'] == 8:
-        has_durable_cleanup = 'cleanup_receipts' in manifest and 'resource_cleanup' in manifest
         durable_receipts = manifest.get('cleanup_receipts', []) if has_durable_cleanup else []
         supplied_receipts = observed.get('released_claims')
         if has_durable_cleanup and supplied_receipts is not None and supplied_receipts != durable_receipts:
             raise ValueError('supplied release receipts differ from the durable cleanup receipt history')
         if isinstance(manifest.get('resource_cleanup'), dict) and manifest['resource_cleanup'].get('status') == 'pending':
             raise ValueError('resource cleanup intent is pending; recover or retry cleanup before closing the review')
-        manifest['resource_claims'] = resource_claims.validate_release_observation(
+        claims = resource_claims.validate_release_observation(
             manifest, present, durable_receipts if has_durable_cleanup else (supplied_receipts or []))
-        resource_claims.validate_claims_for_close(run, manifest)
+        resource_claims.validate_claims_for_close(
+            run, dict(manifest, resource_claims=claims),
+            allow_pending_trace=manifest.get('pending_trace') is not None)
     cleanup = observed['cleanup']
     if (cleanup in {'complete', 'not_needed'} and residuals) or (cleanup == 'not_needed' and registered):
         raise ValueError('cleanup conflicts with registered resources or residuals')
@@ -964,6 +1036,48 @@ def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_
     if manifest['state'] == 'complete':
         if cleanup != manifest['cleanup'] or residuals != manifest['residuals']:
             raise ValueError('completed review history cannot be reopened')
+    return cleanup, residuals, durable_close, claims
+
+
+def _verify_close_replay(run, manifest):
+    """Apply the same read-only gates used by close before recommending replay."""
+    observation = _recorded_close_replay(manifest)
+    if observation is not None:
+        _validate_close_record(run, manifest, require_replay_match=True)
+        _validate_close_request(run, manifest, observation)
+    return observation
+
+
+class _CloseReplayChanged(ValueError):
+    """The selected automatic replay changed before taking the run lock."""
+
+
+@_locked_run
+def close(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None,
+          _replay_owner=None):
+    """Observe exact registered resources and persist closure; never remove resources."""
+    run, manifest, marker = _load_run(run_dir)
+    observed = _read_close_request(cleanup_file, cleanup=cleanup, residuals=residuals,
+                                   released_claims=released_claims)
+    if _replay_owner is not None:
+        current_replay = _recorded_close_replay(manifest)
+        if manifest['state'] == 'complete' and manifest.get('pending_trace') is None:
+            current_replay = manifest.get('close_observation')
+        if manifest['owner_id'] != _replay_owner or current_replay != observed:
+            raise _CloseReplayChanged('selected close replay owner or observation changed before recovery')
+    pending_close = manifest['state'] == 'retaining'
+    recovery_contents = _validate_close_record(run, manifest, require_replay_match=_replay_owner is not None)
+    cleanup, residuals, durable_close, claims = _validate_close_request(run, manifest, observed)
+    # All close checks above refer to the same locked manifest. Only an accepted
+    # observation can recover trace bytes or pin the surviving ownership digest.
+    marker = _recover_trace(run, manifest, marker)
+    if 'previous_manifest_sha256' in marker:
+        marker = dict(marker, manifest_sha256=_digest((run / 'cierre.json').read_bytes()))
+        marker.pop('previous_manifest_sha256')
+        atomic_write(run / MARKER, _json_bytes(marker))
+    if claims is not None:
+        manifest['resource_claims'] = claims
+    if manifest['state'] == 'complete':
         return manifest
     if recovery_contents is not None:
         # Observation/claim checks above must succeed before any recovery writes.

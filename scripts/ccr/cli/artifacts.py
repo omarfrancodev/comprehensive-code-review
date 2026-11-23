@@ -10,9 +10,10 @@ from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
 from ccr.archive.evidence import _input_object, select_preflight_sources
 from ccr.archive.inspection import inspect_run
 from ccr.archive.integrity import (CHECKPOINT_METADATA_LIMIT, PENDING_CONTEXT_LIMIT,
-                                   _evidence_name, _trace_recovery_plan, verify_files as _verify_files)
-from ccr.archive.lifecycle import (_validate_complete_record, _validate_retained_record, block, close, pause, prepare,
-                                   record_event, register, resume, select_profile, validate)
+                                   _evidence_name, verify_files as _verify_files)
+from ccr.archive.lifecycle import (_CloseReplayChanged, _read_close_request, _recorded_close_replay, _verify_close_replay,
+                                   block, close, pause, prepare, record_event, register, resume,
+                                   select_profile, validate)
 from ccr.archive.lookup import find_candidates, select_latest
 from ccr.archive.reader import load_run as _load_run
 from ccr.archive.resources import transfer_resources
@@ -56,74 +57,7 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
 _GATE_ERRORS = (OSError, ValueError, TypeError, KeyError, WorkspaceError)
 
 
-def _final_close_pending(manifest):
-    """Recognize the final helper append; callers still verify its owned bytes."""
-    pending = manifest.get('pending_trace')
-    events = pending.get('events') if isinstance(pending, dict) else None
-    return (manifest['state'] == 'complete'
-            and manifest.get('retained') is True
-            and manifest.get('operation', {}).get('disposition') == 'complete'
-            and manifest.get('operation', {}).get('phase') == 'close'
-            and manifest.get('cleanup') in {'complete', 'not_needed'}
-            and manifest.get('residuals') == []
-            and isinstance(manifest.get('close_observation'), dict)
-            and isinstance(events, list) and len(events) == 1
-            and isinstance(events[0], dict) and events[0].get('kind') == 'close'
-            and events[0].get('status') == 'completed'
-            and events[0].get('provenance') == {
-                'kind': 'helper', 'source': 'review_artifacts:close'})
-
-
-def _terminal_close_observation(run, manifest):
-    """Verify the exact terminal observation that finish may replay."""
-    final_pending = _final_close_pending(manifest)
-    if manifest['state'] != 'closing' and not final_pending:
-        return None
-    observation = manifest.get('close_observation')
-    if observation is None:
-        return None
-    if (not isinstance(observation, dict)
-            or set(observation) != {'cleanup', 'residuals', 'released_claims'}
-            or observation.get('cleanup') not in {'pending', 'complete', 'not_needed'}
-            or not isinstance(observation.get('residuals'), list)
-            or not isinstance(observation.get('released_claims'), list)):
-        raise ValueError('invalid durable close observation')
-    if observation['cleanup'] == 'pending':
-        return None
-    if (observation['residuals']
-            or observation['cleanup'] == 'not_needed' and manifest['temporary_paths']
-            or observation['released_claims'] != manifest.get('cleanup_receipts')
-            or 'resource_cleanup' not in manifest
-            or isinstance(manifest['resource_cleanup'], dict)
-               and manifest['resource_cleanup'].get('status') == 'pending'):
-        raise ValueError('terminal close observation conflicts with durable cleanup')
-    if final_pending:
-        _verify_files(run, manifest, required=True, allow_pending_trace=True)
-        # Validate against the verified pending bytes without committing their
-        # replay. Either trace replacement boundary must pass the same gate.
-        _, planned_trace = _trace_recovery_plan(run, manifest)
-        value = _validate_retained_record(run, manifest, {'trazabilidad.jsonl': planned_trace})
-        _validate_complete_record(manifest, value)
-    else:
-        validate(run, require_retained=True)
-        value = read_json(run / 'review.json')
-    recorded = value['resources']
-    matches_observation = all(recorded[key] == observation[key] for key in ('cleanup', 'residuals'))
-    # The observation is saved before starting the old/planned replacement.
-    # At that boundary only the verified prior pending snapshot may survive.
-    matches_previous = (not final_pending and recorded['cleanup'] == 'pending'
-                        and all(recorded[key] == manifest[key] for key in ('cleanup', 'residuals')))
-    if not matches_observation and not matches_previous:
-        raise ValueError('retained resources differ from the durable close observation')
-    present = _present_resources(manifest['temporary_paths'])
-    if present:
-        raise ValueError('registered resources are still present; inspect cleanup before retrying close')
-    resource_claims.validate_release_observation(manifest, present, observation['released_claims'])
-    resource_claims.validate_claims_for_close(run, manifest)
-    return observation
-
-
-def _finish_status(run_dir, *, current=None, candidate=None):
+def _finish_status(run_dir, *, current=None, candidate=None, rejected_observation=False):
     """Project inspection and existing gates into one next action."""
     inspected = inspect_run(run_dir, current_inputs=current, finalization_details=True)
     status = {key: inspected[key] for key in ('run_dir', 'review_id', 'phase')}
@@ -140,7 +74,9 @@ def _finish_status(run_dir, *, current=None, candidate=None):
         try:
             if integrity['status'] == 'recoverable':
                 run, manifest, _ = _load_run(run_dir)
-                if _terminal_close_observation(run, manifest) is not None:
+                if _verify_close_replay(run, manifest) is not None:
+                    if rejected_observation:
+                        return pending('close', 'preserve', 'Finish rejected the requested cleanup observation.')
                     return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
             return _complete_status(validate(run_dir, require_complete=True), status['review_id'])
         except _GATE_ERRORS as exc:
@@ -149,11 +85,17 @@ def _finish_status(run_dir, *, current=None, candidate=None):
     if action['action'] not in {'continue', 'recover', 'restart'}:
         return pending('lifecycle', action['action'], action['reason'])
     recovery = transactions.keys() - {'retention', 'closure', 'resource_cleanup'}
+    close_transaction = 'closure' in transactions or transactions.get('retention', {}).get('operation') == 'close'
+    if close_transaction and recovery <= {'trace_append'}:
+        try:
+            run, manifest, _ = _load_run(run_dir)
+            if _verify_close_replay(run, manifest) is not None:
+                return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
+        except _GATE_ERRORS as exc:
+            return pending('close', 'preserve', str(exc))
     if recovery:
         return pending('transaction', action['action'], action['reason'])
     if 'retention' in transactions:
-        if transactions['retention'].get('operation') == 'close':
-            return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
         return pending('retention', 'retry_retain', 'Resume retention using the exact selected inputs.')
     if 'closure' in transactions:
         try:
@@ -171,12 +113,6 @@ def _finish_status(run_dir, *, current=None, candidate=None):
             if row['availability'] == 'available':
                 next_action = 'workspace_cleanup' if row['claim_status'] == 'owned' else 'inspect_registered_resource'
                 return pending('cleanup', next_action, 'The registered resource is still present.', resource=row['path'])
-        try:
-            run, manifest, _ = _load_run(run_dir)
-            if _terminal_close_observation(run, manifest) is not None:
-                return pending('close', 'retry_close', 'Replay the exact recorded close observation.')
-        except _GATE_ERRORS as exc:
-            return pending('close', 'preserve', str(exc))
         return pending('close', 'supply_cleanup_observation', 'Supply the observed cleanup state for this run.')
     if action['action'] != 'continue':
         return pending('lifecycle', action['action'], action['reason'])
@@ -208,71 +144,31 @@ def _complete_status(checked, review_id):
             'cleanup': checked['cleanup']}
 
 
-def _verify_close_replay_request(observation, cleanup_file, *, cleanup, residuals, released_claims):
-    """Normalize the existing close inputs and require the exact durable replay."""
-    if (cleanup_file is None) == (cleanup is None):
-        raise ValueError('supply either cleanup_file or an inline cleanup observation')
-    if cleanup_file is not None:
-        if residuals is not None or released_claims is not None:
-            raise ValueError('residuals and release receipts belong to the cleanup file or inline observation, not both')
-        observed = read_json(cleanup_file)
-    else:
-        observed = {'cleanup': cleanup, 'residuals': residuals if residuals is not None else []}
-        if released_claims is not None:
-            observed['released_claims'] = released_claims
-    if (not isinstance(observed, dict) or set(observed) not in ({'cleanup', 'residuals'},
-                                                                  {'cleanup', 'residuals', 'released_claims'})
-            or observed['cleanup'] not in {'complete', 'not_needed', 'pending'}
-            or not isinstance(observed['residuals'], list)):
-        raise ValueError('cleanup must be an explicit cleanup/residuals object')
-    normalized = dict(observed, residuals=[str(safe_path(raw)) for raw in observed['residuals']])
-    if normalized.get('released_claims') is None:
-        normalized['released_claims'] = observation['released_claims']
-    if normalized != observation:
-        raise ValueError('close retry differs from the exact durable cleanup observation')
-
-
 def finish_run(run_dir, cleanup_file=None, *, cleanup=None, residuals=None, released_claims=None):
     """Replay or close a retained run, then verify it through the independent reader."""
     explicit_observation = cleanup_file is not None or cleanup is not None
-    if cleanup_file is None and cleanup is None:
-        if residuals is not None or released_claims is not None:
-            raise ValueError('supply an inline cleanup state with residuals or release receipts')
-        if (Path(run_dir) / 'manifest.json').is_file():
-            result = _finish_status(run_dir)
-            return result, 0 if result['status'] == 'complete' else 1
-        try:
-            run, manifest, _ = _load_run(run_dir)
-            observation = (_terminal_close_observation(run, manifest)
-                           if manifest['state'] == 'closing' or _final_close_pending(manifest)
-                           else manifest.get('close_observation'))
-        except _GATE_ERRORS:
-            return _finish_status(run_dir), 1
-        final_close_pending = _final_close_pending(manifest)
-        if ((manifest['state'] not in {'retaining', 'closing'} and not final_close_pending)
-                or not isinstance(observation, dict)
-                or manifest['state'] == 'closing' and observation['cleanup'] == 'pending'):
-            result = _finish_status(run_dir)
-            return result, 0 if result['status'] == 'complete' else 1
-        cleanup, residuals, released_claims = (observation[key] for key in ('cleanup', 'residuals', 'released_claims'))
-    final_replay = False
+    if not explicit_observation and (residuals is not None or released_claims is not None):
+        raise ValueError('supply an inline cleanup state with residuals or release receipts')
     try:
-        if explicit_observation and not (Path(run_dir) / 'manifest.json').is_file():
-            run, manifest, _ = _load_run(run_dir)
-            if _final_close_pending(manifest):
-                final_replay = True
-                observation = _terminal_close_observation(run, manifest)
-                _verify_close_replay_request(observation, cleanup_file, cleanup=cleanup,
-                                             residuals=residuals, released_claims=released_claims)
-                # Replay the accepted snapshot; do not reread a mutable input file
-                # after the lower-level close service recovers its pending trace.
-                cleanup_file = None
-                cleanup, residuals, released_claims = (observation[key] for key in
-                                                       ('cleanup', 'residuals', 'released_claims'))
-        closed = close(run_dir, cleanup_file, cleanup=cleanup, residuals=residuals, released_claims=released_claims)
+        if explicit_observation:
+            # Capture input bytes once. The close service accepts or rejects
+            # this snapshot against the durable state it reads under lock.
+            observation = _read_close_request(cleanup_file, cleanup=cleanup, residuals=residuals,
+                                              released_claims=released_claims)
+            closed = close(run_dir, **observation)
+        else:
+            if (Path(run_dir) / 'manifest.json').is_file():
+                observation = None
+            else:
+                _, manifest, _ = _load_run(run_dir)
+                observation = _recorded_close_replay(manifest)
+            if observation is None:
+                result = _finish_status(run_dir)
+                return result, 0 if result['status'] == 'complete' else 1
+            closed = close(run_dir, **observation, _replay_owner=manifest['owner_id'])
     except _GATE_ERRORS as exc:
-        result = _finish_status(run_dir)
-        if final_replay:
+        result = _finish_status(run_dir, rejected_observation=explicit_observation)
+        if isinstance(exc, _CloseReplayChanged):
             result.update(status='pending', gate='close', next_action='preserve', resource=None)
         elif result['status'] == 'complete':
             result.update(status='pending', gate='close', next_action='inspect_observation', resource=None)

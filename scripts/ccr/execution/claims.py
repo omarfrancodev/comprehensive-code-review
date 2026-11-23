@@ -358,9 +358,10 @@ def plan_claim(session_dir, run_dir, manifest, *, source_run=None, authority=Non
             'row': _claim_row(sidecar, transferred_from=str(source_path)),
             'expected_current_sha256': current_hash}
 
-def verify_claim(session_dir, run_dir, *, allow_checkpoint_transaction=False):
+def verify_claim(session_dir, run_dir, *, allow_checkpoint_transaction=False, allow_pending_trace=False):
     return _verify_claim(session_dir, run_dir, verify_integrity=True,
-                         allow_checkpoint_transaction=allow_checkpoint_transaction)
+                         allow_checkpoint_transaction=allow_checkpoint_transaction,
+                         allow_pending_trace=allow_pending_trace)
 
 def inspect_claim_identity(session_dir, run_dir):
     """Read ownership only for abandoning an empty adoption; never authorize cleanup/work.
@@ -370,15 +371,17 @@ def inspect_claim_identity(session_dir, run_dir):
     """
     return _verify_claim(session_dir, run_dir, verify_integrity=False)
 
-def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_transaction=False):
+def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_transaction=False,
+                  allow_pending_trace=False):
     workspace_data = _workspace(session_dir)
     if workspace_data is None:
         raise ValueError('resource claim requires a valid review workspace session')
     session, workspace, token_digest = workspace_data
     run, manifest, _ = _archive(run_dir)
     if verify_integrity:
-        _verify_files(run, manifest, allow_checkpoint_transaction=
-            allow_checkpoint_transaction or manifest.get('operation', {}).get('disposition') == 'superseded')
+        _verify_files(run, manifest, allow_pending_trace=allow_pending_trace,
+                      allow_checkpoint_transaction=allow_checkpoint_transaction
+                      or manifest.get('operation', {}).get('disposition') == 'superseded')
     if repository_identity(workspace['repo']) != manifest.get('repository_identity'):
         raise ValueError('claimed workspace belongs to a different repository')
     sidecar = _read_json(session / CLAIM_NAME)
@@ -405,7 +408,7 @@ def _verify_claim(session_dir, run_dir, *, verify_integrity, allow_checkpoint_tr
         raise ValueError('archive resource claim does not match the verified workspace owner')
     return sidecar
 
-def validate_claims_for_close(run_dir, manifest):
+def validate_claims_for_close(run_dir, manifest, *, allow_pending_trace=False):
     """Refuse close when claimed sessions are missing, transferred, or unverifiable."""
     rows = manifest.get('resource_claims', [])
     for row in rows:
@@ -413,7 +416,7 @@ def validate_claims_for_close(run_dir, manifest):
         if row.get('status') in {'owned', 'releasing'}:
             if not path.exists():
                 raise ValueError('claimed session is missing; its own cleanup was not recorded')
-            verify_claim(path, run_dir)
+            verify_claim(path, run_dir, allow_pending_trace=allow_pending_trace)
         elif row.get('status') in {'released', 'transferred'} and path.exists():
             raise ValueError('released/transferred resource path exists again; preserve and inspect it')
         elif row.get('status') not in {'released', 'transferred'}:
