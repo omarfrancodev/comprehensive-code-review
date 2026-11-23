@@ -28,9 +28,11 @@ Las fechas corresponden a la publicación en GitHub en America/Mexico_City. «Si
 #### Ciclo de vida y recuperación
 
 - Reintentar el cierre automático cuando una transición íntegra conserva el manifiesto anterior. Verificar las solicitudes de cierre contra la observación durable dentro del mismo bloqueo, antes de recuperar la traza o confirmar el manifiesto.
+- Verificar toda la evidencia retenida antes de recuperar un reemplazo interrumpido. Reconstruir los bytes planeados y cotejar sus hashes también en archivos sin sidecar de divulgación.
 
 #### Artefactos y contratos
 
+- Conservar la lectura de resultados v3 preliminares y distinguir la procedencia de las autorizaciones heredadas mediante un v2 intermedio. Mantener las condiciones y la incertidumbre cuando la evidencia de origen sea incompleta.
 - Permitir la consolidación acreditada de hallazgos publicados mediante aliases directos al ID superviviente. Conservar los aliases heredados y las decisiones de deuda de cada miembro, con sus condiciones, evidencia y límites de reapertura. Al adoptar un alias v1, vincularlo a la autorización original sin inventar otra atribución. Retener el historial de autorizaciones caducadas para impedir su reutilización tras revisiones intermedias, conservando las deudas independientes de la misma nota.
 
 #### Reportes y entregas
