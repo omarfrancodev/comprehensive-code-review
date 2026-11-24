@@ -209,7 +209,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         lifecycle.close(case['run'], cleanup='not_needed')
         self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
 
-    def test_preflight_and_retention_require_the_inventoried_v2_precursor(self):
+    def test_preflight_and_retention_require_the_selected_historical_copies(self):
         fixture, case = self.guided_run()
         native = fixture.read(case['record'])
         historical = legacy.RetainedLegacyAliasAuthorityTests()
@@ -231,7 +231,7 @@ class InspectPreflightPR37Tests(unittest.TestCase):
         before_run = fixture.snapshot(case['run'])
         base_evidence = list(case['evidence_inputs'])
 
-        def select_candidate(*, descriptor, include_precursor, tampered=False):
+        def select_candidate(*, descriptor=True, missing=None, tampered=None):
             record, sources = legacy.adopt_v2_copy(previous, original, select_history=descriptor)
             record.pop('compact_identity', None)
             for field in ('review_id', 'description', 'profile'):
@@ -244,32 +244,41 @@ class InspectPreflightPR37Tests(unittest.TestCase):
             case['record'] = fixture.write('v3-followup.json', record)
             case['evidence_inputs'] = list(base_evidence)
             for name, data in sources.items():
-                if name == 'evidence/legacy.json' and not include_precursor:
+                if name == missing:
                     continue
-                if name == 'evidence/legacy.json' and tampered:
+                if name == tampered:
                     data += b' '
                 path = fixture.root / Path(name).name
                 path.write_bytes(data)
                 case['evidence_inputs'].append(str(path))
 
-        for descriptor, tampered in ((False, False), (True, False), (True, True)):
-            with self.subTest(descriptor=descriptor, tampered=tampered):
-                select_candidate(descriptor=descriptor, include_precursor=tampered, tampered=tampered)
+        variants = (
+            ('legacy_source', precursor, {'descriptor': False}),
+            ('legacy_source', precursor, {'missing': 'evidence/legacy.json'}),
+            ('legacy_source', precursor, {'tampered': 'evidence/legacy.json'}),
+            ('source', prior_run / 'review.json', {'missing': 'evidence/prior.json'}),
+            ('source', prior_run / 'review.json', {'tampered': 'evidence/prior.json'}),
+        )
+        for field, required, selection in variants:
+            with self.subTest(field=field, selection=selection):
+                select_candidate(**selection)
                 result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
                                               '--phase', 'retain', *self.candidate_args(case))
                 self.assertEqual((result.returncode, diagnostic.get('ready')), (1, False), diagnostic)
                 issue, = diagnostic['issues']
-                self.assertEqual(issue['field'], 'candidate.assessment.previous.legacy_source')
-                self.assertEqual(Path(issue['reference']), precursor)
+                self.assertEqual(issue['field'], 'candidate.assessment.previous.' + field)
+                self.assertEqual(Path(issue['reference']), required)
                 _, status = self.cli(fixture, 'inspect', '--run-dir', case['run'], '--summary',
                                      *self.candidate_args(case))
                 self.assertEqual((status['gate'], status['field']), ('retain_preflight', issue['field']))
-                with self.assertRaisesRegex(ValueError, 'legacy predecessor|evidence/legacy.json'):
+                self.assertNotEqual(status['next_action'], 'retain')
+                self.assertEqual(Path(status['resource']), required)
+                with self.assertRaisesRegex(ValueError, 'legacy predecessor|evidence/(legacy|prior).json'):
                     self.retain13(case)
                 self.assertEqual(fixture.snapshot(case['run']), before_run)
                 self.assertEqual(fixture.snapshot(prior_run), before_prior)
 
-        select_candidate(descriptor=True, include_precursor=True)
+        select_candidate()
         result, diagnostic = self.cli(fixture, 'preflight', '--run-dir', case['run'],
                                       '--phase', 'retain', *self.candidate_args(case))
         self.assertEqual((result.returncode, diagnostic.get('ready')), (0, True), diagnostic)

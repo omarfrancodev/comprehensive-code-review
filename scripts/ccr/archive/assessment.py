@@ -10,12 +10,28 @@ from ccr.shared.json_io import decode_json, read_bounded
 from ccr.shared.paths import safe_path
 
 
-class PrecursorSelectionError(ValueError):
-    """The verified archive offers exact precursor bytes required for adoption."""
+class BaselineSourceSelectionError(ValueError):
+    """A selected copy must match the corresponding verified archive file."""
 
-    def __init__(self, message, reference):
+    def __init__(self, message, field, reference):
         super().__init__(message)
+        self.field = field
         self.reference = reference
+
+
+def _verify_selected_copy(descriptor, verified, read_source, *, field, label):
+    if read_source is None:
+        return
+    reference = descriptor['reference']
+    try:
+        raw = read_source(reference)
+    except (OSError, KeyError, ValueError) as exc:
+        raise BaselineSourceSelectionError(
+            'select the ' + label + ' as ' + reference, field, verified['review_file']) from exc
+    if hashlib.sha256(raw).hexdigest() != verified['sha256']:
+        raise BaselineSourceSelectionError(
+            'selected bytes for ' + reference + ' differ from the ' + label,
+            field, verified['review_file'])
 
 
 def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=None,
@@ -35,25 +51,20 @@ def verify_prior_archive(record, logical_scope, repository_key, *, previous_run=
     if previous['review_id'] != baseline['review_id']:
         raise ValueError('assessment baseline ID differs from the selected archive')
     if previous['source']['sha256'] != baseline['sha256']:
-        raise ValueError('assessment baseline bytes differ from the verified prior archive')
+        raise BaselineSourceSelectionError(
+            'assessment baseline bytes differ from the verified prior archive',
+            'source', baseline['review_file'])
+    _verify_selected_copy(previous['source'], baseline, read_source,
+                          field='source', label='verified prior review')
     predecessor = baseline.get('legacy_previous')
     if assessment['schema_version'] == 3 and predecessor is not None:
         selected = previous.get('legacy_source')
         if selected is None or selected['sha256'] != predecessor['sha256']:
-            raise PrecursorSelectionError(
+            raise BaselineSourceSelectionError(
                 'v3 adoption requires the inventoried legacy predecessor in assessment.previous.legacy_source',
-                predecessor['review_file'])
-        if read_source is not None:
-            try:
-                raw = read_source(selected['reference'])
-            except (OSError, KeyError, ValueError) as exc:
-                raise PrecursorSelectionError(
-                    'select the inventoried legacy predecessor as ' + selected['reference'],
-                    predecessor['review_file']) from exc
-            if hashlib.sha256(raw).hexdigest() != predecessor['sha256']:
-                raise PrecursorSelectionError(
-                    'selected legacy predecessor bytes differ from the inventoried digest',
-                    predecessor['review_file'])
+                'legacy_source', predecessor['review_file'])
+        _verify_selected_copy(selected, predecessor, read_source,
+                              field='legacy_source', label='inventoried legacy predecessor')
 
 
 def read_followup_baseline(run_dir, logical_scope, repository_key, *, compact_reader):

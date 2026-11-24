@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import stat
 import sys
-from ccr.archive.assessment import PrecursorSelectionError, verify_prior_archive
+from ccr.archive.assessment import BaselineSourceSelectionError, verify_prior_archive
 from ccr.archive.checkpoints import CHECKPOINT_EVIDENCE_LIMIT, checkpoint
 from ccr.archive.evidence import _input_object, selected_source_bytes, select_preflight_sources
 from ccr.archive.inspection import inspect_run
@@ -62,10 +62,11 @@ def preflight_run(run_dir, context_input, *, phase, input_file=None, evidence_in
                 record, manifest.get('logical_scope'), manifest['repository_key'],
                 previous_run=manifest.get('previous_run'), compact_reader=read_compact,
                 read_source=lambda name: selected_source_bytes(run, manifest, sources, name))
-        except PrecursorSelectionError as exc:
+        except BaselineSourceSelectionError as exc:
+            code = 'invalid_precursor_selection' if exc.field == 'legacy_source' else 'invalid_baseline_selection'
             result.update(ready=False, issues=[_issue(
-                'invalid_precursor_selection', 'candidate.assessment.previous.legacy_source',
-                exc.reference, str(exc), 'the exact selected copy of the inventoried legacy predecessor')])
+                code, 'candidate.assessment.previous.' + exc.field,
+                exc.reference, str(exc), 'the exact selected copy of the verified archive file')])
         except (OSError, ValueError, TypeError, KeyError) as exc:
             result.update(ready=False, issues=[_issue(
                 'invalid_baseline', 'assessment.baseline', None, str(exc), 'the verified prior archive')])
@@ -150,9 +151,11 @@ def _finish_status(run_dir, *, current=None, candidate=None, rejected_observatio
             repair = (freshness == 'verified' and issues
                       and all(row['field'].startswith('candidate.') for row in issues))
             next_action = 'rebuild_candidate' if repair else 'inspect_preflight'
+            resource = first.get('reference') if first.get('code') in {
+                'invalid_baseline_selection', 'invalid_precursor_selection'} else None
             return pending('retain_preflight', next_action,
                            first.get('message', diagnostic.get('error', 'Retain preflight failed.')),
-                           field=first.get('field'))
+                           resource=resource, field=first.get('field'))
     return pending('retention', 'retain', 'Retain the final candidate and its verified selected evidence.')
 
 
