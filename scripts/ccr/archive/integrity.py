@@ -272,7 +272,8 @@ def verify_files(run, manifest, required=False, *, allow_checkpoint_transaction=
         try:
             data = path.read_bytes()
         except FileNotFoundError:
-            if (required and name in required_files | set(hashes)) or (name in hashes and manifest['state'] != 'retaining'):
+            # Only the planned replacement can restore missing retained bytes.
+            if name in hashes and name not in planned:
                 raise ValueError('retained evidence missing: ' + name)
             continue
         if _digest(data) not in {hashes.get(name), planned.get(name)}:

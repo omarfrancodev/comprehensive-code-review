@@ -27,10 +27,14 @@ def main(argv=None, *, prog=None):
     verify.add_argument('--draft', required=True)
     verify.add_argument('--body', required=True)
     verify.add_argument('--remote', action='store_true')
+    verify.add_argument('--remote-transport', choices=('gitlab',),
+                        help='Enable the GitLab note comparison for an observed remote body')
     for item in (prepare, verify):
         item.add_argument('--check-disclosure-context')
         item.add_argument('--check-disclosure-sources')
     args = parser.parse_args(argv)
+    if args.command == 'verify' and args.remote_transport and not args.remote:
+        parser.error('--remote-transport requires --remote')
     try:
         if bool(args.check_disclosure_context) != bool(args.check_disclosure_sources):
             raise ValueError('check disclosure context and source catalog must be supplied together')
@@ -83,6 +87,7 @@ def main(argv=None, *, prog=None):
         return 2
     try:
         result = verify_public_comment(record, draft, body, remote=args.remote,
+            remote_transport=args.remote_transport,
             check_disclosure_context=disclosure, check_disclosure_sources=disclosure_sources)
     except (ValueError, TypeError) as exc:
         print(json.dumps({'status': 'error', 'error': str(exc)}, ensure_ascii=False), file=sys.stderr)

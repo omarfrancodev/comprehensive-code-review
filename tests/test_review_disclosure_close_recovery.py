@@ -12,6 +12,7 @@ from script_test_support import enable_package_imports, workspace_api
 
 enable_package_imports()
 from ccr.archive import lifecycle, retention
+from ccr.cli import artifacts
 from ccr.shared.encoding import archive_bytes
 from profile_topology_fixtures import record12
 import test_review_topology_integration as topology_tests
@@ -93,8 +94,71 @@ class DisclosureCloseRecoveryTests(unittest.TestCase):
     def test_close_recovers_after_disclosure_replacement(self):
         self.assert_recovers('after')
 
+    def test_finish_replays_only_the_recorded_close_observation(self):
+        from ccr.cli.artifacts import finish_run
+        from ccr.archive.inspection import inspect_run
+        case, run, _ = self.retained_cleaned_run()
+        self.interrupt(case, run, 'after')
+        before = case.snapshot(run)
+        self.assertIn({'kind': 'retention', 'status': 'pending'}, inspect_run(run)['pending_transaction'])
+        rejected, code = finish_run(run, cleanup='not_needed')
+        self.assertEqual((code, rejected['gate'], rejected['next_action']), (1, 'close', 'retry_close'))
+        self.assertEqual(case.snapshot(run), before)
+        completed, code = finish_run(run)
+        self.assertEqual((code, completed['status']), (0, 'complete'))
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
+
     def test_close_recovers_with_selected_model_sidecar_and_handoff(self):
         self.assert_recovers('before', optional_evidence=True)
+
+    def test_retry_rejects_missing_unplanned_retained_evidence_without_writes(self):
+        case, run, _ = self.retained_cleaned_run()
+        self.interrupt(case, run, 'after')
+        manifest = case.read(run / 'cierre.json')
+        name = 'measurements.json'
+        self.assertIn(name, manifest['hashes'])
+        self.assertNotIn(name, manifest['planned_hashes'])
+        (run / name).unlink()
+        before = case.snapshot(run)
+
+        with self.subTest(entry='summary'):
+            summary = artifacts._finish_status(run)
+            self.assertEqual(summary['next_action'], 'preserve')
+            self.assertIn(name, summary['reason'])
+            self.assertEqual(case.snapshot(run), before)
+        for entry, args in (('automatic', {}), ('explicit', {'cleanup': 'complete'})):
+            with self.subTest(entry=entry):
+                result, code = artifacts.finish_run(run, **args)
+                modified = case.snapshot(run)
+                for path, raw in before.items():
+                    if modified.get(path) != raw:
+                        (run / path).write_bytes(raw)
+                self.assertEqual((code, result['next_action']), (1, 'preserve'))
+                self.assertIn(name, result['reason'])
+                self.assertEqual(modified, before)
+        with self.subTest(entry='close'):
+            with self.assertRaisesRegex(ValueError, 'retained evidence missing: measurements.json'):
+                lifecycle.close(run, cleanup='complete')
+            self.assertEqual(case.snapshot(run), before)
+
+    def test_retry_rebuilds_missing_planned_report_disclosure_and_handoff(self):
+        case, run, _ = self.retained_cleaned_run(optional_evidence=True)
+        self.interrupt(case, run, 'after')
+        manifest = case.read(run / 'cierre.json')
+        missing = {'informe.md', 'evidence/check-disclosure.json', 'handoff.md'}
+        self.assertTrue(missing <= manifest['planned_hashes'].keys())
+        for name in missing:
+            (run / name).unlink()
+        before = case.snapshot(run)
+        self.assertEqual(artifacts._finish_status(run)['next_action'], 'retry_close')
+        self.assertEqual(case.snapshot(run), before)
+
+        completed, code = artifacts.finish_run(run)
+        self.assertEqual((code, completed['status']), (0, 'complete'))
+        for name in missing:
+            self.assertEqual(hashlib.sha256((run / name).read_bytes()).hexdigest(),
+                             manifest['planned_hashes'][name])
+        self.assertEqual(lifecycle.validate(run, require_complete=True)['state'], 'complete')
 
     def test_close_recovers_exact_noncanonical_selected_disclosure(self):
         for formatting in ('compact', 'noncanonical'):

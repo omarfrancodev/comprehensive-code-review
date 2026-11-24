@@ -95,6 +95,24 @@ class ReviewProfileTests(unittest.TestCase):
         self.assertTrue(any('duplicate selection identity' in error
                             for error in profiles.validate_history([first, replay])))
 
+    def test_technical_profile_is_chosen_before_harness_availability(self):
+        from ccr.workflow.builders import build_profile_selection
+        facts = {'deep_trigger': True, 'discovery_assignments': 2}
+        selection = selection_input('deep', 'automatic')
+        self.assertEqual(build_profile_selection({'selection': selection, 'technical_facts': facts}), selection)
+        with self.assertRaisesRegex(ValueError, 'technical profile'):
+            build_profile_selection({'selection': dict(selection, profile='focused'), 'technical_facts': facts})
+        with self.assertRaisesRegex(ValueError, 'technical facts'):
+            build_profile_selection({'selection': selection,
+                                     'technical_facts': dict(facts, available_slots=0)})
+        explicit = selection_input('focused', 'explicit')
+        self.assertEqual(build_profile_selection({'selection': explicit, 'technical_facts': facts}), explicit)
+        self.assertEqual(profiles.select_technical_profile({}), 'standard')
+        self.assertEqual(profiles.select_technical_profile(dict(facts, discovery_assignments=3)), 'extended')
+        self.assertEqual(profiles.select_technical_profile(
+            {'deep_trigger': False, 'bounded_scope': True, 'requirements_known': True,
+             'consumers_known': True, 'independent_gate_required': False}), 'focused')
+
     def test_history_limit_is_visible(self):
         rows = [selection('standard', id=f'S{i:03d}', changed_from=None if i == 1 else 'standard',
                           event_id=f'E{i:06d}', phase='prepare' if i == 1 else 'discovery',

@@ -544,6 +544,11 @@ class ArchiveExecutionPolicyTests(unittest.TestCase):
         with patch.object(archive_retention, 'atomic_write', side_effect=interrupt), self.assertRaises(OSError):
             self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
         self.assertIn('evidence/context.json', self.artifacts.read_json(run / 'cierre.json')['planned_hashes'])
+        before = self.fixture.snapshot(run)
+        extra = self.fixture.write('extra-proof.json', {'unplanned': True})
+        with self.assertRaisesRegex(ValueError, 'exact planned inventory'):
+            self.artifacts.retain(run, final, context_input=context, evidence_inputs=[*inputs, extra])
+        self.assertEqual(before, self.fixture.snapshot(run))
         self.artifacts.retain(run, final, context_input=context)
         self.artifacts.retain(run, final, context_input=context, evidence_inputs=inputs)
         self.assertEqual(self.artifacts.read_json(run / 'evidence' / 'context.json')['profile'], 'deep')

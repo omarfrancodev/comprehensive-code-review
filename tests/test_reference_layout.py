@@ -11,7 +11,7 @@ GROUPS = {
     'workflow': ('scopes', 'profiles', 'capabilities', 'reading-strategy', 're-review', 'review-areas', 'reuse'),
     'dimensions': ('design-testability', 'contracts-data', 'security-operation'),
     'execution': ('reviewers', 'worker-packets', 'workspaces', 'external-cli'),
-    'contracts': ('result-contract', 'identifiers', 'priority-calibration'),
+    'contracts': ('result-contract', 'identifiers', 'priority-calibration', 'assessment'),
     'archive': ('artifacts', 'lifecycle-trace', 'recovery', 'history'),
     'reporting': ('report-format', 'publication', 'delivery', 'handoff'),
     'maintenance': ('evaluation', 'measurements'),

@@ -15,6 +15,7 @@ from ccr.contracts.validation import (
 from ccr.reporting.markdown import markdown_text, one_line, reference_text, table_cell
 from ccr.reporting.models import model_summary, model_lines
 from ccr.reporting.projections import (
+    assessment_lines, resolution_by_id,
     public_checks, public_coverage, public_limitations, public_projection, public_reservations, public_url,
 )
 
@@ -128,6 +129,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
     if scope['reference']:
         reference_label = 'MR/PR' if scope['mode'] in {'mr', 'pr'} else 'Referencia'
         lines.append(f"- **{reference_label}:** {reference_text(scope['reference'])}")
+    lines.extend(assessment_lines(record, format_text=markdown_text, format_id=identity_text))
     if audience == 'user':
         if record['schema_version'] in (10, 11, 12, 13):
             history = record['coverage']['execution']['profile_history']
@@ -156,6 +158,7 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
     counts = confirmed_counts_text(record['findings'])
     lines.extend(['', '### Hallazgos', '', '**Confirmados:** ' + counts])
     if confirmed:
+        resolutions = resolution_by_id(record)
         for ordinal, item in enumerate(confirmed, 1):
             location = item['location']
             label = f"{location['path']}:{location['line']}" if item['type'] == 'code' else location['section']
@@ -174,8 +177,10 @@ def _render(record, audience='user', publication_context=None, *, check_publicat
                           f"- **Ubicación:** {label} · **Origen:** {ORIGINS[item['origin']]}",
                           f"- **Escenario:** {one_line(item['scenario'])}",
                           f"- **Impacto:** {one_line(item['impact'])}",
-                          '- **Evidencia:**', *evidence, f"- **Corrección requerida:** {one_line(item['correction'])}",
-                          '- **Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no')])
+                          '- **Evidencia:**', *evidence])
+            if item['id'] not in resolutions:
+                lines.append(f"- **Corrección requerida:** {one_line(item['correction'])}")
+            lines.append('- **Bloqueante:** ' + ('sí — ' + one_line(item['blocking_reason']) if item['blocking'] else 'no'))
     else:
         lines.extend(['', 'No se confirmaron defectos bloqueantes dentro del alcance revisado.'])
     unresolved = [f for f in findings if f['status'] == 'unresolved']
@@ -334,6 +339,7 @@ def render_handoff(record, context=None, audience='user', publication_context=No
             lines.append(f'- **{label}:** ' + identity_text(scope[key]))
     if scope.get('reference'):
         lines.append('- **Referencia del alcance:** ' + reference_text(scope['reference']))
+    lines.extend(assessment_lines(record, format_text=markdown_text, format_id=identity_text))
     for key, label in [('source_record', 'Registro fuente'), ('source_report', 'Informe fuente')]:
         if context.get(key):
             if not isinstance(context[key], str):
@@ -341,13 +347,16 @@ def render_handoff(record, context=None, audience='user', publication_context=No
             lines.append(f'- **{label}:** ' + reference_text(context[key]))
     lines.extend(['', '### Índice de hallazgos confirmados', ''])
     confirmed = [item for item in findings if item['status'] == 'confirmed']
+    resolutions = resolution_by_id(record)
     for item in sorted(confirmed, key=lambda item: (item['priority'], item['id'])):
         correction_reference = ''
-        if source_report:
+        if source_report and item['id'] not in resolutions:
             target = source_report.split('#')[0] + '#' + item['id']
             correction_reference = ' · [Corrección ' + identity_text(item['id']) + '](' + quote(target, safe='/:#?&=%-._~') + ')'
-        lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · "
-                     + markdown_text(item['title']) + ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference)
+        detail = markdown_text(item['title'])
+        if item['id'] not in resolutions:
+            detail += ' · corrección requerida: ' + markdown_text(item['correction']) + correction_reference
+        lines.append(f"- {item['id']} · {item['priority']} · bloqueante: {'sí' if item['blocking'] else 'no'} · " + detail)
         lines.append('  - **Evidencia:**')
         groups = evidence_groups(original_evidence[item['id']], ledger, projected_evidence=item['evidence'],
                                  edited_indices=evidence_edits.get(item['id'], ()))

@@ -15,7 +15,7 @@ from ccr.execution import workspaces as workspace_ops
 from ccr.execution.candidates import write_new_json
 from ccr.execution.workspace_manifest import owned_session as _owned_session
 from ccr.shared.encoding import compact_bytes as _json_bytes
-from ccr.shared.json_io import read_json
+from ccr.shared.json_io import decode_json, read_bounded, read_json
 from ccr.workflow.builders import (
     _issues_message, build_assignment_event, build_context, build_model_usage_update, build_check_disclosure,
     build_profile_selection, build_review_inputs,
@@ -53,6 +53,30 @@ def _session_evidence_file(session_dir: Path, reference: str) -> Path:
     if not result.is_file():
         raise ValueError('selected session evidence is missing: ' + path)
     return result
+
+
+def _disclosure_record(session_dir, session, arguments):
+    if 'record' in arguments:
+        return arguments['record']
+    source = arguments['record_source']
+    if (not isinstance(source, dict) or set(source) != {'reference', 'sha256'}
+            or not isinstance(source['sha256'], str) or SHA256.fullmatch(source['sha256']) is None):
+        raise ValueError('check-disclosure record source requires an owned-session reference and SHA-256')
+    try:
+        path = _session_evidence_file(session_dir, source['reference'])
+        data = read_bounded(path, MAX_INPUT_BYTES)
+        if hashlib.sha256(data).hexdigest() != source['sha256']:
+            raise ValueError('bytes differ from the supplied SHA-256')
+        record = decode_json(data)
+        if not isinstance(record, dict):
+            raise ValueError('JSON must be an object')
+        embedded = {key: value for key, value in arguments.items() if key != 'record_source'}
+        embedded['record'] = record
+        if len(_json_bytes({'session': session, 'arguments': embedded})) > MAX_INPUT_BYTES:
+            raise ValueError('expanded request exceeds the bounded size')
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError('check-disclosure record source: ' + str(exc)) from exc
+    return record
 
 def _read_selected_session_sources(session_dir, index, index_bytes):
     paths = review_reference_index.reference_source_paths(index)
@@ -158,9 +182,12 @@ def run_command(command, input_path, output_path):
             raise ValueError('incomplete material map cannot certify context')
         result = build_review_context(**args)
     elif command == 'check-disclosure':
-        required = {'record', 'input_identity', 'execution_observations', 'sources'}
-        if set(args) != required or not isinstance(args['sources'], dict) or len(args['sources']) > 64:
-            raise ValueError('check-disclosure arguments require record, input_identity, execution_observations and selected sources')
+        required = {'input_identity', 'execution_observations', 'sources'}
+        if (set(args) not in (required | {'record'}, required | {'record_source'})
+                or not isinstance(args['sources'], dict) or len(args['sources']) > 64):
+            raise ValueError('check-disclosure arguments require record or record_source, input_identity, '
+                             'execution_observations and selected sources')
+        record = _disclosure_record(session_dir, payload['session'], args)
         selected = {}
         for reference, row in args['sources'].items():
             if not isinstance(row, dict) or set(row) != {'reference', 'sha256'}:
@@ -169,7 +196,7 @@ def run_command(command, input_path, output_path):
             if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != row['sha256']:
                 raise ValueError('check-disclosure selected source differs from its SHA-256')
             selected[reference] = raw
-        result = build_check_disclosure(args['record'], args['input_identity'], args['execution_observations'], selected)
+        result = build_check_disclosure(record, args['input_identity'], args['execution_observations'], selected)
     elif command == 'model-usage':
         required = {'context', 'ledger', 'metadata', 'actor', 'phase', 'activity',
                     'review_id', 'harness_id', 'assignment_id', 'check_id'}

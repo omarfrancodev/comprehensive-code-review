@@ -2,6 +2,7 @@
 import json
 import re
 
+from ccr.contracts.assessment import validate_shape as validate_assessment
 from ccr.contracts.execution import validate_execution, validate_profile_execution
 from ccr.contracts.findings import validate_checks, validate_findings
 from ccr.contracts.identifier_types import canonical_id, review_id
@@ -25,7 +26,7 @@ def validate_reference_semantics(record, context, reference_index, sources, pack
     return list(dict.fromkeys(messages))
 
 def validate(record, *, reference_index=None, reference_sources=None,
-             reference_context=None, packets=None):
+             reference_context=None, packets=None, require_material_fallbacks=False):
     """Return all observable contract errors; never modify the supplied record."""
     state = ValidationState()
     errors = state.errors
@@ -51,6 +52,9 @@ def validate(record, *, reference_index=None, reference_sources=None,
             if not isinstance(identity.get(name), str) or not re.fullmatch(r'[0-9a-f]{64}', identity[name]):
                 error('compact_identity.' + name, 'expected lowercase SHA-256 identity')
         text(identity.get('created_at'), 'compact_identity.created_at')
+    if schema_version == 13 and stage == 'final' and 'assessment' in record:
+        final_fields.add('assessment')
+        validate_assessment(record, state)
     fields(record, base_fields | final_fields if stage == 'final' else base_fields, 'record')
     if type(schema_version) is not int or schema_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}:
         error('schema_version', 'unsupported version')
@@ -124,7 +128,7 @@ def validate(record, *, reference_index=None, reference_sources=None,
         return errors
 
     if schema_version in (8, 9, 10, 11, 12, 13):
-        errors.extend(validate_execution(record))
+        errors.extend(validate_execution(record, require_material_fallbacks=require_material_fallbacks))
     if schema_version in (9, 10, 11, 12, 13):
         errors.extend(validate_check_execution(record))
     if schema_version in (10, 11, 12, 13):
@@ -319,8 +323,18 @@ def validate(record, *, reference_index=None, reference_sources=None,
                     and alias not in finding_ids | previous_ids):
                 historical_aliases.add(alias)
     if schema_version in (6, 7, 8, 9, 10, 11, 12, 13):
+        assessment = record.get('assessment')
+        lineage_ids = set()
+        if isinstance(assessment, dict) and assessment.get('schema_version') in (2, 3):
+            previous = assessment.get('previous')
+            if (isinstance(previous, dict) and any(prior.get('verified') is True
+                    and prior.get('review_id') == previous.get('review_id') for prior in prior_reviews)):
+                lineage_ids = {member.get('id') for member in array(assessment.get('lineage'), 'assessment.lineage')
+                               if isinstance(member, dict) and isinstance(member.get('id'), str)
+                               and member['id'] not in finding_ids | previous_ids}
         for identifier in historical['findings']:
             if (not isinstance(identifier, str) or (identifier not in historical_aliases
+                    and identifier not in lineage_ids
                     and (identifier not in historical_sources or identifier not in finding_ids | previous_ids))):
                 error('grandfathered_ids.findings', 'historical ID requires retained original identity and verified prior finding provenance')
         for identifier in historical['checks']:

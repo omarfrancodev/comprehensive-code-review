@@ -182,7 +182,7 @@ def _superseded_actions(resources=()):
         actions.append(_action('cleanup', 'Clean the remaining source-owned sessions using this source --run-dir.'))
     return actions
 
-def inspect_run(run_dir, *, current_inputs=None):
+def inspect_run(run_dir, *, current_inputs=None, finalization_details=False):
     """Inspect one explicitly selected run without repairing or changing any file."""
     run_path = Path(run_dir).absolute()
     base = {'schema_version': 1, 'run_dir': str(run_path), 'run_id': None, 'review_id': None,
@@ -261,10 +261,16 @@ def inspect_run(run_dir, *, current_inputs=None):
         errors.append(str(exc)[:1000])
     cleanup = manifest.get('resource_cleanup')
     if isinstance(cleanup, dict) and cleanup.get('status') == 'pending':
-        pending.append({'kind': 'resource_cleanup', 'status': 'pending',
-                        'operation_id': cleanup.get('operation_id')})
+        intent = {'kind': 'resource_cleanup', 'status': 'pending',
+                  'operation_id': cleanup.get('operation_id')}
+        if finalization_details:
+            intent['resource'] = cleanup.get('session_dir')
+        pending.append(intent)
     if manifest.get('state') == 'retaining':
-        pending.append({'kind': 'retention', 'status': 'pending'})
+        intent = {'kind': 'retention', 'status': 'pending'}
+        if finalization_details and isinstance(manifest.get('close_observation'), dict):
+            intent['operation'] = 'close'
+        pending.append(intent)
     if manifest.get('state') == 'closing':
         pending.append({'kind': 'closure', 'status': 'pending'})
 

@@ -8,6 +8,7 @@ from ccr.archive.integrity import verify_files
 from ccr.archive.lookup import latest_verified_candidate, _read_candidate_record
 from ccr.archive.reader import load_run
 from ccr.archive.layout import logical_scope
+from ccr.contracts.assessment import verify_sources as verify_assessment_sources
 from ccr.contracts.effective_changes import normalize_effective_changes, compare_effective_changes
 from ccr.contracts.material_inputs import validate_captured_material_sources
 from ccr.contracts.reference_index import reference_source_paths
@@ -152,6 +153,8 @@ def _ordinary_lineage(repo,scope,inputs,descriptor,materials,run,manifest,record
         parent_record=_read_candidate_record(parent/'review.json',parent_manifest['hashes'].get('review.json'))
         if parent_record is None or parent_record.get('scope')!=parent_manifest['scope']:
             raise ValueError('Ordinary coverage parent record is unavailable or differs from its native scope.')
+        verify_assessment_sources(parent_record, lambda name: _source(parent, parent_manifest, name),
+                                  captured_inputs=parent_manifest.get('review_inputs') or {}, retained=True)
         parent_id=parent_record.get('review_id')
         if parent_id is not None and parent_id!='CR-'+parent_manifest['run_id']:
             raise ValueError('Ordinary coverage parent identity differs from its native run.')
@@ -236,6 +239,8 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
             raise ValueError('previous material source completeness is unknown')
         initial_manifest=copy.deepcopy(manifest)
         record=json.loads(_source(run,manifest,'review.json'))
+        verify_assessment_sources(record, lambda name: _source(run, manifest, name),
+                                  captured_inputs=manifest.get('review_inputs') or {}, retained=True)
         coverage_issue=coverage_reuse_issue(record)
         if coverage_issue is not None and coverage_issue['code']!='ordinary_coverage_unproven':
             return finish(context=dict(applicability='changed',reasons=[coverage_issue]))
@@ -260,6 +265,10 @@ def assess_reuse(repo,scope,*,current_inputs,effective_changes,current_materials
                 or any(final_selection['selected'].get(k)!=candidate.get(k) for k in ('run_dir','run_id','created_at'))):
             raise ValueError('latest verified selection changed during assessment')
         _revalidate_witnesses(witnesses)
-        return finish(code,context,dict(run_dir=candidate['run_dir'],review_id=candidate['review_id']))
+        prior = dict(run_dir=candidate['run_dir'], review_id=candidate['review_id'])
+        if record.get('assessment') and witnesses:
+            ancestor, archive = witnesses[-1]
+            prior['ordinary_coverage'] = {'run_dir': str(ancestor), 'review_id': 'CR-' + archive['run_id']}
+        return finish(code,context,prior)
     except (OSError,ValueError,TypeError,KeyError,UnicodeError) as exc:
         return finish(reason=exc)

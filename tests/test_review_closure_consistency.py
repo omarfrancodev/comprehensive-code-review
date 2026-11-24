@@ -1,7 +1,9 @@
 """Retain, validate and close resolve one stable selection of guided sources."""
 import argparse
 import copy
+from contextlib import redirect_stdout
 import hashlib
+from io import StringIO
 import json
 from pathlib import Path
 import subprocess
@@ -77,7 +79,8 @@ class ClosureConsistencyTests(unittest.TestCase):
                         material_alias: bool = False, dispatch_alias: bool = False,
                         annotate_dispatch: bool = True,
                         dispatch_source: str | None = None, late_assignment: str = 'D1',
-                        profile: str = 'focused', early_verifier: bool = False) -> dict:
+                        profile: str = 'focused', early_verifier: bool = False,
+                        explicit_identities: bool = False) -> dict:
         dispatch_source = dispatch_source or 'evidence/dispatch.json#' + late_assignment
         description, notes = b'MR description captured for the fixture', b'External review notes'
         (self.root / 'description.md').write_bytes(description)
@@ -121,11 +124,15 @@ class ClosureConsistencyTests(unittest.TestCase):
             session = Path(session_manifest['session_dir'])
             owned_entry = {'session': session, 'run': None}
             self.owned_sessions.append(owned_entry)
+        current_inputs = {'scope': scope, 'sources': captured, 'source_set_complete': complete_capture}
+        if explicit_identities:
+            current_inputs.update(description_identity=None, requirements_identity=None,
+                                  plan_identity=None, configuration_identity=None)
         run = Path(lifecycle.prepare(
             self.repo, scope_path, '3.0.0', 'codex', output_root=output_root,
             temporary_paths=[str(session)] if session is not None else None,
             profile_input=selection_input(profile),
-            current_inputs={'scope': scope, 'sources': captured, 'source_set_complete': complete_capture}))
+            current_inputs=current_inputs))
         if owned_entry is not None:
             owned_entry['run'] = run
         manifest = self.read(run / 'cierre.json')
@@ -356,6 +363,124 @@ class ClosureConsistencyTests(unittest.TestCase):
         self.assertEqual(self.snapshot(case['run']), before)
         lifecycle.close(case['run'], cleanup='not_needed')
         self.assertEqual(lifecycle.validate(case['run'], require_complete=True)['state'], 'complete')
+
+    def test_retain_persists_the_same_bytes_read_by_preflight(self):
+        case = self.make_guided_run(complete_capture=True)
+        source = next(path for path in case['evidence_inputs'] if Path(path).name == 'briefs.json')
+        original = Path(source).read_bytes()
+        original_preflight = preflight.validate_preflight
+        original_open = Path.open
+        expected_inputs = {Path(path): 0 for path in [case['context'], *case['evidence_inputs']]}
+
+        def count_input_reads(path, mode='r', *args, **kwargs):
+            if path in expected_inputs and mode == 'rb':
+                expected_inputs[path] += 1
+            return original_open(path, mode, *args, **kwargs)
+
+        def change_input_after_preflight(**kwargs):
+            result = original_preflight(**kwargs)
+            self.assertEqual(kwargs['sources']['evidence/briefs.json'], original)
+            Path(source).write_bytes(b'changed after capture')
+            return result
+
+        with patch.object(preflight, 'validate_preflight', side_effect=change_input_after_preflight), \
+                patch.object(retention, 'render_review', wraps=retention.render_review) as render, \
+                patch.object(Path, 'open', count_input_reads):
+            self.retain(case)
+        self.assertEqual(set(expected_inputs.values()), {1}, expected_inputs)
+        self.assertEqual(render.call_count, 1)
+        retained = case['run'] / 'evidence' / 'briefs.json'
+        self.assertEqual(retained.read_bytes(), original)
+        lifecycle.validate(case['run'], require_retained=True)
+        retained.write_bytes(b'changed after retention')
+        with self.assertRaises(ValueError):
+            lifecycle.validate(case['run'], require_retained=True)
+
+    def archive_command(self, *args):
+        from ccr.cli.artifacts import main
+        with redirect_stdout(StringIO()) as output:
+            code = main(list(map(str, args)))
+        return code, json.loads(output.getvalue())
+
+    def test_guided_finish_requires_retention_cleanup_and_final_readback(self):
+        case = self.make_guided_run(complete_capture=True)
+        run = case['run']
+        before = self.snapshot(run)
+        code, status = self.archive_command('inspect', '--run-dir', run, '--summary')
+        self.assertEqual((code, status['gate'], status['next_action']), (0, 'retention', 'retain'))
+        self.assertEqual(self.snapshot(run), before)
+        code, status = self.archive_command('finish', '--run-dir', run, '--cleanup', 'not_needed')
+        self.assertEqual((code, status['gate']), (1, 'retention'))
+        self.assertEqual(self.snapshot(run), before)
+        self.retain(case)
+        code, status = self.archive_command('finish', '--run-dir', run)
+        self.assertEqual((code, status['next_action']), (1, 'supply_cleanup_observation'))
+        from ccr.cli import artifacts as cli
+        with patch.object(cli, 'validate', side_effect=ValueError('simulated final readback failure')):
+            code, status = self.archive_command('finish', '--run-dir', run, '--cleanup', 'not_needed')
+        self.assertEqual((code, status['gate'], status['next_action']), (1, 'complete_validation', 'preserve'))
+        code, status = self.archive_command('finish', '--run-dir', run)
+        self.assertEqual((code, status['status']), (0, 'complete'))
+
+    def test_guided_finish_waits_for_verified_resource_release(self):
+        case = self.make_guided_run(complete_capture=True)
+        run = case['run']
+        session = Path(workspaces.prepare(argparse.Namespace(
+            repo=str(self.repo), ref='HEAD', mode='commit', role=['review'],
+            include_untracked=[]))['session_dir'])
+        self.owned_sessions.append({'session': session, 'run': run})
+        lifecycle.register(run, [str(session)], context_input=case['context'])
+        self.retain(case)
+        code, status = self.archive_command('inspect', '--run-dir', run, '--summary')
+        self.assertEqual((code, status['gate'], status['resource'], status['next_action']),
+                         (0, 'cleanup', str(session), 'workspace_cleanup'))
+        before = self.snapshot(run)
+        code, status = self.archive_command('finish', '--run-dir', run, '--cleanup', 'complete')
+        self.assertEqual((code, status['gate']), (1, 'cleanup'))
+        self.assertEqual(self.snapshot(run), before)
+        self.assertTrue(session.is_dir())
+        resources.begin_resource_cleanup(run, session)
+        code, status = self.archive_command('inspect', '--run-dir', run, '--summary')
+        self.assertEqual((code, status['resource'], status['next_action']),
+                         (0, str(session), 'recover_cleanup'))
+        self.assertTrue(session.is_dir())
+        cleanup = resources.cleanup_workspace(argparse.Namespace(manifest=str(session / 'manifest.json'),
+                                                                  run_dir=str(run)))
+        wrong = self.write('wrong-receipts.json', [])
+        code, status = self.archive_command('finish', '--run-dir', run, '--cleanup', 'complete',
+                                            '--released-claims-input', wrong)
+        self.assertEqual((code, status['gate']), (1, 'close'))
+        exact = self.write('exact-receipts.json', cleanup['released_claims'])
+        code, status = self.archive_command('finish', '--run-dir', run, '--cleanup', 'complete',
+                                            '--released-claims-input', exact)
+        self.assertEqual((code, status['status']), (0, 'complete'))
+
+    def test_inspect_summary_rebuilds_only_the_candidate_on_same_inputs(self):
+        case = self.make_guided_run(complete_capture=True, explicit_identities=True)
+        run = case['run']
+        record = self.read(case['record'])
+        invalid = self.write('invalid-candidate.json', dict(record, schema_version=11, stage='discovery'))
+        current = self.read(run / 'cierre.json')['review_inputs']
+        current['profile'] = record['profile']
+        args = ['inspect', '--run-dir', run, '--summary', '--context-input', case['context'],
+                '--input', invalid]
+        for evidence in case['evidence_inputs']:
+            args.extend(['--evidence-input', evidence])
+        before = self.snapshot(run)
+        code, status = self.archive_command(*args, '--current-inputs', self.write('current.json', current))
+        self.assertEqual((code, status['gate'], status['next_action']),
+                         (0, 'retain_preflight', 'rebuild_candidate'))
+        changed = copy.deepcopy(current)
+        changed['sources']['evidence/notes.json'] = 'f' * 64
+        _, status = self.archive_command(*args, '--current-inputs', self.write('changed.json', changed))
+        self.assertEqual((status['gate'], status['next_action']), ('current_inputs', 'restart'))
+        self.assertEqual(self.snapshot(run), before)
+        self.retain(case)
+        trace = run / 'trazabilidad.jsonl'
+        original = before[str(trace.relative_to(run))]
+        self.assertTrue(trace.read_bytes().startswith(original))
+        events = [json.loads(line) for line in trace.read_bytes()[len(original):].splitlines()]
+        self.assertEqual([event['kind'] for event in events], ['retain'])
 
     def test_reregister_recovers_history_and_adds_owned_resource_without_new_execution(self):
         for recovered, assignment in ((False, 'D1'), (True, 'D1'), (True, 'V1')):

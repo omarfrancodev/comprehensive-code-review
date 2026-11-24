@@ -183,6 +183,14 @@ def coverage_reuse_issue(record, *, ordinary_coverage_verified=False):
     if kind=='rereview' and not ordinary_coverage_verified:
         return dict(code='ordinary_coverage_unproven',
             detail='A rereview matrix covers its follow-up scope; applicable ordinary coverage needs separate native evidence.')
+    assessment = record.get('assessment')
+    if kind == 'review' and assessment:
+        observed = {identifier for row in assessment['scope']['delta'] for identifier in row['evidence_ids']}
+        required = {identifier for area in coverage['areas'] for group in area['groups']
+                    if group['status'] == 'covered' for identifier in group['evidence_ids']}
+        if not required <= observed:
+            return dict(code='previous_coverage_incomplete',
+                        detail='Ordinary coverage cites observations outside the recorded reviewed delta.')
     return None
 
 

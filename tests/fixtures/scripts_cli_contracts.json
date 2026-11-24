@@ -39,6 +39,7 @@
           "transfer-resources",
           "inspect",
           "preflight",
+          "followup-baseline",
           "lookup",
           "assess-reuse",
           "pause",
@@ -53,7 +54,8 @@
           "record-event",
           "checkpoint",
           "retain",
-          "close"
+          "close",
+          "finish"
         ],
         "const": null,
         "metavar": null,
@@ -384,6 +386,38 @@
                 "metavar": null,
                 "help": null,
                 "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--session"
+                ],
+                "dest": "session",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing owned evidence session or manifest",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--output"
+                ],
+                "dest": "output",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "New JSON file in the owned session evidence directory",
+                "mutex_groups": []
               }
             ],
             "mutually_exclusive_groups": []
@@ -407,6 +441,22 @@
                 "const": null,
                 "metavar": null,
                 "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
+                "options": [
+                  "--summary"
+                ],
+                "dest": "summary",
+                "nargs": 0,
+                "required": false,
+                "default": false,
+                "type": null,
+                "choices": null,
+                "const": true,
+                "metavar": null,
+                "help": "Omit the hash inventory from stdout",
                 "mutex_groups": []
               },
               {
@@ -1119,6 +1169,70 @@
                 "const": null,
                 "metavar": null,
                 "help": "Existing JSON {scope, sources} verified by the coordinator",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreTrueAction",
+                "options": [
+                  "--summary"
+                ],
+                "dest": "summary",
+                "nargs": 0,
+                "required": false,
+                "default": false,
+                "type": null,
+                "choices": null,
+                "const": true,
+                "metavar": null,
+                "help": "Show the next finalization gate and action",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--context-input"
+                ],
+                "dest": "context_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing context for retain preflight with --summary",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--input"
+                ],
+                "dest": "input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Final candidate for retain preflight with --summary and --context-input",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--evidence-input"
+                ],
+                "dest": "evidence_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Selected source for retain preflight with --summary",
                 "mutex_groups": []
               }
             ],
@@ -2992,6 +3106,214 @@
                 ]
               }
             ]
+          },
+          "followup-baseline": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--repo"
+                ],
+                "dest": "repo",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--scope-file"
+                ],
+                "dest": "scope_file",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--logical-scope-input"
+                ],
+                "dest": "logical_scope_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": []
+          },
+          "finish": {
+            "description": null,
+            "defaults": {},
+            "actions": [
+              {
+                "kind": "_HelpAction",
+                "options": [
+                  "-h",
+                  "--help"
+                ],
+                "dest": "help",
+                "nargs": 0,
+                "required": false,
+                "default": "<argparse.SUPPRESS>",
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "show this help message and exit",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--run-dir"
+                ],
+                "dest": "run_dir",
+                "nargs": null,
+                "required": true,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--cleanup-file"
+                ],
+                "dest": "cleanup_file",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": [
+                  0
+                ]
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--cleanup"
+                ],
+                "dest": "cleanup",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": [
+                  "complete",
+                  "not_needed",
+                  "pending"
+                ],
+                "const": null,
+                "metavar": null,
+                "help": "Observed state without creating a post-cleanup temporary file",
+                "mutex_groups": [
+                  0
+                ]
+              },
+              {
+                "kind": "_AppendAction",
+                "options": [
+                  "--residual"
+                ],
+                "dest": "residual",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Exact registered remaining path; repeat with --cleanup pending",
+                "mutex_groups": []
+              },
+              {
+                "kind": "_StoreAction",
+                "options": [
+                  "--released-claims-input"
+                ],
+                "dest": "released_claims_input",
+                "nargs": null,
+                "required": false,
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": "Existing JSON list of exact durable cleanup receipts for inline close",
+                "mutex_groups": []
+              }
+            ],
+            "mutually_exclusive_groups": [
+              {
+                "required": false,
+                "actions": [
+                  "cleanup_file",
+                  "cleanup"
+                ]
+              }
+            ]
           }
         }
       }
@@ -3383,6 +3705,24 @@
                 "type": null
               },
               {
+                "choices": [
+                  "gitlab"
+                ],
+                "const": null,
+                "default": null,
+                "dest": "remote_transport",
+                "help": "Enable the GitLab note comparison for an observed remote body",
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [],
+                "nargs": null,
+                "options": [
+                  "--remote-transport"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
                 "choices": null,
                 "const": null,
                 "default": null,
@@ -3399,20 +3739,20 @@
                 "type": null
               },
               {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "check_disclosure_sources",
-                "help": null,
                 "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
                 "options": [
                   "--check-disclosure-sources"
                 ],
+                "dest": "check_disclosure_sources",
+                "nargs": null,
                 "required": false,
-                "type": null
+                "default": null,
+                "type": null,
+                "choices": null,
+                "const": null,
+                "metavar": null,
+                "help": null,
+                "mutex_groups": []
               }
             ],
             "defaults": {},

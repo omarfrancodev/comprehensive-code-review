@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from ccr.reporting import markdown
 from ccr.reporting.check_disclosure import disclosure_view, sanitize_public_detail
 from ccr.contracts import check_disclosure
+from ccr.contracts.assessment import resolution_decisions, source_references
 from ccr.contracts.check_disclosure import EXPLANATION_COMMAND, OMITTED, sensitive_text_ranges
 from ccr.contracts.disclosure_paths import _POSIX_PATH, _QUOTED_PATH, _SOURCE_TOKENS, _local_start, source_tokens
 from ccr.contracts.disclosure_text import sensitive_values_from_text
@@ -36,6 +37,13 @@ def _hash(data):
 
 def _json(value):
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False) + '\n').encode('utf-8')
+
+
+def _decision_key(value, authorization_id=None):
+    """Private equality key; public ordinals never encode its contents."""
+    return _json([authorization_id or value.get('authorization_id'),
+                  {name: item for name, item in value.items() if name != 'authorization_id'}])
+
 
 def _public_url(value):
     try:
@@ -81,6 +89,15 @@ class _Projection:
         change_authors[].name change_authors[].username change_authors[].commits[]
         presentation.kind description.identity previous_reviews[].review_id
         compact_identity.inputs_sha256 compact_identity.logical_scope_identity compact_identity.created_at
+        assessment.scope.base assessment.scope.head assessment.scope.snapshot
+        assessment.scope.delta[].evidence_ids[] assessment.scope.delta[].sources[].sha256
+        assessment.previous.review_id assessment.previous.source.sha256 assessment.previous.legacy_source.sha256
+        assessment.findings[].id assessment.findings[].cause assessment.findings[].relation
+        assessment.findings[].verification.evidence_ids[] assessment.findings[].resolution.status
+        assessment.findings[].resolution.scope assessment.findings[].resolution.authority
+        assessment.findings[].resolution.channel assessment.findings[].resolution.source.sha256
+        assessment.findings[].reopening.reason assessment.findings[].reopening.evidence_id
+        assessment.findings[].reopening.source.sha256
         grandfathered_ids.findings[] grandfathered_ids.checks[]
         rereview[].id rereview[].status rereview[].previous_review_id
         rereview[].previous_finding_id rereview[].check_ids[] resources.cleanup resources.publication'''.split())
@@ -93,10 +110,52 @@ class _Projection:
         coverage.areas[].applicability_reason coverage.areas[].groups[].reason coverage.evidence[].detail
         coverage.execution.profile_history[].reason coverage.execution.profile_history[].authority
         responsible.source change_authors[].source description.details
-        presentation.subject rereview[].details rereview[].previous_title resources.residuals[]'''.split())
+        presentation.subject rereview[].details rereview[].previous_title resources.residuals[]
+        assessment.scope.delta[].detail assessment.findings[].verification.obligation
+        assessment.findings[].verification.trigger assessment.findings[].verification.consequence
+        assessment.findings[].verification.consumer assessment.findings[].verification.question
+        assessment.findings[].resolution.conditions[] assessment.findings[].reopening.detail
+        assessment.findings[].reopening.condition'''.split())
+
+    STRUCTURAL.update('assessment.lineage[].' + field
+                      for field in ('id', 'cause', 'survivor', 'last_status'))
+    STRUCTURAL.add('assessment.observed_hashes[]')
+    STRUCTURAL.update(base + '.' + field
+                      for base in ('assessment.findings[].resolution[]',
+                                   'assessment.findings[].resolution',
+                                   'assessment.lineage[].resolution',
+                                   'assessment.lineage[].resolution[]',
+                                   'assessment.authorizations[].decision')
+                      for field in ('status', 'scope', 'authority', 'channel', 'source.sha256',
+                                    'authorization_id'))
+    STRUCTURAL.update('assessment.authorizations[].' + field
+                      for field in ('id', 'member_id', 'review_id', 'scope.base', 'scope.head', 'scope.snapshot'))
+    PROSE.add('assessment.lineage[].title')
+    PROSE.update(base + '.conditions[]'
+                 for base in ('assessment.findings[].resolution[]',
+                              'assessment.lineage[].resolution',
+                              'assessment.lineage[].resolution[]',
+                              'assessment.authorizations[].decision'))
 
     def __init__(self, record, manifest, project, source_hash, *, check_disclosure_context=None,
                  check_disclosure_sources=None, editorial_texts=()):
+        self.assessment_references = source_references(record, include_history=True)
+        # Public decision identity is positional, never a verifier of private
+        # conditions. Exact original equality only links repeated row/lineage
+        # occurrences inside this projection; these private keys never leave it.
+        self.decision_ordinals = {}
+        assessment = record.get('assessment') or {}
+        self.authorization_ids = {'record.assessment.authorizations[' + str(index) + '].decision': row['id']
+                                  for index, row in enumerate(assessment.get('authorizations', []))}
+        for row in assessment.get('findings', []) + assessment.get('lineage', []):
+            for decision in resolution_decisions(row.get('resolution')):
+                key = _decision_key(decision)
+                if key not in self.decision_ordinals:
+                    self.decision_ordinals[key] = len(self.decision_ordinals) + 1
+        for row in assessment.get('authorizations', []):
+            key = _decision_key(row['decision'], row['id'])
+            if key not in self.decision_ordinals:
+                self.decision_ordinals[key] = len(self.decision_ordinals) + 1
         self.source_hash = source_hash
         self.disclosure = disclosure_view(record, check_disclosure_context, check_disclosure_sources)
         editorial_texts = tuple(editorial_texts)
@@ -369,13 +428,27 @@ class _Projection:
             if path == 'record.aliases':
                 return {self.structural(key, path + ' key'): self.structural(item, path + ' value')
                         for key, item in value.items()}
-            return {key: self.value(item, path + '.' + key) for key, item in value.items()}
+            projected = {key: self.value(item, path + '.' + key) for key, item in value.items()}
+            field = re.sub(r'\[\d+\]', '[]', path.removeprefix('record.'))
+            if field in {'assessment.findings[].resolution', 'assessment.findings[].resolution[]',
+                         'assessment.lineage[].resolution', 'assessment.lineage[].resolution[]',
+                         'assessment.authorizations[].decision'}:
+                # Keep the retained source label as provenance and attach a
+                # separate display identity to every complete decision. User
+                # text, including literal previous output, cannot forge it.
+                ordinal = self.decision_ordinals[_decision_key(value, self.authorization_ids.get(path))]
+                reference = projected['source']['reference'].partition('#')[0]
+                projected['source']['reference'] = reference + '#decision-' + str(ordinal)
+            return projected
         if isinstance(value, list):
             return [self.value(item, path + '[' + str(index) + ']') for index, item in enumerate(value)]
         if not isinstance(value, str):
             return value
         field = re.sub(r'\[\d+\]', '[]', path.removeprefix('record.'))
-        if field in self.STRUCTURAL:
+        if (value in self.assessment_references and field.endswith('.reference')
+                and (field.startswith('assessment.') or field == 'coverage.evidence[].reference')):
+            projected = 'evidence/retained-' + _hash(value.encode('utf-8'))[:32] + '.json'
+        elif field in self.STRUCTURAL:
             projected = self.structural(value, path)
         elif field == 'description.status':
             projected = self.structural(value, path)

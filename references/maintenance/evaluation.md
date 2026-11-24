@@ -10,7 +10,7 @@ For lifecycle instruction changes, compare bounded application scenarios with an
 
 ## Review inputs
 
-Use `tests/fixtures/review_inputs.json`: three small before/after Python artifacts, consumers, requirements and PR descriptions. Give a fresh reviewer only its selected case, a requested profile and relevant skill instructions. No answer key, previous findings, parent analysis, or unrelated cases. Require the minimal worker record. Do not ask discovery workers to read evaluation.md or tests/test_review_scenarios.py.
+Use `tests/fixtures/review_inputs.json`: small before/after Python artifacts, consumers, requirements and PR descriptions. Give a fresh reviewer only its selected case, a requested profile and relevant skill instructions. No answer key, previous findings, parent analysis, or unrelated cases. Require the minimal worker record. Do not ask discovery workers to read evaluation.md or tests/test_review_scenarios.py.
 
 Evaluator-only answer key:
 
@@ -19,17 +19,35 @@ Evaluator-only answer key:
 | response-contract | Introduced code defect: removed id breaks the included consumer. Compare before/after; a compatible response is required. Description consistency is assessed separately. |
 | normalization-control | Clean control: trims accepted names, rejects empty/blank names, preserves consumer navigation. No code finding. |
 | description-only | Required default change and overrides work. Description incorrectly claims unchanged behavior; request a description correction, without inventing a code defect or automatically blocking. |
+| future-contract | Clean control: the supported integer ID still navigates through the wrapper. A hypothetical string ID is outside the declared contract. |
+| accepted-residual | The duplicate read remains observable and the new guard rejects writes. Keep the maintainer's scoped decision visible. Do not request the deferred correction for this read-only PR. |
 
 The tests execute these cases. Count distinct causes, not repeated worker findings. A worker candidate is not a confirmed final finding. Final verification must preserve decisive evidence and separate description issues from code defects.
 
+## Artifact workflow controls
+
+Run these existing or extended mechanical fixtures separately from reviewer inputs. They pin the current baseline for the implementation plan.
+
+| Case | Expected observation | Test |
+|---|---|---|
+| Same HEAD, new material note | Start a new review because the material input changed. | `test_review_reuse_flow.py::test_new_material_note_starts_review_at_same_head` |
+| Same HEAD, narrower prior coverage | A bounded follow-up alone cannot certify the whole MR. | `test_review_reuse_flow.py::test_bounded_rereview_without_full_coverage_is_not_ordinary_review` |
+| Interrupted full close | Resume the recorded operation with its retained disclosure. | `test_review_disclosure_close_recovery.py::test_close_recovers_before_disclosure_replacement` and `test_close_recovers_after_disclosure_replacement` |
+| Remote final LF removed | An explicit GitLab comparison with a verified draft 4 admits the terminal LF difference. The exact comparator still reports a mismatch. | `test_review_comment.py` |
+| Compact bound file and short retain receipt | Same bound object and disclosure digest. Missing observed execution fails and complete retained evidence passes the final read-back. | `test_review_compact_cli_output.py` |
+
+Replay equivalent archive phases with [ccr-workflow-benchmark.py](../../docs/validation/ccr-workflow-benchmark.py). Use a fixed baseline commit, alternate variant order, and retain the per-phase observations and paired results. Include a rejected candidate and an interrupted close. Compare the retained record, projection and selected bytes, and require the complete archive reader after both routes. Compare compact with compact and full with full. An inline control has different persistence and cannot establish archive equivalence.
+
 ## Comparable model runs
 
-Use the same immutable inputs, profile, capability constraints and harness configuration for a comparison. Limit each run to the profile's assigned discovery/verification passes; do not retry to obtain a preferred answer. Record exact model identifier/date, input IDs, profile, actual sessions, independent/fallback verification, extra tool executions, unsupported findings, missed expected causes and elapsed time. Change one factor per comparison.
+Use the same immutable inputs, profile, capability constraints and harness configuration for a comparison. Use supplied model and effort metadata when available. Otherwise record them as unknown and qualify the comparison. No model capture is required in an ordinary review. Limit each run to the profile's assigned discovery/verification passes; do not retry to obtain a preferred answer. Record exact model identifier/date, input IDs, profile, actual sessions, independent/fallback verification, extra tool executions, unsupported findings, missed expected causes and elapsed time. Change one factor per comparison.
 
 Record actual provider/harness input/output/cached tokens and charges when exposed; unavailable is **unknown**, never zero or an inferred price. Compare both accuracy and measured total cost. Do not infer savings from fewer reference words alone. Before/after comparisons require observations for both skill versions; planning probes are separate.
 
 Use measurements.md and scripts metrics for disjoint per-phase actual counters and incomplete totals. New discovery/verification probes use worker-packets.md; the final result still follows result-contract.md. Native counters are available only when exposed by the harness; the helpers do not instrument native tools automatically.
 
+A native run starting from an already reviewed candidate measures archive coordination. It cannot score discovery, independent verification, missed defects or false positives. Use fresh, blinded runs of the review inputs above to measure those outcomes across profiles. Report sample sizes and variation, and keep phase-local savings separate from full-session quota observations.
+
 Worksheet: run ID | skill version | case/profile | model/harness/effort | verification mode | found/missed causes | false positives | repeated checks/reads | tool output size | elapsed | measured tokens/charge or unknown.
 
-These three cases are a smoke evaluation, not representative accuracy or cost benchmarks. Add a real anonymized failure or clean control only when it tests a distinct behavior; keep expected outcomes separate from discovery inputs.
+These cases are a smoke evaluation. They do not establish representative accuracy or cost. Add a real anonymized failure or clean control only when it tests a distinct behavior; keep expected outcomes separate from discovery inputs.

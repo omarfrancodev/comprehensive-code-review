@@ -11,6 +11,8 @@ References are grouped by purpose; keep phase/role loading selective. This direc
 
 Set supported per-call output bounds; request subsequent ranges as needed. Truncation is incomplete evidence. Entire listings/files/review histories/logs are not default worker inputs. Explicit full audits/project instructions can require broader coverage.
 
+For artifact operations, retain the pinned inputs, selected-source catalog, candidates, diagnostics and receipts by their actual paths. Pass those paths to later helpers. Use file output for a bound compact final when the owned session already exists and summary output for compact retention. Read the retained manifest or the relevant evidence range only when it answers a question or gate. Keep the same phase checks, exact inputs and final read-back verification.
+
 ## Checkpoints
 
 Discovery ends with inspected flows, evidence-backed candidates and gaps. Before dispatch keep candidates with observable triggers, affected requirements/conventions and consequences. Discard style-only/unsupported hypotheses. Unknown baseline yields unknown origin, not rejection. Material questions/independent gates remain eligible without candidates.

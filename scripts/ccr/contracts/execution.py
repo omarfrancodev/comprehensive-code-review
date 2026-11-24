@@ -34,7 +34,7 @@ def verification_status(verification, observed, missing):
     return 'independent'
 
 
-def validate_execution(record):
+def validate_execution(record, *, require_material_fallbacks=False):
     errors = []
     coverage = record.get('coverage', {})
     execution = coverage.get('execution') if isinstance(coverage, dict) else None
@@ -231,6 +231,12 @@ def validate_execution(record):
     unmet_gates = [row for row in active_plan if row['role'] == 'project_gate' and row.get('id') in missing]
     if unmet_gates and not material:
         fail('unmet required project_gate needs a material coverage gap')
+    if require_material_fallbacks and any(row['independent'] and row['id'] in impeded for row in active_plan):
+        limitations = coverage.get('limitations')
+        if not isinstance(limitations, list) or not any(
+                isinstance(row, dict) and row.get('kind') == 'execution' and row.get('material') is True
+                for row in limitations):
+            fail('unmet independent obligation needs a material execution limitation')
     return errors
 
 def verification_batches(record, trace_events):

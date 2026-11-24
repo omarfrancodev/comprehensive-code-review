@@ -56,7 +56,10 @@ def main(argv=None, *, prog=None):
             if not args.groups:
                 raise ValueError('--groups is required')
             groups = json.loads(Path(args.groups).read_text(encoding='utf-8'))
-            print(json.dumps(deduplicate(value, groups), ensure_ascii=False))
+            reserved = json.loads(Path(args.reserved_ids).read_text(encoding='utf-8')) if args.reserved_ids else {}
+            if not isinstance(reserved, dict):
+                raise ValueError('reserved IDs must be an object')
+            print(json.dumps(deduplicate(value, groups, prior_ids=reserved.get('findings', [])), ensure_ascii=False))
         elif args.command == 'canonicalize-ids':
             reserved = json.loads(Path(args.reserved_ids).read_text(encoding='utf-8')) if args.reserved_ids else None
             record, mapping = canonicalize_ids(value, reserved_ids=reserved)

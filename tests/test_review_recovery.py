@@ -1087,6 +1087,11 @@ class ReviewRecoveryTests(unittest.TestCase):
                                                               run_dir=str(run)))
 
         manifest = self.read(run / 'cierre.json')
+        from ccr.cli.artifacts import finish_run
+        pending, code = finish_run(run)
+        self.assertEqual((code, pending['gate'], pending['next_action'], pending['resource']),
+                         (1, 'cleanup', 'recover_cleanup', str(session)))
+        self.assertEqual(pending['operation_id'], manifest['resource_cleanup']['operation_id'])
         recovered = artifacts.recover(run, controller=manifest['controller'],
                                       authority='User requested cleanup recovery',
                                       current_inputs=self.current(run))
