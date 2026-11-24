@@ -31,9 +31,29 @@ python /absolute/skill/scripts comment prepare \
   --coverage-publication-context /absolute/owned/publication-session/evidence/coverage-publication.json
 ```
 
+For a closed schema-13 compact archive, use the archive directory as the source:
+
+```sh
+python /absolute/skill/scripts comment prepare \
+  --run-dir /absolute/compact-run \
+  --session /absolute/owned/publication-session/manifest.json \
+  --output /absolute/owned/publication-session/evidence/public-comment.json \
+  --check-publication-context /absolute/owned/publication-session/evidence/check-publication.json \
+  --coverage-publication-context /absolute/owned/publication-session/evidence/coverage-publication.json
+
+python /absolute/skill/scripts comment verify \
+  --run-dir /absolute/compact-run \
+  --draft /absolute/owned/publication-session/evidence/public-comment.json \
+  --body /absolute/outbound-body.md
+```
+
+Bind editorial contexts to the retained review record. Use a separate owned publication session for the draft. The original capture session can already be gone. Both commands validate the archive and use its declared disclosure and proof sources. A verified archive with no declared or retained sidecar uses the same explanation-only check view as delivery. Invalid or missing declared evidence, and a retained sidecar without a declaration, block both commands. Use `--run-dir` by itself as the source, with draft 4. For standalone records or historic drafts 2 and 3, use `--input` and the original disclosure selection when applicable.
+
 The draft records the source hash, all three classification contexts (when applicable), the exact `render(comment)` body and its UTF-8 hash. Before sending, run `scripts comment verify` against the exact outbound body. Do not edit, trim, translate or normalize the draft after that check; change the structured public context and prepare a new draft instead. If a value is private, correct its source classification/context before rendering rather than patching generated text. This corrects presentation without repeating discovery or code verification while the source record remains current. A post-close publication is recorded as a separate verified event; it does not rewrite the retained result or draft.
 
 After an authorized send, save the body returned by the remote service as UTF-8 without editing it. Verify it with `scripts comment verify --remote`. For a body observed from a GitLab note, add `--remote-transport gitlab`. Ordinary remote comparison permits CRLF to LF. For draft 4, the GitLab selector additionally accepts an otherwise identical body with exactly the final LF omitted. Drafts 2 and 3 keep their original comparison. Local verification requires exact bytes.
+
+For a returned GitLab note prepared from a compact run, repeat the same `verify --run-dir` command with `--body` pointing to the observed body and add `--remote --remote-transport gitlab`.
 
 The successful remote result includes the canonical draft hash, observed body hash, transport and applied normalizations. A discrepancy leaves the observation available for inspection before any retry. Record publication only after observing the authorized remote operation and its response, in the open run or as a separate event linked to the closed review.
 

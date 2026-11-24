@@ -1,6 +1,12 @@
 """One proof-validated public check view for every audience."""
 from ccr.contracts.check_disclosure import (canonical, digest, safe_text, private_values,
-                                           validate_check_disclosure)
+                                           input_identity_for, validate_check_disclosure)
+
+
+def build_explanation_only_disclosure(record):
+    """Build the safe view when no disclosure proof was retained."""
+    from ccr.workflow.builders import build_check_disclosure
+    return build_check_disclosure(record, input_identity_for(record), {}, {})
 
 
 def sanitize_public_detail(value, secrets, *, syntax='prose', explanation=False):

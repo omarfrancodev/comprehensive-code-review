@@ -236,6 +236,8 @@ Set `context.check_disclosure_reference` to `evidence/check-disclosure.json`, pr
 
 ### Compact selected-source projections
 
+For post-close publication from a verified compact archive, use `comment prepare --run-dir` and `comment verify --run-dir` as described in [publication.md](../reporting/publication.md). When the compact archive has no declared or retained check-disclosure sidecar, the comment uses the delivery fallback and gives an explanation for each check. A declared sidecar and its selected proofs must still validate.
+
 Compact retention and read validation resolve aliases through the selected reference index, including pinned sources and execution references. The private report is derived from the final record and the retained model observations; a record-only report candidate is completed by the writer before hashing. A selected disclosure sidecar must match its retained input identity and independently verifiable resource proof; delivery uses those same bytes. Missing proof still requires a safe explanation or a full archive, never a guessed project command. Model ledgers must fit the 256 KiB limit in their original UTF-8 bytes as well as their normalized structure.
 
 A promoted full run preserves its reserved transaction staging identity, so retry can recover initial writes after an abrupt process exit without adopting unrelated files.

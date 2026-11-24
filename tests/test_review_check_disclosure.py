@@ -51,6 +51,28 @@ def fixture(argv=None, files=None):
 
 
 class DisclosureTests(unittest.TestCase):
+
+    def test_explanation_only_uses_record_identity_without_proof(self):
+        from ccr.contracts.check_disclosure import source_digest
+        from ccr.reporting.check_disclosure import build_explanation_only_disclosure
+
+        for head, snapshot in (('a' * 40, None), (None, 'b' * 64)):
+            with self.subTest(head=head, snapshot=snapshot):
+                record, _, _, _ = fixture()
+                record['scope'].update(head=head, snapshot=snapshot)
+                second = copy.deepcopy(record['checks'][0])
+                second['id'] = 'C002'
+                record['checks'].append(second)
+                disclosure = build_explanation_only_disclosure(record)
+                self.assertEqual(disclosure['input_identity'], {'head': head, 'snapshot': snapshot})
+                self.assertEqual(disclosure['source_sha256'], source_digest(record))
+                self.assertEqual([row['id'] for row in disclosure['checks']], ['C001', 'C002'])
+                for row in disclosure['checks']:
+                    self.assertEqual(row['mode'], 'explanation')
+                    self.assertEqual(row['resources'], [])
+                    for field in ('command', 'execution_reference', 'evidence_reference'):
+                        self.assertIsNone(row[field])
+
     def test_capture_uses_input_map_pinned_before_ccr_changes(self):
         import pathlib
         import sys
