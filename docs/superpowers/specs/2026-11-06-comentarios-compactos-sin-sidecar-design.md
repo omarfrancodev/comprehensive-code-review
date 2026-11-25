@@ -26,7 +26,7 @@ Se lee el compacto con `read_compact`. El lector valida la propiedad, el estado 
 
 El fallback compartido usa el constructor existente, la identidad del head o snapshot del registro y un conjunto vacío de observaciones. La vista resultante queda vinculada al registro y contiene exactamente una fila por check en modo `explanation`, sin comandos, recursos ni referencias de reproducción. La proyección pública conserva los estados y resultados registrados, incluidas las ejecuciones externas, fallidas y los checks omitidos. Los contextos editoriales conservan las reglas de texto, redacción y atribución del renderizador. La ausencia de evidencia de divulgación nunca concede permiso para reconstruir o mostrar un comando.
 
-Cuando hay sidecar, la selección para el comentario se limita al propio sidecar y las pruebas que referencia. Se aplican las mismas comprobaciones de procedencia que a la evidencia retenida. Una identidad de snapshot copiada del contexto no se considera una autorización de recursos. El flujo de entrega conserva su selección de fuentes y su comportamiento para archivos compactos y completos.
+Cuando hay sidecar, la preparación y la verificación usan el mismo inventario de evidencia verificada que el lector del compacto. Las referencias del sidecar siguen determinando qué pruebas acreditan los comandos y recursos. La evidencia auxiliar puede aportar valores para el saneamiento y el comentario solo muestra la vista pública resultante. Una identidad de snapshot copiada del contexto no se considera una autorización de recursos. El flujo de entrega conserva su selección de fuentes y su comportamiento para archivos compactos y completos.
 
 ## Compatibilidad e integridad
 

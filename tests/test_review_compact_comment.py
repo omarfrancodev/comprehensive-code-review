@@ -27,7 +27,7 @@ class CompactCommentTests(unittest.TestCase):
         return str(path)
 
     def publish(self, *, operation_id='comment', with_sidecar=False, no_checks=False,
-                scope=None, additional_checks=()):
+                scope=None, additional_checks=(), auxiliary_secret=None):
         from ccr.workflow.builders import build_check_disclosure
 
         if with_sidecar:
@@ -54,9 +54,13 @@ class CompactCommentTests(unittest.TestCase):
             record['checks'][0]['command'] = proof_record['checks'][0]['command']
         record = compact.bind_compact_record(reserved, record)
         if with_sidecar:
-            sidecar = build_check_disclosure(record, identity, observations, proof_sources)
-            sources[SIDECAR] = json.dumps(sidecar, indent=2).encode()
             sources.update(proof_sources)
+            if auxiliary_secret is not None:
+                sources['evidence/auxiliary.json'] = json.dumps({
+                    'argv': ['fixture-tool', '--token', auxiliary_secret],
+                }).encode()
+            sidecar = build_check_disclosure(record, identity, observations, sources)
+            sources[SIDECAR] = json.dumps(sidecar, indent=2).encode()
             context = json.loads(sources[CONTEXT])
             context.update(check_disclosure_reference=SIDECAR, check_disclosure_input_identity=identity)
             sources[CONTEXT] = json.dumps(context).encode()
@@ -176,6 +180,33 @@ class CompactCommentTests(unittest.TestCase):
         self.assert_fails(args, 'compact')
         self.assert_fails(verify, 'compact')
         self.assertFalse(new_output.exists())
+
+    def test_archived_sidecar_uses_auxiliary_sources_for_redaction(self):
+        from ccr.reporting.comment import prepare_public_comment
+
+        secret = 'retry'
+        run, record = self.publish(with_sidecar=True, auxiliary_secret=secret)
+        original = self.inventory(run)
+        args, output = self.publication_args(run, record)
+        sources = compact.read_compact(run)['sources']
+        disclosure = json.loads(sources[SIDECAR])
+        check_context = json.loads((self.root / 'checks.json').read_bytes())
+        coverage_context = json.loads((self.root / 'coverage.json').read_bytes())
+        expected = prepare_public_comment(
+            record, check_disclosure_context=disclosure, check_disclosure_sources=sources,
+            check_publication_context=check_context, coverage_publication_context=coverage_context)
+        self.assertNotIn(secret, json.dumps(expected, ensure_ascii=False))
+        self.assertNotIn('fixture-tool', expected['body'])
+        self.assertIn('**Comando saneado:** pytest', expected['body'])
+        control = self.write_json(self.root / 'control.json', expected)
+        (self.root / 'body.md').write_bytes(expected['body'].encode())
+
+        with self.subTest(operation='prepare'):
+            self.assert_succeeds(args)
+            self.assertEqual(json.loads(output.read_bytes()), expected)
+        with self.subTest(operation='verify'):
+            self.assertTrue(self.assert_succeeds(self.verify_args(run, control))['verified'])
+        self.assertEqual(self.inventory(run), original)
 
     def test_compact_without_checks_uses_empty_disclosure_view(self):
         run, record = self.publish(no_checks=True)

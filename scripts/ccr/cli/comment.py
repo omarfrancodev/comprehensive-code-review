@@ -36,15 +36,8 @@ def _read_comment_source(args):
             raise ValueError('compact check disclosure sidecar exists without a declared reference')
         return record, build_explanation_only_disclosure(record) if record['checks'] else None, None
 
-    # read_compact already validated the declared sidecar and its proofs.
-    disclosure = json.loads(sources[reference])
-    selected = {reference: sources[reference]}
-    for row in disclosure['checks']:
-        for field in ('execution_reference', 'evidence_reference'):
-            proof = row[field]
-            if proof is not None:
-                selected[proof] = sources[proof]
-    return record, disclosure, selected
+    # Auxiliary retained evidence can affect redaction when reconstructing the sidecar.
+    return record, json.loads(sources[reference]), sources
 
 
 def main(argv=None, *, prog=None):
