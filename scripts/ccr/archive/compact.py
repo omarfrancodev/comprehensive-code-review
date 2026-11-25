@@ -328,7 +328,10 @@ def _validate_compact_sources(record, request, selected):
         disclosure = _decode_json(selected[reference])
         if disclosure['input_identity'] != context.get('check_disclosure_input_identity'):
             raise ValueError('compact disclosure input identity differs from context')
-        disclosure_view(record, disclosure, selected)
+        try:
+            disclosure_view(record, disclosure, selected)
+        except AttributeError as exc:
+            raise ValueError('invalid compact check disclosure evidence') from exc
     return index
 
 

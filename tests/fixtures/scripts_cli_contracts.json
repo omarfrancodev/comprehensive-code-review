@@ -3476,22 +3476,6 @@
                 "choices": null,
                 "const": null,
                 "default": null,
-                "dest": "input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--input"
-                ],
-                "required": true,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
                 "dest": "session",
                 "help": null,
                 "kind": "_StoreAction",
@@ -3588,6 +3572,42 @@
                 "choices": null,
                 "const": null,
                 "default": null,
+                "dest": "input",
+                "help": "Read a standalone review record",
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [
+                  0
+                ],
+                "nargs": null,
+                "options": [
+                  "--input"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "run_dir",
+                "help": "Read a verified, complete compact archive",
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [
+                  0
+                ],
+                "nargs": null,
+                "options": [
+                  "--run-dir"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
                 "dest": "check_disclosure_context",
                 "help": null,
                 "kind": "_StoreAction",
@@ -3619,7 +3639,15 @@
             ],
             "defaults": {},
             "description": null,
-            "mutually_exclusive_groups": []
+            "mutually_exclusive_groups": [
+              {
+                "required": true,
+                "actions": [
+                  "input",
+                  "run_dir"
+                ]
+              }
+            ]
           },
           "verify": {
             "actions": [
@@ -3638,22 +3666,6 @@
                   "--help"
                 ],
                 "required": false,
-                "type": null
-              },
-              {
-                "choices": null,
-                "const": null,
-                "default": null,
-                "dest": "input",
-                "help": null,
-                "kind": "_StoreAction",
-                "metavar": null,
-                "mutex_groups": [],
-                "nargs": null,
-                "options": [
-                  "--input"
-                ],
-                "required": true,
                 "type": null
               },
               {
@@ -3726,6 +3738,42 @@
                 "choices": null,
                 "const": null,
                 "default": null,
+                "dest": "input",
+                "help": "Read a standalone review record",
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [
+                  0
+                ],
+                "nargs": null,
+                "options": [
+                  "--input"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
+                "dest": "run_dir",
+                "help": "Read a verified, complete compact archive",
+                "kind": "_StoreAction",
+                "metavar": null,
+                "mutex_groups": [
+                  0
+                ],
+                "nargs": null,
+                "options": [
+                  "--run-dir"
+                ],
+                "required": false,
+                "type": null
+              },
+              {
+                "choices": null,
+                "const": null,
+                "default": null,
                 "dest": "check_disclosure_context",
                 "help": null,
                 "kind": "_StoreAction",
@@ -3757,7 +3805,15 @@
             ],
             "defaults": {},
             "description": null,
-            "mutually_exclusive_groups": []
+            "mutually_exclusive_groups": [
+              {
+                "required": true,
+                "actions": [
+                  "input",
+                  "run_dir"
+                ]
+              }
+            ]
           }
         },
         "type": null

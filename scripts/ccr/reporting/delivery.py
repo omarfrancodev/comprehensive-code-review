@@ -277,9 +277,8 @@ def deliver(run_dir, delivery, project_root, output_root=None, context=None, *,
             selected.input_identity = manifest['check_disclosure_input_identity']
     elif (compact_mode or record.get('schema_version') == 13) and record.get('checks'):
         # No project-resource proof was pinned; disclose an explanation only.
-        from ccr.workflow.builders import build_check_disclosure
-        identity = {'head': record['scope']['head'], 'snapshot': record['scope']['snapshot']}
-        check_disclosure_context = build_check_disclosure(record, identity, {}, selected)
+        from ccr.reporting.check_disclosure import build_explanation_only_disclosure
+        check_disclosure_context = build_explanation_only_disclosure(record)
     events = ([json.loads(line) for line in selected_source_bytes(run, manifest, {}, TRACE_NAME).splitlines()]
               if TRACE_NAME in manifest['hashes'] else
               json.loads(compact_sources['evidence/compact-execution.json']) if compact_mode else None)
